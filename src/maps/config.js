@@ -1,5 +1,6 @@
 // src/maps/config.js
-import { MapApp1, MapApp2 } from './index';
+import MapApp1 from './MapApp1';
+import MapApp2 from './MapApp2';
 
 const mapApps = [
     { name: 'Map App 1', path: '/map1', component: MapApp1 },

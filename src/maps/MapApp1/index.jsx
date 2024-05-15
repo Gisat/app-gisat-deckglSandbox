@@ -35,7 +35,7 @@ const layers = [
             });
         },
     })
-    ]
+]
 function MapApp1() {
     return (
         <DeckGL
