@@ -43,6 +43,7 @@ function MapApp1() {
             controller={true}
             views={new MapView({ repeat: true })}
             layers={layers}
+            className="deckgl-map"
         >
         </DeckGL>
     );
