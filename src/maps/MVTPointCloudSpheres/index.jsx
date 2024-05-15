@@ -6,7 +6,10 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { MVTLayer } from "@deck.gl/geo-layers";
 import { PointCloudLayer } from '@deck.gl/layers';
+import geolib from "@gisatcz/deckgl-geolib";
 import chroma from "chroma-js";
+
+const CogTerrainLayer = geolib.CogTerrainLayer;
 
 const colorScale = chroma
     .scale(['#fda34b', '#ff7882', '#c8699e', '#7046aa', '#0c1db8', '#2eaaac'])
@@ -21,6 +24,29 @@ const INITIAL_VIEW_STATE = {
 };
 
 const layers = [
+    new CogTerrainLayer(
+        {
+            id: 'CogTerrainLayerD8Dem',
+            elevationData:  'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/LITC52_53_4g_5m_4326_cog_nodata.tif',
+            // onClick: onRasterLayerClick,
+            minZoom: 12,
+            maxZoom: 14,
+            meshMaxError: 5,
+            opacity: 1,
+            isTiled: true,
+            useChannel: null,
+            tileSize: 256,
+            multiplier: 1.0,
+            // operation: 'terrain+draw'
+        },
+        {
+            type: 'terrain',
+            multiplier: 1,
+            useChannel: null,
+            terrainSkirtHeight: 1,
+        },
+    ),
+
     new TileLayer({
         data: 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
         id: 'standard-tile-layer',
@@ -53,7 +79,7 @@ const layers = [
                     pickable: false,
                     sizeUnits: 'meters',
                     pointSize: 7,
-                    getPosition: (d) => [...d.geometry.coordinates, 200],
+                    getPosition: (d) => [...d.geometry.coordinates, 200 + Math.random() * 200],
                     getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
                 });
             }
