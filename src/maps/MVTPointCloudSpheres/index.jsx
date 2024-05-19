@@ -69,7 +69,10 @@ const layers = [
         },
     }),
     new MVTLayer({
-        data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_95_upd3_psd_los_4326/{z}/{x}/{y}.pbf',
+        // data ascending
+        data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_ASC_upd3_psd_los_4326_height/{z}/{x}/{y}.pbf',
+        // data descending
+        // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height/{z}/{x}/{y}.pbf',
         binary: false,
         renderSubLayers: (props) => {
             if (props.data) {
@@ -79,7 +82,9 @@ const layers = [
                     pickable: false,
                     sizeUnits: 'meters',
                     pointSize: 7,
-                    getPosition: (d) => [...d.geometry.coordinates, 200 + Math.random() * 200],
+                    getPosition: (d) => [...d.geometry.coordinates, d.properties.h],
+                    // druha varianta s atributem h_dtm, podle H.Kolomaznika se to musi otestovat co bude vypadat lepe
+                    // getPosition: (d) => [...d.geometry.coordinates, d.properties.h_dtm],
                     getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
                 });
             }
