@@ -75,9 +75,9 @@ const layers = [
                     pickable: false,
                     sizeUnits: 'meters',
                     pointSize: 7,
-                    getPosition: (d) => [...d.geometry.coordinates, d.properties.h],
-                    // druha varianta s atributem h_dtm, podle H.Kolomaznika se to musi otestovat co bude vypadat lepe
-                    // getPosition: (d) => [...d.geometry.coordinates, d.properties.h_dtm],
+                    // dve varianty vysek 'h' a 'h_dtm' podle H.Kolomaznika se to musi otestovat co bude vypadat lepe
+                    // getPosition: (d) => [...d.geometry.coordinates, d.properties.h],
+                    getPosition: (d) => [...d.geometry.coordinates, d.properties.h_dtm + 5],
                     getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
                 });
             }
