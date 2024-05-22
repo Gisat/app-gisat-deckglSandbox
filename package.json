@@ -14,7 +14,7 @@
     "@deck.gl/geo-layers": "^9.0.14",
     "@deck.gl/layers": "^9.0.14",
     "@deck.gl/react": "^9.0.14",
-    "@gisatcz/deckgl-geolib": "^1.10.1",
+    "@gisatcz/deckgl-geolib": "^1.10.2-dev.6",
     "chroma-js": "^2.4.2",
     "deck.gl": "^9.0.14",
     "react": "^18.2.0",

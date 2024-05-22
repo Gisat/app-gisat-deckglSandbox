@@ -1,5 +1,4 @@
 // src/maps/MapApp1.jsx
-import React from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
@@ -24,29 +23,23 @@ const INITIAL_VIEW_STATE = {
 };
 
 const layers = [
-    new CogTerrainLayer(
-        {
-            id: 'CogTerrainLayerD8Dem',
-            elevationData:  'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/LITC52_53_4g_5m_4326_cog_nodata.tif',
-            // onClick: onRasterLayerClick,
-            minZoom: 12,
-            maxZoom: 14,
-            meshMaxError: 5,
-            opacity: 1,
-            isTiled: true,
-            useChannel: null,
-            tileSize: 256,
-            multiplier: 1.0,
-            // operation: 'terrain+draw'
-        },
-        {
+    new CogTerrainLayer({
+        id: 'CogTerrainLayerD8Dem',
+        elevationData:  'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/LITC52_53_4g_5m_4326_cog_nodata.tif',
+        minZoom: 12,
+        maxZoom: 14,
+        opacity: 1,
+        isTiled: true,
+        useChannel: null,
+        tileSize: 256,
+        meshMaxError: 5,
+        operation: 'terrain+draw',
+        terrainOptions: {
             type: 'terrain',
             multiplier: 1,
-            useChannel: null,
             terrainSkirtHeight: 1,
-        },
-    ),
-
+        }
+    }),
     new TileLayer({
         data: 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
         id: 'standard-tile-layer',
