@@ -7,12 +7,18 @@ import { MVTLayer } from "@deck.gl/geo-layers";
 import { PointCloudLayer } from '@deck.gl/layers';
 import geolib from "@gisatcz/deckgl-geolib";
 import chroma from "chroma-js";
+import { scaleLinear } from 'd3-scale';
+import {SimpleMeshLayer} from '@deck.gl/mesh-layers';
+import {SphereGeometry} from '@luma.gl/engine';
 
 const CogTerrainLayer = geolib.CogTerrainLayer;
 
 const colorScale = chroma
-    .scale(['#fda34b', '#ff7882', '#c8699e', '#7046aa', '#0c1db8', '#2eaaac'])
-    .domain([-30, 30]);
+    .scale(['#b1001d', '#ca2d2f', '#e25b40', '#ffaa00', '#ffff00', '#a0f000', '#4ce600', '#50d48e', '#00c3ff', '#0f80d1', '#004ca8', '#003e8a'])
+    .domain([-5, 5]);
+
+const sphereSizeScale = scaleLinear([0.45, 1], [1, 10]);
+
 
 const INITIAL_VIEW_STATE = {
     longitude: 14.015511800867504,
@@ -85,7 +91,17 @@ const layers = [
         },
         minZoom: 8,
         maxZoom: 14,
-    })
+    }),
+    // new SimpleMeshLayer({
+    //     data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_selected_arrows.geojson',
+    //     id: 'sphere-mesh',
+    //     mesh: new SphereGeometry(),
+    //     getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
+    //     getScale: (d) => Array(3).fill(sphereSizeScale(d.properties.coh)),
+    //     getPosition: (d) => d.geometry.coordinates,
+    //     getTranslation: [0,0,100],
+    //     pickable: true,
+    // })
 ]
 function MapApp1() {
     return (
