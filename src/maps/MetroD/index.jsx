@@ -1,12 +1,16 @@
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { TileLayer, Tile3DLayer, MVTLayer } from '@deck.gl/geo-layers';
-import {BitmapLayer, PointCloudLayer} from '@deck.gl/layers';
+import {BitmapLayer, GeoJsonLayer, PointCloudLayer} from '@deck.gl/layers';
+import {SimpleMeshLayer} from '@deck.gl/mesh-layers';
 import {Tiles3DLoader} from '@loaders.gl/3d-tiles';
 import geolib from "@gisatcz/deckgl-geolib";
 import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
 import {I3SLoader} from '@loaders.gl/i3s';
+import {COORDINATE_SYSTEM} from '@deck.gl/core';
 import chroma from 'chroma-js';
+import {SphereGeometry} from "@luma.gl/engine";
+import {scaleLinear} from "d3-scale";
 
 const CogTerrainLayer = geolib.CogTerrainLayer;
 
@@ -15,6 +19,8 @@ const TILESET_URL = 'https://tile.googleapis.com/v1/3dtiles/root.json';
 const colorScale = chroma
     .scale(['#b1001d', '#ca2d2f', '#e25b40', '#ffaa00', '#ffff00', '#a0f000', '#4ce600', '#50d48e', '#00c3ff', '#0f80d1', '#004ca8', '#003e8a'])
     .domain([-5, 5]);
+
+const sphereSizeScale = scaleLinear([0.45, 1], [0.5, 2.5]);
 
 const INITIAL_VIEW_STATE = {
     longitude: 14.437713740781064,
@@ -68,7 +74,7 @@ const buildings_geojson = new GeoJsonLayer({
     getFillColor: [255, 0, 0, 255],
 })
 
-const inSAR_spheres = new MVTLayer({
+const inSAR_point_cloud = new MVTLayer({
         // dataset with all parameters
         // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/metroD/inSAR/gisat_metrod_insar_tsx_los_etapa3_pilot1_3857_all/{z}/{x}/{y}.pbf',
         // dataset with selected parameters
@@ -115,6 +121,18 @@ const google3Dtile = new Tile3DLayer({
     opacity:1
 })
 
+const inSAR_mesh_spheres = new SimpleMeshLayer({
+    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/metroD/inSAR/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_mesh.geojson',
+    id: 'sphere-mesh',
+    mesh: new SphereGeometry(),
+    getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
+    getScale: (d) => Array(3).fill(sphereSizeScale(d.properties.coh)),
+    getPosition: (d) => d.geometry.coordinates,
+    getTranslation: (d) => [0,0,sphereSizeScale(d.properties.coh)*0.75],
+    pickable: true,
+    extensions: [new TerrainExtension()],
+})
+
 const DTM = new CogTerrainLayer({
     id: 'CogTerrainLayerPrahaDTM',
     elevationData:  'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/metroD/dtm/dtm1m_3857_cog_nodata.tif',
@@ -159,10 +177,11 @@ const layers = [
     // osm_basemap,
     // DTM,
     google3Dtile,
+    inSAR_mesh_spheres,
     // inSAR_points,
     buildings,
     // buildings_geojson,
-    // inSAR_spheres,
+    // inSAR_point_cloud,
     // new Tile3DLayer({
     //     id: 'tile-3d-layer',
     //     // data: '/3d-tiles-samples-main/1.0/TilesetWithDiscreteLOD/tileset.json',
