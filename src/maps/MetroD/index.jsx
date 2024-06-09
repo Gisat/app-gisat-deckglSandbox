@@ -40,21 +40,32 @@ const inSAR_points =  new MVTLayer({
 
 const buildings =  new MVTLayer({
     id: 'prague_buildings',
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/metroD/budovy/SO_Praha_Neratovice_3857/{z}/{x}/{y}.pbf',
+    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/metroD/budovy/SO_Praha_Neratovice_4326/{z}/{x}/{y}.pbf',
     binary: true,
     minZoom: 10,
     maxZoom: 14,
-    getLineColor: [125,65,23],
     stroked: false,
     filled: true,
-    getLineWidth: 1,
-    lineWidthMinPixels: 1,
-    getFillColor: d => {
-        console.log(d.properties)
-        console.log("test")
-        return [123,23,220]
+    getFillColor: (d) => {
+        if (d.properties.TYP_KOD === 0){
+            return [228, 26, 28, 150]
+        } else if (d.properties.TYP_KOD === 1){
+            return [55, 126, 184, 150]
+        } else if (d.properties.TYP_KOD === 2) {
+            return [152, 78, 163, 150]
+        } else return [255, 127, 0, 150]
     },
-    // extensions: [new TerrainExtension()],
+    extensions: [new TerrainExtension()],
+})
+
+const buildings_geojson = new GeoJsonLayer({
+    id: 'GeoJsonLayer',
+    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/metroD/budovy/SO_Praha_Neratovice_4326_selection.geojson',
+    // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/metroD/budovy/SO_Praha_Neratovice_3857_selection_test.geojson',
+    // coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
+    // coordinateOrigin: [0.001,-0.1,0],
+    // positionFormat:"XY",
+    getFillColor: [255, 0, 0, 255],
 })
 
 const inSAR_spheres = new MVTLayer({
@@ -145,12 +156,13 @@ const osm_basemap = new TileLayer({
 })
 
 const layers = [
-    osm_basemap,
+    // osm_basemap,
     // DTM,
-    // google3Dtile,
+    google3Dtile,
     // inSAR_points,
-    // buildings,
-    inSAR_spheres,
+    buildings,
+    // buildings_geojson,
+    // inSAR_spheres,
     // new Tile3DLayer({
     //     id: 'tile-3d-layer',
     //     // data: '/3d-tiles-samples-main/1.0/TilesetWithDiscreteLOD/tileset.json',
