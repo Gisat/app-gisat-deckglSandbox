@@ -11,6 +11,7 @@ import {COORDINATE_SYSTEM} from '@deck.gl/core';
 import chroma from 'chroma-js';
 import {SphereGeometry} from "@luma.gl/engine";
 import {scaleLinear} from "d3-scale";
+import { OBJLoader } from '@loaders.gl/obj';
 
 const CogTerrainLayer = geolib.CogTerrainLayer;
 
@@ -133,6 +134,45 @@ const inSAR_mesh_spheres = new SimpleMeshLayer({
     extensions: [new TerrainExtension()],
 })
 
+const scaleXYArrowWidth = scaleLinear([0.1, 20], [0.1 , 0.3]);
+const scaleZArrowLength = scaleLinear([0.1, 20], [0.05, 2]);
+
+const ARROW_SIZE = 67; // eyeball measured, only for this object: https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_v3.obj
+
+const inSAR_mesh_arrow = new SimpleMeshLayer({
+    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/metroD/inSAR/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_mesh.geojson',
+    id: 'arrow-mesh',
+    mesh: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_v3.obj',
+    getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
+    getOrientation: (d) => {
+        if (d.properties.vel_rel > 0) {
+            return [0, d.properties.az_ang, 180 + d.properties.inc_ang];
+        } else {return [0, d.properties.az_ang, d.properties.inc_ang]};
+    },
+    getTranslation: (d) => {
+        if (d.properties.vel_rel > 0) {
+            const inc_ang_rad = d.properties.inc_ang * Math.PI / 180;
+            const az_ang_rad = d.properties.az_ang * Math.PI / 180;
+            return [
+                Math.sin(inc_ang_rad) * Math.sin(az_ang_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.vel_rel),
+                -Math.sin(inc_ang_rad) * Math.cos(az_ang_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.vel_rel),
+                Math.cos(inc_ang_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.vel_rel)];
+        } return [0, 0, 0];
+    },
+    getPosition: (d) => d.geometry.coordinates,
+    // wireframe: true,
+    getScale: (d) => {
+        if (d.properties.vel_rel > 0) {
+            return [scaleXYArrowWidth(d.properties.vel_rel), scaleXYArrowWidth(d.properties.vel_rel), scaleZArrowLength(d.properties.vel_rel)];
+        }
+        return [scaleXYArrowWidth(Math.abs(d.properties.vel_rel)), scaleXYArrowWidth(Math.abs(d.properties.vel_rel)), scaleZArrowLength(Math.abs(d.properties.vel_rel))];
+    },
+    loaders: [OBJLoader],
+    pickable: true,
+    extensions: [new TerrainExtension()],
+});
+
+
 const DTM = new CogTerrainLayer({
     id: 'CogTerrainLayerPrahaDTM',
     elevationData:  'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/metroD/dtm/dtm1m_3857_cog_nodata.tif',
@@ -177,6 +217,7 @@ const layers = [
     // osm_basemap,
     // DTM,
     google3Dtile,
+    // inSAR_mesh_arrow,
     inSAR_mesh_spheres,
     // inSAR_points,
     buildings,
