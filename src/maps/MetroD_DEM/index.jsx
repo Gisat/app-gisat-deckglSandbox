@@ -91,7 +91,7 @@ const inSAR_point_cloud = new MVTLayer({
     })
 
 const inSAR_mesh_spheres = new SimpleMeshLayer({
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.geojson',
+    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.json',
     id: 'sphere-mesh',
     mesh: new SphereGeometry(),
     getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
@@ -108,7 +108,7 @@ const scaleZArrowLength = scaleLinear([0.1, 20], [0.05, 2]).clamp(true);
 const ARROW_SIZE = 67; // eyeball measured, only for this object: https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_v3.obj
 
 const inSAR_mesh_arrow = new SimpleMeshLayer({
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_mesh.geojson',
+    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_mesh.json',
     id: 'arrow-mesh',
     mesh: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/assets/arrow_v3.obj',
     getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
