@@ -17,7 +17,7 @@ const colorScale = chroma
     .domain([-5, 5]);
 
 const sphereSizeScale = scaleLinear([0.45, 1], [0.5, 2.5]).clamp(true);
-const pointSizeScale = scaleLinear([0.45,1],[0.5, 2.5]).clamp(true);
+const pointSizeScale = scaleLinear([0.45,1],[0.1, 2.5]).clamp(true);
 
 const INITIAL_VIEW_STATE = {
     longitude: 14.437713740781064,
@@ -29,7 +29,10 @@ const INITIAL_VIEW_STATE = {
 
 const inSAR_points =  new MVTLayer({
     id: 'inSAR_body',
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/metroD/inSAR/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326/{z}/{x}/{y}.pbf',
+    // dataset with all parameters
+    // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_all/{z}/{x}/{y}.pbf',
+    // dataset with selected parameters
+    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326/{z}/{x}/{y}.pbf',
     binary: false,
     minZoom: 10,
     maxZoom: 16,
@@ -37,8 +40,7 @@ const inSAR_points =  new MVTLayer({
     filled: true,
     pointType: 'circle',
     getFillColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
-    getScale: (d) => Array(3).fill(sphereSizeScale(d.properties.coh)),
-    getPointRadius: (d) => pointSizeScale(d.properties.coh) // coh interval (0.13-0.98)
+    getPointRadius: (d) => pointSizeScale(d.properties.coh), // coh interval (0.13-0.98)
     // extensions: [new TerrainExtension()],
 })
 
