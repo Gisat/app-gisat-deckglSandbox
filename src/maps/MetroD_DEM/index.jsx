@@ -1,15 +1,14 @@
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { TileLayer, MVTLayer } from '@deck.gl/geo-layers';
-import {BitmapLayer, PointCloudLayer} from '@deck.gl/layers';
+import {BitmapLayer, PointCloudLayer, GeoJsonLayer} from '@deck.gl/layers';
 import {SimpleMeshLayer} from '@deck.gl/mesh-layers';
 import geolib from "@gisatcz/deckgl-geolib";
-import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
+import { _TerrainExtension as TerrainExtension, PathStyleExtension } from '@deck.gl/extensions';
 import chroma from 'chroma-js';
 import {SphereGeometry} from "@luma.gl/engine";
 import {scaleLinear} from "d3-scale";
 import { OBJLoader } from '@loaders.gl/obj';
-
 const CogTerrainLayer = geolib.CogTerrainLayer;
 
 const colorScale = chroma
@@ -43,6 +42,43 @@ const inSAR_points =  new MVTLayer({
     getPointRadius: (d) => pointSizeScale(d.properties.coh), // coh interval (0.13-0.98)
     // extensions: [new TerrainExtension()],
 })
+
+const razbaZona = new GeoJsonLayer({
+    id: 'razba_zona',
+    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/razba_zona-ovlivneni_buffer_chronologie.geojson',
+    filled: true,
+    pickable: true,
+    getFillColor: (d) => {
+        if (d.properties.BREAKDATE === 20220331) return [253, 231, 37]
+            else if (d.properties.BREAKDATE === 20220430) return [171, 220, 50]
+            else if (d.properties.BREAKDATE === 20220531) return [93, 201, 98]
+            else if (d.properties.BREAKDATE === 20220630) return [39, 174, 128]
+            else if (d.properties.BREAKDATE === 20230730) return [32, 144, 141]
+            else if (d.properties.BREAKDATE === 20230831) return [43, 114, 142]
+            else if (d.properties.BREAKDATE === 20230930) return [58, 82, 139]
+            else if (d.properties.BREAKDATE === 20231031) return [70, 44, 123]
+        else return [0,0,0,0]
+    },
+    stroked: true,
+    getLineColor: (d) => {
+        if (d.properties.BREAKDATE === 20230730) return [0,0,0,0]
+        else return [15,15,15]
+    },
+    getLineWidth: 0.5,
+});
+
+const razbaOsa = new GeoJsonLayer({
+    id: 'razba_osa',
+    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/razba_osa.geojson',
+    pickable: true,
+    stroked: true,
+    getLineColor: [15, 15, 15],
+    getLineWidth: 2,
+    getDashArray: [3, 2],
+    dashJustified: true,
+    dashGapPickable: true,
+    extensions: [new PathStyleExtension({dash: true})]
+});
 
 const buildings =  new MVTLayer({
     id: 'prague_buildings',
