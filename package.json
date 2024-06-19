@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist"
   },
   "dependencies": {
     "@deck.gl/core": "^9.0.14",
@@ -40,5 +42,5 @@
     "gh-pages": "^6.1.1",
     "vite": "^5.2.0"
   },
-  "homepage": "https://gisat-panther.github.io/my-vite-map-app/"
+  "homepage": "https://gisat-panther.github.io/app-gisat-deckglSandbox/"
 }
