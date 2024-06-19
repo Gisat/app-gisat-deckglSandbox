@@ -1,7 +1,7 @@
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { TileLayer, MVTLayer } from '@deck.gl/geo-layers';
-import {BitmapLayer, GeoJsonLayer, PointCloudLayer} from '@deck.gl/layers';
+import {BitmapLayer, PointCloudLayer} from '@deck.gl/layers';
 import {SimpleMeshLayer} from '@deck.gl/mesh-layers';
 import geolib from "@gisatcz/deckgl-geolib";
 import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
