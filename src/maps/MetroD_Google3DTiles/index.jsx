@@ -90,7 +90,7 @@ const inSAR_mesh_arrow = new SimpleMeshLayer({
     getOrientation: (d) => {
         if (d.properties.vel_rel > 0) {
             return [0, d.properties.az_ang, 180 + d.properties.inc_ang];
-        } else {return [0, d.properties.az_ang, d.properties.inc_ang]};
+        } else {return [0, d.properties.az_ang, d.properties.inc_ang]}
     },
     getTranslation: (d) => {
         if (d.properties.vel_rel > 0) {
