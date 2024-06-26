@@ -26,7 +26,6 @@ const breakDateColors = {
     20231031: [70, 44, 123],
 };
 
-
 // Layer configurations
 const layerConfigs = [
     {
@@ -49,7 +48,6 @@ const layerConfigs = [
         },
         name: 'Tile Layer',
     },
-    ,
     {
         id: 'razba-zona',
         type: GeoJsonLayer,
@@ -57,20 +55,13 @@ const layerConfigs = [
             data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/razba_zona-ovlivneni_buffer_chronologie.geojson',
             filled: true,
             pickable: true,
-            // getFillColor: (d) => breakDateColors[d.properties.BREAKDATE] || [0, 0, 0, 0],
-            getFillColor: [15,15,15],
+            getFillColor: (d) => breakDateColors[d.properties.BREAKDATE] || [0, 0, 0, 0],
             stroked: true,
             visible: true,
             getLineColor: [15,15,15],
             getLineWidth: 0.5,
         },
         name: 'Chronology',
-        controls: {
-            getFillColor: {
-                'original': [15,15,15],
-                'red': [255, 255, 0, 255],
-            }
-        }
     },
     {
         id: 'razba-osa',
@@ -137,38 +128,6 @@ function MapApp1() {
                     [config.id]: value,
                 }));
             });
-        });
-
-        // Add dropdown controls for properties of specific layers
-        layerConfigs.forEach(config => {
-            if (config.controls) {
-                const folder = gui.addFolder(config.name + ' Properties');
-                Object.keys(config.controls).forEach(property => {
-                    const options = config.controls[property];
-                    if (typeof options === 'object' && !Array.isArray(options)) {
-                        const controlObject = { selected: Object.keys(options)[0] };
-                        folder.add(controlObject, 'selected', Object.keys(options)).name(property).onChange((value) => {
-                            setLayerProperties((prevState) => ({
-                                ...prevState,
-                                [config.id]: {
-                                    ...prevState[config.id],
-                                    [property]: options[value],
-                                },
-                            }));
-                        });
-                    } else {
-                        folder.add(layerProperties[config.id], property, options).onChange((value) => {
-                            setLayerProperties((prevState) => ({
-                                ...prevState,
-                                [config.id]: {
-                                    ...prevState[config.id],
-                                    [property]: value,
-                                },
-                            }));
-                        });
-                    }
-                });
-            }
         });
 
         // Cleanup dat.gui on unmount
