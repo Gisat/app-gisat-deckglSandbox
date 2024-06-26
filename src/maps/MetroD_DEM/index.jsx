@@ -1,22 +1,18 @@
+// src/maps/MapApp1.jsx
+import React, { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
-import { TileLayer, MVTLayer } from '@deck.gl/geo-layers';
-import {BitmapLayer, PointCloudLayer, GeoJsonLayer} from '@deck.gl/layers';
-import {SimpleMeshLayer} from '@deck.gl/mesh-layers';
-import geolib from "@gisatcz/deckgl-geolib";
-import { _TerrainExtension as TerrainExtension, PathStyleExtension } from '@deck.gl/extensions';
-import chroma from 'chroma-js';
+import {MVTLayer, TileLayer} from '@deck.gl/geo-layers';
+import {BitmapLayer, GeoJsonLayer} from '@deck.gl/layers';
+import * as dat from 'dat.gui';
+import {_TerrainExtension as TerrainExtension, PathStyleExtension} from "@deck.gl/extensions";
+import {SimpleMeshLayer} from "@deck.gl/mesh-layers";
 import {SphereGeometry} from "@luma.gl/engine";
+import chroma from "chroma-js";
 import {scaleLinear} from "d3-scale";
-import { OBJLoader } from '@loaders.gl/obj';
+import {OBJLoader} from "@loaders.gl/obj";
+import geolib from "@gisatcz/deckgl-geolib";
 const CogTerrainLayer = geolib.CogTerrainLayer;
-
-const colorScale = chroma
-    .scale(['#b1001d', '#ca2d2f', '#e25b40', '#ffaa00', '#ffff00', '#a0f000', '#4ce600', '#50d48e', '#00c3ff', '#0f80d1', '#004ca8', '#003e8a'])
-    .domain([-5, 5]);
-
-const sphereSizeScale = scaleLinear([0.45, 1], [0.5, 2.5]).clamp(true);
-const pointSizeScale = scaleLinear([0.45,1],[0.1, 2.5]).clamp(true);
 
 const INITIAL_VIEW_STATE = {
     longitude: 14.437713740781064,
@@ -26,210 +22,311 @@ const INITIAL_VIEW_STATE = {
     bearing: 0,
 };
 
-const inSAR_points =  new MVTLayer({
-    id: 'inSAR_body',
-    // dataset with all parameters
-    // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_all/{z}/{x}/{y}.pbf',
-    // dataset with selected parameters
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326/{z}/{x}/{y}.pbf',
-    binary: false,
-    minZoom: 10,
-    maxZoom: 16,
-    stroked: false,
-    filled: true,
-    pointType: 'circle',
-    getFillColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
-    getPointRadius: (d) => pointSizeScale(d.properties.coh), // coh interval (0.13-0.98)
-    // extensions: [new TerrainExtension()],
-})
+const breakDateColors = {
+    20220331: [253, 231, 37],
+    20220430: [171, 220, 50],
+    20220531: [93, 201, 98],
+    20220630: [39, 174, 128],
+    20230730: [32, 144, 141],
+    20230831: [43, 114, 142],
+    20230930: [58, 82, 139],
+    20231031: [70, 44, 123],
+};
 
-const razbaZona = new GeoJsonLayer({
-    id: 'razba_zona',
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/razba_zona-ovlivneni_buffer_chronologie.geojson',
-    filled: true,
-    pickable: true,
-    getFillColor: (d) => {
-        if (d.properties.BREAKDATE === 20220331) return [253, 231, 37]
-            else if (d.properties.BREAKDATE === 20220430) return [171, 220, 50]
-            else if (d.properties.BREAKDATE === 20220531) return [93, 201, 98]
-            else if (d.properties.BREAKDATE === 20220630) return [39, 174, 128]
-            else if (d.properties.BREAKDATE === 20230730) return [32, 144, 141]
-            else if (d.properties.BREAKDATE === 20230831) return [43, 114, 142]
-            else if (d.properties.BREAKDATE === 20230930) return [58, 82, 139]
-            else if (d.properties.BREAKDATE === 20231031) return [70, 44, 123]
-        else return [0,0,0,0]
-    },
-    stroked: true,
-    getLineColor: (d) => {
-        if (d.properties.BREAKDATE === 20230730) return [0,0,0,0]
-        else return [15,15,15]
-    },
-    getLineWidth: 0.5,
-});
+const colorScale = chroma
+    .scale(['#b1001d', '#ca2d2f', '#e25b40', '#ffaa00', '#ffff00', '#a0f000', '#4ce600', '#50d48e', '#00c3ff', '#0f80d1', '#004ca8', '#003e8a'])
+    .domain([-5, 5]);
 
-const razbaOsa = new GeoJsonLayer({
-    id: 'razba_osa',
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/razba_osa.geojson',
-    pickable: true,
-    stroked: true,
-    getLineColor: [15, 15, 15],
-    getLineWidth: 2,
-    getDashArray: [3, 2],
-    dashJustified: true,
-    dashGapPickable: true,
-    extensions: [new PathStyleExtension({dash: true})]
-});
+const sphereSizeScale = scaleLinear([0.45, 1], [0.5, 2.5]).clamp(true);
+const pointSizeScaleCoh = scaleLinear([0.45,1],[0.1, 2.5]).clamp(true);
+const pointSizeScaleRelLen = scaleLinear([0,1],[0.1, 10]).clamp(true);
 
-const buildings =  new MVTLayer({
-    id: 'prague_buildings',
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/SO_Praha_Neratovice_4326/{z}/{x}/{y}.pbf',
-    binary: true,
-    minZoom: 10,
-    maxZoom: 14,
-    stroked: false,
-    filled: true,
-    extruded: true,
-    getElevation: (d) => d.properties.TYP_KOD * 5 + 10,
-    getFillColor: (d) => {
-        if (d.properties.TYP_KOD === 0){
-            return [228, 26, 28, 255]
-        } else if (d.properties.TYP_KOD === 1){
-            return [55, 126, 184, 255]
-        } else if (d.properties.TYP_KOD === 2) {
-            return [152, 78, 163, 255]
-        } else return [255, 127, 0, 255]
-    },
-    extensions: [new TerrainExtension()],
-})
-
-const inSAR_point_cloud = new MVTLayer({
-        // dataset with all parameters
-        data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_all/{z}/{x}/{y}.pbf',
-        // dataset with selected parameters
-        // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326/{z}/{x}/{y}.pbf',
-        binary: false,
-        renderSubLayers: (props) => {
-            if (props.data) {
-                return new PointCloudLayer({
-                    ...props,
-                    id: `${props.id}-sphere`,
-                    pickable: false,
-                    sizeUnits: 'meters',
-                    pointSize: 5,
-                    // dve varianty vysek 'h' a 'h_dtm' podle H.Kolomaznika se to musi otestovat co bude vypadat lepe
-                    // getPosition: (d) => [...d.geometry.coordinates, d.properties.h],
-                    getPosition: (d) => [...d.geometry.coordinates, d.properties.h_dtm + 5],
-                    getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
+// Layer configurations
+const layerConfigs = [
+    {
+        id: 'tile-layer',
+        type: TileLayer,
+        options: {
+            data: 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            minZoom: 0,
+            maxZoom: 19,
+            tileSize: 256,
+            visible: true,
+            renderSubLayers: (props) => {
+                const { bbox: { west, south, east, north } } = props.tile;
+                return new BitmapLayer(props, {
+                    data: null,
+                    image: props.data,
+                    bounds: [west, south, east, north],
                 });
-            }
-            return null;
+            },
+            extensions: [new TerrainExtension()],
         },
-        minZoom: 10,
-        maxZoom: 16,
-    })
-
-const inSAR_mesh_spheres = new SimpleMeshLayer({
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.json',
-    id: 'sphere-mesh',
-    mesh: new SphereGeometry(),
-    getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
-    getScale: (d) => Array(3).fill(sphereSizeScale(d.properties.coh)),
-    getPosition: (d) => d.geometry.coordinates,
-    getTranslation: (d) => [0,0,sphereSizeScale(d.properties.coh)*0.75],
-    pickable: true,
-    extensions: [new TerrainExtension()],
-})
+        name: 'Basemap',
+    },
+    {
+        id: 'razba-zona',
+        type: GeoJsonLayer,
+        options: {
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/razba_zona-ovlivneni_buffer_chronologie.geojson',
+            filled: true,
+            pickable: true,
+            getFillColor: (d) => breakDateColors[d.properties.BREAKDATE] || [0, 0, 0, 0],
+            stroked: true,
+            visible: true,
+            getLineColor: [15,15,15],
+            getLineWidth: 0.5,
+            extensions: [new TerrainExtension()],
+        },
+        name: 'Chronology',
+    },
+    {
+        id: 'razba-osa',
+        type: GeoJsonLayer,
+        options: {
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/razba_osa.geojson',
+            pickable: true,
+            stroked: true,
+            getLineColor: [15, 15, 15],
+            getLineWidth: 2,
+            getDashArray: [3, 2],
+            dashJustified: true,
+            visible: true,
+            dashGapPickable: true,
+            extensions: [new TerrainExtension(), new PathStyleExtension({dash: true})]
+        },
+        name: 'Axis',
+    },
+    {
+        id: 'insar-points-mvt',
+        type: MVTLayer,
+        options: {
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326/{z}/{x}/{y}.pbf',
+            binary: false,
+            minZoom: 10,
+            maxZoom: 16,
+            stroked: false,
+            filled: true,
+            pointType: 'circle',
+            visible: false,
+            getFillColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
+            getPointRadius: (d) => pointSizeScaleRelLen(d.properties.rel_len),
+            // getPointRadius: (d) => pointSizeScaleCoh(d.properties.coh), // coh interval (0.13-0.98)
+            // extensions: [new TerrainExtension()],
+        },
+        name: 'InSAR points MVT',
+        controls: {
+            stroked: {
+                'true': true,
+                'false': false
+            },
+            // getPointRadius: Object.keys(getPointRadiusOptions),
+        }
+    },
+    {
+        id: 'insar-points-sphere',
+        type: SimpleMeshLayer,
+        options: {
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.json',
+            mesh: new SphereGeometry(),
+            visible: false,
+            getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
+            getScale: (d) => Array(3).fill(sphereSizeScale(d.properties.coh)),
+            // InSAR body clamped to ground (h_dtm)
+            // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm],
+            // InSAR body clamped to ground (h_dsm)
+            // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dsm],
+            // InSAR body vykreslene dle jejich vysky (h)
+            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h],
+            getTranslation: (d) => [0,0,sphereSizeScale(d.properties.coh)*0.75],
+            pickable: true,
+            // extensions: [new TerrainExtension()],
+        },
+        name: 'InSAR sphere',
+    },
+    {
+        id: 'insar-points-arrow',
+        type: SimpleMeshLayer,
+        options: {
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.json',
+            mesh: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/assets/arrow_v3.obj',
+            getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
+            getOrientation: (d) => {
+                if (d.properties.vel_rel > 0) {
+                    return [0, d.properties.az_ang, 180 + d.properties.inc_ang];
+                } else {return [0, d.properties.az_ang, d.properties.inc_ang]};
+            },
+            visible: false,
+            getTranslation: (d) => {
+                if (d.properties.vel_rel > 0) {
+                    const inc_ang_rad = d.properties.inc_ang * Math.PI / 180;
+                    const az_ang_rad = d.properties.az_ang * Math.PI / 180;
+                    return [
+                        Math.sin(inc_ang_rad) * Math.sin(az_ang_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.vel_rel),
+                        -Math.sin(inc_ang_rad) * Math.cos(az_ang_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.vel_rel),
+                        Math.cos(inc_ang_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.vel_rel)];
+                } return [0, 0, 0];
+            },
+            // InSAR body clamped to ground (h_dtm)
+            // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm],
+            // InSAR body clamped to ground (h_dsm)
+            // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dsm],
+            // InSAR body vykreslene dle jejich vysky (h)
+            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h],
+            getScale: (d) => {
+                if (d.properties.vel_rel > 0) {
+                    return [scaleXYArrowWidth(d.properties.vel_rel), scaleXYArrowWidth(d.properties.vel_rel), scaleZArrowLength(d.properties.vel_rel)];
+                }
+                return [scaleXYArrowWidth(Math.abs(d.properties.vel_rel)), scaleXYArrowWidth(Math.abs(d.properties.vel_rel)), scaleZArrowLength(Math.abs(d.properties.vel_rel))];
+            },
+            loaders: [OBJLoader],
+            pickable: true,
+            // extensions: [new TerrainExtension()],
+        },
+        name: 'InSAR arrow',
+    },
+    {
+        id: 'cog-terrain-dtm-praha',
+        type: CogTerrainLayer,
+        options: {
+            elevationData:  'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/rasters/dtm1m_4326_cog_nodata.tif',
+            minZoom: 12,
+            maxZoom: 17,
+            // opacity: 0.7,
+            isTiled: true,
+            useChannel: null,
+            tileSize: 256,
+            meshMaxError: 1,
+            visible: true,
+            operation: 'terrain+draw',
+            terrainOptions: {
+                type: 'terrain',
+                multiplier: 1,
+                terrainSkirtHeight: 1,
+            }
+        },
+        name: 'DTM Prague',
+    },
+    {
+        id: 'buildings',
+        type: MVTLayer,
+        options: {
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/SO_Praha_Neratovice_4326/{z}/{x}/{y}.pbf',
+            binary: true,
+            minZoom: 10,
+            maxZoom: 14,
+            stroked: false,
+            filled: true,
+            extruded: true,
+            visible: false,
+            getElevation: (d) => d.properties.TYP_KOD * 5 + 12,
+            getFillColor: (d) => {
+                if (d.properties.TYP_KOD === 0){
+                    return [228, 26, 28, 255]
+                } else if (d.properties.TYP_KOD === 1){
+                    return [55, 126, 184, 255]
+                } else if (d.properties.TYP_KOD === 2) {
+                    return [152, 78, 163, 255]
+                } else return [255, 127, 0, 255]
+            },
+            extensions: [new TerrainExtension()],
+        },
+        name: 'Building',
+    }
+];
 
 const scaleXYArrowWidth = scaleLinear([0.1, 20], [0.1 , 0.3]).clamp(true);
 const scaleZArrowLength = scaleLinear([0.1, 20], [0.05, 2]).clamp(true);
 
 const ARROW_SIZE = 67; // eyeball measured, only for this object: https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_v3.obj
 
-const inSAR_mesh_arrow = new SimpleMeshLayer({
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_mesh.json',
-    id: 'arrow-mesh',
-    mesh: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/assets/arrow_v3.obj',
-    getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
-    getOrientation: (d) => {
-        if (d.properties.vel_rel > 0) {
-            return [0, d.properties.az_ang, 180 + d.properties.inc_ang];
-        } else {return [0, d.properties.az_ang, d.properties.inc_ang]};
-    },
-    getTranslation: (d) => {
-        if (d.properties.vel_rel > 0) {
-            const inc_ang_rad = d.properties.inc_ang * Math.PI / 180;
-            const az_ang_rad = d.properties.az_ang * Math.PI / 180;
-            return [
-                Math.sin(inc_ang_rad) * Math.sin(az_ang_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.vel_rel),
-                -Math.sin(inc_ang_rad) * Math.cos(az_ang_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.vel_rel),
-                Math.cos(inc_ang_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.vel_rel)];
-        } return [0, 0, 0];
-    },
-    getPosition: (d) => d.geometry.coordinates,
-    // wireframe: true,
-    getScale: (d) => {
-        if (d.properties.vel_rel > 0) {
-            return [scaleXYArrowWidth(d.properties.vel_rel), scaleXYArrowWidth(d.properties.vel_rel), scaleZArrowLength(d.properties.vel_rel)];
-        }
-        return [scaleXYArrowWidth(Math.abs(d.properties.vel_rel)), scaleXYArrowWidth(Math.abs(d.properties.vel_rel)), scaleZArrowLength(Math.abs(d.properties.vel_rel))];
-    },
-    loaders: [OBJLoader],
-    pickable: true,
-    extensions: [new TerrainExtension()],
-});
 
-
-const DTM = new CogTerrainLayer({
-    id: 'CogTerrainLayerPrahaDTM',
-    elevationData:  'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/rasters/dtm1m_4326_cog_nodata.tif',
-    minZoom: 12,
-    maxZoom: 17,
-    // opacity: 0.7,
-    isTiled: true,
-    useChannel: null,
-    tileSize: 256,
-    meshMaxError: 1,
-    operation: 'terrain+draw',
-    terrainOptions: {
-        type: 'terrain',
-        multiplier: 1,
-        terrainSkirtHeight: 1,
-    }
-})
-
-const osm_basemap = new TileLayer({
-    data: 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    id: 'standard-tile-layer',
-    minZoom: 0,
-    maxZoom: 19,
-    tileSize: 256,
-
-    renderSubLayers: (props) => {
-        const {
-            bbox: {
-                west, south, east, north,
-            },
-        } = props.tile;
-
-        return new BitmapLayer(props, {
-            data: null,
-            image: props.data,
-            bounds: [west, south, east, north],
+// Function to create a layer based on its configuration, visibility, and properties
+const createLayer = (config, visibility, properties) => {
+    const options = { ...config.options, id: config.id, visible: visibility };
+    if (properties) {
+        Object.keys(properties).forEach((key) => {
+            options[key] = properties[key];
         });
-    },
-    extensions: [new TerrainExtension()],
-})
+    }
+    return new config.type(options);
+};
 
-const layers = [
-    osm_basemap,
-    DTM,
-    // inSAR_mesh_arrow,
-    inSAR_mesh_spheres,
-    inSAR_points,
-    buildings,
-    // inSAR_point_cloud,
-]
-function MapApp() {
+function MapApp1() {
+    // Initial visibility state and layer properties for all layers
+    const initialVisibility = layerConfigs.reduce((acc, config) => {
+        acc[config.id] = config.options.visible;
+        return acc;
+    }, {});
+
+    const initialProperties = layerConfigs.reduce((acc, config) => {
+        if (config.controls) {
+            acc[config.id] = {};
+            Object.keys(config.controls).forEach(key => {
+                acc[config.id][key] = config.options[key];
+            });
+        }
+        return acc;
+    }, {});
+
+    const [layerVisibility, setLayerVisibility] = useState(initialVisibility);
+    const [layerProperties, setLayerProperties] = useState(initialProperties);
+
+    // Update the layers array based on visibility and properties state
+    const layers = layerConfigs.map(config => createLayer(config, layerVisibility[config.id], layerProperties[config.id]));
+
+    useEffect(() => {
+        // Initialize dat.gui
+        const gui = new dat.GUI();
+
+        // Add visibility controls for each layer
+        layerConfigs.forEach(config => {
+            gui.add(layerVisibility, config.id).name(config.name).onChange((value) => {
+                setLayerVisibility((prevState) => ({
+                    ...prevState,
+                    [config.id]: value,
+                }));
+            });
+        });
+
+        // Add dropdown controls for properties of specific layers
+        layerConfigs.forEach(config => {
+            if (config.controls) {
+                const folder = gui.addFolder(config.name + ' Properties');
+                Object.keys(config.controls).forEach(property => {
+                    const options = config.controls[property];
+                    if (typeof options === 'object' && !Array.isArray(options)) {
+                        const controlObject = { selected: Object.keys(options)[0] };
+                        folder.add(controlObject, 'selected', Object.keys(options)).name(property).onChange((value) => {
+                            setLayerProperties((prevState) => ({
+                                ...prevState,
+                                [config.id]: {
+                                    ...prevState[config.id],
+                                    [property]: options[value],
+                                },
+                            }));
+                        });
+                    } else {
+                        folder.add(layerProperties[config.id], property, options).onChange((value) => {
+                            setLayerProperties((prevState) => ({
+                                ...prevState,
+                                [config.id]: {
+                                    ...prevState[config.id],
+                                    [property]: value,
+                                },
+                            }));
+                        });
+                    }
+                });
+            }
+        });
+
+        // Cleanup dat.gui on unmount
+        return () => {
+            gui.destroy();
+        };
+    }, []);
+
     return (
         <DeckGL
             initialViewState={INITIAL_VIEW_STATE}
@@ -242,4 +339,4 @@ function MapApp() {
     );
 }
 
-export default MapApp;
+export default MapApp1;
