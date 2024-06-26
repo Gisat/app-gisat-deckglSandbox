@@ -5,7 +5,7 @@ import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import {BitmapLayer, GeoJsonLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
-import {PathStyleExtension} from "@deck.gl/extensions";
+import {_TerrainExtension as TerrainExtension, PathStyleExtension} from "@deck.gl/extensions";
 
 const INITIAL_VIEW_STATE = {
     longitude: 14.437713740781064,
@@ -15,12 +15,25 @@ const INITIAL_VIEW_STATE = {
     bearing: 0,
 };
 
+const breakDateColors = {
+    20220331: [253, 231, 37],
+    20220430: [171, 220, 50],
+    20220531: [93, 201, 98],
+    20220630: [39, 174, 128],
+    20230730: [32, 144, 141],
+    20230831: [43, 114, 142],
+    20230930: [58, 82, 139],
+    20231031: [70, 44, 123],
+};
+
+
 // Layer configurations
 const layerConfigs = [
     {
         id: 'tile-layer',
         type: TileLayer,
         options: {
+            visible:true,
             data: 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
             minZoom: 0,
             maxZoom: 19,
@@ -36,8 +49,31 @@ const layerConfigs = [
         },
         name: 'Tile Layer',
     },
+    ,
     {
-        id: 'razba_osa',
+        id: 'razba-zona',
+        type: GeoJsonLayer,
+        options: {
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/razba_zona-ovlivneni_buffer_chronologie.geojson',
+            filled: true,
+            pickable: true,
+            // getFillColor: (d) => breakDateColors[d.properties.BREAKDATE] || [0, 0, 0, 0],
+            getFillColor: [15,15,15],
+            stroked: true,
+            visible: true,
+            getLineColor: [15,15,15],
+            getLineWidth: 0.5,
+        },
+        name: 'Chronology',
+        controls: {
+            getFillColor: {
+                'original': [15,15,15],
+                'red': [255, 255, 0, 255],
+            }
+        }
+    },
+    {
+        id: 'razba-osa',
         type: GeoJsonLayer,
         options: {
             data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/razba_osa.geojson',
@@ -47,25 +83,17 @@ const layerConfigs = [
             getLineWidth: 2,
             getDashArray: [3, 2],
             dashJustified: true,
+            visible: true,
             dashGapPickable: true,
-            extensions: [new PathStyleExtension({dash: true})]
+            extensions: [ new PathStyleExtension({dash: true})]
         },
-        name: 'GeoJson Layer',
-        controls: {
-            getLineColor: {
-                Black: [0, 0, 0, 255],
-                Red: [255, 0, 0, 255],
-                Blue: [0, 0, 255, 255],
-                Green: [0, 255, 0, 255],
-            }
-            // heightProperty: ['elevation', 'value']
-        }
-    }
+        name: 'Axis',
+    },
 ];
 
 // Function to create a layer based on its configuration, visibility, and properties
 const createLayer = (config, visibility, properties) => {
-    const options = { ...config.options, visible: visibility };
+    const options = { ...config.options, id: config.id, visible: visibility };
     if (properties) {
         Object.keys(properties).forEach((key) => {
             options[key] = properties[key];
@@ -77,7 +105,7 @@ const createLayer = (config, visibility, properties) => {
 function MapApp1() {
     // Initial visibility state and layer properties for all layers
     const initialVisibility = layerConfigs.reduce((acc, config) => {
-        acc[config.id] = true;
+        acc[config.id] = config.options.visible;
         return acc;
     }, {});
 
