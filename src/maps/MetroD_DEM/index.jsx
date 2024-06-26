@@ -37,9 +37,9 @@ const colorScale = chroma
     .scale(['#b1001d', '#ca2d2f', '#e25b40', '#ffaa00', '#ffff00', '#a0f000', '#4ce600', '#50d48e', '#00c3ff', '#0f80d1', '#004ca8', '#003e8a'])
     .domain([-5, 5]);
 
-const sphereSizeScale = scaleLinear([0.45, 1], [0.5, 2.5]).clamp(true);
-const pointSizeScaleCoh = scaleLinear([0.45,1],[0.1, 2.5]).clamp(true);
-const pointSizeScaleRelLen = scaleLinear([0,1],[0.1, 10]).clamp(true);
+const sphereSizeScale = scaleLinear([0, 1], [0.5, 2.5]).clamp(true); //for rel len
+// const sphereSizeScale = scaleLinear([0.45, 1], [0.5, 2.5]).clamp(true); //for coh
+const pointSizeScale = scaleLinear([0.45,1],[0.1, 2.5]).clamp(true);
 
 // Layer configurations
 const layerConfigs = [
@@ -63,6 +63,7 @@ const layerConfigs = [
             extensions: [new TerrainExtension()],
         },
         name: 'Basemap',
+        showVisibilityToggle: false, // Show visibility toggle for this layer
     },
     {
         id: 'razba-zona',
@@ -79,6 +80,7 @@ const layerConfigs = [
             extensions: [new TerrainExtension()],
         },
         name: 'Chronology',
+        showVisibilityToggle: true, // Show visibility toggle for this layer
     },
     {
         id: 'razba-osa',
@@ -96,33 +98,27 @@ const layerConfigs = [
             extensions: [new TerrainExtension(), new PathStyleExtension({dash: true})]
         },
         name: 'Axis',
+        showVisibilityToggle: true, // Show visibility toggle for this layer
     },
-    {
-        id: 'insar-points-mvt',
-        type: MVTLayer,
-        options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326/{z}/{x}/{y}.pbf',
-            binary: false,
-            minZoom: 10,
-            maxZoom: 16,
-            stroked: false,
-            filled: true,
-            pointType: 'circle',
-            visible: false,
-            getFillColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
-            getPointRadius: (d) => pointSizeScaleRelLen(d.properties.rel_len),
-            // getPointRadius: (d) => pointSizeScaleCoh(d.properties.coh), // coh interval (0.13-0.98)
-            // extensions: [new TerrainExtension()],
-        },
-        name: 'InSAR points MVT',
-        controls: {
-            stroked: {
-                'true': true,
-                'false': false
-            },
-            // getPointRadius: Object.keys(getPointRadiusOptions),
-        }
-    },
+    // {
+    //     id: 'insar-points-mvt',
+    //     type: MVTLayer,
+    //     options: {
+    //         data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326/{z}/{x}/{y}.pbf',
+    //         binary: false,
+    //         minZoom: 10,
+    //         maxZoom: 16,
+    //         stroked: false,
+    //         filled: true,
+    //         pointType: 'circle',
+    //         visible: false,
+    //         getFillColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
+    //         getPointRadius: (d) => pointSizeScale(d.properties.coh), // coh interval (0.13-0.98)
+    //         extensions: [new TerrainExtension()],
+    //     },
+    //     name: 'InSAR points MVT',
+    //     showVisibilityToggle: true, // Show visibility toggle for this layer
+    // },
     {
         id: 'insar-points-sphere',
         type: SimpleMeshLayer,
@@ -138,11 +134,12 @@ const layerConfigs = [
             // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dsm],
             // InSAR body vykreslene dle jejich vysky (h)
             getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h],
-            getTranslation: (d) => [0,0,sphereSizeScale(d.properties.coh)*0.75],
+            getTranslation: (d) => [0,0,sphereSizeScale(d.properties.rel_len)*0.75],
             pickable: true,
             // extensions: [new TerrainExtension()],
         },
         name: 'InSAR sphere',
+        showVisibilityToggle: true, // Show visibility toggle for this layer
     },
     {
         id: 'insar-points-arrow',
@@ -156,7 +153,7 @@ const layerConfigs = [
                     return [0, d.properties.az_ang, 180 + d.properties.inc_ang];
                 } else {return [0, d.properties.az_ang, d.properties.inc_ang]};
             },
-            visible: false,
+            visible: true,
             getTranslation: (d) => {
                 if (d.properties.vel_rel > 0) {
                     const inc_ang_rad = d.properties.inc_ang * Math.PI / 180;
@@ -184,6 +181,7 @@ const layerConfigs = [
             // extensions: [new TerrainExtension()],
         },
         name: 'InSAR arrow',
+        showVisibilityToggle: true, // Show visibility toggle for this layer
     },
     {
         id: 'cog-terrain-dtm-praha',
@@ -206,6 +204,7 @@ const layerConfigs = [
             }
         },
         name: 'DTM Prague',
+        showVisibilityToggle: false, // Show visibility toggle for this layer
     },
     {
         id: 'buildings',
@@ -218,7 +217,7 @@ const layerConfigs = [
             stroked: false,
             filled: true,
             extruded: true,
-            visible: false,
+            visible: true,
             getElevation: (d) => d.properties.TYP_KOD * 5 + 12,
             getFillColor: (d) => {
                 if (d.properties.TYP_KOD === 0){
@@ -232,6 +231,7 @@ const layerConfigs = [
             extensions: [new TerrainExtension()],
         },
         name: 'Building',
+        showVisibilityToggle: true, // Show visibility toggle for this layer
     }
 ];
 
@@ -281,12 +281,14 @@ function MapApp1() {
 
         // Add visibility controls for each layer
         layerConfigs.forEach(config => {
-            gui.add(layerVisibility, config.id).name(config.name).onChange((value) => {
-                setLayerVisibility((prevState) => ({
-                    ...prevState,
-                    [config.id]: value,
-                }));
-            });
+            if (config.showVisibilityToggle) {
+                gui.add(layerVisibility, config.id).name(config.name).onChange((value) => {
+                    setLayerVisibility((prevState) => ({
+                        ...prevState,
+                        [config.id]: value,
+                    }));
+                });
+            }
         });
 
         // Add dropdown controls for properties of specific layers
