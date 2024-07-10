@@ -22,15 +22,15 @@ const INITIAL_VIEW_STATE = {
     bearing: 0,
 };
 
-const breakDateColors = {
-    20220331: [253, 231, 37],
-    20220430: [171, 220, 50],
-    20220531: [93, 201, 98],
-    20220630: [39, 174, 128],
-    20230730: [32, 144, 141],
-    20230831: [43, 114, 142],
-    20230930: [58, 82, 139],
-    20231031: [70, 44, 123],
+const zoneColors = {
+    20190701: [253, 231, 37],
+    20220301: [171, 220, 50],
+    20220401: [93, 201, 98],
+    20220501: [39, 174, 128],
+    20220601: [32, 144, 141],
+    20230701: [43, 114, 142],
+    20230731: [58, 82, 139],
+    20230901: [70, 44, 123],
 };
 
 const colorScale = chroma
@@ -69,10 +69,10 @@ const layerConfigs = [
         id: 'razba-zona',
         type: GeoJsonLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/razba_zona-ovlivneni_buffer_chronologie.geojson',
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/razba_zona-ovlivneni_buffer_chronologie_v2.geojson',
             filled: true,
             pickable: true,
-            getFillColor: (d) => breakDateColors[d.properties.BREAKDATE] || [0, 0, 0, 0],
+            getFillColor: (d) => zoneColors[d.properties.CL_START] || [0, 0, 0, 0],
             stroked: true,
             visible: true,
             getLineColor: [15,15,15],
