@@ -33,6 +33,15 @@ const zoneColors = {
     20230901: [70, 44, 123],
 };
 
+const riskColors = {
+    0: [255, 255, 255],
+    1: [255, 213, 213],
+    2: [255, 170, 170],
+    3: [255, 128, 128],
+    4: [255, 85, 85],
+    5: [255, 42, 42]
+};
+
 const colorScale = chroma
     .scale(['#b1001d', '#ca2d2f', '#e25b40', '#ffaa00', '#ffff00', '#a0f000', '#4ce600', '#50d48e', '#00c3ff', '#0f80d1', '#004ca8', '#003e8a'])
     .domain([-5, 5]);
@@ -125,7 +134,7 @@ const layerConfigs = [
         options: {
             data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.json',
             mesh: new SphereGeometry(),
-            visible: false,
+            visible: true,
             getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
             getScale: (d) => Array(3).fill(sphereSizeScale(d.properties.coh)),
             // InSAR body clamped to ground (h_dtm)
@@ -153,7 +162,7 @@ const layerConfigs = [
                     return [0, d.properties.az_ang, 180 + d.properties.inc_ang];
                 } else {return [0, d.properties.az_ang, d.properties.inc_ang]};
             },
-            visible: true,
+            visible: false,
             getTranslation: (d) => {
                 if (d.properties.vel_rel > 0) {
                     const inc_ang_rad = d.properties.inc_ang * Math.PI / 180;
@@ -218,16 +227,8 @@ const layerConfigs = [
             filled: true,
             extruded: true,
             visible: true,
-            getElevation: (d) => d.properties.TYP_KOD * 5 + 12,
-            getFillColor: (d) => {
-                if (d.properties.TYP_KOD === 0){
-                    return [228, 26, 28, 255]
-                } else if (d.properties.TYP_KOD === 1){
-                    return [55, 126, 184, 255]
-                } else if (d.properties.TYP_KOD === 2) {
-                    return [152, 78, 163, 255]
-                } else return [255, 127, 0, 255]
-            },
+            getElevation: (d) => d.properties.h,
+            getFillColor: (d) => riskColors[d.properties.cl_risk_e3] || [255, 255, 255, 255],
             extensions: [new TerrainExtension()],
         },
         name: 'Building',
