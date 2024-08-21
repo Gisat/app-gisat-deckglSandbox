@@ -45,9 +45,9 @@ const getScale = item => {
 
 const getOrientation = item => {
     if (item.properties.vel_rel > 0) {
-        return [0, item.properties.az_ang, 180 + item.properties.inc_ang];
+        return [0, 180+360+item.properties.az_ang, 180 + item.properties.inc_ang];
     } else {
-        return [0, item.properties.az_ang, item.properties.inc_ang];
+        return [0, 180+360+item.properties.az_ang, item.properties.inc_ang];
     }
 };
 
@@ -106,7 +106,7 @@ const layerConfigs = [
             getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
             getOrientation: getOrientation,
             // getPosition: d => [...d.geometry.coordinates, d.properties.h_dtm],
-            getPosition: d => [...d.geometry.coordinates, 0],
+            getPosition: d => [...d.geometry.coordinates],
             getScale: getScale,
             getTranslation: getTranslation,
             loaders: [OBJLoader],
