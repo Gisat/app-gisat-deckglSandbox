@@ -142,7 +142,7 @@ const layerConfigs = [
             // InSAR body clamped to ground (h_dsm)
             // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dsm],
             // InSAR body vykreslene dle jejich vysky (h)
-            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h],
+            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dsm],
             getTranslation: (d) => [0,0,sphereSizeScale(d.properties.rel_len)*0.75],
             pickable: true,
             // extensions: [new TerrainExtension()],
@@ -196,7 +196,7 @@ const layerConfigs = [
         id: 'cog-terrain-dtm-praha',
         type: CogTerrainLayer,
         options: {
-            elevationData:  'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/rasters/dtm1m_4326_cog_nodata.tif',
+            elevationData:  'https://gisat-data.eu-central-1.linodeobjects.com/3DFlus_GST-22/app-esa3DFlusMetroD/dev/rasters/dtm1m_4326_cog_nodata.tif',
             minZoom: 12,
             maxZoom: 17,
             // opacity: 0.7,
