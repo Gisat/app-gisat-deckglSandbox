@@ -9,6 +9,8 @@ import chroma from "chroma-js";
 import { scaleLinear } from 'd3-scale';
 import { PointCloudLayer } from '@deck.gl/layers';
 import {_TerrainExtension as TerrainExtension, DataFilterExtension} from '@deck.gl/extensions';
+import {SimpleMeshLayer} from "@deck.gl/mesh-layers";
+import {OBJLoader} from "@loaders.gl/obj";
 
 const CogTerrainLayer = geolib.CogTerrainLayer;
 
@@ -26,6 +28,37 @@ const INITIAL_VIEW_STATE = {
     pitch: 20,
     bearing: 0,
 };
+
+const scaleXYArrowWidth = scaleLinear([0.1, 20], [0.1 , 0.3*1000]).clamp(true);
+const scaleZArrowLength = scaleLinear([0.1, 20], [0.05, 2*1000]).clamp(true);
+
+const ARROW_SIZE = 67; // eyeball measured, only for this object: https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_v3.obj
+
+const insarPointRelLenThresholdInterval = [0.45, 1000000];
+
+const meshArrow = new SimpleMeshLayer(
+    {
+        id: 'insar-points-arrow',
+        data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_mesh_v2.json',
+        mesh: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/test_arrow.obj',
+        getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
+        getOrientation: (d) => [0,d.properties.az_ang,90],
+        getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dt],
+        // getSize: (d) => iconScale(Math.abs(d.properties.vel_rel))*10000,
+        getScale: (d) => {
+            return [meshIconScale(Math.abs(d.properties.vel_rel)), meshIconScale(Math.abs(d.properties.vel_rel)), meshIconScale(Math.abs(d.properties.vel_rel))]
+            // if (d.properties.vel_rel > 0) {
+            //     return [scaleXYArrowWidth(d.properties.vel_rel), scaleXYArrowWidth(d.properties.vel_rel), scaleZArrowLength(d.properties.vel_rel)];
+            // }
+            // return [scaleXYArrowWidth(Math.abs(d.properties.vel_rel)), scaleXYArrowWidth(Math.abs(d.properties.vel_rel)), scaleZArrowLength(Math.abs(d.properties.vel_rel))];
+        },
+        loaders: [OBJLoader],
+        getFilterValue: d => d.properties.rel_len,
+        filterRange: insarPointRelLenThresholdInterval,
+        extensions: [new DataFilterExtension({filterSize: 1})],
+        // pickable: true,
+        // extensions: [new TerrainExtension()],
+})
 
 const DEM = new CogTerrainLayer({
     id: 'CogTerrainLayerD8Dem',
@@ -45,6 +78,7 @@ const DEM = new CogTerrainLayer({
     }
 })
 const iconScale = scaleLinear([0,1], [10,50]).clamp(true)
+const meshIconScale= scaleLinear([0,1], [10,200]).clamp(true)
 
 const iconArrow = new IconLayer({
     id: 'icon-arrow',
@@ -119,9 +153,10 @@ const osm_basemap = new TileLayer({
 })
 
 const layers = [
-    // DEM,
+    DEM,
     // mvt_insar_points,
-    iconArrow,
+    meshArrow,
+    // iconArrow,
     osm_basemap
 ]
 function MapApp1() {
