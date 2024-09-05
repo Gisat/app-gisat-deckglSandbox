@@ -8,8 +8,7 @@ import geolib from "@gisatcz/deckgl-geolib";
 import chroma from "chroma-js";
 import { scaleLinear } from 'd3-scale';
 import { PointCloudLayer } from '@deck.gl/layers';
-import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
-import {SphereGeometry} from "@luma.gl/engine";
+import {_TerrainExtension as TerrainExtension, DataFilterExtension} from '@deck.gl/extensions';
 
 const CogTerrainLayer = geolib.CogTerrainLayer;
 
@@ -45,24 +44,32 @@ const DEM = new CogTerrainLayer({
         terrainSkirtHeight: 1,
     }
 })
+const iconScale = scaleLinear([0,1], [10,50]).clamp(true)
 
 const iconArrow = new IconLayer({
     id: 'icon-arrow',
     data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_selected_arrows.geojson',
     getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
-    getIcon: d => 'marker',
-    getPosition: (d) => d.geometry.coordinates,
-    getSize: 100,
-    iconAtlas: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icons8-arrow-50.png',
-    iconMapping: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icon-atlas.json',
+    getIcon: (d) => d.properties.vel_rel > 0 ? 'arrow': 'arrow-filled',
+    getPosition: (d) => [...d.geometry.coordinates, 1],
+    getAngle: (d) => d.properties.az_ang,
+    billboard: false,
+    sizeUnits: "meters",
+    getSize: (d) => iconScale(Math.abs(d.properties.vel_rel)),
+   // mask: true,
+    iconAtlas: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_icon_atlas.png',
+    iconMapping: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_icon_atlas.json',
+    getFilterValue: d => Math.abs(d.properties.coh),
+    filterRange: [0.4, 40],
+    extensions: [new DataFilterExtension({filterSize: 1})],
     // extensions: [new TerrainExtension()],
 });
 
 const mvt_insar_points = new MVTLayer({
     // data ascending
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_ASC_upd3_psd_los_4326_height/{z}/{x}/{y}.pbf',
+    // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_ASC_upd3_psd_los_4326_height/{z}/{x}/{y}.pbf',
     // data descending
-    // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height/{z}/{x}/{y}.pbf',
+    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height/{z}/{x}/{y}.pbf',
     binary: false,
     renderSubLayers: (props) => {
         if (props.data) {
@@ -75,8 +82,11 @@ const mvt_insar_points = new MVTLayer({
                 // dve varianty vysek 'h' a 'h_dtm' podle H.Kolomaznika se to musi otestovat co bude vypadat lepe
                 // getPosition: (d) => [...d.geometry.coordinates, d.properties.h],
                 // getPosition: (d) => [...d.geometry.coordinates, d.properties.h_dtm + 5],
-                getPosition: (d) => [...d.geometry.coordinates, d.properties.h_dtm + 5],
+                getPosition: (d) => [...d.geometry.coordinates],
                 getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
+                getFilterValue: d => Math.abs(d.properties.coh),
+                filterRange: [0.4, 40],
+                extensions: [new DataFilterExtension({filterSize: 1})],
             });
         }
         return null;
@@ -109,7 +119,7 @@ const osm_basemap = new TileLayer({
 })
 
 const layers = [
-    DEM,
+    // DEM,
     // mvt_insar_points,
     iconArrow,
     osm_basemap
