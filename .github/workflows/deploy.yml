@@ -1,27 +1,28 @@
-name: Deploy to GitHub Pages
+# .github/workflows/deploy.yml
+name: Deploy Vite App to GitHub Pages
 
 on:
   push:
     branches:
-      - main  # Set the branch you want to deploy from
+      - main # or your default branch
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v2
+      - name: Checkout the repository
+        uses: actions/checkout@v3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v3
         with:
-          node-version: '16'  # Adjust Node.js version if necessary
+          node-version: '18' # Adjust Node version if needed
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: npm install
 
-      - name: Build
+      - name: Build the Vite app
         run: npm run build
 
       - name: Deploy to GitHub Pages
