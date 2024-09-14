@@ -4,20 +4,20 @@ name: Deploy Vite App to GitHub Pages
 on:
   push:
     branches:
-      - main # or your default branch
+      - main  # or the branch you want to deploy from
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout the repository
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4  # Update to the latest version
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v4  # Update to the latest version
         with:
-          node-version: '20' # Adjust Node version if needed
+          node-version: '20'  # Ensure compatibility with Node.js 20
 
       - name: Install dependencies
         run: npm install
