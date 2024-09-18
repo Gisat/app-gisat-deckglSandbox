@@ -31,9 +31,14 @@ jobs:
       - name: Build the Vite app
         run: npm run build
 
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
       - name: Deploy to GitHub Pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
         id: deployment
-        uses: actions/deploy-pages@v3
+        uses: actions/deploy-pages@v4
