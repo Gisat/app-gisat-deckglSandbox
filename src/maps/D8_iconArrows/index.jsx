@@ -36,8 +36,12 @@ const colorScale = chroma
 
 const insarPointRelLenThresholdInterval = [0.45, 1000000];
 
-const iconScale = scaleLinear([0,5], [10,18]).clamp(true)
-const meshIconScale= scaleLinear([0,1], [10,200]).clamp(true)
+// for vel_rel attribute
+// const iconScale = scaleLinear([0,5], [10,18]).clamp(true)
+
+const iconScale = scaleLinear([0,30], [10,40]).clamp(true)
+const meshIconVelLastScale= scaleLinear([0,30], [50,500]).clamp(true)
+const meshIconRelLenScale= scaleLinear([0,1], [1,200]).clamp(true)
 
 const arrowIconOptions = {
     data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_selected_arrows.geojson',
@@ -48,7 +52,7 @@ const arrowIconOptions = {
     getAngle: (d) => 90 - (180 + d.properties.az_ang),
     billboard: false,
     sizeUnits: "meters",
-    getSize: (d) => iconScale(Math.abs(d.properties.vel_rel)),
+    getSize: (d) => iconScale(Math.abs(d.properties.vel_last)),
     // mask: true,
     iconAtlas: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/right-arrow-atlas.png',
     iconMapping: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/right-arrow-atlas.json',
@@ -85,15 +89,17 @@ const layerConfigs = [
         id: 'insar-points-arrow-mesh',
         type: SimpleMeshLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_mesh_v2.json',
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_mesh_v3.json',
             mesh: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_filled.obj',
             id: 'insar-points-arrow-mesh',
             getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
             // [0,azimuth (horizontalni) - aby sipka ukazovala nahoru, hodnota je 90, hodnota 90 - aby sipka byla placata]
-            getOrientation: (d) => [-20,90 - (180 + d.properties.az_ang),90],
-            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm + 2],
+            getOrientation: (d) => [0,90 - (180 + d.properties.az_ang),90],
+            // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm + 2],
+            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], 1],
             getScale: (d) => {
-                return [meshIconScale(Math.abs(d.properties.vel_rel)), meshIconScale(Math.abs(d.properties.vel_rel)), meshIconScale(Math.abs(d.properties.vel_rel))]
+                // [delka sipky, tloustka ve 3d - nema smysl pro 2d sipky, sirka sipky]
+                return [meshIconVelLastScale(Math.abs(d.properties.vel_last)), 1, meshIconRelLenScale(Math.abs(d.properties.rel_len))]
                 // if (d.properties.vel_rel > 0) {
                 //     return [scaleXYArrowWidth(d.properties.vel_rel), scaleXYArrowWidth(d.properties.vel_rel), scaleZArrowLength(d.properties.vel_rel)];
                 // }
@@ -108,17 +114,17 @@ const layerConfigs = [
         },
         name: 'arrows mesh',
     },
-    {
-        id: 'insar-points-arrow-icon',
-        type: IconLayer,
-        options: {...arrowIconOptions},
-        name: 'arrows icon',
-    },
+    // {
+    //     id: 'insar-points-arrow-icon',
+    //     type: IconLayer,
+    //     options: {...arrowIconOptions},
+    //     name: 'arrows icon',
+    // },
     {
         id: 'insar-points-arrow-icon-mvt',
         type: MVTLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_v2/{z}/{x}/{y}.pbf',
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_v3/{z}/{x}/{y}.pbf',
                 binary: false,
                 renderSubLayers: (props) => {
                     if (props.data) {
