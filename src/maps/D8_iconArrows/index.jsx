@@ -104,7 +104,7 @@ const layerConfigs = [
             filterRange: insarPointRelLenThresholdInterval,
             // pickable: true,
             extensions: [new DataFilterExtension({filterSize: 1})],
-            visible: true,
+            visible: false,
         },
         name: 'arrows mesh',
     },
@@ -133,7 +133,7 @@ const layerConfigs = [
                     }
                     return null;
                 },
-                visible: false,
+                visible: true,
                 minZoom: 8,
                 maxZoom: 14,
         },
@@ -151,7 +151,7 @@ const layerConfigs = [
             useChannel: null,
             tileSize: 256,
             meshMaxError: 1,
-            visible: true,
+            visible: false,
             operation: 'terrain+draw',
             terrainOptions: {
                 type: 'terrain',
