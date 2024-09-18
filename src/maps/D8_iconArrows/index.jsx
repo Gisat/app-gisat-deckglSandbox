@@ -126,6 +126,9 @@ const layerConfigs = [
                             ...arrowIconOptions,
                             ...props,
                             id: `${props.id}-icon`,
+                            getFilterValue: d => d.properties.rel_len,
+                            filterRange: insarPointRelLenThresholdInterval,
+                            extensions: [new DataFilterExtension({filterSize: 1})],
                         });
                     }
                     return null;
