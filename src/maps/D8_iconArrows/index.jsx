@@ -68,12 +68,12 @@ const arrowIconOptions = {
     data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_selected_arrows.geojson',
     getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
     getIcon: (d) => {
-        let length = getLength(d.properties.vel_last);
+        let length = getLength(Math.abs(d.properties.vel_last));
         let width = getWidth(d.properties.rel_len);
-        let type = d.properties.vel_rel > 0 ? 'o' : 'f'
+        let type = d.properties.vel_rel > 0 ? 'o' : 'f';
+        let direction = d.properties.vel_rel > 0 ? 'r' : 'l';
 
-        return `rigth_arrow_l${length}-w${width}-${type}`
-        // return `rigth_arrow_l${length}-w1-${type}`
+        return `arrow_${direction}_l${length}_w${width}_${type}`
     },
     // getIcon: (d) =>'right-arrow',
     getPosition: (d) => [...d.geometry.coordinates, 1],
@@ -81,18 +81,18 @@ const arrowIconOptions = {
     // getAngle: (d) => 90 - (d.properties.az_ang),
     getAngle: (d) => {
         const arrowRotation = 90 - (180 + d.properties.az_ang);
-        return d.properties.vel_rel > 0 ? arrowRotation : arrowRotation + 180;
+        return d.properties.vel_rel < 0 ? arrowRotation : arrowRotation + 180;
     },
 
     billboard: false,
     sizeUnits: "meters",
     // getSize: (d) => iconScale(Math.abs(d.properties.vel_last)),
-    getSize: 40,
+    getSize: 20,
     // mask: true,
     // iconAtlas: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/right-arrow-atlas.png',
-    iconAtlas: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icon_atlas/right-arrow-atlas-v3.png',
+    iconAtlas: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icon_atlas/v4/arrow-atlas-v4.png',
     // iconMapping: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/right-arrow-atlas.json',
-    iconMapping: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icon_atlas/right-arrow-atlas-v3.json',
+    iconMapping: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icon_atlas/v4/arrow-atlas-v4.json',
     getFilterValue: d => (d.properties.rel_len),
     filterRange: insarPointRelLenThresholdInterval,
     extensions: [new DataFilterExtension({filterSize: 1}), new TerrainExtension()],
@@ -165,9 +165,9 @@ const layerConfigs = [
             data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_v3/{z}/{x}/{y}.pbf',
             binary: false,
             id: `insarpoints`,
-            getFilterValue: d => d.properties.rel_len,
-            filterRange: insarPointRelLenThresholdInterval,
-            extensions: [new DataFilterExtension({filterSize: 1})],
+            getFilterValue: d => [d.properties.rel_len, Math.abs(d.properties.vel_last)],
+            filterRange: [insarPointRelLenThresholdInterval, [0.001,100]],
+            extensions: [new DataFilterExtension({filterSize: 2})],
             visible: true,
             minZoom: 8,
             maxZoom: 14,
