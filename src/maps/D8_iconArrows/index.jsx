@@ -11,7 +11,6 @@ import * as dat from 'dat.gui';
 import {SimpleMeshLayer} from "@deck.gl/mesh-layers";
 import chroma from "chroma-js";
 import geolib from "@gisatcz/deckgl-geolib";
-import { PointCloudLayer } from '@deck.gl/layers';
 import {_TerrainExtension as TerrainExtension, DataFilterExtension} from '@deck.gl/extensions';
 
 const CogTerrainLayer = geolib.CogTerrainLayer;
@@ -43,19 +42,57 @@ const iconScale = scaleLinear([0,30], [10,40]).clamp(true)
 const meshIconVelLastScale= scaleLinear([0,30], [50,500]).clamp(true)
 const meshIconRelLenScale= scaleLinear([0,1], [1,200]).clamp(true)
 
+// based on vel_last
+const getLength = (num) => {
+    if (num < 3) {
+        return 1;
+    } else if (num >= 3 && num <= 10) {
+        return 2;
+    } else if (num > 10) {
+        return 3;
+    }
+};
+
+// based on rel_len
+const getWidth = (num) => {
+    if (num < 0.36) {
+        return 1;
+    } else if (num >= 0.36 && num <= 0.7) {
+        return 2;
+    } else if (num > 0.7) {
+        return 3;
+    }
+};
+
 const arrowIconOptions = {
     data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_selected_arrows.geojson',
     getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
-    // getIcon: (d) => d.properties.vel_rel > 0 ? 'right-arrow': 'right-filled-arrow',
-    getIcon: (d) =>'right-arrow',
+    getIcon: (d) => {
+        let length = getLength(d.properties.vel_last);
+        let width = getWidth(d.properties.rel_len);
+        let type = d.properties.vel_rel > 0 ? 'o' : 'f'
+
+        return `rigth_arrow_l${length}-w${width}-${type}`
+        // return `rigth_arrow_l${length}-w1-${type}`
+    },
+    // getIcon: (d) =>'right-arrow',
     getPosition: (d) => [...d.geometry.coordinates, 1],
-    getAngle: (d) => 90 - (180 + d.properties.az_ang),
+    // getAngle: (d) => 90 - (180 + d.properties.az_ang),
+    // getAngle: (d) => 90 - (d.properties.az_ang),
+    getAngle: (d) => {
+        const arrowRotation = 90 - (180 + d.properties.az_ang);
+        return d.properties.vel_rel > 0 ? arrowRotation : arrowRotation + 180;
+    },
+
     billboard: false,
     sizeUnits: "meters",
-    getSize: (d) => iconScale(Math.abs(d.properties.vel_last)),
+    // getSize: (d) => iconScale(Math.abs(d.properties.vel_last)),
+    getSize: 40,
     // mask: true,
-    iconAtlas: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/right-arrow-atlas.png',
-    iconMapping: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/right-arrow-atlas.json',
+    // iconAtlas: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/right-arrow-atlas.png',
+    iconAtlas: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icon_atlas/right-arrow-atlas-v3.png',
+    // iconMapping: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/right-arrow-atlas.json',
+    iconMapping: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icon_atlas/right-arrow-atlas-v3.json',
     getFilterValue: d => (d.properties.rel_len),
     filterRange: insarPointRelLenThresholdInterval,
     extensions: [new DataFilterExtension({filterSize: 1}), new TerrainExtension()],
@@ -95,8 +132,9 @@ const layerConfigs = [
             getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
             // [0,azimuth (horizontalni) - aby sipka ukazovala nahoru, hodnota je 90, hodnota 90 - aby sipka byla placata]
             getOrientation: (d) => [0,90 - (180 + d.properties.az_ang),90],
-            // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm + 2],
-            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], 1],
+            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm + 2],
+            // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], 1],
+            wireframe: true,
             getScale: (d) => {
                 // [delka sipky, tloustka ve 3d - nema smysl pro 2d sipky, sirka sipky]
                 return [meshIconVelLastScale(Math.abs(d.properties.vel_last)), 1, meshIconRelLenScale(Math.abs(d.properties.rel_len))]
@@ -120,6 +158,22 @@ const layerConfigs = [
     //     options: {...arrowIconOptions},
     //     name: 'arrows icon',
     // },
+    {
+        id: 'insar-points-mvt',
+        type: MVTLayer,
+        options: {
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_v3/{z}/{x}/{y}.pbf',
+            binary: false,
+            id: `insarpoints`,
+            getFilterValue: d => d.properties.rel_len,
+            filterRange: insarPointRelLenThresholdInterval,
+            extensions: [new DataFilterExtension({filterSize: 1})],
+            visible: true,
+            minZoom: 8,
+            maxZoom: 14,
+        },
+        name: 'insar points MVT',
+    },
     {
         id: 'insar-points-arrow-icon-mvt',
         type: MVTLayer,
