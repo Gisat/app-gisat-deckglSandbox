@@ -71,7 +71,8 @@ const arrowIconOptions = {
         let length = getLength(Math.abs(d.properties.vel_last));
         let width = getWidth(d.properties.rel_len);
         let type = d.properties.vel_rel > 0 ? 'o' : 'f';
-        let direction = d.properties.vel_rel > 0 ? 'r' : 'l';
+        let direction ='r';
+        // let direction = d.properties.vel_rel > 0 ? 'r' : 'l';
 
         return `arrow_${direction}_l${length}_w${width}_${type}`
     },
