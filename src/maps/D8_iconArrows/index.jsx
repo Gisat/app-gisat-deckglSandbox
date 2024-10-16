@@ -38,7 +38,7 @@ const insarPointRelLenThresholdInterval = [0.45, 1000000];
 // for vel_rel attribute
 // const iconScale = scaleLinear([0,5], [10,18]).clamp(true)
 
-const iconScale = scaleLinear([0,30], [10,40]).clamp(true)
+const arrow2DiconScale = scaleLinear([0,30], [10,40]).clamp(true)
 const meshIconVelLastScale= scaleLinear([0,30], [50,500]).clamp(true)
 const meshIconRelLenScale= scaleLinear([0,1], [1,200]).clamp(true)
 
@@ -135,7 +135,6 @@ const layerConfigs = [
             getOrientation: (d) => [0,90 - (180 + d.properties.az_ang),90],
             getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm + 2],
             // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], 1],
-            wireframe: true,
             getScale: (d) => {
                 // [delka sipky, tloustka ve 3d - nema smysl pro 2d sipky, sirka sipky]
                 return [meshIconVelLastScale(Math.abs(d.properties.vel_last)), 1, meshIconRelLenScale(Math.abs(d.properties.rel_len))]
@@ -153,12 +152,6 @@ const layerConfigs = [
         },
         name: 'arrows mesh',
     },
-    // {
-    //     id: 'insar-points-arrow-icon',
-    //     type: IconLayer,
-    //     options: {...arrowIconOptions},
-    //     name: 'arrows icon',
-    // },
     {
         id: 'insar-points-mvt',
         type: MVTLayer,
@@ -176,7 +169,7 @@ const layerConfigs = [
         name: 'insar points MVT',
     },
     {
-        id: 'insar-points-arrow-icon-mvt',
+        id: 'insar-points-arrow-icon-mvt-los',
         type: MVTLayer,
         options: {
             data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_v3/{z}/{x}/{y}.pbf',
@@ -186,6 +179,12 @@ const layerConfigs = [
                         return new IconLayer({
                             ...arrowIconOptions,
                             ...props,
+                            getIcon: d => (d.properties.vel_last !== null ? 'right-arrow' : ''),
+                            getSize: d => arrow2DiconScale(Math.abs(d.properties.vel_last)) || 0,
+                            iconAtlas:
+                                'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icon_atlas/v1/right-arrow-atlas.png',
+                            iconMapping:
+                                'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icon_atlas/v1/right-arrow-atlas.json',
                             id: `${props.id}-icon`,
                             getFilterValue: d => d.properties.rel_len,
                             filterRange: insarPointRelLenThresholdInterval,
@@ -198,7 +197,32 @@ const layerConfigs = [
                 minZoom: 8,
                 maxZoom: 14,
         },
-        name: 'arrows icon MVT',
+        name: 'arrows MVT LOS',
+    },
+    {
+        id: 'insar-points-arrow-icon-mvt-dts',
+        type: MVTLayer,
+        options: {
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_v3/{z}/{x}/{y}.pbf',
+            binary: false,
+            renderSubLayers: (props) => {
+                if (props.data) {
+                    return new IconLayer({
+                        ...arrowIconOptions,
+                        ...props,
+                        id: `${props.id}-icon`,
+                        getFilterValue: d => d.properties.rel_len,
+                        filterRange: insarPointRelLenThresholdInterval,
+                        extensions: [new DataFilterExtension({filterSize: 1})],
+                    });
+                }
+                return null;
+            },
+            visible: false,
+            minZoom: 8,
+            maxZoom: 14,
+        },
+        name: 'arrows MVT DTS',
     },
     {
         id: 'CogTerrainLayerCUZK',
