@@ -44,29 +44,29 @@ const getScale = item => {
 };
 
 const getOrientation = item => {
-    if (item.properties.vel_rel < 0) {
-        return [0, 180+360+item.properties.az_ang, 180 + item.properties.inc_ang];
+    if (item.properties.vel_rel > 0) {
+        return [0, 180+360-item.properties.az_ang, 180 + item.properties.inc_ang];
     } else {
-        return [0, 180+360+item.properties.az_ang, item.properties.inc_ang];
+        return [0, 180+360-item.properties.az_ang, item.properties.inc_ang];
     }
 };
 
 const getTranslation = item => {
-    if (item.properties.vel_rel < 0) {
+    if (item.properties.vel_rel > 0) {
         const inc_ang_rad = (item.properties.inc_ang * Math.PI) / 180;
         const az_ang_rad = (item.properties.az_ang * Math.PI) / 180;
         return [
-            -Math.sin(inc_ang_rad) *
+            Math.sin(inc_ang_rad) *
             Math.sin(az_ang_rad) *
             ARROW_SIZE *
-            scaleZArrowLength(Math.abs(item.properties.vel_rel)),
+            scaleZArrowLength(item.properties.vel_rel),
             Math.sin(inc_ang_rad) *
             Math.cos(az_ang_rad) *
             ARROW_SIZE *
-            scaleZArrowLength(Math.abs(item.properties.vel_rel)),
+            scaleZArrowLength(item.properties.vel_rel),
             Math.cos(inc_ang_rad) *
             ARROW_SIZE *
-            scaleZArrowLength(Math.abs(item.properties.vel_rel)),
+            scaleZArrowLength(item.properties.vel_rel),
         ];
     } else {
         return [0, 0, 0];
