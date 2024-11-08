@@ -2,8 +2,8 @@
 import React, { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
-import { TileLayer } from '@deck.gl/geo-layers';
-import {BitmapLayer} from '@deck.gl/layers';
+import {TileLayer} from '@deck.gl/geo-layers';
+import {BitmapLayer, GeoJsonLayer} from '@deck.gl/layers';
 import {scaleLinear} from 'd3-scale';
 import {OBJLoader} from '@loaders.gl/obj';
 import * as dat from 'dat.gui';
@@ -44,7 +44,7 @@ const getScale = item => {
 };
 
 const getOrientation = item => {
-    if (item.properties.vel_rel > 0) {
+    if (item.properties.vel_rel < 0) {
         return [0, 180+360+item.properties.az_ang, 180 + item.properties.inc_ang];
     } else {
         return [0, 180+360+item.properties.az_ang, item.properties.inc_ang];
@@ -52,21 +52,21 @@ const getOrientation = item => {
 };
 
 const getTranslation = item => {
-    if (item.properties.vel_rel > 0) {
+    if (item.properties.vel_rel < 0) {
         const inc_ang_rad = (item.properties.inc_ang * Math.PI) / 180;
         const az_ang_rad = (item.properties.az_ang * Math.PI) / 180;
         return [
-            Math.sin(inc_ang_rad) *
+            -Math.sin(inc_ang_rad) *
             Math.sin(az_ang_rad) *
             ARROW_SIZE *
-            scaleZArrowLength(item.properties.vel_rel),
-            -Math.sin(inc_ang_rad) *
+            scaleZArrowLength(Math.abs(item.properties.vel_rel)),
+            Math.sin(inc_ang_rad) *
             Math.cos(az_ang_rad) *
             ARROW_SIZE *
-            scaleZArrowLength(item.properties.vel_rel),
+            scaleZArrowLength(Math.abs(item.properties.vel_rel)),
             Math.cos(inc_ang_rad) *
             ARROW_SIZE *
-            scaleZArrowLength(item.properties.vel_rel),
+            scaleZArrowLength(Math.abs(item.properties.vel_rel)),
         ];
     } else {
         return [0, 0, 0];
@@ -95,6 +95,24 @@ const layerConfigs = [
             },
         },
         name: 'Tile Layer',
+    },
+    {
+        id: 'insar-points-geojson',
+        type: GeoJsonLayer,
+        options: {
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_ASC_upd3_psd_los_4326.geojson',
+            binary: false,
+            getFillColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
+            // getFillColor: "red",
+            id: `insarpointsGEOJSON`,
+            getFilterValue: d => Math.abs(d.properties.coh),
+            filterRange: [0.4, 40],
+            extensions: [new DataFilterExtension({filterSize: 1})],
+            visible: true,
+            minZoom: 8,
+            maxZoom: 14,
+        },
+        name: 'insar points GeoJSON',
     },
     {
         id: 'trim_d8_ASC_arrows',
