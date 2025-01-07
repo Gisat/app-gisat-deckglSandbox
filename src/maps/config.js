@@ -7,6 +7,7 @@ import D8_iconArrows from "./D8_iconArrows/index.jsx";
 import MapApp1 from './MapApp1';
 import D8_filter from "./D8_filter/index.jsx";
 import vertical_profile from "./vertical_profiles/index.jsx";
+import building3D from './Buildings_3D/index.jsx';
 
 const mapApps = [
     { name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
@@ -16,7 +17,8 @@ const mapApps = [
     { name: 'P3 D8: 3D arrows', path: '/d8-filter', component: D8_filter },
     { name: 'P3 D8: vertical profile', path: '/vertical_profile', component: vertical_profile },
     // { name: 'Google 3D Tiles', path: '/google-3d-tiles', component: Google3DTiles },
-    // { name: 'Test App', path: '/test-app', component: MapApp1 },
+    { name: 'Test App', path: '/test-app', component: MapApp1 },
+    {name: 'POC Buildings 3D', path: 'buildings-3D', component: building3D },
 ];
 
 export default mapApps;
