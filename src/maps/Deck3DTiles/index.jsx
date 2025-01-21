@@ -4,6 +4,7 @@ import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import {MVTLayer, TileLayer} from '@deck.gl/geo-layers';
 import {Tile3DLayer} from '@deck.gl/geo-layers';
+import {I3SLoader} from '@loaders.gl/i3s';
 import {} from '@loaders.gl/3d-tiles';
 import {Tiles3DLoader, CesiumIonLoader} from '@loaders.gl/3d-tiles';
 import {BitmapLayer} from '@deck.gl/layers';
@@ -16,8 +17,8 @@ import cesium2 from '../../assets/3d-tiles-samples/1.0/TilesetWithTreeBillboards
 
 const INITIAL_VIEW_STATE = {
     // cesium 1.1
-    // longitude: 45,
-    // latitude: 35.446011426401625,
+    // longitude: -75.152325,
+    // latitude: 39.94704,
     // cesium 1.0
     longitude: -75.61209430782448,
     latitude: 40.042530611425896,
@@ -63,16 +64,19 @@ const layerConfigs = [
         options: {
             visible: true,
             // data: cesium2,
-            // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/cesium_3dtiles_v1_dragon/tileset.json',
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/cesium_3dtiles_v1_dragon/tileset.json',
             // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/3d-tiles-samples/1.0/TilesetWithDiscreteLOD/tileset.json',
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/3d-tiles-samples/1.0/TilesetWithRequestVolume/tileset.json',
+            // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/3d-tiles-samples/1.0/TilesetWithRequestVolume/tileset.json',
             // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/3d-tiles-samples/1.1/SparseImplicitOctree/tileset.json',
             // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/Prah_7-1_3D_Tiles_v2/tileset.json',
-            loader: Tiles3DLoader,
+            loadOptions: {
+                '3d-tiles': { decodeQuantizedPositions: true }
+            },
+            // loader: Tiles3DLoader,
             onTilesetLoad: (tileset) => {
                 // Recenter to cover the tileset
                 const {cartographicCenter, zoom} = tileset;
-                console.log({cartographicCenter, zoom})
+                // console.log({cartographicCenter, zoom})
                 // setInitialViewState({
                 //     longitude: cartographicCenter[0],
                 //     latitude: cartographicCenter[1],
@@ -88,11 +92,14 @@ const layerConfigs = [
         type: Tile3DLayer,
         options: {
             visible: false,
-            data: cesium1,
+            // data: cesium1,
+            // data: '/3d-tiles-samples/1.0/TilesetWithDiscreteLOD/tileset.json',
+            // data: '/3d-tiles-samples/1.0/TilesetWithRequestVolume/tileset.json',
+            data: '/3d-tiles-samples/1.1/MetadataGranularities/tileset.json',
             loader: Tiles3DLoader,
             onTilesetLoad: (tileset) => {
                 // Recenter to cover the tileset
-                const {cartographicCenter, zoom} = tileset;
+                // const {cartographicCenter, zoom} = tileset;
                 // console.log({cartographicCenter, zoom})
                 // setInitialViewState({
                 //     longitude: cartographicCenter[0],
@@ -102,6 +109,28 @@ const layerConfigs = [
             },
         },
         name: 'Cesium samples',
+        showVisibilityToggle: true, // Show visibility toggle for this layer
+    },
+    {
+        id: 'i3s-layer-dragon',
+        type: Tile3DLayer,
+        options: {
+            visible: false,
+            // data: '/dragon_i3s/SceneServer/layers/0',
+            data: 'https://tiles.arcgis.com/tiles/z2tnIkrLQ2BRzr6P/arcgis/rest/services/SanFrancisco_Bldgs/SceneServer/layers/0',
+            loader: I3SLoader,
+            onTilesetLoad: (tileset) => {
+                // Recenter to cover the tileset
+                const {cartographicCenter, zoom} = tileset;
+                console.log({cartographicCenter, zoom})
+                // setInitialViewState({
+                //     longitude: cartographicCenter[0],
+                //     latitude: cartographicCenter[1],
+                //     zoom
+                // });
+            },
+        },
+        name: 'i3s samples',
         showVisibilityToggle: true, // Show visibility toggle for this layer
     },
     {
