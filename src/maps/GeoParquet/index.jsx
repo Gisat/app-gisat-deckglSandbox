@@ -2,20 +2,34 @@
 import React, { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
-import {MVTLayer, TileLayer} from '@deck.gl/geo-layers';
-import {BitmapLayer, GeoJsonLayer, PolygonLayer} from '@deck.gl/layers';
+import {TileLayer} from '@deck.gl/geo-layers';
+import {BitmapLayer, GeoJsonLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
-import {_TerrainExtension as TerrainExtension, PathStyleExtension} from "@deck.gl/extensions";
-import geolib from "@gisatcz/deckgl-geolib";
-const CogTerrainLayer = geolib.CogTerrainLayer;
+import initWasm, {readParquet} from "parquet-wasm";
+import * as arrow from 'apache-arrow';  // For creating Arrow tables
+// import geoArrowDeckLayers from '@geoarrow/deck.gl-layers';
+
 
 const INITIAL_VIEW_STATE = {
-    longitude: 14.41188380380868,
-    latitude: 50.08890726049832,
+    longitude: 14.437713740781064,
+    latitude: 50.05105178409062,
     zoom: 15,
     pitch: 40,
     bearing: 0,
 };
+
+async function fetchParquetFile() {
+    // Fetch the file from the public folder
+    const response = await fetch('/geoparquet/Utah@1.parquet');
+    const arrayBuffer = await response.arrayBuffer();
+
+    return new Uint8Array(arrayBuffer); // Return as Uint8Array for further processing
+}
+
+// Usage example
+const utahParquetBytes = await fetchParquetFile();
+console.log('Parquet Bytes:', utahParquetBytes);
+
 
 // Layer configurations
 const layerConfigs = [
@@ -41,6 +55,18 @@ const layerConfigs = [
         name: 'Basemap',
         showVisibilityToggle: false, // Show visibility toggle for this layer
     },
+    // {
+    //     id: 'geoparquet-buildings',
+    //     type: geoArrowDeckLayers.GeoArrowSolidPolygonLayer,
+    //     options: {
+    //         data: arrowTable,
+    //         getPolygon: arrowTable.getChild("GEOMETRY"),
+    //         getFillColor: [0, 100, 60, 160],
+    //         visible: true,
+    //     },
+    //     name: 'Chronology',
+    //     showVisibilityToggle: true, // Show visibility toggle for this layer
+    // },
 ];
 
 
@@ -55,7 +81,7 @@ const createLayer = (config, visibility, properties) => {
     return new config.type(options);
 };
 
-function MapApp1() {
+function GeoParquet() {
     // Initial visibility state and layer properties for all layers
     const initialVisibility = layerConfigs.reduce((acc, config) => {
         acc[config.id] = config.options.visible;
@@ -144,4 +170,4 @@ function MapApp1() {
     );
 }
 
-export default MapApp1;
+export default GeoParquet;

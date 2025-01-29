@@ -1,7 +1,8 @@
 // src/maps/MapApp1.jsx
 import React, { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
-import { MapView } from '@deck.gl/core';
+import { MapView, AmbientLight, LightingEffect } from '@deck.gl/core';
+import {_SunLight as SunLight} from '@deck.gl/core';
 import {MVTLayer, TileLayer} from '@deck.gl/geo-layers';
 import {BitmapLayer, GeoJsonLayer, PolygonLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
@@ -21,6 +22,20 @@ const INITIAL_VIEW_STATE = {
     pitch: 40,
     bearing: 0,
 };
+
+// create an ambient light
+const ambientLight = new AmbientLight({
+    color: [255, 255, 255],
+    intensity: 1.0
+});
+// create directional light from the sun
+const directionalLight = new SunLight({
+    timestamp: 1554927200000,
+    color: [255, 0, 0],
+    intensity: 1
+});
+// create lighting effect with light sources
+const lightingEffect = new LightingEffect({ambientLight, directionalLight});
 
 const riskColors = {
     0: [255, 255, 255],
@@ -99,6 +114,40 @@ const layerConfigs = [
         showVisibilityToggle: true, // Show visibility toggle for this layer
     },
     {
+        id: 'shp-geojson-mvt',
+        type: MVTLayer,
+        options: {
+            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/Prah_7-1_vectortiles/{z}/{x}/{y}.pbf',
+            binary: true,
+            minZoom: 10,
+            maxZoom: 14,
+            stroked: false,
+            filled: true,
+            visible: false,
+            // getElevation: (d) => d.properties.h,
+            getFillColor: (d) => {
+                if (d.properties.TYP === 'Strecha'){
+                    // https://mycolor.space/?hex=%23A00F0F&sub=1
+                    return [160, 15, 15, 255]
+                }
+                else if (d.properties.TYP === 'Stena'){
+                    // https://mycolor.space/?hex=%237F8A84&sub=1
+                    return [127,138,132,255]
+                }
+                else if (d.properties.TYP === 'Detail'){
+                    return [157, 9, 13, 255]
+                }
+
+                // else if (d.properties.TYP === 'Zakladova deska'){
+                //     return [201,61,45,255]
+                // }
+            },
+            // extensions: [new TerrainExtension()],
+        },
+        name: 'shp-geojson-mvt',
+        showVisibilityToggle: true, // Show visibility toggle for this layer
+    },
+    {
         id: 'test_building',
         type: PolygonLayer,
         options: {
@@ -135,9 +184,9 @@ const layerConfigs = [
                     return [157, 9, 13, 255]
                 }
 
-                // else if (d.properties.TYP === 'Zakladova deska'){
-                //     return [201,61,45,255]
-                // }
+                else if (d.properties.TYP === 'Zakladova deska'){
+                    return [201,61,45,255]
+                }
             },
             getLineColor: (d) => {
                 if (d.properties.TYP === 'Strecha'){
@@ -258,6 +307,7 @@ function MapApp1() {
             views={new MapView({ repeat: true })}
             layers={layers}
             className="deckgl-map"
+            // effects={[lightingEffect]}
         >
         </DeckGL>
     );
