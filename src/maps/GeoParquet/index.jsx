@@ -51,7 +51,7 @@ const layerConfigs = [
             minZoom: 0,
             maxZoom: 19,
             tileSize: 256,
-            visible: true,
+            visible: false,
             renderSubLayers: (props) => {
                 const { bbox: { west, south, east, north } } = props.tile;
                 return new BitmapLayer(props, {
@@ -63,14 +63,14 @@ const layerConfigs = [
             // extensions: [new TerrainExtension()],
         },
         name: 'Basemap',
-        showVisibilityToggle: false, // Show visibility toggle for this layer
+        showVisibilityToggle: true, // Show visibility toggle for this layer
     },
     {
         id: 'geoparquet-buildings',
         type: GeoArrowSolidPolygonLayer,
         options: {
             data: jsTable,
-            getPosition: jsTable.getChild("GEOMETRY"),
+            getPolygon: jsTable.getChild("GEOMETRY"),
             getFillColor: [0, 100, 60, 160],
             visible: true,
         },
