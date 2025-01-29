@@ -3,11 +3,11 @@ import React, { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import {TileLayer} from '@deck.gl/geo-layers';
-import {BitmapLayer, GeoJsonLayer} from '@deck.gl/layers';
+import {BitmapLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
+import { tableFromIPC } from "apache-arrow";
+import { GeoArrowScatterplotLayer } from '@geoarrow/deck.gl-layers';
 import initWasm, {readParquet} from "parquet-wasm";
-import * as arrow from 'apache-arrow';  // For creating Arrow tables
-// import geoArrowDeckLayers from '@geoarrow/deck.gl-layers';
 
 
 const INITIAL_VIEW_STATE = {
@@ -18,17 +18,27 @@ const INITIAL_VIEW_STATE = {
     bearing: 0,
 };
 
-async function fetchParquetFile() {
-    // Fetch the file from the public folder
-    const response = await fetch('/geoparquet/Utah@1.parquet');
-    const arrayBuffer = await response.arrayBuffer();
 
-    return new Uint8Array(arrayBuffer); // Return as Uint8Array for further processing
-}
 
-// Usage example
-const utahParquetBytes = await fetchParquetFile();
-console.log('Parquet Bytes:', utahParquetBytes);
+console.log('Starting WASM initialization...');
+
+// Call wasmInit() and wait for it to initialize the WASM bundle
+await initWasm('/esm/parquet_wasm_bg.wasm'); // Ensure this is the correct path to the WASM file
+
+console.log('WASM initialized successfully!');
+
+// Now you can safely use `readParquet` or other functions
+// Example usage after WASM is initialized
+
+const response = await fetch('/geoparquet/Utah@1.parquet');  // Load Parquet file from URL
+const arrayBuffer = await response.arrayBuffer();   //parquetBytes
+const wasmTable = readParquet(new Uint8Array(arrayBuffer));
+console.log('Arrow Data:', wasmTable);
+console.log('Type of Arrow Data:', typeof wasmTable);
+const jsTable = tableFromIPC(wasmTable.intoIPCStream());
+console.log('jsTable:', jsTable)
+console.log(jsTable.schema.fields)
+
 
 
 // Layer configurations
@@ -55,18 +65,17 @@ const layerConfigs = [
         name: 'Basemap',
         showVisibilityToggle: false, // Show visibility toggle for this layer
     },
-    // {
-    //     id: 'geoparquet-buildings',
-    //     type: geoArrowDeckLayers.GeoArrowSolidPolygonLayer,
-    //     options: {
-    //         data: arrowTable,
-    //         getPolygon: arrowTable.getChild("GEOMETRY"),
-    //         getFillColor: [0, 100, 60, 160],
-    //         visible: true,
-    //     },
-    //     name: 'Chronology',
-    //     showVisibilityToggle: true, // Show visibility toggle for this layer
-    // },
+    {
+        id: 'geoparquet-scatterplot',
+        type: GeoArrowScatterplotLayer,
+        options: {
+            data: jsTable,
+            getPosition: jsTable.getChild("GEOMETRY"),
+            visible: true,
+        },
+        name: 'Geoparquet',
+        showVisibilityToggle: true, // Show visibility toggle for this layer
+    },
 ];
 
 
