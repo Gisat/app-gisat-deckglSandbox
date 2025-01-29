@@ -6,15 +6,15 @@ import {TileLayer} from '@deck.gl/geo-layers';
 import {BitmapLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
 import { tableFromIPC } from "apache-arrow";
-import { GeoArrowScatterplotLayer } from '@geoarrow/deck.gl-layers';
+import { GeoArrowSolidPolygonLayer } from '@geoarrow/deck.gl-layers';
 import initWasm, {readParquet} from "parquet-wasm";
 
 
 const INITIAL_VIEW_STATE = {
-    longitude: 14.437713740781064,
-    latitude: 50.05105178409062,
-    zoom: 15,
-    pitch: 40,
+    longitude: -111.89411386472318,
+    latitude: 40.75150168091724,
+    zoom: 10,
+    pitch: 0,
     bearing: 0,
 };
 
@@ -66,11 +66,12 @@ const layerConfigs = [
         showVisibilityToggle: false, // Show visibility toggle for this layer
     },
     {
-        id: 'geoparquet-scatterplot',
-        type: GeoArrowScatterplotLayer,
+        id: 'geoparquet-buildings',
+        type: GeoArrowSolidPolygonLayer,
         options: {
             data: jsTable,
             getPosition: jsTable.getChild("GEOMETRY"),
+            getFillColor: [0, 100, 60, 160],
             visible: true,
         },
         name: 'Geoparquet',
