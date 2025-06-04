@@ -6,7 +6,7 @@ import {TileLayer} from '@deck.gl/geo-layers';
 import {BitmapLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
 import { tableFromIPC } from "apache-arrow";
-import { GeoArrowSolidPolygonLayer } from '@geoarrow/deck.gl-layers';
+import { GeoArrowSolidPolygonLayer, GeoArrowScatterplotLayer } from '@geoarrow/deck.gl-layers';
 import initWasm, {readParquet} from "parquet-wasm";
 
 
@@ -30,6 +30,7 @@ console.log('WASM initialized successfully!');
 // Now you can safely use `readParquet` or other functions
 // Example usage after WASM is initialized
 
+// const response = await fetch('/geoparquet/gisat_metrod_insar_tsx_los_etapa5_NOduplicates_add_e0_idzone_toparguet.parquet');  // Load Parquet file from URL
 const response = await fetch('/geoparquet/Utah@1.parquet');  // Load Parquet file from URL
 const arrayBuffer = await response.arrayBuffer();   //parquetBytes
 const wasmTable = readParquet(new Uint8Array(arrayBuffer));
@@ -38,6 +39,9 @@ console.log('Type of Arrow Data:', typeof wasmTable);
 const jsTable = tableFromIPC(wasmTable.intoIPCStream());
 console.log('jsTable:', jsTable)
 console.log(jsTable.schema.fields)
+const geometryField = jsTable.schema.fields.find(f => f.name === 'lat');
+console.log('Lat field:', geometryField);
+
 
 
 
@@ -65,6 +69,19 @@ const layerConfigs = [
         name: 'Basemap',
         showVisibilityToggle: true, // Show visibility toggle for this layer
     },
+    // {
+    //     id: 'geoparquet-points',
+    //     type: GeoArrowScatterplotLayer,
+    //     options: {
+    //         data: jsTable,
+    //         getFillColor: [0, 100, 60, 160],
+    //         getPosition: (d) => [d.lon, d.lat],
+    //         getRadius: 10,
+    //         visible: true,
+    //     },
+    //     name: 'Geoparquet',
+    //     showVisibilityToggle: true, // Show visibility toggle for this layer
+    // },
     {
         id: 'geoparquet-buildings',
         type: GeoArrowSolidPolygonLayer,
