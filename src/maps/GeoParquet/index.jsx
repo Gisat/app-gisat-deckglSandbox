@@ -10,10 +10,17 @@ import { GeoArrowSolidPolygonLayer, GeoArrowScatterplotLayer } from '@geoarrow/d
 import initWasm, {readParquet} from "parquet-wasm";
 
 
+// const INITIAL_VIEW_STATE = {
+//     longitude: -111.89411386472318,
+//     latitude: 40.75150168091724,
+//     zoom: 10,
+//     pitch: 0,
+//     bearing: 0,
+// };
 const INITIAL_VIEW_STATE = {
-    longitude: -111.89411386472318,
-    latitude: 40.75150168091724,
-    zoom: 10,
+    longitude: 14.449138,
+    latitude: 50.031892,
+    zoom: 14,
     pitch: 0,
     bearing: 0,
 };
@@ -30,19 +37,45 @@ console.log('WASM initialized successfully!');
 // Now you can safely use `readParquet` or other functions
 // Example usage after WASM is initialized
 
-// const response = await fetch('/geoparquet/gisat_metrod_insar_tsx_los_etapa5_NOduplicates_add_e0_idzone_toparguet.parquet');  // Load Parquet file from URL
-const response = await fetch('/geoparquet/Utah@1.parquet');  // Load Parquet file from URL
+const response = await fetch('/geoparquet/compo_area_vellast_sipky_MK.parquet');  // Load Parquet file from URL
+// const response = await fetch('/geoparquet/Utah@1.parquet');  // Load Parquet file from URL
 const arrayBuffer = await response.arrayBuffer();   //parquetBytes
 const wasmTable = readParquet(new Uint8Array(arrayBuffer));
 console.log('Arrow Data:', wasmTable);
 console.log('Type of Arrow Data:', typeof wasmTable);
 const jsTable = tableFromIPC(wasmTable.intoIPCStream());
-console.log('jsTable:', jsTable)
-console.log(jsTable.schema.fields)
-const geometryField = jsTable.schema.fields.find(f => f.name === 'lat');
-console.log('Lat field:', geometryField);
 
 
+console.log('Full jsTable:', jsTable); // Inspect the full table structure
+console.log('jsTable schema fields:', jsTable.schema.fields);
+
+const geometryField = jsTable.schema.fields.find(f => f.name === 'geometry');
+
+if (!geometryField) {
+    console.error("Error: 'geometry' field not found in the table.");
+    // return;
+}
+
+// Check the type of the geometry field to ensure it's GeoArrow Point
+console.log('Geometry Field Type:', geometryField.type);
+console.log('Geometry Field Extension Name:', geometryField.metadata.get('ARROW:extension:name'));
+console.log('Geometry Field Extension Type:', geometryField.metadata.get('ARROW:extension:metadata')); // Check if this shows geoarrow.point
+
+const geomVector = jsTable.getChild("geometry");
+
+if (!geomVector) {
+    console.error("Error: Could not get 'geometry' vector from the table.");
+    // return;
+}
+
+// Basic sanity checks on the vector
+console.log('Geometry Vector Length:', geomVector.length);
+console.log('Geometry Vector Type:', geomVector.type);
+// For FixedSizeList (common for points), check the child type and size
+if (geomVector.type.children && geomVector.type.children.length > 0) {
+    console.log('Geometry Vector Child Type:', geomVector.type.children[0].type);
+    console.log('Geometry Vector Fixed Size List Size:', geomVector.type.listSize); // For FixedSizeList
+}
 
 
 // Layer configurations
@@ -55,7 +88,7 @@ const layerConfigs = [
             minZoom: 0,
             maxZoom: 19,
             tileSize: 256,
-            visible: false,
+            visible: true,
             renderSubLayers: (props) => {
                 const { bbox: { west, south, east, north } } = props.tile;
                 return new BitmapLayer(props, {
@@ -69,31 +102,34 @@ const layerConfigs = [
         name: 'Basemap',
         showVisibilityToggle: true, // Show visibility toggle for this layer
     },
+    {
+        id: 'geoparquet-points',
+        type: GeoArrowScatterplotLayer,
+        options: {
+            data: jsTable, // Pass the entire Arrow Table as data
+            // The getPosition accessor MUST be the GeoArrow Vector itself
+            getPosition: geomVector,
+            getFillColor: [0, 100, 60, 160], // Example color
+            getRadius: 5,
+            visible: true,
+            // Add debugging props if available in your Deck.gl version
+            // debug: true, // If available, might give more insights
+        },
+        name: 'Geoparquet',
+        showVisibilityToggle: true, // Show visibility toggle for this layer
+    },
     // {
-    //     id: 'geoparquet-points',
-    //     type: GeoArrowScatterplotLayer,
+    //     id: 'geoparquet-buildings',
+    //     type: GeoArrowSolidPolygonLayer,
     //     options: {
     //         data: jsTable,
+    //         getPolygon: jsTable.getChild("GEOMETRY"),
     //         getFillColor: [0, 100, 60, 160],
-    //         getPosition: (d) => [d.lon, d.lat],
-    //         getRadius: 10,
     //         visible: true,
     //     },
     //     name: 'Geoparquet',
     //     showVisibilityToggle: true, // Show visibility toggle for this layer
     // },
-    {
-        id: 'geoparquet-buildings',
-        type: GeoArrowSolidPolygonLayer,
-        options: {
-            data: jsTable,
-            getPolygon: jsTable.getChild("GEOMETRY"),
-            getFillColor: [0, 100, 60, 160],
-            visible: true,
-        },
-        name: 'Geoparquet',
-        showVisibilityToggle: true, // Show visibility toggle for this layer
-    },
 ];
 
 
