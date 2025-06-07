@@ -9,7 +9,6 @@ import D8_filter from "./D8_filter/index.jsx";
 import vertical_profile from "./vertical_profiles/index.jsx";
 import building3D from './Buildings_3D/index.jsx';
 import deck3DTiles from './Deck3DTiles/index.jsx';
-import geoParquet from './GeoParquet/index.jsx';
 
 const mapApps = [
     { name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
@@ -22,7 +21,6 @@ const mapApps = [
     { name: 'POC Test App', path: '/test-app', component: MapApp1 },
     { name: 'POC Buildings 3D', path: 'buildings-3D', component: building3D },
     { name: 'POC 3D Tiles Layer', path: '/deck-3d-tiles', component: deck3DTiles },
-    { name: 'POC GeoParquet', path: '/geo-parquet', component: geoParquet },
 ];
 
 export default mapApps;
