@@ -8,6 +8,7 @@ import * as dat from 'dat.gui';
 import { tableFromIPC } from "apache-arrow";
 import { GeoArrowSolidPolygonLayer, GeoArrowScatterplotLayer } from '@geoarrow/deck.gl-layers';
 import initWasm, {readParquet} from "parquet-wasm";
+import chroma from "chroma-js";
 
 
 // const INITIAL_VIEW_STATE = {
@@ -18,27 +19,31 @@ import initWasm, {readParquet} from "parquet-wasm";
 //     bearing: 0,
 // };
 const INITIAL_VIEW_STATE = {
-    longitude: 14.449138,
-    latitude: 50.031892,
-    zoom: 14,
+    longitude: 14.440015596229106,
+    latitude: 50.05104860235221,
+    zoom: 15,
     pitch: 0,
     bearing: 0,
 };
 
+const colorScale = chroma
+    .scale(['#b1001d', '#ca2d2f', '#e25b40', '#ffaa00', '#ffff00', '#a0f000', '#4ce600', '#50d48e', '#00c3ff', '#0f80d1', '#004ca8', '#003e8a'])
+    .domain([-2, 2]);
 
 
 console.log('Starting WASM initialization...');
 
 // Call wasmInit() and wait for it to initialize the WASM bundle
-await initWasm('/esm/parquet_wasm_bg.wasm'); // Ensure this is the correct path to the WASM file
+await initWasm(`${import.meta.env.BASE_URL}esm/parquet_wasm_bg.wasm`);
 
 console.log('WASM initialized successfully!');
 
 // Now you can safely use `readParquet` or other functions
 // Example usage after WASM is initialized
 
-const response = await fetch('/geoparquet/compo_area_vellast_sipky_MK.parquet');  // Load Parquet file from URL
+const response = await fetch('https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/compo_area_vellast_sipky_MK.parquet');  // Load Parquet file from URL
 // const response = await fetch('/geoparquet/Utah@1.parquet');  // Load Parquet file from URL
+// const response = await fetch('https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/demo_data/Utah@1.parquet');  // Load Parquet file from URL
 const arrayBuffer = await response.arrayBuffer();   //parquetBytes
 const wasmTable = readParquet(new Uint8Array(arrayBuffer));
 console.log('Arrow Data:', wasmTable);
@@ -109,11 +114,18 @@ const layerConfigs = [
             data: jsTable, // Pass the entire Arrow Table as data
             // The getPosition accessor MUST be the GeoArrow Vector itself
             getPosition: geomVector,
-            getFillColor: [0, 100, 60, 160], // Example color
-            getRadius: 5,
+            // getFillColor: [0, 100, 60, 160], // Example color
+            getFillColor: ({ index, data }) => {
+                const recordBatch = data.data;
+                const row = recordBatch.get(index);
+                return colorScale(row["VEL_LA_EW"]).rgb();
+            },
+            getRadius: ({ index, data }) => {
+                const recordBatch = data.data;
+                const row = recordBatch.get(index);
+                return row["VEL_LA_UP"] * 5;
+            },
             visible: true,
-            // Add debugging props if available in your Deck.gl version
-            // debug: true, // If available, might give more insights
         },
         name: 'Geoparquet',
         showVisibilityToggle: true, // Show visibility toggle for this layer
