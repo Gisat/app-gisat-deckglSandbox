@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import {TileLayer} from '@deck.gl/geo-layers';
-import {BitmapLayer} from '@deck.gl/layers';
+import {BitmapLayer, GeoJsonLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
 import { tableFromIPC } from "apache-arrow";
 import { GeoArrowSolidPolygonLayer, GeoArrowScatterplotLayer } from '@geoarrow/deck.gl-layers';
@@ -127,8 +127,60 @@ const layerConfigs = [
             },
             visible: true,
         },
-        name: 'Geoparquet',
+        name: 'Geoparquet Points (GeoArrow)',
         showVisibilityToggle: true, // Show visibility toggle for this layer
+    },
+    {
+        id: 'geojson-points',
+        type: GeoJsonLayer, // <-- Using GeoJsonLayer
+        options: {
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky.geojson',
+            pointRadiusMinPixels: 2, // Minimum radius in pixels for points
+            getPointRadius: d => {
+                // GeoJSON feature properties are under d.properties
+                const vel_la_up = d.properties.VEL_LA_UP;
+                return vel_la_up ? vel_la_up * 5 : 5; // Default to 5 if property not found
+            },
+            getFillColor: d => {
+                // Prioritize precomputed 'geojson_color' if it exists
+                if (d.properties && d.properties.geojson_color) {
+                    return d.properties.geojson_color;
+                }
+                // Fallback to real-time calculation using chroma.js if no precomputed color
+                const vel_la_ew = d.properties.VEL_LA_EW;
+                return vel_la_ew !== undefined ? colorScale(vel_la_ew).rgb() : [128, 128, 128, 160]; // Default grey if not found
+            },
+            visible: true, // Start invisible for comparison, toggle via GUI
+            pickable: true,
+        },
+        name: 'GeoJSON Points',
+        showVisibilityToggle: true,
+    },
+    {
+        id: 'geojson-points-color',
+        type: GeoJsonLayer, // <-- Using GeoJsonLayer
+        options: {
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_colors.geojson',
+            pointRadiusMinPixels: 2, // Minimum radius in pixels for points
+            getPointRadius: d => {
+                // GeoJSON feature properties are under d.properties
+                const vel_la_up = d.properties.VEL_LA_UP;
+                return vel_la_up ? vel_la_up * 5 : 5; // Default to 5 if property not found
+            },
+            getFillColor: d => {
+                // Prioritize precomputed 'geojson_color' if it exists
+                if (d.properties && d.properties.geojson_color) {
+                    return d.properties.geojson_color;
+                }
+                // Fallback to real-time calculation using chroma.js if no precomputed color
+                const vel_la_ew = d.properties.VEL_LA_EW;
+                return vel_la_ew !== undefined ? colorScale(vel_la_ew).rgb() : [128, 128, 128, 160]; // Default grey if not found
+            },
+            visible: true, // Start invisible for comparison, toggle via GUI
+            pickable: true,
+        },
+        name: 'GeoJSON Points Color',
+        showVisibilityToggle: true,
     },
     // {
     //     id: 'geoparquet-buildings',
@@ -181,7 +233,7 @@ function GeoParquet() {
 
     useEffect(() => {
         // Initialize dat.gui
-        const gui = new dat.GUI();
+        const gui = new dat.GUI({ width: 300 });
 
         // Add visibility controls for each layer
         layerConfigs.forEach(config => {
