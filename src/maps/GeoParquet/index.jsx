@@ -41,7 +41,7 @@ console.log('WASM initialized successfully!');
 // Now you can safely use `readParquet` or other functions
 // Example usage after WASM is initialized
 
-const response = await fetch('https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/compo_area_vellast_sipky_MK.parquet');  // Load Parquet file from URL
+const response = await fetch('https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK_colors.parquet');  // Load Parquet file from URL
 // const response = await fetch('/geoparquet/Utah@1.parquet');  // Load Parquet file from URL
 // const response = await fetch('https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/demo_data/Utah@1.parquet');  // Load Parquet file from URL
 const arrayBuffer = await response.arrayBuffer();   //parquetBytes
@@ -115,11 +115,12 @@ const layerConfigs = [
             // The getPosition accessor MUST be the GeoArrow Vector itself
             getPosition: geomVector,
             // getFillColor: [0, 100, 60, 160], // Example color
-            getFillColor: ({ index, data }) => {
-                const recordBatch = data.data;
-                const row = recordBatch.get(index);
-                return colorScale(row["VEL_LA_EW"]).rgb();
-            },
+            // getFillColor: ({ index, data }) => {
+            //     const recordBatch = data.data;
+            //     const row = recordBatch.get(index);
+            //     return colorScale(row["VEL_LA_EW"]).rgb();
+            // },
+            getFillColor: jsTable.getChild("colors"),
             getRadius: ({ index, data }) => {
                 const recordBatch = data.data;
                 const row = recordBatch.get(index);
