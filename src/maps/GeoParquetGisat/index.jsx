@@ -37,6 +37,7 @@ console.log('WASM initialized successfully!');
 // --- 1. Load GeoParquetGisat (client-side calculated color) ---
 
 const geoParquetPathClientColor = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK.parquet' // Assuming this is your original GeoParquetGisat
+// const geoParquetPathClientColor = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/EGMS_L2b_146_0296_IW2_VV_2019_2023_1.parquet' // Assuming this is your original GeoParquetGisat
 console.time('Load_GP_ClientColor');
 const parquetResponseClientColor = await fetch(geoParquetPathClientColor);
 if (!parquetResponseClientColor.ok) {
