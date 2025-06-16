@@ -11,10 +11,12 @@ import building3D from './Buildings_3D/index.jsx';
 import deck3DTiles from './Deck3DTiles/index.jsx';
 import geoParquetGisat from './GeoParquetGisat/index.jsx';
 import geoParquetDemo from './GeoParquetDemo/index.jsx';
+import MetroDarrows3D from "./MetroD_arrows_3D/index.jsx";
 
 const mapApps = [
     { name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
     { name: 'P1 Metro D: Google 3D Tiles', path: '/metro-d-google-3d-tiles', component: MetroD_Google3DTiles },
+    { name: 'P1 Metro D: 3D arrows', path: '/metro-d-3d-arrows', component: MetroDarrows3D },
     { name: 'P3 D8: points as spheres', path: '/d8-mvt-point-cloud-spheres', component: MVTPointCloudSpheres },
     { name: 'P3 D8: 2D arrows', path: '/d8-icon-arrows', component: D8_iconArrows },
     { name: 'P3 D8: 3D arrows', path: '/d8-filter', component: D8_filter },
