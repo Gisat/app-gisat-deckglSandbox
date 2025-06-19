@@ -3,14 +3,15 @@ import React, { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import {MVTLayer, TileLayer} from '@deck.gl/geo-layers';
-import {BitmapLayer} from '@deck.gl/layers';
+import {BitmapLayer, GeoJsonLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
-import {_TerrainExtension as TerrainExtension} from "@deck.gl/extensions";
+import {_TerrainExtension as TerrainExtension, DataFilterExtension} from "@deck.gl/extensions";
 import {SimpleMeshLayer} from "@deck.gl/mesh-layers";
 import chroma from "chroma-js";
 import {scaleLinear} from "d3-scale";
 import {OBJLoader} from "@loaders.gl/obj";
 import geolib from "@gisatcz/deckgl-geolib";
+import {SphereGeometry} from "@luma.gl/engine";
 const CogTerrainLayer = geolib.CogTerrainLayer;
 
 const INITIAL_VIEW_STATE = {
@@ -37,6 +38,19 @@ const colorScale = chroma
 const sphereSizeScale = scaleLinear([0, 1], [0.5, 2.5]).clamp(true); //for rel len
 // const sphereSizeScale = scaleLinear([0.45, 1], [0.5, 2.5]).clamp(true); //for coh
 const pointSizeScale = scaleLinear([0.45,1],[0.1, 2.5]).clamp(true);
+const meshIconFlatArrowVelScale= scaleLinear([0,30], [10,200]).clamp(true)
+const meshIconFlatArrowDiscreteScale = (value) => {
+    if (value < 1) return 5;
+    if (value < 2) return 10;
+    return 20;
+}
+
+
+const scaleXYArrowWidth = scaleLinear([0.1, 20], [0.1 , 0.3]).clamp(true);
+const scaleZArrowLength = scaleLinear([0.1, 20], [0.05, 2]).clamp(true);
+
+const ARROW_SIZE = 67; // eyeball measured, only for this object: https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_v3.obj
+const FLAT_ARROW_SIZE = 0.451564; // eyeball measured
 
 // Layer configurations
 const layerConfigs = [
@@ -63,6 +77,30 @@ const layerConfigs = [
         showVisibilityToggle: false, // Show visibility toggle for this layer
     },
     {
+        id: 'insar-points-sphere',
+        type: SimpleMeshLayer,
+        options: {
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_colors.json',
+            mesh: new SphereGeometry(),
+            visible: true,
+            getColor: (d) => [...colorScale(d.properties.VEL_LA_EW).rgb(), 255],
+            getScale: [0.5,0.5,0.5],
+            // getScale: (d) => Array(3).fill(sphereSizeScale(d.properties.VEL_LA_EW)),
+            // InSAR body clamped to ground (h_dtm)
+            // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm],
+            // InSAR body clamped to ground (h_dsm)
+            // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dsm],
+            // InSAR body vykreslene dle jejich vysky (h)
+            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1]],
+            // getTranslation: (d) => [0,0,sphereSizeScale(d.properties.VEL_LA_EW)*0.75],
+            getTranslation: (d) => [0,0,1],
+            pickable: true,
+            extensions: [new TerrainExtension()],
+        },
+        name: 'sphere points',
+        showVisibilityToggle: true, // Show visibility toggle for this layer
+    },
+    {
         id: 'insar-points-arrow',
         type: SimpleMeshLayer,
         options: {
@@ -75,7 +113,7 @@ const layerConfigs = [
                     return [0, d.properties.AZ_ANG, 180 + orientation];
                 } else {return [0, d.properties.AZ_ANG, orientation]};
             },
-            visible: true,
+            visible: false,
             getTranslation: (d) => {
                 if (d.properties.VEL_LA_EW > 0) {
                     const orientation = d.properties.VEL_LA_EW >= 0 ? 90 : -90;
@@ -93,7 +131,7 @@ const layerConfigs = [
             // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dsm],
             // InSAR body vykreslene dle jejich vysky (h)
             // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h],
-            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1]],
+            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1],1],
             getScale: (d) => {
                 if (d.properties.VEL_LA_EW > 0) {
                     return [scaleXYArrowWidth(d.properties.VEL_LA_EW), scaleXYArrowWidth(d.properties.VEL_LA_EW), scaleZArrowLength(d.properties.VEL_LA_EW)];
@@ -104,9 +142,70 @@ const layerConfigs = [
             pickable: true,
             extensions: [new TerrainExtension()],
         },
-        name: 'InSAR arrow v1',
+        name: 'arrow not flat',
         showVisibilityToggle: true, // Show visibility toggle for this layer
     },
+    {
+        id: 'insar-points-arrow-flat',
+        type: SimpleMeshLayer,
+        options: {
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_colors.json',
+            // mesh: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_filled.obj',
+            mesh: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/arrows/arrow_filled_v2.obj',
+            id: 'insar-points-arrow-mesh',
+            getColor: (d) => [...colorScale(d.properties.VEL_LA_EW).rgb(), 255],
+            getOrientation: (d) => {
+                const orientation = d.properties.VEL_LA_EW >= 0 ? 90 : -90;
+                if (d.properties.VEL_LA_EW > 0) {
+                    return [0, d.properties.AZ_ANG, 180 + orientation];
+                } else {return [0, d.properties.AZ_ANG, orientation]};
+            },
+            getTranslation: (d) => {
+                if (d.properties.VEL_LA_EW > 0) {
+                    const orientation = d.properties.VEL_LA_EW >= 0 ? 90 : -90;
+                    const orientation_rad = orientation * Math.PI / 180;
+                    const AZ_ANG_rad = d.properties.AZ_ANG * Math.PI / 180;
+                    return [
+                        Math.sin(orientation_rad) * Math.sin(AZ_ANG_rad) * FLAT_ARROW_SIZE * meshIconFlatArrowDiscreteScale(d.properties.VEL_LA_EW),
+                        -Math.sin(orientation_rad) * Math.cos(AZ_ANG_rad) * FLAT_ARROW_SIZE * meshIconFlatArrowDiscreteScale(d.properties.VEL_LA_EW),
+                        Math.cos(orientation_rad) * FLAT_ARROW_SIZE * meshIconFlatArrowDiscreteScale(d.properties.VEL_LA_EW)];
+                } return [0, 0, 0];
+            },
+            // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm + 2],
+            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], 1],
+            getScale: (d) => {
+                // [delka sipky, tloustka ve 3d - nema smysl pro 2d sipky, sirka sipky]
+
+                return [meshIconFlatArrowDiscreteScale(Math.abs(d.properties.VEL_LA_EW)), 1, meshIconFlatArrowDiscreteScale(Math.abs(d.properties.VEL_LA_EW))]
+
+                // if (d.properties.VEL_LA_EW > 0) {
+                //     return [scaleXYArrowWidth(d.properties.VEL_LA_EW), scaleXYArrowWidth(d.properties.VEL_LA_EW), scaleZArrowLength(d.properties.VEL_LA_EW)];
+                // }
+                // return [scaleXYArrowWidth(Math.abs(d.properties.VEL_LA_EW)), scaleXYArrowWidth(Math.abs(d.properties.VEL_LA_EW)), scaleZArrowLength(Math.abs(d.properties.VEL_LA_EW))];
+            },
+            loaders: [OBJLoader],
+            getFilterValue: d => d.properties.rel_len,
+            // filterRange: insarPointRelLenThresholdInterval,
+            // pickable: true,
+            // extensions: [new DataFilterExtension({filterSize: 1})],
+            extensions: [new TerrainExtension()],
+            visible: true,
+        },
+        name: 'arrow flat',
+        showVisibilityToggle: true, // Show visibility toggle for this layer
+    },
+    // {
+    //     id: 'geojson-points',
+    //     type: GeoJsonLayer, // <-- Using GeoJsonLayer
+    //     options: {
+    //         data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_colors.geojson',
+    //         getPointRadius: 0.5,
+    //         visible: true, // Start invisible for comparison, toggle via GUI
+    //         extensions: [new TerrainExtension()],
+    //     },
+    //     name: 'points',
+    //     showVisibilityToggle: true,
+    // },
     {
         id: 'cog-terrain-dtm-praha',
         type: CogTerrainLayer,
@@ -128,7 +227,7 @@ const layerConfigs = [
             }
         },
         name: 'DTM Prague',
-        showVisibilityToggle: true, // Show visibility toggle for this layer
+        showVisibilityToggle: false, // Show visibility toggle for this layer
     },
     {
         id: 'buildings',
@@ -151,10 +250,6 @@ const layerConfigs = [
     }
 ];
 
-const scaleXYArrowWidth = scaleLinear([0.1, 20], [0.1 , 0.3]).clamp(true);
-const scaleZArrowLength = scaleLinear([0.1, 20], [0.05, 2]).clamp(true);
-
-const ARROW_SIZE = 67; // eyeball measured, only for this object: https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_v3.obj
 
 
 // Function to create a layer based on its configuration, visibility, and properties
