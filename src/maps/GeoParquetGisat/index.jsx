@@ -51,34 +51,34 @@ console.timeEnd('Load_GP_ClientColor');
 const geomVectorClientColor = jsTableClientColor.getChild("geometry");
 
 
-// --- 2. Load GeoParquetGisat (with precomputed color) ---
-const geoParquetPathPrecomputedColor = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK_colors.parquet'; // <--- NEW FILE PATH
-console.time('Load_GP_ClientColor');
-const parquetResponsePrecomputedColor = await fetch(geoParquetPathPrecomputedColor);
-if (!parquetResponsePrecomputedColor.ok) {
-    console.error(`Failed to fetch GeoParquet (client-side color) file: ${parquetResponsePrecomputedColor.statusText}`);
-}
-const parquetArrayBufferPrecomputedColor = await parquetResponsePrecomputedColor.arrayBuffer();
-const wasmTablePrecomputedColor = readParquet(new Uint8Array(parquetArrayBufferPrecomputedColor));
-const jsTablePrecomputedColor = tableFromIPC(wasmTablePrecomputedColor.intoIPCStream());
-// console.log('Loaded GeoParquetGisat (precomputed color - jsTablePrecomputedColor):', jsTablePrecomputedColor);
-console.timeEnd('Load_GP_ClientColor');
-const geomVectorPrecomputedColor = jsTablePrecomputedColor.getChild("geometry");
-const colorsVectorPrecomputedColor = jsTablePrecomputedColor.getChild("colors"); // Get the precomputed colors column
-
-// --- 3. GeoJSON Data Loading (client-side calculated color) ---
-const geoJsonPathClientColor = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky.geojson`;
-console.time('Load_GeoJSON_ClientColor');
-const geoJsonClientColorResponse = await fetch(geoJsonPathClientColor);
-const geoJsonClientColorData = await geoJsonClientColorResponse.json();
-console.timeEnd('Load_GeoJSON_ClientColor');
-
-// --- 4. GeoJSON Data Loading (client-side calculated color) ---
-const geoJsonPathPrecomputedColor = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_colors.geojson`;
-console.time('Load_GeoJSON_PrecomputedColor');
-const geoJsonPrecomputedColorResponse = await fetch(geoJsonPathPrecomputedColor);
-const geoJsonPrecomputedColorData = await geoJsonPrecomputedColorResponse.json();
-console.timeEnd('Load_GeoJSON_PrecomputedColor');
+// // --- 2. Load GeoParquetGisat (with precomputed color) ---
+// const geoParquetPathPrecomputedColor = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK_colors.parquet'; // <--- NEW FILE PATH
+// console.time('Load_GP_ClientColor');
+// const parquetResponsePrecomputedColor = await fetch(geoParquetPathPrecomputedColor);
+// if (!parquetResponsePrecomputedColor.ok) {
+//     console.error(`Failed to fetch GeoParquet (client-side color) file: ${parquetResponsePrecomputedColor.statusText}`);
+// }
+// const parquetArrayBufferPrecomputedColor = await parquetResponsePrecomputedColor.arrayBuffer();
+// const wasmTablePrecomputedColor = readParquet(new Uint8Array(parquetArrayBufferPrecomputedColor));
+// const jsTablePrecomputedColor = tableFromIPC(wasmTablePrecomputedColor.intoIPCStream());
+// // console.log('Loaded GeoParquetGisat (precomputed color - jsTablePrecomputedColor):', jsTablePrecomputedColor);
+// console.timeEnd('Load_GP_ClientColor');
+// const geomVectorPrecomputedColor = jsTablePrecomputedColor.getChild("geometry");
+// const colorsVectorPrecomputedColor = jsTablePrecomputedColor.getChild("colors"); // Get the precomputed colors column
+//
+// // --- 3. GeoJSON Data Loading (client-side calculated color) ---
+// const geoJsonPathClientColor = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky.geojson`;
+// console.time('Load_GeoJSON_ClientColor');
+// const geoJsonClientColorResponse = await fetch(geoJsonPathClientColor);
+// const geoJsonClientColorData = await geoJsonClientColorResponse.json();
+// console.timeEnd('Load_GeoJSON_ClientColor');
+//
+// // --- 4. GeoJSON Data Loading (client-side calculated color) ---
+// const geoJsonPathPrecomputedColor = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_colors.geojson`;
+// console.time('Load_GeoJSON_PrecomputedColor');
+// const geoJsonPrecomputedColorResponse = await fetch(geoJsonPathPrecomputedColor);
+// const geoJsonPrecomputedColorData = await geoJsonPrecomputedColorResponse.json();
+// console.timeEnd('Load_GeoJSON_PrecomputedColor');
 
 
 
@@ -132,74 +132,74 @@ const layerConfigs = [
         showVisibilityToggle: true, // Show visibility toggle for this layer
     },
 
-    {
-        id: 'geoparquet-points-color',
-        type: GeoArrowScatterplotLayer,
-        options: {
-            data: jsTablePrecomputedColor, // Pass the entire Arrow Table as data
-            // The getPosition accessor MUST be the GeoArrow Vector itself
-            getPosition: geomVectorPrecomputedColor,
-            getFillColor: colorsVectorPrecomputedColor,
-            getRadius: 5,
-            visible: true,
-        },
-        name: 'Geoparquet Points Color',
-        showVisibilityToggle: true, // Show visibility toggle for this layer
-    },
-    {
-        id: 'geojson-points',
-        type: GeoJsonLayer, // <-- Using GeoJsonLayer
-        options: {
-            data: geoJsonClientColorData,
-            pointRadiusMinPixels: 2, // Minimum radius in pixels for points
-            // getPointRadius: d => {
-            //     // GeoJSON feature properties are under d.properties
-            //     const vel_la_up = d.properties.VEL_LA_UP;
-            //     return vel_la_up ? vel_la_up * 5 : 5; // Default to 5 if property not found
-            // },
-            getRadius: 5,
-            getFillColor: d => {
-                // Prioritize precomputed 'geojson_color' if it exists
-                if (d.properties && d.properties.geojson_color) {
-                    return d.properties.geojson_color;
-                }
-                // Fallback to real-time calculation using chroma.js if no precomputed color
-                const vel_la_ew = d.properties.VEL_LA_EW;
-                return vel_la_ew !== undefined ? colorScale(vel_la_ew).rgb() : [128, 128, 128, 160]; // Default grey if not found
-            },
-            visible: true, // Start invisible for comparison, toggle via GUI
-            pickable: true,
-        },
-        name: 'GeoJSON Points',
-        showVisibilityToggle: true,
-    },
-    {
-        id: 'geojson-points-color',
-        type: GeoJsonLayer, // <-- Using GeoJsonLayer
-        options: {
-            data: geoJsonPrecomputedColorData,
-            pointRadiusMinPixels: 2, // Minimum radius in pixels for points
-            // getPointRadius: d => {
-            //     // GeoJSON feature properties are under d.properties
-            //     const vel_la_up = d.properties.VEL_LA_UP;
-            //     return vel_la_up ? vel_la_up * 5 : 5; // Default to 5 if property not found
-            // },
-            getPointRadius: 5,
-            getFillColor: d => {
-                // Prioritize precomputed 'geojson_color' if it exists
-                if (d.properties && d.properties.geojson_color) {
-                    return d.properties.geojson_color;
-                }
-                // Fallback to real-time calculation using chroma.js if no precomputed color
-                const vel_la_ew = d.properties.VEL_LA_EW;
-                return vel_la_ew !== undefined ? colorScale(vel_la_ew).rgb() : [128, 128, 128, 160]; // Default grey if not found
-            },
-            visible: true, // Start invisible for comparison, toggle via GUI
-            pickable: true,
-        },
-        name: 'GeoJSON Points Color',
-        showVisibilityToggle: true,
-    },
+    // {
+    //     id: 'geoparquet-points-color',
+    //     type: GeoArrowScatterplotLayer,
+    //     options: {
+    //         data: jsTablePrecomputedColor, // Pass the entire Arrow Table as data
+    //         // The getPosition accessor MUST be the GeoArrow Vector itself
+    //         getPosition: geomVectorPrecomputedColor,
+    //         getFillColor: colorsVectorPrecomputedColor,
+    //         getRadius: 5,
+    //         visible: true,
+    //     },
+    //     name: 'Geoparquet Points Color',
+    //     showVisibilityToggle: true, // Show visibility toggle for this layer
+    // },
+    // {
+    //     id: 'geojson-points',
+    //     type: GeoJsonLayer, // <-- Using GeoJsonLayer
+    //     options: {
+    //         data: geoJsonClientColorData,
+    //         pointRadiusMinPixels: 2, // Minimum radius in pixels for points
+    //         // getPointRadius: d => {
+    //         //     // GeoJSON feature properties are under d.properties
+    //         //     const vel_la_up = d.properties.VEL_LA_UP;
+    //         //     return vel_la_up ? vel_la_up * 5 : 5; // Default to 5 if property not found
+    //         // },
+    //         getRadius: 5,
+    //         getFillColor: d => {
+    //             // Prioritize precomputed 'geojson_color' if it exists
+    //             if (d.properties && d.properties.geojson_color) {
+    //                 return d.properties.geojson_color;
+    //             }
+    //             // Fallback to real-time calculation using chroma.js if no precomputed color
+    //             const vel_la_ew = d.properties.VEL_LA_EW;
+    //             return vel_la_ew !== undefined ? colorScale(vel_la_ew).rgb() : [128, 128, 128, 160]; // Default grey if not found
+    //         },
+    //         visible: true, // Start invisible for comparison, toggle via GUI
+    //         pickable: true,
+    //     },
+    //     name: 'GeoJSON Points',
+    //     showVisibilityToggle: true,
+    // },
+    // {
+    //     id: 'geojson-points-color',
+    //     type: GeoJsonLayer, // <-- Using GeoJsonLayer
+    //     options: {
+    //         data: geoJsonPrecomputedColorData,
+    //         pointRadiusMinPixels: 2, // Minimum radius in pixels for points
+    //         // getPointRadius: d => {
+    //         //     // GeoJSON feature properties are under d.properties
+    //         //     const vel_la_up = d.properties.VEL_LA_UP;
+    //         //     return vel_la_up ? vel_la_up * 5 : 5; // Default to 5 if property not found
+    //         // },
+    //         getPointRadius: 5,
+    //         getFillColor: d => {
+    //             // Prioritize precomputed 'geojson_color' if it exists
+    //             if (d.properties && d.properties.geojson_color) {
+    //                 return d.properties.geojson_color;
+    //             }
+    //             // Fallback to real-time calculation using chroma.js if no precomputed color
+    //             const vel_la_ew = d.properties.VEL_LA_EW;
+    //             return vel_la_ew !== undefined ? colorScale(vel_la_ew).rgb() : [128, 128, 128, 160]; // Default grey if not found
+    //         },
+    //         visible: true, // Start invisible for comparison, toggle via GUI
+    //         pickable: true,
+    //     },
+    //     name: 'GeoJSON Points Color',
+    //     showVisibilityToggle: true,
+    // },
 ];
 
 
