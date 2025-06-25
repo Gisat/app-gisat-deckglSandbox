@@ -115,15 +115,18 @@ const layerConfigs = [
             },
             visible: false,
             getTranslation: (d) => {
+                const orientation = d.properties.VEL_LA_EW >= 0 ? 90 : -90;
+                const orientation_rad = orientation * Math.PI / 180;
+                const AZ_ANG_rad = d.properties.AZ_ANG * Math.PI / 180;
                 if (d.properties.VEL_LA_EW > 0) {
-                    const orientation = d.properties.VEL_LA_EW >= 0 ? 90 : -90;
-                    const orientation_rad = orientation * Math.PI / 180;
-                    const AZ_ANG_rad = d.properties.AZ_ANG * Math.PI / 180;
                     return [
                         Math.sin(orientation_rad) * Math.sin(AZ_ANG_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.VEL_LA_EW),
                         -Math.sin(orientation_rad) * Math.cos(AZ_ANG_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.VEL_LA_EW),
                         Math.cos(orientation_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.VEL_LA_EW)];
-                } return [0, 0, 0];
+                } return [
+                    -Math.sin(orientation_rad) * Math.sin(AZ_ANG_rad) * ARROW_SIZE * scaleZArrowLength(Math.abs(d.properties.VEL_LA_EW)),
+                    -Math.sin(orientation_rad) * Math.cos(AZ_ANG_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.VEL_LA_EW),
+                    Math.cos(orientation_rad) * ARROW_SIZE * scaleZArrowLength(d.properties.VEL_LA_EW)];
             },
             // InSAR body clamped to ground (h_dtm)
             // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm],
@@ -156,32 +159,20 @@ const layerConfigs = [
             getColor: (d) => [...colorScale(d.properties.VEL_LA_EW).rgb(), 255],
             getOrientation: (d) => {
                 const orientation = d.properties.VEL_LA_EW >= 0 ? 90 : -90;
-                if (d.properties.VEL_LA_EW > 0) {
-                    return [0, d.properties.AZ_ANG, 180 + orientation];
-                } else {return [0, d.properties.AZ_ANG, orientation]};
+                return [0, 180 + orientation, 90]
             },
             getTranslation: (d) => {
-                if (d.properties.VEL_LA_EW > 0) {
-                    const orientation = d.properties.VEL_LA_EW >= 0 ? 90 : -90;
-                    const orientation_rad = orientation * Math.PI / 180;
-                    const AZ_ANG_rad = d.properties.AZ_ANG * Math.PI / 180;
+                if (d.properties.VEL_LA_EW >= 0) {
+                    return [FLAT_ARROW_SIZE * meshIconFlatArrowDiscreteScale(Math.abs(d.properties.VEL_LA_EW)),0,0];
+                } else {
                     return [
-                        Math.sin(orientation_rad) * Math.sin(AZ_ANG_rad) * FLAT_ARROW_SIZE * meshIconFlatArrowDiscreteScale(d.properties.VEL_LA_EW),
-                        -Math.sin(orientation_rad) * Math.cos(AZ_ANG_rad) * FLAT_ARROW_SIZE * meshIconFlatArrowDiscreteScale(d.properties.VEL_LA_EW),
-                        Math.cos(orientation_rad) * FLAT_ARROW_SIZE * meshIconFlatArrowDiscreteScale(d.properties.VEL_LA_EW)];
-                } return [0, 0, 0];
+                       -FLAT_ARROW_SIZE * meshIconFlatArrowDiscreteScale(Math.abs(d.properties.VEL_LA_EW)),0, 0];
+                }
             },
-            // getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm + 2],
             getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], 1],
             getScale: (d) => {
                 // [delka sipky, tloustka ve 3d - nema smysl pro 2d sipky, sirka sipky]
-
                 return [meshIconFlatArrowDiscreteScale(Math.abs(d.properties.VEL_LA_EW)), 1, meshIconFlatArrowDiscreteScale(Math.abs(d.properties.VEL_LA_EW))]
-
-                // if (d.properties.VEL_LA_EW > 0) {
-                //     return [scaleXYArrowWidth(d.properties.VEL_LA_EW), scaleXYArrowWidth(d.properties.VEL_LA_EW), scaleZArrowLength(d.properties.VEL_LA_EW)];
-                // }
-                // return [scaleXYArrowWidth(Math.abs(d.properties.VEL_LA_EW)), scaleXYArrowWidth(Math.abs(d.properties.VEL_LA_EW)), scaleZArrowLength(Math.abs(d.properties.VEL_LA_EW))];
             },
             loaders: [OBJLoader],
             getFilterValue: d => d.properties.rel_len,
