@@ -20,7 +20,7 @@ const INITIAL_VIEW_STATE = {
     // latitude: 50.03569033232786,
     longitude: 14.440544794048083,
     latitude: 50.04894986887636,
-    zoom: 18,
+    zoom: 16,
     pitch: 40,
     bearing: 0,
 };
@@ -48,9 +48,9 @@ const meshIconFlatArrowDiscreteScale = (value) => {
     return 20;
 }
 const meshIconFlatArrowDiscreteScaleMVT = (value) => {
-    if (value < 1) return 0.007;
-    if (value < 2) return 0.015;
-    return 0.025;
+    if (value < 1) return 0.015;
+    if (value < 2) return 0.03;
+    return 0.06;
 }
 
 
@@ -128,8 +128,7 @@ const layerConfigs = [
         id: 'insar-arrow-mvt',
         type: MVTLayer,
         options: {
-            // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_v3/{z}/{x}/{y}.pbf',
-            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_mvt_v3/{z}/{x}/{y}.pbf',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_mvt_v4/{z}/{x}/{y}.pbf',
             binary: false,
             renderSubLayers: (props) => {
                 if (props.data) {
@@ -138,30 +137,30 @@ const layerConfigs = [
                         id: `${props.id}-mesh`, // Create a unique ID for each tile's mesh sublayer
                         data: props.data, // Crucially, pass the parsed data for the current tile to SimpleMeshLayer
                         mesh: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/arrows/arrow_filled_v2.obj',
-                        getColor: (d) => [...colorScale(d.properties.VEL_LA_EW).rgb(), 255],
+                        getColor: (d) => [...colorScale(d.properties.VEL_L_EW_e5).rgb(), 255],
                         getOrientation: (d) => {
-                            const orientation = d.properties.VEL_LA_EW >= 0 ? 90 : -90;
+                            const orientation = d.properties.VEL_L_EW_e5 >= 0 ? 90 : -90;
                             return [0, 180 + orientation, 90]
                         },
                         getTranslation: (d) => {
-                            if (d.properties.VEL_LA_EW >= 0) {
-                                return [FLAT_ARROW_SIZE * meshIconFlatArrowDiscreteScaleMVT(Math.abs(d.properties.VEL_LA_EW)),0,0];
+                            if (d.properties.VEL_L_EW_e5 >= 0) {
+                                return [FLAT_ARROW_SIZE * meshIconFlatArrowDiscreteScaleMVT(Math.abs(d.properties.VEL_L_EW_e5)),0,0];
                             } else {
                                 return [
-                                    -FLAT_ARROW_SIZE * meshIconFlatArrowDiscreteScaleMVT(Math.abs(d.properties.VEL_LA_EW)),0, 0];
+                                    -FLAT_ARROW_SIZE * meshIconFlatArrowDiscreteScaleMVT(Math.abs(d.properties.VEL_L_EW_e5)),0, 0];
                             }
                         },
-                        getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], 2],
+                        getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.H_DSM],
                         getScale: (d) => {
                             // [delka sipky, tloustka ve 3d - nema smysl pro 2d sipky, sirka sipky]
-                            return [meshIconFlatArrowDiscreteScaleMVT(Math.abs(d.properties.VEL_LA_EW)), 1, meshIconFlatArrowDiscreteScaleMVT(Math.abs(d.properties.VEL_LA_EW))]
+                            return [meshIconFlatArrowDiscreteScaleMVT(Math.abs(d.properties.VEL_L_EW_e5)), 1, meshIconFlatArrowDiscreteScaleMVT(Math.abs(d.properties.VEL_L_EW_e5))]
                         },
                         loaders: [OBJLoader],
                         // getFilterValue: d => d.properties.rel_len,
                         // filterRange: insarPointRelLenThresholdInterval,
                         // pickable: true,
                         // extensions: [new DataFilterExtension({filterSize: 1})],
-                        extensions: [new TerrainExtension()],
+                        // extensions: [new TerrainExtension()],
                     });
                 }
                 return null;
@@ -177,7 +176,7 @@ const layerConfigs = [
         id: 'insar-sphere-mvt',
         type: MVTLayer,
         options: {
-            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_mvt_v3/{z}/{x}/{y}.pbf',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_mvt_v4/{z}/{x}/{y}.pbf',
             binary: false,
             renderSubLayers: (props) => {
                 if (props.data) {
@@ -187,9 +186,9 @@ const layerConfigs = [
                         data: props.data, // Crucially, pass the parsed data for the current tile to SimpleMeshLayer
                         mesh: new SphereGeometry(),
                         getScale: [0.001,0.001,0.001],
-                        getColor: (d) => [...colorScale(d.properties.VEL_LA_EW).rgb(), 255],
-                        getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], 2],
-                        extensions: [new TerrainExtension()],
+                        getColor: (d) => [...colorScale(d.properties.VEL_L_EW_e5).rgb(), 255],
+                        getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.H_DSM],
+                        // extensions: [new TerrainExtension()],
                     });
                 }
                 return null;
@@ -334,7 +333,7 @@ const layerConfigs = [
             stroked: false,
             filled: true,
             extruded: true,
-            visible: false,
+            visible: true,
             getElevation: (d) => d.properties.h,
             getFillColor: (d) => riskColors[d.properties.cl_risk_e3] || [255, 255, 255, 255],
             extensions: [new TerrainExtension()],
