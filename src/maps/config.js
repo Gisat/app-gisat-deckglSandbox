@@ -11,6 +11,7 @@ import building3D from './Buildings_3D/index.jsx';
 import deck3DTiles from './Deck3DTiles/index.jsx';
 import geoParquetGisat from './GeoParquetGisat/index.jsx';
 import geoParquetDemo from './GeoParquetDemo/index.jsx';
+import geoParquetLoaders from './GeoparquetLoaders/index.jsx';
 import MetroDarrows3D from "./MetroD_arrows_3D/index.jsx";
 
 const mapApps = [
@@ -27,6 +28,7 @@ const mapApps = [
     { name: 'POC 3D Tiles Layer', path: '/deck-3d-tiles', component: deck3DTiles },
     { name: 'POC GeoParquet Gisat', path: '/geo-parquet-gisat', component: geoParquetGisat },
     { name: 'POC GeoParquet Demo', path: '/geo-parquet-demo', component: geoParquetDemo },
+    { name: 'POC GeoParquet Loaders', path: '/geo-parquet-loaders', component: geoParquetLoaders },
 
 ];
 
