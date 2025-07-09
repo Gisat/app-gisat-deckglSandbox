@@ -12,6 +12,7 @@ import deck3DTiles from './Deck3DTiles/index.jsx';
 import geoParquetGisat from './GeoParquetGisat/index.jsx';
 import geoParquetDemo from './GeoParquetDemo/index.jsx';
 import geoParquetLoaders from './GeoparquetLoaders/index.jsx';
+import geoParquetLoadersBinary from './GeoparquetLoadersBinary/index.jsx';
 import MetroDarrows3D from "./MetroD_arrows_3D/index.jsx";
 
 const mapApps = [
@@ -29,6 +30,7 @@ const mapApps = [
     { name: 'POC GeoParquet Gisat', path: '/geo-parquet-gisat', component: geoParquetGisat },
     { name: 'POC GeoParquet Demo', path: '/geo-parquet-demo', component: geoParquetDemo },
     { name: 'POC GeoParquet Loaders', path: '/geo-parquet-loaders', component: geoParquetLoaders },
+    { name: 'POC GeoParquet Loaders v2', path: '/geo-parquet-loaders-binary', component: geoParquetLoadersBinary },
 
 ];
 
