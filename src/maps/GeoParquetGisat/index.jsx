@@ -1,5 +1,5 @@
-// src/maps/MapApp1.jsx
-import React, { useEffect, useState } from 'react';
+// src/maps/GPG.jsx
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import {TileLayer} from '@deck.gl/geo-layers';
@@ -7,13 +7,14 @@ import {BitmapLayer, GeoJsonLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
 import { tableFromIPC } from "apache-arrow";
 import { GeoArrowScatterplotLayer } from '@geoarrow/deck.gl-layers';
-import initWasm, {readParquet} from "parquet-wasm";
+import initWasm, {readParquet} from "parquet-wasm"; // parquet-wasm imports
 import chroma from "chroma-js";
+
 
 const INITIAL_VIEW_STATE = {
     longitude: 14.440015596229106,
     latitude: 50.05104860235221,
-    zoom: 15,
+    zoom: 11,
     pitch: 0,
     bearing: 0,
 };
@@ -23,187 +24,16 @@ const colorScale = chroma
     .domain([-2, 2]);
 
 
-console.log('Starting WASM initialization...');
-
-// Call wasmInit() and wait for it to initialize the WASM bundle
-await initWasm(`${import.meta.env.BASE_URL}esm/parquet_wasm_bg.wasm`);
-
-console.log('WASM initialized successfully!');
-
-// Now you can safely use `readParquet` or other functions
-// Example usage after WASM is initialized
-
-// --- Data Loading ---
-// --- 1. Load GeoParquetGisat (client-side calculated color) ---
-
-const geoParquetPathClientColor = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK.parquet' // Assuming this is your original GeoParquetGisat
-// const geoParquetPathClientColor = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/EGMS_L2b_146_0296_IW2_VV_2019_2023_1.parquet' // Assuming this is your original GeoParquetGisat
-console.time('Load_GP_ClientColor');
-const parquetResponseClientColor = await fetch(geoParquetPathClientColor);
-if (!parquetResponseClientColor.ok) {
-    console.error(`Failed to fetch GeoParquet (client-side color) file: ${parquetResponseClientColor.statusText}`);
-}
-const parquetArrayBufferClientColor = await parquetResponseClientColor.arrayBuffer();
-const wasmTableClientColor = readParquet(new Uint8Array(parquetArrayBufferClientColor));
-const jsTableClientColor = tableFromIPC(wasmTableClientColor.intoIPCStream());
-// console.log('Loaded GeoParquetGisat (client-side color - jsTableClientColor):', jsTableClientColor);
-console.timeEnd('Load_GP_ClientColor');
-const geomVectorClientColor = jsTableClientColor.getChild("geometry");
+// --- Define Data Paths (Constants) ---
+const GEO_PARQUET_PATH_CLIENT_COLOR = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK.parquet';
+const GEO_PARQUET_PATH_PRECOMPUTED_COLOR = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK_colors.parquet';
+const GEO_JSON_PATH_CLIENT_COLOR = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky.geojson`;
+const GEO_JSON_PATH_PRECOMPUTED_COLOR = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_colors.geojson`;
+const GEO_PARQUET_PATH_EGMS_GEOM_ONLY = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/EGMS_L2b_146_0296_IW2_VV_2019_2023_1_geom_only.parquet';
+// const GEO_PARQUET_PATH_EGMS = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/EGMS_L2b_146_0296_IW2_VV_2019_2023_1.parquet';
 
 
-// // --- 2. Load GeoParquetGisat (with precomputed color) ---
-// const geoParquetPathPrecomputedColor = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK_colors.parquet'; // <--- NEW FILE PATH
-// console.time('Load_GP_ClientColor');
-// const parquetResponsePrecomputedColor = await fetch(geoParquetPathPrecomputedColor);
-// if (!parquetResponsePrecomputedColor.ok) {
-//     console.error(`Failed to fetch GeoParquet (client-side color) file: ${parquetResponsePrecomputedColor.statusText}`);
-// }
-// const parquetArrayBufferPrecomputedColor = await parquetResponsePrecomputedColor.arrayBuffer();
-// const wasmTablePrecomputedColor = readParquet(new Uint8Array(parquetArrayBufferPrecomputedColor));
-// const jsTablePrecomputedColor = tableFromIPC(wasmTablePrecomputedColor.intoIPCStream());
-// // console.log('Loaded GeoParquetGisat (precomputed color - jsTablePrecomputedColor):', jsTablePrecomputedColor);
-// console.timeEnd('Load_GP_ClientColor');
-// const geomVectorPrecomputedColor = jsTablePrecomputedColor.getChild("geometry");
-// const colorsVectorPrecomputedColor = jsTablePrecomputedColor.getChild("colors"); // Get the precomputed colors column
-//
-// // --- 3. GeoJSON Data Loading (client-side calculated color) ---
-// const geoJsonPathClientColor = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky.geojson`;
-// console.time('Load_GeoJSON_ClientColor');
-// const geoJsonClientColorResponse = await fetch(geoJsonPathClientColor);
-// const geoJsonClientColorData = await geoJsonClientColorResponse.json();
-// console.timeEnd('Load_GeoJSON_ClientColor');
-//
-// // --- 4. GeoJSON Data Loading (client-side calculated color) ---
-// const geoJsonPathPrecomputedColor = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_colors.geojson`;
-// console.time('Load_GeoJSON_PrecomputedColor');
-// const geoJsonPrecomputedColorResponse = await fetch(geoJsonPathPrecomputedColor);
-// const geoJsonPrecomputedColorData = await geoJsonPrecomputedColorResponse.json();
-// console.timeEnd('Load_GeoJSON_PrecomputedColor');
-
-
-
-// Layer configurations
-const layerConfigs = [
-    {
-        id: 'tile-layer',
-        type: TileLayer,
-        options: {
-            data: 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            minZoom: 0,
-            maxZoom: 19,
-            tileSize: 256,
-            visible: true,
-            renderSubLayers: (props) => {
-                const { bbox: { west, south, east, north } } = props.tile;
-                return new BitmapLayer(props, {
-                    data: null,
-                    image: props.data,
-                    bounds: [west, south, east, north],
-                });
-            },
-            // extensions: [new TerrainExtension()],
-        },
-        name: 'Basemap',
-        showVisibilityToggle: true, // Show visibility toggle for this layer
-    },
-    {
-        id: 'geoparquet-points',
-        type: GeoArrowScatterplotLayer,
-        options: {
-            data: jsTableClientColor, // Pass the entire Arrow Table as data
-            // The getPosition accessor MUST be the GeoArrow Vector itself
-            getPosition: geomVectorClientColor,
-            // getFillColor: [0, 100, 60, 160], // Example color
-            getFillColor: ({ index, data }) => {
-                const recordBatch = data.data;
-                const row = recordBatch.get(index);
-                return colorScale(row["VEL_LA_EW"]).rgb();
-            },
-            // getFillColor: jsTable.getChild("colors"),
-            // getRadius: ({ index, data }) => {
-            //     const recordBatch = data.data;
-            //     const row = recordBatch.get(index);
-            //     return row["VEL_LA_UP"] * 5;
-            // },
-            getRadius: 5,
-            visible: true,
-        },
-        name: 'Geoparquet Points',
-        showVisibilityToggle: true, // Show visibility toggle for this layer
-    },
-
-    // {
-    //     id: 'geoparquet-points-color',
-    //     type: GeoArrowScatterplotLayer,
-    //     options: {
-    //         data: jsTablePrecomputedColor, // Pass the entire Arrow Table as data
-    //         // The getPosition accessor MUST be the GeoArrow Vector itself
-    //         getPosition: geomVectorPrecomputedColor,
-    //         getFillColor: colorsVectorPrecomputedColor,
-    //         getRadius: 5,
-    //         visible: true,
-    //     },
-    //     name: 'Geoparquet Points Color',
-    //     showVisibilityToggle: true, // Show visibility toggle for this layer
-    // },
-    // {
-    //     id: 'geojson-points',
-    //     type: GeoJsonLayer, // <-- Using GeoJsonLayer
-    //     options: {
-    //         data: geoJsonClientColorData,
-    //         pointRadiusMinPixels: 2, // Minimum radius in pixels for points
-    //         // getPointRadius: d => {
-    //         //     // GeoJSON feature properties are under d.properties
-    //         //     const vel_la_up = d.properties.VEL_LA_UP;
-    //         //     return vel_la_up ? vel_la_up * 5 : 5; // Default to 5 if property not found
-    //         // },
-    //         getRadius: 5,
-    //         getFillColor: d => {
-    //             // Prioritize precomputed 'geojson_color' if it exists
-    //             if (d.properties && d.properties.geojson_color) {
-    //                 return d.properties.geojson_color;
-    //             }
-    //             // Fallback to real-time calculation using chroma.js if no precomputed color
-    //             const vel_la_ew = d.properties.VEL_LA_EW;
-    //             return vel_la_ew !== undefined ? colorScale(vel_la_ew).rgb() : [128, 128, 128, 160]; // Default grey if not found
-    //         },
-    //         visible: true, // Start invisible for comparison, toggle via GUI
-    //         pickable: true,
-    //     },
-    //     name: 'GeoJSON Points',
-    //     showVisibilityToggle: true,
-    // },
-    // {
-    //     id: 'geojson-points-color',
-    //     type: GeoJsonLayer, // <-- Using GeoJsonLayer
-    //     options: {
-    //         data: geoJsonPrecomputedColorData,
-    //         pointRadiusMinPixels: 2, // Minimum radius in pixels for points
-    //         // getPointRadius: d => {
-    //         //     // GeoJSON feature properties are under d.properties
-    //         //     const vel_la_up = d.properties.VEL_LA_UP;
-    //         //     return vel_la_up ? vel_la_up * 5 : 5; // Default to 5 if property not found
-    //         // },
-    //         getPointRadius: 5,
-    //         getFillColor: d => {
-    //             // Prioritize precomputed 'geojson_color' if it exists
-    //             if (d.properties && d.properties.geojson_color) {
-    //                 return d.properties.geojson_color;
-    //             }
-    //             // Fallback to real-time calculation using chroma.js if no precomputed color
-    //             const vel_la_ew = d.properties.VEL_LA_EW;
-    //             return vel_la_ew !== undefined ? colorScale(vel_la_ew).rgb() : [128, 128, 128, 160]; // Default grey if not found
-    //         },
-    //         visible: true, // Start invisible for comparison, toggle via GUI
-    //         pickable: true,
-    //     },
-    //     name: 'GeoJSON Points Color',
-    //     showVisibilityToggle: true,
-    // },
-];
-
-
-// Function to create a layer based on its configuration, visibility, and properties
+// Helper function to create a layer instance
 const createLayer = (config, visibility, properties) => {
     const options = { ...config.options, id: config.id, visible: visibility };
     if (properties) {
@@ -214,47 +44,270 @@ const createLayer = (config, visibility, properties) => {
     return new config.type(options);
 };
 
+
 function GeoParquet() {
-    // Initial visibility state and layer properties for all layers
-    const initialVisibility = layerConfigs.reduce((acc, config) => {
-        acc[config.id] = config.options.visible;
-        return acc;
-    }, {});
+    // --- State for Loaded Data ---
+    const [isWasmReady, setIsWasmReady] = useState(false); // Tracks if parquet-wasm is initialized
+    const [jsTableClientColor, setJsTableClientColor] = useState(null);
+    const [jsTablePrecomputedColor, setJsTablePrecomputedColor] = useState(null);
+    const [geoJsonClientColorData, setGeoJsonClientColorData] = useState(null);
+    const [geoJsonPrecomputedColorData, setGeoJsonPrecomputedColorData] = useState(null);
+    // --- NEW: State for Geometry-Only GeoParquet Data ---
+    const [jsTableGeomOnly, setJsTableGeomOnly] = useState(null);
 
-    const initialProperties = layerConfigs.reduce((acc, config) => {
-        if (config.controls) {
-            acc[config.id] = {};
-            Object.keys(config.controls).forEach(key => {
-                acc[config.id][key] = config.options[key];
-            });
-        }
-        return acc;
-    }, {});
+    // --- State for Layer Visibility and Properties (controlled by dat.GUI) ---
+    const [layerVisibility, setLayerVisibility] = useState({});
+    const [layerProperties, setLayerProperties] = useState({});
 
-    const [layerVisibility, setLayerVisibility] = useState(initialVisibility);
-    const [layerProperties, setLayerProperties] = useState(initialProperties);
+    const renderedLayerIds = useRef(new Set());
 
-    // Update the layers array based on visibility and properties state
-    const layers = layerConfigs.map(config => createLayer(config, layerVisibility[config.id], layerProperties[config.id]));
 
+    // --- Define Initial Layer Configurations ---
+    const initialLayerConfigs = [
+        {
+            id: 'tile-layer',
+            type: TileLayer,
+            options: {
+                data: 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                minZoom: 0, maxZoom: 19, tileSize: 256, visible: true, // Basemap remains visible by default
+                renderSubLayers: (props) => {
+                    const { bbox: { west, south, east, north } = {} } = props.tile || {};
+                    return new BitmapLayer(props, { data: null, image: props.data, bounds: [west, south, east, north] });
+                },
+            },
+            name: 'Basemap', showVisibilityToggle: true,
+        },
+        {
+            id: 'geoparquet-points-client-color',
+            type: GeoArrowScatterplotLayer,
+            options: {
+                data: jsTableClientColor, // Data state variable (initially null)
+                getPosition: jsTableClientColor ? jsTableClientColor.getChild("geometry") : null,
+                getFillColor: ({ index, data }) => {
+                    if (!data || !data.data) return [128, 128, 128, 160];
+                    const row = data.data.get(index);
+                    return colorScale(row["VEL_LA_EW"]).rgb();
+                },
+                getRadius: ({ index, data }) => {
+                    if (!data || !data.data) return 5;
+                    const row = data.data.get(index);
+                    return row["VEL_LA_UP"] ? row["VEL_LA_UP"] * 5 : 5;
+                },
+                visible: false, // Starts OFF
+                pickable: true,
+            },
+            name: 'GP (Client-side Color)',
+            showVisibilityToggle: true,
+        },
+        {
+            id: 'geoparquet-points-precomputed-color',
+            type: GeoArrowScatterplotLayer,
+            options: {
+                data: jsTablePrecomputedColor, // Data state variable (initially null)
+                getPosition: jsTablePrecomputedColor ? jsTablePrecomputedColor.getChild("geometry") : null,
+                getFillColor: jsTablePrecomputedColor ? jsTablePrecomputedColor.getChild("colors") : null,
+                getRadius: ({ index, data }) => {
+                    if (!data || !data.data) return 5;
+                    const row = data.data.get(index);
+                    return row["VEL_LA_UP"] ? row["VEL_LA_UP"] * 5 : 5;
+                },
+                visible: false, // Starts OFF
+                pickable: true,
+            },
+            name: 'GP (Precomputed Color)',
+            showVisibilityToggle: true,
+        },
+        // --- NEW: Geometry Only GeoParquet Layer ---
+        {
+            id: 'geoparquet-points-geom-only',
+            type: GeoArrowScatterplotLayer,
+            options: {
+                data: jsTableGeomOnly, // Data state variable (initially null)
+                getPosition: jsTableGeomOnly ? jsTableGeomOnly.getChild("geometry") : null,
+                getFillColor: [0, 200, 255, 180], // Static color since no attributes
+                getRadius: 5, // Static radius since no attributes
+                visible: false, // Starts OFF
+                pickable: true,
+            },
+            name: 'GP EGMS (Geom Only)',
+            showVisibilityToggle: true,
+        },
+        {
+            id: 'geojson-points-client-color',
+            type: GeoJsonLayer,
+            options: {
+                data: geoJsonClientColorData, // Data state variable (initially null)
+                pointRadiusMinPixels: 2,
+                getPointRadius: d => { // Ensure property names match your GeoJSON
+                    return d.properties && d.properties.VEL_LA_UP ? d.properties.VEL_LA_UP * 5 : 5;
+                },
+                getFillColor: d => { // Ensure property names match your GeoJSON
+                    return d.properties && d.properties.VEL_LA_EW !== undefined ? colorScale(d.properties.VEL_LA_EW).rgb() : [128, 128, 128, 160];
+                },
+                visible: false, // Starts OFF
+                pickable: true,
+            },
+            name: 'GeoJSON (Client-side Color)',
+            showVisibilityToggle: true,
+        },
+        {
+            id: 'geojson-points-precomputed-color',
+            type: GeoJsonLayer,
+            options: {
+                data: geoJsonPrecomputedColorData, // Data state variable (initially null)
+                pointRadiusMinPixels: 2,
+                getPointRadius: d => {
+                    return d.properties && d.properties.VEL_LA_UP ? d.properties.VEL_LA_UP * 5 : 5;
+                },
+                getFillColor: d => {
+                    return d.properties && d.properties.geojson_color ? d.properties.geojson_color : [128, 128, 128, 160];
+                },
+                visible: false, // Starts OFF
+                pickable: true,
+            },
+            name: 'GeoJSON (Precomputed Color)',
+            showVisibilityToggle: true,
+        },
+    ];
+
+    // --- Dynamic Layer Generation ---
+    const layers = useCallback(() => {
+        return initialLayerConfigs.filter(config => {
+            if (config.id === 'tile-layer') return true;
+            return config.options.data !== null;
+        }).map(config => createLayer(config, layerVisibility[config.id], layerProperties[config.id]));
+    }, [
+        jsTableClientColor, jsTablePrecomputedColor, jsTableGeomOnly, // NEW: Added jsTableGeomOnly
+        geoJsonClientColorData, geoJsonPrecomputedColorData,
+        layerVisibility, layerProperties
+    ]);
+
+
+    // --- WASM Initialization Effect (for parquet-wasm) ---
     useEffect(() => {
-        // Initialize dat.gui
+        console.log('GPG: useEffect triggered for WASM initialization.');
+        if (!isWasmReady) {
+            console.log('GPG: Starting WASM initialization (parquet-wasm)...');
+            initWasm(`${import.meta.env.BASE_URL}esm/parquet_wasm_bg.wasm`)
+                .then(() => {
+                    console.log('GPG: WASM initialized successfully (parquet-wasm)!');
+                    setIsWasmReady(true);
+                })
+                .catch(error => console.error('GPG: Failed to init WASM:', error));
+        }
+    }, [isWasmReady]);
+
+
+    // --- Lazy Data Loading Effects ---
+    // GeoParquet (Client-side Color)
+    useEffect(() => {
+        if (layerVisibility['geoparquet-points-client-color'] && !jsTableClientColor && isWasmReady) {
+            console.time('Load_GP_ClientColor_Lazy');
+            fetch(GEO_PARQUET_PATH_CLIENT_COLOR)
+                .then(response => response.arrayBuffer())
+                .then(arrayBuffer => readParquet(new Uint8Array(arrayBuffer)))
+                .then(wasmTable => tableFromIPC(wasmTable.intoIPCStream()))
+                .then(table => {
+                    setJsTableClientColor(table);
+                    console.timeEnd('Load_GP_ClientColor_Lazy');
+                })
+                .catch(error => console.error("Lazy Load Error (GP Client Color):", error));
+        }
+    }, [layerVisibility['geoparquet-points-client-color'], jsTableClientColor, isWasmReady]);
+
+    // GeoParquet (Precomputed Color)
+    useEffect(() => {
+        if (layerVisibility['geoparquet-points-precomputed-color'] && !jsTablePrecomputedColor && isWasmReady) {
+            console.time('Load_GP_PrecomputedColor_Lazy');
+            fetch(GEO_PARQUET_PATH_PRECOMPUTED_COLOR)
+                .then(response => response.arrayBuffer())
+                .then(arrayBuffer => readParquet(new Uint8Array(arrayBuffer)))
+                .then(wasmTable => tableFromIPC(wasmTable.intoIPCStream()))
+                .then(table => {
+                    setJsTablePrecomputedColor(table);
+                    console.timeEnd('Load_GP_PrecomputedColor_Lazy');
+                })
+                .catch(error => console.error("Lazy Load Error (GP Precomputed Color):", error));
+        }
+    }, [layerVisibility['geoparquet-points-precomputed-color'], jsTablePrecomputedColor, isWasmReady]);
+
+    // --- NEW: Lazy Load Effect for Geometry-Only GeoParquet ---
+    useEffect(() => {
+        if (layerVisibility['geoparquet-points-geom-only'] && !jsTableGeomOnly && isWasmReady) {
+            console.time('Load_GP_GeomOnly_Lazy');
+            fetch(GEO_PARQUET_PATH_EGMS_GEOM_ONLY)
+                .then(response => response.arrayBuffer())
+                .then(arrayBuffer => readParquet(new Uint8Array(arrayBuffer)))
+                .then(wasmTable => tableFromIPC(wasmTable.intoIPCStream()))
+                .then(table => {
+                    setJsTableGeomOnly(table);
+                    console.timeEnd('Load_GP_GeomOnly_Lazy');
+                })
+                .catch(error => console.error("Lazy Load Error (GP Geometry Only):", error));
+        }
+    }, [layerVisibility['geoparquet-points-geom-only'], jsTableGeomOnly, isWasmReady]);
+
+    // GeoJSON (Client-side Color)
+    useEffect(() => {
+        if (layerVisibility['geojson-points-client-color'] && !geoJsonClientColorData) {
+            console.time('Load_GeoJSON_ClientColor_Lazy');
+            fetch(GEO_JSON_PATH_CLIENT_COLOR)
+                .then(response => response.json())
+                .then(data => {
+                    setGeoJsonClientColorData(data);
+                    console.timeEnd('Load_GeoJSON_ClientColor_Lazy');
+                })
+                .catch(error => console.error("Lazy Load Error (GeoJSON Client Color):", error));
+        }
+    }, [layerVisibility['geojson-points-client-color'], geoJsonClientColorData]);
+
+    // GeoJSON (Precomputed Color)
+    useEffect(() => {
+        if (layerVisibility['geojson-points-precomputed-color'] && !geoJsonPrecomputedColorData) {
+            console.time('Load_GeoJSON_PrecomputedColor_Lazy');
+            fetch(GEO_JSON_PATH_PRECOMPUTED_COLOR)
+                .then(response => response.json())
+                .then(data => {
+                    setGeoJsonPrecomputedColorData(data);
+                    console.timeEnd('Load_GeoJSON_PrecomputedColor_Lazy');
+                })
+                .catch(error => console.error("Lazy Load Error (GeoJSON Precomputed Color):", error));
+        }
+    }, [layerVisibility['geojson-points-precomputed-color'], geoJsonPrecomputedColorData]);
+
+
+    // --- GUI Setup Effect (Runs once on mount) ---
+    useEffect(() => {
         const gui = new dat.GUI({ width: 350 });
 
-        // Add visibility controls for each layer
-        layerConfigs.forEach(config => {
+        const initialViz = initialLayerConfigs.reduce((acc, config) => {
+            acc[config.id] = config.options.visible;
+            return acc;
+        }, {});
+        setLayerVisibility(initialViz);
+
+        const initialProps = initialLayerConfigs.reduce((acc, config) => {
+            if (config.controls) { acc[config.id] = {}; Object.keys(config.controls).forEach(key => { acc[config.id][key] = config.options[key]; }); }
+            return acc;
+        }, {});
+        setLayerProperties(initialProps);
+
+
+        initialLayerConfigs.forEach(config => {
             if (config.showVisibilityToggle) {
-                gui.add(layerVisibility, config.id).name(config.name).onChange((value) => {
-                    setLayerVisibility((prevState) => ({
-                        ...prevState,
-                        [config.id]: value,
-                    }));
-                });
+                gui.add(initialViz, config.id)
+                    .name(config.name)
+                    .onChange((value) => {
+                        setLayerVisibility((prevState) => ({
+                            ...prevState,
+                            [config.id]: value,
+                        }));
+                    });
             }
         });
 
-        // Add dropdown controls for properties of specific layers
-        layerConfigs.forEach(config => {
+        // Add dropdown controls for properties of specific layers (if any)
+        initialLayerConfigs.forEach(config => {
             if (config.controls) {
                 const folder = gui.addFolder(config.name + ' Properties');
                 Object.keys(config.controls).forEach(property => {
@@ -271,7 +324,7 @@ function GeoParquet() {
                             }));
                         });
                     } else {
-                        folder.add(layerProperties[config.id], property, options).onChange((value) => {
+                        folder.add(initialProps[config.id], property, options).onChange((value) => {
                             setLayerProperties((prevState) => ({
                                 ...prevState,
                                 [config.id]: {
@@ -289,14 +342,15 @@ function GeoParquet() {
         return () => {
             gui.destroy();
         };
-    }, []);
+    }, []); // Empty dependency array ensures this effect runs once on mount
+
 
     return (
         <DeckGL
             initialViewState={INITIAL_VIEW_STATE}
             controller={true}
             views={new MapView({ repeat: true })}
-            layers={layers}
+            layers={layers()}
             className="deckgl-map"
         >
         </DeckGL>
