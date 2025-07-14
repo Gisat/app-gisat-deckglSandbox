@@ -136,6 +136,9 @@ function GeoparquetLoadersJSObjects() { // Renamed component
             getPosition: d => [Number(d.LON_CENTER), Number(d.LAT_CENTER)],
             getFillColor: [255, 0, 0, 160], // Simple red color (RGBA)
             getRadius: 5, // Radius in meters
+            stroked: true,
+            getLineColor: [50, 50, 50, 160],
+            getLineWidth: 0.5,
             visible: true,
             pickable: true,
         }),

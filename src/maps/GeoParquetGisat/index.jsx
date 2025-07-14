@@ -96,6 +96,9 @@ function GeoParquet() {
                     const row = data.data.get(index);
                     return row["VEL_LA_UP"] ? row["VEL_LA_UP"] * 5 : 5;
                 },
+                stroked: true,
+                getLineColor: [50, 50, 50, 160],
+                getLineWidth: 0.5,
                 visible: false, // Starts OFF
                 pickable: true,
             },
@@ -114,6 +117,9 @@ function GeoParquet() {
                     const row = data.data.get(index);
                     return row["VEL_LA_UP"] ? row["VEL_LA_UP"] * 5 : 5;
                 },
+                stroked: true,
+                getLineColor: [50, 50, 50, 160],
+                getLineWidth: 0.5,
                 visible: false, // Starts OFF
                 pickable: true,
             },
@@ -131,6 +137,9 @@ function GeoParquet() {
                 getRadius: 5, // Static radius since no attributes
                 visible: false, // Starts OFF
                 pickable: true,
+                stroked: true,
+                getLineColor: [50, 50, 50, 160],
+                getLineWidth: 0.5,
             },
             name: 'GP EGMS (Geom Only)',
             showVisibilityToggle: true,
@@ -149,6 +158,9 @@ function GeoParquet() {
                 },
                 visible: false, // Starts OFF
                 pickable: true,
+                stroked: true,
+                getLineColor: [50, 50, 50, 160],
+                getLineWidth: 0.5,
             },
             name: 'GeoJSON (Client-side Color)',
             showVisibilityToggle: true,
@@ -167,6 +179,9 @@ function GeoParquet() {
                 },
                 visible: false, // Starts OFF
                 pickable: true,
+                stroked: true,
+                getLineColor: [50, 50, 50, 160],
+                getLineWidth: 0.5,
             },
             name: 'GeoJSON (Precomputed Color)',
             showVisibilityToggle: true,

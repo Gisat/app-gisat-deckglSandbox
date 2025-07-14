@@ -80,6 +80,9 @@ function GeoparquetLoadersBinary() {
 
             getFillColor: [255, 0, 0, 160], // Simple red color for points
             getRadius: 5, // Radius in meters
+            stroked: true,
+            getLineColor: [50, 50, 50, 160],
+            getLineWidth: 0.5,
             visible: true, // Layer is visible once data is loaded
             pickable: true, // Enable picking for interaction
         }) : null; // If geoParquetData is null, the layer instance is null
