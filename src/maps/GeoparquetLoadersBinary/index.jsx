@@ -23,8 +23,10 @@ const INITIAL_VIEW_STATE = {
 };
 
 // URL to the GeoParquet file
-const GEO_PARQUET_FILE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK.parquet';
-
+// not zipped file
+// const GEO_PARQUET_FILE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK.parquet';
+// zipped file
+const GEO_PARQUET_FILE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK_zipped.parquet';
 
 function GeoparquetLoadersBinary() {
     console.log('GPLBinary: Component rendering...');

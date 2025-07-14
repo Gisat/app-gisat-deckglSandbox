@@ -25,7 +25,10 @@ const colorScale = chroma
 
 
 // --- Define Data Paths (Constants) ---
-const GEO_PARQUET_PATH_CLIENT_COLOR = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK.parquet';
+// not zipped file
+// const GEO_PARQUET_PATH_CLIENT_COLOR = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK.parquet';
+// zipped file
+const GEO_PARQUET_PATH_CLIENT_COLOR = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK_zipped.parquet';
 const GEO_PARQUET_PATH_PRECOMPUTED_COLOR = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK_colors.parquet';
 const GEO_JSON_PATH_CLIENT_COLOR = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky.geojson`;
 const GEO_JSON_PATH_PRECOMPUTED_COLOR = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_colors.geojson`;
