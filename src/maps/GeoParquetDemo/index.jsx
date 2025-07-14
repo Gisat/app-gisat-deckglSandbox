@@ -6,7 +6,7 @@ import {TileLayer} from '@deck.gl/geo-layers';
 import {BitmapLayer } from '@deck.gl/layers'; // Corrected BitmapLayer import
 import * as dat from 'dat.gui'; // For the GUI controls
 import { tableFromIPC } from "apache-arrow"; // For converting WASM output to Apache Arrow Table
-import { GeoArrowSolidPolygonLayer } from '@geoarrow/deck.gl-layers'; // Layer for solid polygons
+import { GeoArrowPolygonLayer } from '@geoarrow/deck.gl-layers'; // Layer for solid polygons
 import initWasm, {readParquet} from "parquet-wasm"; // parquet-wasm imports for reading .parquet files
 
 
@@ -70,14 +70,20 @@ function GeoParquet() { // Component name based on your file
         },
         {
             id: 'geoparquet-buildings',
-            type: GeoArrowSolidPolygonLayer, // Using Solid Polygon Layer for building footprints
+            type: GeoArrowPolygonLayer, // Using Solid Polygon Layer for building footprints
             options: {
                 data: jsTablePolygonData, // Data state variable (initially null), will be populated via lazy loading
                 // getPolygon accessor needs to be conditional as jsTablePolygonData is null initially
                 getPolygon: jsTablePolygonData ? jsTablePolygonData.getChild("GEOMETRY") : null, // Access geometry column (all caps) from Arrow Table
                 getFillColor: [0, 100, 60, 160], // Static fill color for buildings
                 visible: false, // Starts OFF, loads on toggle via GUI
-                pickable: true, // Enable picking for user interaction
+                // pickable: true, // Enable picking for user interaction
+                stroked: true, // Enable stroke for polygons
+                extruded: false,
+                wireframe: true,
+                filled: true,
+                getLineColor: [50, 50, 50], // Stroke color for polygons
+                lineWidthMinPixels: 1,
             },
             name: 'GeoParquet Buildings', // Descriptive name for GUI
             showVisibilityToggle: true,
