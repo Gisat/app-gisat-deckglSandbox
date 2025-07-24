@@ -1,4 +1,4 @@
-# test_wkb_connection.py
+# final_script_with_counts.py
 import duckdb
 import os
 import sys
@@ -6,8 +6,7 @@ import sys
 # --- Configuration ---
 FILE_PATH = './be/EGMS_backend_filterable_dual_geom.parquet'
 
-print("--- Testing DuckDB Compatibility with WKB and Arrow Geometry ---")
-print(f"Attempting to read file: {FILE_PATH}")
+print("--- Running Final GeoParquet Query Script ---")
 
 if not os.path.exists(FILE_PATH):
     print(f"Error: GeoParquet file not found at {FILE_PATH}")
@@ -17,53 +16,48 @@ con = None
 try:
     con = duckdb.connect(database=':memory:', read_only=False)
 
-    # STAGE 1: Load data into a temporary table
-    print("\nStage 1: Loading data as a standard table...")
-    con.install_extension("httpfs")
-    con.load_extension("httpfs")
+    # Stage 1: Load data into a temp table
     con.execute(f"CREATE OR REPLACE TABLE temp_data AS SELECT * FROM read_parquet('{FILE_PATH}');")
-    print("  Data loaded into 'temp_data'.")
 
-    # DIAGNOSTIC STEP: Check the actual column names
-    print("\nActual table schema for 'temp_data':")
-    schema_df = con.execute("DESCRIBE temp_data;").fetch_df()
-    print(schema_df)
+    # --- ADDED: Get and print the original row count ---
+    original_count = con.execute("SELECT COUNT(*) FROM temp_data;").fetchone()[0]
+    print(f"\nTotal original rows in file: {original_count:,}")
+    # ----------------------------------------------------
 
-
-    # STAGE 2: Load spatial extension and perform query
-    print("\nStage 2: Loading spatial extension and running query...")
+    # Stage 2: Load the spatial extension
     con.install_extension("spatial")
     con.load_extension("spatial")
-    print("  'spatial' extension loaded.")
 
+    # Define the bounding box for the spatial filter
     bbox_wkt = 'POLYGON((14.4 50.0, 14.5 50.0, 14.5 50.1, 14.4 50.1, 14.4 50.0))'
 
-    # FIX: Use the correct column name 'geometry' instead of 'geometry_wkb'
+    # Final, cleaned query
     final_query = f"""
     SELECT
-        * EXCLUDE (geometry), -- Use the correct WKB column name here
-        geometry_arrows
+        * EXCLUDE (geometry)
     FROM
         temp_data
     WHERE
         ST_Intersects(
-            ST_GeomFromWKB(geometry), -- And use it here as well
+            ST_GeomFromWKB(geometry),
             ST_GeomFromText('{bbox_wkt}')
         )
     """
 
-    print("\nExecuting spatial query and fetching Arrow data...")
-    result_arrow_table = con.execute(final_query).fetch_arrow_table()
+    print("Executing spatial query and fetching results...")
 
-    print(f"\nSUCCESS: Query executed. Fetched {len(result_arrow_table)} rows. ✅")
-    print("Schema of the returned data:")
+    result_arrow_table = con.execute(final_query).fetch_arrow_table()
+    filtered_count = len(result_arrow_table)
+
+    print(f"\nSUCCESS: Query complete. Filtered rows: {filtered_count:,} ✅")
+    print("Schema of returned data:")
     print(result_arrow_table.schema)
 
 except Exception as e:
-    print(f"\nCRITICAL ERROR: The test failed. Reason: {e}")
+    print(f"\nCRITICAL ERROR: The script failed. Reason: {e}")
     sys.exit(1)
 
 finally:
     if con:
         con.close()
-        print("\nDuckDB connection closed. Test finished.")
+        print("\nDuckDB connection closed. Script finished.")
