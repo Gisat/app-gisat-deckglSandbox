@@ -100,7 +100,7 @@ function GPDuckDB() { // Renamed component for clarity
             // Dynamically assign 'data' and specific accessors based on current state
             if (config.id === 'geoparquet-filtered-data') {
                 config.options.data = jsTableFilteredData;
-                config.options.getPosition = jsTableFilteredData ? jsTableFilteredData.getChild("geometry") : null;
+                config.options.getPosition = jsTableFilteredData ? jsTableFilteredData.getChild("render_coords") : null;
                 // Add other accessors that depend on jsTableFilteredData here, if they need to be dynamic
             }
             // Add other layer types here if they depend on other specific data states
@@ -150,7 +150,7 @@ function GPDuckDB() { // Renamed component for clarity
             const backendQueryUrl = `${BACKEND_API_URL}?minx=${minLon}&miny=${minLat}&maxx=${maxLon}&maxy=${maxLat}`;
 
             const timerLabel = `Load_DuckDB_Filtered_Z${viewState.zoom.toFixed(0)}`;
-            console.time(timerLabel);
+            // console.time(timerLabel);
             console.log(`GPDuckDB: Starting backend-filtered load from: ${backendQueryUrl}`);
 
             fetch(backendQueryUrl)
@@ -163,7 +163,12 @@ function GPDuckDB() { // Renamed component for clarity
                 .then(arrayBuffer => readParquet(new Uint8Array(arrayBuffer))) // Read the small filtered GeoParquet
                 .then(wasmTable => tableFromIPC(wasmTable.intoIPCStream()))
                 .then(table => {
+
                     console.log(`GPDuckDB: Backend-filtered data loaded successfully. Rows: ${table.numRows}`);
+                    // --- ADD THIS LINE FOR DEBUGGING ---
+                    // After:
+                    console.log("METADATA CHECK:", table.schema.fields[0].metadata);
+                    // ------------------------------------
                     setJsTableFilteredData(table); // Update state with the new filtered data
                     console.timeEnd(timerLabel);
                 })

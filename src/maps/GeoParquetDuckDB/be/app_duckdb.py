@@ -9,11 +9,11 @@ import pyarrow.parquet as pq
 import json
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}})
+CORS(app) # Allow all origins for development
 
 # --- Configuration ---
 GEOPARQUET_PATH = './EGMS_backend_filterable_dual_geom.parquet'
-CRS_EPSG_CODE = 4326 # The EPSG code used in your data
+CRS_EPSG_CODE = 4326
 
 # --- DuckDB Connection ---
 try:
@@ -44,36 +44,38 @@ def filtered_geoparquet():
     try:
         bbox_wkt = f'POLYGON(({min_x} {min_y}, {max_x} {min_y}, {max_x} {max_y}, {min_x} {max_y}, {min_x} {min_y}))'
 
-        # 1. Get filtered data from DuckDB. This result has no metadata.
+        # 1. Get filtered data from DuckDB
         query = f"SELECT render_coords FROM read_parquet('{GEOPARQUET_PATH}') WHERE ST_Intersects(geometry, ST_GeomFromText('{bbox_wkt}'))"
         result_table_from_db = duckdb_con.execute(query).fetch_arrow_table()
 
         if result_table_from_db.num_rows == 0: return ('', 204)
 
-        # 2. --- THE DEFINITIVE FIX: Rebuild the entire schema from scratch ---
-
+        # 2. --- THE DEFINITIVE FIX: Rebuild the table with COMPLETE metadata ---
         render_coords_array = result_table_from_db.column('render_coords')
 
-        # 2a. Create the column-level metadata for GeoArrow
-        geo_field = pa.field('render_coords', render_coords_array.type, metadata={b'ARROW:extension:name': b'geoarrow.point'})
+        # 2a. Create a plain field without metadata first
+        plain_field = pa.field('render_coords', render_coords_array.type)
 
-        # 2b. Create the top-level GeoParquet file metadata
-        geoparquet_metadata = {
-            "version": "1.0.0",
-            "primary_column": "render_coords", # This file's primary column is the one we're sending
-            "columns": {
-                "render_coords": {
-                    "encoding": "geoarrow", # The encoding is GeoArrow Point
-                    "crs": f"EPSG:{CRS_EPSG_CODE}",
-                    "geometry_types": ["Point"]
-                }
-            }
+        # 2b. Create the complete metadata dictionary
+        full_column_metadata = {
+            b'ARROW:extension:name': b'geoarrow.point',
+            b'ARROW:extension:metadata': json.dumps({"crs": f"EPSG:{CRS_EPSG_CODE}"}).encode('utf-8')
         }
 
-        # 2c. Create the final schema, combining the field and the top-level metadata
+        # 2c. Use the .with_metadata() method to apply the full dictionary
+        # This is a more robust way to attach it in older pyarrow versions
+        geo_field = plain_field.with_metadata(full_column_metadata)
+
+        # 2d. Create the top-level GeoParquet file metadata
+        geoparquet_metadata = {
+            "version": "1.0.0", "primary_column": "render_coords",
+            "columns": { "render_coords": { "encoding": "geoarrow", "geometry_types": ["Point"] } }
+        }
+
+        # 2e. Create the final schema
         final_schema = pa.schema([geo_field]).with_metadata({b"geo": json.dumps(geoparquet_metadata).encode('utf-8')})
 
-        # 2d. Create the final table with the corrected data and schema
+        # 2f. Create the final table
         final_table_to_send = pa.Table.from_arrays([render_coords_array], schema=final_schema)
         print("Rebuilt table with complete GeoParquet and GeoArrow metadata. ✅")
 

@@ -1,4 +1,4 @@
-# generate_final_data.py
+# generate_data_definitive.py
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -13,58 +13,63 @@ LAT_COLUMN_NAME = 'latitude'
 CRS_EPSG_CODE = 4326
 # --- End Configuration ---
 
-def generate_final_geoparquet(input_csv, output_parquet, lon_col, lat_col, crs):
+def generate_definitive_geoparquet(input_csv, output_parquet, lon_col, lat_col, crs):
     """
-    Generates the definitive GeoParquet file with a WKB geometry column for filtering
-    and a GeoArrow-compatible rendering column for Deck.gl.
+    Generates the definitive GeoParquet file with a WKB geometry column and a
+    rendering column with the correct FixedSizeList data type for GeoArrow.
     """
-    print("--- Starting Final GeoParquet Generation ---")
+    print("--- Starting Definitive GeoParquet Generation ---")
 
     # 1. Load data into a standard Pandas DataFrame
     df = pd.read_csv(input_csv)
     df.dropna(subset=[lon_col, lat_col], inplace=True)
     print(f"Loaded {len(df)} valid rows from CSV.")
 
-    # 2. Create geometry columns using basic Python types
-    # WKB for DuckDB filtering
-    df['geometry'] = [Point(xy).wkb for xy in zip(df[lon_col], df[lat_col])]
-    # List of coordinates for Deck.gl rendering
-    df['render_coords'] = df[[lon_col, lat_col]].values.tolist()
-    print("Created 'geometry' (WKB) and 'render_coords' (list) columns.")
+    # 2. --- THE DEFINITIVE FIX: Create columns with explicit Arrow types ---
 
-    # 3. Keep only the essential columns for the final file
-    df_final = df[['geometry', 'render_coords']]
+    # Create the WKB column (as a pyarrow array of binary type)
+    wkb_geometries = [Point(xy).wkb for xy in zip(df[lon_col], df[lat_col])]
+    geometry_array = pa.array(wkb_geometries, type=pa.binary())
 
-    # 4. Convert the pure Pandas DataFrame to an Arrow Table
-    arrow_table = pa.Table.from_pandas(df_final, preserve_index=False)
-    print("Converted DataFrame to Arrow Table.")
+    # Create the rendering coordinates as a FixedSizeList array
+    coords_list = df[[lon_col, lat_col]].values.tolist()
+    # Define the specific FixedSizeList type
+    list_type = pa.list_(pa.field('coords', pa.float64()), 2)
+    # Create the array with the explicit type
+    render_coords_array = pa.array(coords_list, type=list_type)
 
-    # 5. Add GeoArrow metadata to the 'render_coords' column's schema
-    field_idx = arrow_table.schema.get_field_index('render_coords')
-    field = arrow_table.schema.field(field_idx)
-    geo_field = field.with_metadata({b'ARROW:extension:name': b'geoarrow.point'})
-    schema_with_geoarrow = arrow_table.schema.set(field_idx, geo_field)
-    print("Prepared schema with GeoArrow point metadata.")
+    print("Created 'geometry' and 'render_coords' arrays with correct types. ✅")
 
-    # 6. Create the top-level GeoParquet metadata
-    geo_metadata = {
+    # 3. Build the final Arrow Table from our explicit arrays
+    # Create the field for the WKB column (no special metadata needed)
+    wkb_field = pa.field('geometry', geometry_array.type)
+
+    # Create the field for the rendering column with full GeoArrow metadata
+    geo_column_metadata = {
+        b'ARROW:extension:name': b'geoarrow.point',
+        b'ARROW:extension:metadata': json.dumps({"crs": f"EPSG:{crs}"}).encode('utf-8')
+    }
+    geo_render_field = pa.field('render_coords', render_coords_array.type, metadata=geo_column_metadata)
+
+    # 4. Create the top-level GeoParquet metadata
+    geoparquet_metadata = {
         "version": "1.0.0", "primary_column": "geometry",
         "columns": {"geometry": {"encoding": "WKB", "crs": f"EPSG:{crs}", "geometry_types": ["Point"]}}
     }
-    final_schema = schema_with_geoarrow.with_metadata({b"geo": json.dumps(geo_metadata).encode('utf-8')})
-    print("Prepared final schema with top-level GeoParquet metadata.")
 
-    # 7. Re-create the table using the final schema for maximum compatibility
-    final_arrow_table = pa.Table.from_arrays(arrow_table.columns, schema=final_schema)
-    print("Re-created table with final schema. ✅")
+    # Create the final schema
+    final_schema = pa.schema([wkb_field, geo_render_field]).with_metadata({b"geo": json.dumps(geoparquet_metadata).encode('utf-8')})
 
-    # 8. Write the final table to a file
+    # Create the final table
+    final_arrow_table = pa.Table.from_arrays([geometry_array, render_coords_array], schema=final_schema)
+    print("Created final Arrow Table with fully correct schema and data types.")
+
+    # 5. Write the final table to a file
     pq.write_table(final_arrow_table, output_parquet, compression='snappy')
     print(f"\nSuccessfully wrote final GeoParquet file to: {output_parquet}")
 
-
 if __name__ == "__main__":
-    generate_final_geoparquet(
+    generate_definitive_geoparquet(
         input_csv=INPUT_CSV_PATH,
         output_parquet=OUTPUT_GEOPARQUET_PATH,
         lon_col=LON_COLUMN_NAME,
