@@ -8,7 +8,8 @@ app = Flask(__name__)
 CORS(app) # Allow all origins for development
 
 # --- Configuration ---
-GEOPARQUET_PATH = './egms_simple.geoparquet' # Point to the new simple file
+# Ensure this points to the GeoParquet file created by the simple generation script
+GEOPARQUET_PATH = './egms_simple.geoparquet'
 
 # --- DuckDB Connection ---
 try:
@@ -20,44 +21,48 @@ try:
 except Exception as e:
     duckdb_con = None
 
-# --- API Endpoint for Filtered JSON Data ---
 @app.route('/api/data')
 def get_filtered_data():
     if not duckdb_con:
         return jsonify({"error": "Database connection not available."}), 500
 
-    # 1. Get bounding box from frontend
+    # 1. Get spatial and attribute filters from the request
     try:
         min_x = request.args.get('minx', type=float)
         min_y = request.args.get('miny', type=float)
         max_x = request.args.get('maxx', type=float)
         max_y = request.args.get('maxy', type=float)
+
+        # This matches the single value sent by your slider
+        max_velocity = request.args.get('max_velocity', default=100.0, type=float)
+
         if None in [min_x, min_y, max_x, max_y]:
             return jsonify({"error": "Bounding box not provided."}), 400
     except Exception as e:
-        return jsonify({"error": f"Invalid BBOX parameters: {e}"}), 400
+        return jsonify({"error": f"Invalid filter parameters: {e}"}), 400
 
     try:
         # 2. Construct the SQL query
         bbox_wkt = f'POLYGON(({min_x} {min_y}, {max_x} {min_y}, {max_x} {max_y}, {min_x} {max_y}, {min_x} {min_y}))'
 
-        # Select the columns needed for the ScatterplotLayer
-        # In this case, longitude and latitude. Add any other columns for popups/colors.
+        # This query selects the columns needed by your frontend
+        # and filters using the absolute value of mean_velocity to match the slider
         query = f"""
         SELECT
             longitude,
-            latitude
+            latitude,
+            mean_velocity
         FROM
             read_parquet('{GEOPARQUET_PATH}')
         WHERE
-            ST_Intersects(geometry, ST_GeomFromText('{bbox_wkt}'))
+            ST_Intersects(geometry, ST_GeomFromText($bbox)) AND
+            abs(mean_velocity) <= $max_vel
         """
 
         # 3. Execute query and return result as JSON
-        # .fetchdf() gets a pandas DataFrame, .to_json() converts it to a JSON string
-        result_json = duckdb_con.execute(query).fetchdf().to_json(orient="records")
+        params = {'bbox': bbox_wkt, 'max_vel': max_velocity}
+        result_json = duckdb_con.execute(query, params).fetchdf().to_json(orient="records")
 
-        # Using jsonify is not ideal for pre-formatted JSON strings, so we build a Response
         from flask import Response
         return Response(result_json, mimetype='application/json')
 
