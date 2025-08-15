@@ -1,19 +1,14 @@
 # app.py
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import duckdb
-import io
 import os
-import pyarrow as pa
-import pyarrow.parquet as pq
-import json
 
 app = Flask(__name__)
 CORS(app) # Allow all origins for development
 
 # --- Configuration ---
-GEOPARQUET_PATH = './EGMS_backend_filterable_dual_geom.parquet'
-CRS_EPSG_CODE = 4326
+GEOPARQUET_PATH = './egms_simple.geoparquet' # Point to the new simple file
 
 # --- DuckDB Connection ---
 try:
@@ -25,12 +20,13 @@ try:
 except Exception as e:
     duckdb_con = None
 
-# --- API Endpoint for Filtered Data ---
-@app.route('/api/filtered-geoparquet')
-def filtered_geoparquet():
+# --- API Endpoint for Filtered JSON Data ---
+@app.route('/api/data')
+def get_filtered_data():
     if not duckdb_con:
-        return jsonify({"error": "Backend database connection not available."}), 500
+        return jsonify({"error": "Database connection not available."}), 500
 
+    # 1. Get bounding box from frontend
     try:
         min_x = request.args.get('minx', type=float)
         min_y = request.args.get('miny', type=float)
@@ -39,60 +35,39 @@ def filtered_geoparquet():
         if None in [min_x, min_y, max_x, max_y]:
             return jsonify({"error": "Bounding box not provided."}), 400
     except Exception as e:
-        return jsonify({"error": f"Invalid bounding box parameters: {e}"}), 400
+        return jsonify({"error": f"Invalid BBOX parameters: {e}"}), 400
 
     try:
+        # 2. Construct the SQL query
         bbox_wkt = f'POLYGON(({min_x} {min_y}, {max_x} {min_y}, {max_x} {max_y}, {min_x} {max_y}, {min_x} {min_y}))'
 
-        # 1. Get filtered data from DuckDB
-        query = f"SELECT render_coords FROM read_parquet('{GEOPARQUET_PATH}') WHERE ST_Intersects(geometry, ST_GeomFromText('{bbox_wkt}'))"
-        result_table_from_db = duckdb_con.execute(query).fetch_arrow_table()
+        # Select the columns needed for the ScatterplotLayer
+        # In this case, longitude and latitude. Add any other columns for popups/colors.
+        query = f"""
+        SELECT
+            longitude,
+            latitude
+        FROM
+            read_parquet('{GEOPARQUET_PATH}')
+        WHERE
+            ST_Intersects(geometry, ST_GeomFromText('{bbox_wkt}'))
+        """
 
-        if result_table_from_db.num_rows == 0: return ('', 204)
+        # 3. Execute query and return result as JSON
+        # .fetchdf() gets a pandas DataFrame, .to_json() converts it to a JSON string
+        result_json = duckdb_con.execute(query).fetchdf().to_json(orient="records")
 
-        # 2. --- THE DEFINITIVE FIX: Rebuild the table with COMPLETE metadata ---
-        render_coords_array = result_table_from_db.column('render_coords')
-
-        # 2a. Create a plain field without metadata first
-        plain_field = pa.field('render_coords', render_coords_array.type)
-
-        # 2b. Create the complete metadata dictionary
-        full_column_metadata = {
-            b'ARROW:extension:name': b'geoarrow.point',
-            b'ARROW:extension:metadata': json.dumps({"crs": f"EPSG:{CRS_EPSG_CODE}"}).encode('utf-8')
-        }
-
-        # 2c. Use the .with_metadata() method to apply the full dictionary
-        # This is a more robust way to attach it in older pyarrow versions
-        geo_field = plain_field.with_metadata(full_column_metadata)
-
-        # 2d. Create the top-level GeoParquet file metadata
-        geoparquet_metadata = {
-            "version": "1.0.0", "primary_column": "render_coords",
-            "columns": { "render_coords": { "encoding": "geoarrow", "geometry_types": ["Point"] } }
-        }
-
-        # 2e. Create the final schema
-        final_schema = pa.schema([geo_field]).with_metadata({b"geo": json.dumps(geoparquet_metadata).encode('utf-8')})
-
-        # 2f. Create the final table
-        final_table_to_send = pa.Table.from_arrays([render_coords_array], schema=final_schema)
-        print("Rebuilt table with complete GeoParquet and GeoArrow metadata. ✅")
-
-        # 3. Write this fully corrected table to the buffer and send
-        output_buffer = io.BytesIO()
-        pq.write_table(final_table_to_send, output_buffer, compression='snappy')
-        output_buffer.seek(0)
-
-        return send_file(output_buffer, mimetype='application/octet-stream', as_attachment=False)
+        # Using jsonify is not ideal for pre-formatted JSON strings, so we build a Response
+        from flask import Response
+        return Response(result_json, mimetype='application/json')
 
     except Exception as e:
-        print(f"Error during query or data preparation: {e}")
+        print(f"Error during DuckDB query: {e}")
         return jsonify({"error": "Internal server error."}), 500
 
 if __name__ == '__main__':
     if not os.path.exists(GEOPARQUET_PATH):
         print(f"FATAL: GeoParquet file not found at '{GEOPARQUET_PATH}'")
     else:
-        print("\n--- Starting Flask Backend with DuckDB ---")
+        print("\n--- Starting Flask Backend for JSON ---")
         app.run(debug=True, port=5000, host='0.0.0.0', threaded=False)
