@@ -25,17 +25,17 @@ const BACKEND_API_URL = 'http://localhost:5000/api/data';
 // --- 2. UPDATE THE COLOR SCALE DEFINITION ---
 // Use scaleLinear to map an input domain to an output range of color arrays
 const colorScale = scaleLinear()
-    .domain([-0.5, 0, 0.5]) // Input data values (e.g., slow, medium, fast velocity)
+    .domain([-1.5, 0, 1.5]) // Input data values (e.g., slow, medium, fast velocity)
     .range([ // Output colors in [R, G, B] format
         [65, 182, 196],  // Blue for negative values
         [254, 224, 144], // Yellow for zero
         [224, 49, 49]    // Red for positive values
-    ]);
+    ]).clamp(true);
 
 function SimpleMap() {
     const [data, setData] = useState([]);
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
-    const [velocityFilter, setVelocityFilter] = useState(0.5);
+    const [velocityFilter, setVelocityFilter] = useState(5.0);
 
     const debouncedViewState = useDebounce(viewState, 300);
     const debouncedVelocity = useDebounce(velocityFilter, 300);
@@ -93,7 +93,7 @@ function SimpleMap() {
                 <input
                     type="range"
                     min={0}
-                    max={0.5}
+                    max={5.0}
                     step={0.01}
                     value={velocityFilter}
                     onChange={e => setVelocityFilter(Number(e.target.value))}
