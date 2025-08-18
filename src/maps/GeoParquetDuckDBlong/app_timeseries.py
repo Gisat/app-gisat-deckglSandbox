@@ -9,6 +9,7 @@ CORS(app)
 
 # --- Configuration ---
 # Point to your reshaped, long-format file
+# GEOPARQUET_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_timeseries.geoparquet'
 GEOPARQUET_PATH = './sample_timeseries.geoparquet'
 
 # --- DuckDB Connection ---
