@@ -1,51 +1,28 @@
 # app_hybrid.py
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import duckdb
 import os
-from functools import lru_cache
+import io
+import pyarrow as pa # Import pyarrow
 
 app = Flask(__name__)
 CORS(app)
 
 # --- Configuration ---
-# GEOPARQUET_PATH = './sample_hybrid.geoparquet'
 GEOPARQUET_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_hybrid.geoparquet'
-# GEOPARQUET_PATH = './sample_100k_hybrid.geoparquet'
 
 # --- DuckDB Connection ---
-# This connection is created once when the app starts
 duckdb_con = duckdb.connect(database=':memory:', read_only=False)
 duckdb_con.install_extension("spatial")
 duckdb_con.load_extension("spatial")
 
-# --- Cached Query Function ---
-@lru_cache(maxsize=256) # Remembers the results of the 256 most recent queries
-def get_data_from_db(geoparquet_path, bbox_wkt, db_index):
-    """
-    This function's results are cached. If called again with the same
-    arguments, it will return the saved result instead of running the query.
-    """
-    print(f"--- CACHE MISS: Running new DuckDB query for index {db_index - 1} ---")
-    query = """
-    SELECT
-        longitude,
-        latitude,
-        displacements[?] AS displacement
-    FROM read_parquet(?)
-    WHERE ST_Intersects(geometry, ST_GeomFromText(?))
-    """
-    params = [db_index, geoparquet_path, bbox_wkt]
-    return duckdb_con.execute(query, params).fetchdf()
-
-# --- API Endpoints ---
 @app.route('/api/dates')
 def get_dates():
-    """Returns the single array of dates for the frontend slider."""
+    """Returns the single array of dates for the frontend slider (as JSON)."""
     try:
         query = "SELECT dates FROM read_parquet(?) LIMIT 1"
         dates_list_objects = duckdb_con.execute(query, [GEOPARQUET_PATH]).fetchone()[0]
-        # Convert each date object to an 'YYYY-MM-DD' string for JSON
         dates_list_strings = [d.strftime('%Y-%m-%d') for d in dates_list_objects]
         return jsonify(dates_list_strings)
     except Exception as e:
@@ -54,7 +31,7 @@ def get_dates():
 
 @app.route('/api/hybrid-data')
 def get_hybrid_data():
-    """Gets filtered data for a specific map view and date index."""
+    """Gets filtered data and returns it in the binary Arrow IPC format."""
     try:
         min_x = request.args.get('minx', type=float)
         min_y = request.args.get('miny', type=float)
@@ -70,20 +47,32 @@ def get_hybrid_data():
         bbox_wkt = f'POLYGON(({min_x} {min_y}, {max_x} {min_y}, {max_x} {max_y}, {min_x} {max_y}, {min_x} {min_y}))'
         db_index = date_index + 1
 
-        # Call the cached function to get the data
-        result_df = get_data_from_db(GEOPARQUET_PATH, bbox_wkt, db_index)
+        query = """
+        SELECT longitude, latitude, displacements[?] AS displacement
+        FROM read_parquet(?)
+        WHERE ST_Intersects(geometry, ST_GeomFromText(?))
+        """
+        params = [db_index, GEOPARQUET_PATH, bbox_wkt]
 
-        result_json = result_df.to_json(orient="records")
+        # --- Fetch data as a PyArrow Table ---
+        arrow_table = duckdb_con.execute(query, params).fetch_arrow_table()
 
-        from flask import Response
-        return Response(result_json, mimetype='application/json')
+        # --- Write the table to an in-memory buffer in Arrow IPC format ---
+        output_buffer = io.BytesIO()
+        with pa.ipc.RecordBatchStreamWriter(output_buffer, arrow_table.schema) as writer:
+            writer.write_table(arrow_table)
+        output_buffer.seek(0)
+
+        # --- Send the binary Arrow data ---
+        return send_file(output_buffer, mimetype='application/vnd.apache.arrow.stream')
+
     except Exception as e:
         print(f"Error during DuckDB query: {e}")
         return jsonify({"error": "Internal server error."}), 500
 
 if __name__ == '__main__':
     if not os.path.exists(GEOPARQUET_PATH):
-        print(f"FATAL: GeoParquet file not found at '{GEOPARQUET_PATH}'")
+        print(f"FATAL: Data file not found at '{GEOPARQUET_PATH}'")
     else:
-        print("\n--- Starting Flask Backend with Caching ---")
+        print("\n--- Starting Flask Backend for Arrow ---")
         app.run(debug=True, port=5000, host='0.0.0.0', threaded=False)

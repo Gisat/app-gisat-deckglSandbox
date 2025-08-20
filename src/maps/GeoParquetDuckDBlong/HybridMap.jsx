@@ -6,6 +6,8 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { ScatterplotLayer } from '@deck.gl/layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { scaleLinear } from 'd3-scale';
+import { load } from '@loaders.gl/core';
+import { ArrowLoader } from '@loaders.gl/arrow';
 
 // A custom hook to delay updates
 function useDebounce(value, delay) {
@@ -18,17 +20,12 @@ function useDebounce(value, delay) {
 }
 
 // --- Configuration ---
-const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 13, pitch: 0, bearing: 0 };
+const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 12, pitch: 0, bearing: 0 };
 const DATES_API_URL = 'http://localhost:5000/api/dates';
 const DATA_API_URL = 'http://localhost:5000/api/hybrid-data';
-
 const colorScale = scaleLinear()
     .domain([-20, 0, 20])
-    .range([
-        [65, 182, 196],
-        [254, 254, 191],
-        [215, 25, 28]
-    ])
+    .range([[65, 182, 196], [254, 254, 191], [215, 25, 28]])
     .clamp(true);
 
 function HybridMap() {
@@ -45,21 +42,17 @@ function HybridMap() {
     // Effect 1: Fetch the list of dates once on startup
     useEffect(() => {
         fetch(DATES_API_URL)
-            .then(response => response.json())
-            .then(dateList => {
-                setDates(dateList);
-                setIsLoading(false);
-            })
-            .catch(error => console.error("Error fetching dates:", error));
+            .then(res => res.json())
+            .then(d => { setDates(d); setIsLoading(false); });
     }, []);
 
-    // Effect 2: Fetch map data
+    // Effect 2: Fetch map data using debounced values and caching
     useEffect(() => {
         if (dates.length === 0) return;
 
         const viewport = new WebMercatorViewport(debouncedViewState);
         const [minLon, minLat, maxLon, maxLat] = viewport.getBounds();
-        const backendQueryUrl = `${DATA_API_URL}?minx=${minLon}&miny=${minLat}&maxx=${maxLon}&maxy=${maxLat}&date_index=${debouncedTimeIndex}`;
+        const backendQueryUrl = `${DATA_API_URL}?minx=${minLon}&miny=${minLat}&maxx=${maxLon}&maxy=${maxLat}&date_index=${debouncedTimeIndex}&zoom=${debouncedViewState.zoom}`;
 
         if (dataCache.current[backendQueryUrl]) {
             setData(dataCache.current[backendQueryUrl]);
@@ -67,53 +60,51 @@ function HybridMap() {
         }
 
         setIsLoading(true);
-        fetch(backendQueryUrl)
-            .then(response => response.json())
-            .then(jsonData => {
-                if (jsonData) {
-                    dataCache.current[backendQueryUrl] = jsonData;
-                    setData(jsonData);
-                }
+        load(backendQueryUrl, ArrowLoader, { arrow: { shape: 'object-row-table' } })
+            .then(loadedData => {
+                dataCache.current[backendQueryUrl] = loadedData;
+                setData(loadedData);
             })
             .catch(error => console.error("Backend Load Error:", error))
             .finally(() => setIsLoading(false));
 
     }, [debouncedViewState, debouncedTimeIndex, dates]);
 
-    // --- FIX: Restored the layer definitions ---
+    const isAggregated = data && data.length > 0 && data[0].value !== undefined;
+
     const layers = [
         new TileLayer({
             id: 'tile-layer',
             data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-            minZoom: 0,
-            maxZoom: 19,
-            tileSize: 256,
+            minZoom: 0, maxZoom: 19, tileSize: 256,
             renderSubLayers: props => {
                 const { west, south, east, north } = props.tile.bbox;
-                return new BitmapLayer(props, {
-                    data: null,
-                    image: props.data,
-                    bounds: [west, south, east, north]
-                });
+                return new BitmapLayer(props, { data: null, image: props.data, bounds: [west, south, east, north] });
             }
         }),
         new ScatterplotLayer({
-            id: 'scatterplot-layer',
+            id: 'data-layer',
             data,
             getPosition: d => [d.longitude, d.latitude],
             getFillColor: d => {
-                const rgb = colorScale(d.displacement);
+                const value = isAggregated ? d.value : d.displacement;
+                const rgb = colorScale(value);
                 if (!rgb) return [0, 0, 0, 0];
                 return [rgb[0], rgb[1], rgb[2], 180];
             },
-            getRadius: 5,
+            getRadius: isAggregated ? 400 : 5,
             pickable: true,
+            transitions: {
+                getFillColor: 100
+            }
         })
     ];
 
     return (
         <div>
             <div style={{ position: 'absolute', bottom: 20, left: '10%', width: '80%', zIndex: 1, background: 'white', padding: '10px', fontFamily: 'sans-serif', borderRadius: '5px', boxShadow: '0 0 10px rgba(0,0,0,0.2)' }}>
+
+                {/* Notice there is NO separate {isLoading && ...} div here */}
                 <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                     <button
                         onClick={() => setTimeIndex(timeIndex - 1)}
@@ -123,6 +114,7 @@ function HybridMap() {
                     </button>
 
                     <div style={{textAlign: 'center', flexGrow: 1}}>
+                        {/* The loading text is handled directly inside the label */}
                         <label>Date: {isLoading ? 'Loading...' : (dates[timeIndex] || '...')}</label>
                         <input
                             type="range"
