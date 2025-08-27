@@ -8,6 +8,7 @@ import { BitmapLayer } from '@deck.gl/layers';
 import { scaleLinear } from 'd3-scale';
 import { SphereGeometry } from '@luma.gl/engine';
 
+// A custom hook to delay updates
 function useDebounce(value, delay) {
     const [debouncedValue, setDebouncedValue] = useState(value);
     useEffect(() => {
@@ -38,8 +39,6 @@ function HybridMap3D() {
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
     const [timeIndex, setTimeIndex] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
-
-    // --- NEW: Add refs for the cache and the map container ---
     const dataCache = useRef({});
     const mapContainerRef = useRef(null);
 
@@ -121,7 +120,7 @@ function HybridMap3D() {
     ];
 
     return (
-        <div>
+        <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh' }}>
             <div style={{ position: 'absolute', bottom: 20, left: '10%', width: '80%', zIndex: 1, background: 'white', padding: '10px', fontFamily: 'sans-serif', borderRadius: '5px', boxShadow: '0 0 10px rgba(0,0,0,0.2)' }}>
                 <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                     <button onClick={() => setTimeIndex(timeIndex - 1)} disabled={isLoading || timeIndex === 0}>Back</button>
