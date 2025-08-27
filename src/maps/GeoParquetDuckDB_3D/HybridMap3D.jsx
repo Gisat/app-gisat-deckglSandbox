@@ -1,5 +1,5 @@
 // src/maps/HybridMap3D.jsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView, WebMercatorViewport } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
@@ -22,14 +22,15 @@ const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch:
 const DATES_API_URL = 'http://localhost:5000/api/dates';
 const DATA_API_URL = 'http://localhost:5000/api/3d-data';
 const colorScale = scaleLinear().domain([-20, 0, 20]).range([[65, 182, 196], [254, 254, 191], [215, 25, 28]]).clamp(true);
+const sizeScale = scaleLinear().domain([0, 5]).range([1, 10]).clamp(true);
 const sphere = new SphereGeometry({ radius: 1, nlat: 10, nlong: 10 });
 
-// --- NEW: Create a size scale based on your requirements ---
-// Maps an input domain of [0, 5] (absolute velocity) to an output range of [1, 10] (size in meters)
-const sizeScale = scaleLinear()
-    .domain([0, 5])
-    .range([1, 10])
-    .clamp(true);
+// --- NEW: Caching Strategy ---
+// Set to `true` to use a rounded, "fuzzy" key. This is better for performance
+// as it allows similar map views to share a cache entry.
+// Set to `false` to use the exact, "precise" bounding box. You will notice
+// very few cache hits with this method.
+const USE_FUZZY_CACHE = true;
 
 function HybridMap3D() {
     const [data, setData] = useState([]);
@@ -37,6 +38,10 @@ function HybridMap3D() {
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
     const [timeIndex, setTimeIndex] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
+
+    // --- NEW: Add refs for the cache and the map container ---
+    const dataCache = useRef({});
+    const mapContainerRef = useRef(null);
 
     const debouncedViewState = useDebounce(viewState, 300);
     const debouncedTimeIndex = useDebounce(timeIndex, 200);
@@ -51,17 +56,41 @@ function HybridMap3D() {
 
     // Effect to fetch map data
     useEffect(() => {
-        if (dates.length === 0) return;
-        const viewport = new WebMercatorViewport(debouncedViewState);
+        if (dates.length === 0 || !mapContainerRef.current) return;
+
+        const { clientWidth, clientHeight } = mapContainerRef.current;
+        const viewport = new WebMercatorViewport({ ...debouncedViewState, width: clientWidth, height: clientHeight });
         const [minLon, minLat, maxLon, maxLat] = viewport.getBounds();
         const backendQueryUrl = `${DATA_API_URL}?minx=${minLon}&miny=${minLat}&maxx=${maxLon}&maxy=${maxLat}&date_index=${debouncedTimeIndex}`;
 
+        // --- NEW: Logic to generate cache key based on the constant ---
+        let cacheKey;
+        if (USE_FUZZY_CACHE) {
+            const roundedZoom = Math.round(debouncedViewState.zoom * 10) / 10;
+            const roundedLat = debouncedViewState.latitude.toFixed(3);
+            const roundedLon = debouncedViewState.longitude.toFixed(3);
+            cacheKey = `${roundedZoom}-${roundedLat}-${roundedLon}-${debouncedTimeIndex}`;
+        } else {
+            cacheKey = backendQueryUrl;
+        }
+
+        if (dataCache.current[cacheKey]) {
+            console.log(`Loading from ${USE_FUZZY_CACHE ? 'fuzzy' : 'precise'} cache...`);
+            setData(dataCache.current[cacheKey]);
+            return;
+        }
+
         setIsLoading(true);
+        console.log("Fetching from backend...");
         fetch(backendQueryUrl)
             .then(response => response.json())
-            .then(setData)
+            .then(jsonData => {
+                dataCache.current[cacheKey] = jsonData;
+                setData(jsonData);
+            })
             .catch(error => console.error("Backend Load Error:", error))
             .finally(() => setIsLoading(false));
+
     }, [debouncedViewState, debouncedTimeIndex, dates]);
 
     const layers = [
@@ -83,9 +112,7 @@ function HybridMap3D() {
                 const rgb = colorScale(d.displacement);
                 return [rgb[0], rgb[1], rgb[2], 200];
             },
-            // --- UPDATED: getScale is now a function that uses the size scale ---
             getScale: d => {
-                // Use the absolute value of mean_velocity for size
                 const size = sizeScale(Math.abs(d.mean_velocity));
                 return [size, size, size];
             },
@@ -114,6 +141,7 @@ function HybridMap3D() {
                     <button onClick={() => setTimeIndex(timeIndex + 1)} disabled={isLoading || timeIndex >= dates.length - 1}>Next</button>
                 </div>
             </div>
+
             <DeckGL
                 initialViewState={INITIAL_VIEW_STATE}
                 onViewStateChange={({ viewState }) => setViewState(viewState)}

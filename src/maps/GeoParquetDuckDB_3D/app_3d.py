@@ -1,5 +1,5 @@
 # app_3d.py
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import duckdb
 import os
@@ -20,13 +20,14 @@ def get_dates():
     try:
         query = "SELECT dates FROM read_parquet(?) LIMIT 1"
         dates_list_objects = duckdb_con.execute(query, [GEOPARQUET_PATH]).fetchone()[0]
+        # --- FIX: Convert each date object to an 'YYYY-MM-DD' string ---
         dates_list_strings = [d.strftime('%Y-%m-%d') for d in dates_list_objects]
         return jsonify(dates_list_strings)
     except Exception as e:
         print(f"Error in /api/dates: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/3d-data')
+@app.route('/api/3d-data') # Note the endpoint name
 def get_3d_data():
     try:
         min_x = request.args.get('minx', type=float)
@@ -40,10 +41,9 @@ def get_3d_data():
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
     try:
-        bbox_wkt = f'POLYGON(({min_x} {min_y}, {max_x} {min_y}, {max_x} {max_y}, {min_x} {min_y}))'
+        bbox_wkt = f'POLYGON(({min_x} {min_y}, {max_x} {min_y}, {max_x} {max_y}, {min_x} {max_y}, {min_x} {min_y}))'
         db_index = date_index + 1
 
-        # --- UPDATED QUERY: Also select the 'mean_velocity' column ---
         query = """
         SELECT
             ST_X(geometry) AS longitude,
