@@ -5,12 +5,7 @@ import pandas as pd
 import os
 
 # --- Configuration ---
-# Point this to your ORIGINAL, WIDE-FORMAT CSV file
-# INPUT_WIDE_CSV_PATH = './sample_wide.csv'
-# INPUT_WIDE_CSV_PATH = './sample_100k_wide.csv'
 INPUT_WIDE_CSV_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/EGMS_L2b_146_0296_IW2_VV_2019_2023_1.csv'
-# OUTPUT_HYBRID_GEOPARQUET_PATH = './sample_hybrid.geoparquet'
-# OUTPUT_HYBRID_GEOPARQUET_PATH = './sample_100k_hybrid.geoparquet'
 OUTPUT_HYBRID_GEOPARQUET_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_hybrid.geoparquet'
 # List of all your static, non-date columns from the original CSV
 STATIC_COLUMNS = [
