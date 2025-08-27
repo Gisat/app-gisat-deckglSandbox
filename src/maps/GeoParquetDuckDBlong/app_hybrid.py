@@ -11,6 +11,7 @@ CORS(app)
 
 # --- Configuration ---
 GEOPARQUET_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_hybrid.geoparquet'
+# GEOPARQUET_PATH = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/egms_hybrid.geoparquet'
 
 # --- DuckDB Connection ---
 duckdb_con = duckdb.connect(database=':memory:', read_only=False)
@@ -71,8 +72,5 @@ def get_hybrid_data():
         return jsonify({"error": "Internal server error."}), 500
 
 if __name__ == '__main__':
-    if not os.path.exists(GEOPARQUET_PATH):
-        print(f"FATAL: Data file not found at '{GEOPARQUET_PATH}'")
-    else:
-        print("\n--- Starting Flask Backend for Arrow ---")
-        app.run(debug=True, port=5000, host='0.0.0.0', threaded=False)
+    print("\n--- Starting Flask Backend for Arrow ---")
+    app.run(debug=True, port=5000, host='0.0.0.0', threaded=False)
