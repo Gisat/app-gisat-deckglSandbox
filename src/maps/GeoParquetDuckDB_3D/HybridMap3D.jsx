@@ -1,4 +1,3 @@
-// src/maps/HybridMap3D.jsx
 import React, { useEffect, useState, useRef } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView, WebMercatorViewport } from '@deck.gl/core';
@@ -7,6 +6,8 @@ import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { scaleLinear } from 'd3-scale';
 import { SphereGeometry } from '@luma.gl/engine';
+import { load } from '@loaders.gl/core';
+import { ArrowLoader } from '@loaders.gl/arrow';
 
 // A custom hook to delay updates
 function useDebounce(value, delay) {
@@ -55,37 +56,41 @@ function HybridMap3D() {
 
     // Effect to fetch map data
     useEffect(() => {
-        if (dates.length === 0 || !mapContainerRef.current) return;
+        // Wait until the container has rendered and has a valid size
+        if (dates.length === 0 || !mapContainerRef.current || mapContainerRef.current.clientWidth === 0) {
+            return;
+        }
 
         const { clientWidth, clientHeight } = mapContainerRef.current;
+
         const viewport = new WebMercatorViewport({ ...debouncedViewState, width: clientWidth, height: clientHeight });
         const [minLon, minLat, maxLon, maxLat] = viewport.getBounds();
-        const backendQueryUrl = `${DATA_API_URL}?minx=${minLon}&miny=${minLat}&maxx=${maxLon}&maxy=${maxLat}&date_index=${debouncedTimeIndex}`;
 
-        // --- NEW: Logic to generate cache key based on the constant ---
         let cacheKey;
         if (USE_FUZZY_CACHE) {
-            const roundedZoom = Math.round(debouncedViewState.zoom * 10) / 10;
-            const roundedLat = debouncedViewState.latitude.toFixed(3);
-            const roundedLon = debouncedViewState.longitude.toFixed(3);
+            const roundedZoom = Math.round(debouncedViewState.zoom);
+            const roundedLat = debouncedViewState.latitude.toFixed(2);
+            const roundedLon = debouncedViewState.longitude.toFixed(2);
             cacheKey = `${roundedZoom}-${roundedLat}-${roundedLon}-${debouncedTimeIndex}`;
         } else {
-            cacheKey = backendQueryUrl;
+            cacheKey = `${minLon}-${minLat}-${maxLon}-${maxLat}-${debouncedTimeIndex}`;
         }
 
         if (dataCache.current[cacheKey]) {
             console.log(`Loading from ${USE_FUZZY_CACHE ? 'fuzzy' : 'precise'} cache...`);
             setData(dataCache.current[cacheKey]);
+            setIsLoading(false);
             return;
         }
 
         setIsLoading(true);
         console.log("Fetching from backend...");
-        fetch(backendQueryUrl)
-            .then(response => response.json())
-            .then(jsonData => {
-                dataCache.current[cacheKey] = jsonData;
-                setData(jsonData);
+        const backendQueryUrl = `${DATA_API_URL}?minx=${minLon}&miny=${minLat}&maxx=${maxLon}&maxy=${maxLat}&date_index=${debouncedTimeIndex}`;
+
+        load(backendQueryUrl, ArrowLoader, { arrow: { shape: 'object-row-table' } })
+            .then(loadedData => {
+                dataCache.current[cacheKey] = loadedData;
+                setData(loadedData);
             })
             .catch(error => console.error("Backend Load Error:", error))
             .finally(() => setIsLoading(false));
@@ -96,7 +101,6 @@ function HybridMap3D() {
         new TileLayer({
             id: 'tile-layer', data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
             minZoom: 0, maxZoom: 19, tileSize: 256,
-            depthTest: false,
             renderSubLayers: props => {
                 const { west, south, east, north } = props.tile.bbox;
                 return new BitmapLayer(props, { data: null, image: props.data, bounds: [west, south, east, north] });
@@ -120,7 +124,7 @@ function HybridMap3D() {
     ];
 
     return (
-        <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+        <div ref={mapContainerRef} style={{ position: 'relative', width: '80vw', height: '100vh' }}>
             <div style={{ position: 'absolute', bottom: 20, left: '10%', width: '80%', zIndex: 1, background: 'white', padding: '10px', fontFamily: 'sans-serif', borderRadius: '5px', boxShadow: '0 0 10px rgba(0,0,0,0.2)' }}>
                 <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                     <button onClick={() => setTimeIndex(timeIndex - 1)} disabled={isLoading || timeIndex === 0}>Back</button>
