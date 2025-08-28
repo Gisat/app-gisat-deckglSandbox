@@ -15,19 +15,22 @@ else:
     try:
         print(f"Reading GeoJSON file: {INPUT_GEOJSON_PATH}")
         gdf = gpd.read_file(INPUT_GEOJSON_PATH)
-        print(f"Read {len(gdf)} polygons into GeoDataFrame.")
+        print(f"Read {len(gdf)} features.")
 
-        # Ensure the 'h' column, used for height, is a numeric type (float)
-        if 'h' in gdf.columns:
-            gdf['h'] = gdf['h'].astype(float)
+        # ✅ FIX: Explode all MultiPolygons into single Polygons.
+        # This ensures every row in the output contains one simple polygon.
+        gdf_exploded = gdf.explode(index_parts=False)
+        print(f"Exploded MultiPolygons. New total: {len(gdf_exploded)} polygons.")
+
+        if 'h' in gdf_exploded.columns:
+            gdf_exploded['h'] = gdf_exploded['h'].astype(float)
             print("Validated 'h' column for extrusion.")
         else:
             raise ValueError("The specified height column 'h' was not found in the GeoJSON properties.")
 
-        # Spatially sort the data using Hilbert distance for faster queries later
         print("Spatially sorting the data...")
-        gdf['hilbert'] = gdf.geometry.hilbert_distance()
-        gdf_sorted = gdf.sort_values('hilbert').drop(columns=['hilbert'])
+        gdf_exploded['hilbert'] = gdf_exploded.geometry.hilbert_distance()
+        gdf_sorted = gdf_exploded.sort_values('hilbert').drop(columns=['hilbert'])
         print("Sorting complete.")
 
         print(f"Saving final GeoParquet file to: {OUTPUT_GEOPARQUET_PATH}")
