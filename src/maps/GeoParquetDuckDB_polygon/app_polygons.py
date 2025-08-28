@@ -24,28 +24,42 @@ def get_polygon_data():
         min_y = request.args.get('miny', type=float)
         max_x = request.args.get('maxx', type=float)
         max_y = request.args.get('maxy', type=float)
+        if None in [min_x, min_y, max_x, max_y]:
+            return jsonify({"error": "Missing bounding box parameters."}), 400
     except Exception as e:
         return jsonify({"error": f"Invalid filter parameters: {e}"}), 400
 
     try:
         bbox_wkt = f'POLYGON(({min_x} {min_y}, {max_x} {min_y}, {max_x} {max_y}, {min_x} {max_y}, {min_x} {min_y}))'
 
-        # ✅ This query converts geometry to a GeoJSON string, matching the 'object-row-table' approach.
+        # ✅ FIX: This query now uses a Common Table Expression (CTE) for robustness.
         query = """
+        -- Step 1: Create a temporary table called 'exploded_geometries'
+        WITH exploded_geometries AS (
+            SELECT
+                *, -- Select all original columns from the parquet file
+                UNNEST(ST_Dump(geometry)) as dumped_struct -- Unnest the geometry structure
+            FROM read_parquet(?)
+            WHERE ST_Intersects(geometry, ST_GeomFromText(?))
+        )
+        -- Step 2: Select from the temporary table
         SELECT
-            "id_ruian", "dokonceni", "typ_kod", "h", "avg_vel_l_e3", "range_vel_l_e3",
-            "range_vel_cum_e3", "avg_abs_accel_e3", "cnt_mp_e3", "cl_risk_e3",
-            ST_AsGeoJSON(geometry) as geometry
-        FROM read_parquet(?)
-        WHERE ST_Intersects(geometry, ST_GeomFromText(?))
+            "id_ruian", "dokonceni", "typ_kod", "h", "avg_vel_l_e3",
+            "range_vel_l_e3", "range_vel_cum_e3", "avg_abs_accel_e3",
+            "cnt_mp_e3", "cl_risk_e3",
+            -- Safely access the 'geom' field from the 'dumped_struct'
+            ST_AsGeoJSON(dumped_struct.geom) as geometry
+        FROM exploded_geometries;
         """
         params = [GEOPARQUET_PATH, bbox_wkt]
         arrow_table = duckdb_con.execute(query, params).fetch_arrow_table()
+
         output_buffer = io.BytesIO()
         with pa.ipc.RecordBatchStreamWriter(output_buffer, arrow_table.schema) as writer:
             writer.write_table(arrow_table)
         output_buffer.seek(0)
         return send_file(output_buffer, mimetype='application/vnd.apache.arrow.stream')
+
     except Exception as e:
         print(f"Error during DuckDB query: {e}")
         return jsonify({"error": "Internal server error."}), 500

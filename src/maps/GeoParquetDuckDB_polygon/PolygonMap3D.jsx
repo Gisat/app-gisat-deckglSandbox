@@ -16,7 +16,6 @@ function useDebounce(value, delay) {
     return debouncedValue;
 }
 
-
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch: 45, bearing: 0, minPitch: 30 };
 const DATA_API_URL = 'http://localhost:5001/api/polygon-data';
 const riskColors = {
@@ -44,17 +43,12 @@ function PolygonMap3D() {
 
         setIsLoading(true);
 
-        // ✅ Use the same 'object-row-table' shape as your working point map
         load(backendQueryUrl, ArrowLoader, { arrow: { shape: 'object-row-table' } })
             .then(loadedData => {
-                // ✅ ADD THIS LINE to see what the loader is returning
-                console.log("Data received from loader:", loadedData);
-                // ✅ Since 'geometry' is a GeoJSON string, we must parse it
                 const finalData = loadedData.data.map(d => ({
                     ...d,
                     geometry: JSON.parse(d.geometry)
                 }));
-                console.log(finalData);
                 setData(finalData);
             })
             .catch(error => console.error("Backend Load Error:", error))
@@ -73,10 +67,10 @@ function PolygonMap3D() {
             id: 'polygon-layer',
             data,
             extruded: true,
-            // ✅ Use simple accessors because 'data' is now a simple array of objects
-            getPolygon: d => d.geometry.coordinates[0],
+            // ✅ This now works perfectly because the backend sends consistent, simple polygon data.
+            getPolygon: d => d.geometry.coordinates,
             getElevation: d => d.h,
-            getFillColor: (d) => riskColors[d.cl_risk_e3] || [255, 255, 255, 255],
+            getFillColor: d => riskColors[d.cl_risk_e3] || [128, 128, 128, 128],
             getLineColor: [80, 80, 80],
             lineWidthMinPixels: 1,
             pickable: true,
