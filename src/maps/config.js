@@ -13,6 +13,10 @@ import geoParquetGisat from './GeoParquetGisat/index.jsx';
 import geoParquetDemo from './GeoParquetDemo/index.jsx';
 import geoParquetLoaders from './GeoparquetLoaders/index.jsx';
 import geoParquetLoadersBinary from './GeoparquetLoadersBinary/index.jsx';
+import geoParquetDuckDB from './GeoParquetDuckDB/index.jsx';
+import geoParquetDuckDB3D from './GeoParquetDuckDB_3D/HybridMap3D.jsx';
+import geoParquetDuckDB2D from './GeoParquetDuckDB_2D/HybridMap.jsx';
+import geoParquetDuckDBpolygon from './GeoParquetDuckDB_polygon/PolygonMap3D.jsx';
 import MetroDarrows3D from "./MetroD_arrows_3D/index.jsx";
 
 const mapApps = [
@@ -23,15 +27,18 @@ const mapApps = [
     { name: 'P3 D8: 2D arrows', path: '/d8-icon-arrows', component: D8_iconArrows },
     { name: 'P3 D8: 3D arrows', path: '/d8-filter', component: D8_filter },
     { name: 'P3 D8: vertical profile', path: '/vertical_profile', component: vertical_profile },
-    // { name: 'POC Google 3D Tiles', path: '/google-3d-tiles', component: Google3DTiles },
-    { name: 'POC Test App', path: '/test-app', component: MapApp1 },
-    { name: 'POC Buildings 3D', path: 'buildings-3D', component: building3D },
-    { name: 'POC 3D Tiles Layer', path: '/deck-3d-tiles', component: deck3DTiles },
-    { name: 'POC GeoParquet Gisat', path: '/geo-parquet-gisat', component: geoParquetGisat },
-    { name: 'POC GeoParquet Demo', path: '/geo-parquet-demo', component: geoParquetDemo },
-    { name: 'POC GeoParquet Loaders', path: '/geo-parquet-loaders', component: geoParquetLoaders },
-    { name: 'POC GeoParquet Loaders v2', path: '/geo-parquet-loaders-binary', component: geoParquetLoadersBinary },
-
+    // { name: 'Google 3D Tiles', path: '/google-3d-tiles', component: Google3DTiles },
+    { name: 'Test App', path: '/test-app', component: MapApp1 },
+    { name: 'Buildings 3D', path: 'buildings-3D', component: building3D },
+    { name: '3D Tiles Layer', path: '/deck-3d-tiles', component: deck3DTiles },
+    { name: 'GeoParquet Gisat', path: '/geo-parquet-gisat', component: geoParquetGisat },
+    { name: 'GeoParquet Demo', path: '/geo-parquet-demo', component: geoParquetDemo },
+    { name: 'GeoParquet Loaders', path: '/geo-parquet-loaders', component: geoParquetLoaders },
+    { name: 'GeoParquet Loaders v2', path: '/geo-parquet-loaders-binary', component: geoParquetLoadersBinary },
+    // { name: 'GeoParquet DuckDB', path: '/geo-parquet-duckdb', component: geoParquetDuckDB },
+    { name: 'GeoParquet DuckDB 2D', path: '/geoparquet-duckdb-2d', component: geoParquetDuckDB2D },
+    { name: 'GeoParquet DuckDB 3D', path: '/geoparquet-duckdb-3d', component: geoParquetDuckDB3D },
+    { name: 'GeoParquet DuckDB polygon', path: '/geoparquet-duckdb-polygon', component: geoParquetDuckDBpolygon },
 ];
 
 export default mapApps;
