@@ -13,6 +13,7 @@ export async function setupDB() {
     // Use your actual file name and S3 URL here
     const file = "data_subset.geoparquet";
     const url = "https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/egms_hybrid_subset.geoparquet";
+    // const url = "https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/egms_hybrid_optimized.geoparquet";
 
     await db.registerFileURL(
         file,

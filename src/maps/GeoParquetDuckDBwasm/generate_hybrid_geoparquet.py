@@ -6,8 +6,8 @@ import os
 
 # --- Configuration ---
 INPUT_WIDE_CSV_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/EGMS_L2b_146_0296_IW2_VV_2019_2023_1.csv'
-OUTPUT_HYBRID_GEOPARQUET_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_hybrid.geoparquet'
-# List of all your static, non-date columns from the original CSV
+OUTPUT_HYBRID_GEOPARQUET_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_hybrid_optimized.geoparquet' # Changed output name
+# List of all your static, non-date columns
 STATIC_COLUMNS = [
     'pid', 'mp_type', 'latitude', 'longitude', 'easting', 'northing', 'height',
     'height_wgs84', 'line', 'pixel', 'rmse', 'temporal_coherence',
@@ -15,6 +15,8 @@ STATIC_COLUMNS = [
     'los_north', 'los_up', 'mean_velocity', 'mean_velocity_std',
     'acceleration', 'acceleration_std', 'seasonality', 'seasonality_std'
 ]
+# --- NEW: Row Group Size Configuration ---
+OPTIMAL_ROW_GROUP_SIZE = 122880 # Recommended by DuckDB docs
 # --- End Configuration ---
 
 print(f"--- Starting Spatially Optimized Hybrid GeoParquet Generation ---")
@@ -49,18 +51,22 @@ try:
         crs="EPSG:4326"
     )
 
-    # --- FIX: Spatially sort the data correctly in two steps ---
+    # Spatially sort the data using Hilbert curve
     print("Spatially sorting the data...")
-    # 1. Create a new, temporary column containing the hilbert distance
     gdf['hilbert'] = gdf.geometry.hilbert_distance()
-
-    # 2. Sort the DataFrame BY THE NAME of the new column, then drop it
     gdf_sorted = gdf.sort_values('hilbert').drop(columns=['hilbert'])
     print("Sorting complete.")
 
-    print("Saving final hybrid GeoParquet file...")
-    gdf_sorted.to_parquet(OUTPUT_HYBRID_GEOPARQUET_PATH, index=False, compression='snappy')
-    print(f"Successfully wrote spatially sorted file to: {OUTPUT_HYBRID_GEOPARQUET_PATH}")
+    # --- UPDATED: Save with specified row_group_size ---
+    print(f"Saving final hybrid GeoParquet file with row group size: {OPTIMAL_ROW_GROUP_SIZE}...")
+    gdf_sorted.to_parquet(
+        OUTPUT_HYBRID_GEOPARQUET_PATH,
+        index=False,
+        compression='snappy', # Snappy is generally a good balance
+        row_group_size=OPTIMAL_ROW_GROUP_SIZE # Explicitly set row group size
+    )
+    print(f"Successfully wrote optimized file to: {OUTPUT_HYBRID_GEOPARQUET_PATH}")
+    # --- END UPDATE ---
 
 except Exception as e:
     print(f"An error occurred: {e}")
