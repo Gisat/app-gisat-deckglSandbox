@@ -203,8 +203,8 @@ function MinimalWasmMap() {
         id: 'scatterplot-layer',
         data: points,
         getPosition: d => d.position,
-        // getRadius: 8,
-        radiusUnits: 'pixels',
+        getRadius: 15,
+        // radiusUnits: 'pixels',
         getFillColor: d => {
             const rgb = colorScale(d.displacement);
             return [rgb[0], rgb[1], rgb[2], 180];
