@@ -1,5 +1,5 @@
 // src/maps/MinimalWasmMap.jsx
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react'; // Removed useTransition
 import { DeckGL } from 'deck.gl';
 import { MapView, WebMercatorViewport } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
@@ -38,17 +38,15 @@ const DATES_QUERY = `
 
 function MinimalWasmMap() {
     const [dbInitialized, setDbInitialized] = useState(false);
-    const [positionArray, setPositionArray] = useState(null); // Flat binary array for positions
-    const [attributeTable, setAttributeTable] = useState(null); // Arrow table for attributes
+    const [positionArray, setPositionArray] = useState(null);
+    const [attributeTable, setAttributeTable] = useState(null);
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
     const [visiblePointCount, setVisiblePointCount] = useState(0);
     const [dates, setDates] = useState([]);
     const [timeIndex, setTimeIndex] = useState(0);
     const [isDatesLoading, setIsDatesLoading] = useState(true);
     const mapContainerRef = useRef(null);
-    // Use refs for logging flags to prevent spam
-    const hasLoggedColorAccessor = useRef(false);
-    const hasLoggedTooltipAccessor = useRef(false);
+    // Removed isPending, startTransition
 
     const debouncedViewState = useDebounce(viewState, 500);
     const debouncedTimeIndex = useDebounce(timeIndex, 200);
@@ -59,7 +57,7 @@ function MinimalWasmMap() {
     useEffect(() => {
         async function setup() {
             try {
-                console.log("Running DB setup...");
+                // console.log("Running DB setup...");
                 await setupDB();
                 console.log("✅ DB setup finished.");
                 setDbInitialized(true);
@@ -73,9 +71,9 @@ function MinimalWasmMap() {
     // Fetch Dates Effect
     useEffect(() => {
         if (dbInitialized && db) {
-            // ... (same working date fetching code) ...
-            setIsDatesLoading(true); console.log("⏳ Fetching dates...");
-            const fetchDates = async () => { /* ... */
+            setIsDatesLoading(true);
+            // console.log("⏳ Fetching dates...");
+            const fetchDates = async () => {
                 let conn = null;
                 try {
                     conn = await db.connect(); const result = await conn.query(DATES_QUERY);
@@ -98,12 +96,11 @@ function MinimalWasmMap() {
 
     // Generate dynamic query for points
     const currentQuery = useMemo(() => {
-        // ... (same query generation code selecting x, y, displacement) ...
         if (!dbInitialized || !mapContainerRef.current || dates.length === 0) return null;
         const { clientWidth, clientHeight } = mapContainerRef.current; if (!clientWidth || !clientHeight) return null;
         const viewport = new WebMercatorViewport({ ...debouncedViewState, width: clientWidth, height: clientHeight });
         const [minLon, minLat, maxLon, maxLat] = viewport.getBounds(); if ([minLon, minLat, maxLon, maxLat].some(isNaN)) { return null; }
-        console.log(`🗺️ Querying bounds: [${minLon.toFixed(4)}, ${minLat.toFixed(4)}, ${maxLon.toFixed(4)}, ${maxLat.toFixed(4)}] Index: ${debouncedTimeIndex}`);
+        // console.log(`🗺️ Querying bounds for index: ${debouncedTimeIndex}`); // Cleaned
         const dbIndex = debouncedTimeIndex + 1;
         return ` LOAD httpfs; LOAD spatial; SELECT ST_X(geometry) AS x, ST_Y(geometry) AS y, displacements[${dbIndex}] AS displacement FROM read_parquet('data_subset.geoparquet') WHERE geometry IS NOT NULL AND ST_Intersects( geometry, ST_MakeEnvelope(${minLon}, ${minLat}, ${maxLon}, ${maxLat}) ) AND displacement IS NOT NULL; `;
     }, [dbInitialized, debouncedViewState, debouncedTimeIndex, dates]);
@@ -111,44 +108,45 @@ function MinimalWasmMap() {
     // Fetch point data
     const { arrow: data, loading: pointsLoading } = useDuckDbQuery(currentQuery);
 
-    // Process Arrow Table -> Flat Float64Array for positions
+    // Process Arrow Table -> Flat Float64Array
     useEffect(() => {
-        // Reset logging flags when new data comes in
-        hasLoggedColorAccessor.current = false;
-        hasLoggedTooltipAccessor.current = false;
-
+        // Only update state if new, valid data arrives
         if (data && data.numRows > 0) {
-            console.log(`➡️ Arrow table loaded/updated, numRows: ${data.numRows}`);
-            setVisiblePointCount(data.numRows);
-            setAttributeTable(data); // Keep original table for attribute access
-
+            // console.log(`➡️ Arrow table loaded/updated, numRows: ${data.numRows}`);
             const xVector = data.getChild('x');
             const yVector = data.getChild('y');
-
             if (!xVector || !yVector) {
-                console.error("❌ Could not find 'x' or 'y' columns."); setPositionArray(null); return;
+                console.error("❌ Could not find 'x' or 'y' columns.");
+                // Avoid clearing state here to prevent flicker
+                return;
             }
 
-            console.log("⏳ Creating flat position array...");
+            // console.log("⏳ Creating flat position array...");
             const N = data.numRows;
             const positions = new Float64Array(N * 2);
             for (let i = 0; i < N; i++) {
                 positions[i * 2] = xVector.get(i);
                 positions[i * 2 + 1] = yVector.get(i);
             }
-            setPositionArray(positions);
-            console.log(`✅ Flat position array created (length ${positions.length}).`);
 
-        } else if (data) {
-            console.log("📊 Data loaded, but 0 rows returned."); setVisiblePointCount(0); setPositionArray(null); setAttributeTable(null);
-        } else {
-            setVisiblePointCount(0); setPositionArray(null); setAttributeTable(null);
+            // Set state only when processing is complete
+            setPositionArray(positions);
+            setAttributeTable(data);
+            setVisiblePointCount(data.numRows);
+            // console.log(`✅ Flat position array created (length ${positions.length}).`);
+
+        } else if (data && data.numRows === 0) {
+            // Only clear state if the query explicitly returned 0 rows
+            // console.log("📊 Data loaded, 0 rows returned.");
+            setVisiblePointCount(0);
+            setPositionArray(null);
+            setAttributeTable(null);
         }
-    }, [data]);
+        // If data is null (loading), do nothing, keep old state visible
+    }, [data]); // Only depends on data
 
     // Define Layers
     const baseMapLayer = new TileLayer({
-        // ... (same base map layer code) ...
         id: 'tile-layer', data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
         minZoom: 0, maxZoom: 19, tileSize: 256,
         renderSubLayers: props => {
@@ -157,57 +155,43 @@ function MinimalWasmMap() {
         }
     });
 
-    // --- UPDATED: Use ScatterplotLayer with separated binary/attribute data ---
     const pointsLayer = attributeTable && positionArray && new ScatterplotLayer({
         id: 'scatterplot-layer',
-
-        // Give Deck.gl a simple way to count rows
-        data: { length: visiblePointCount},
-        // Use the flat binary array for positions
+        data: { length: visiblePointCount },
         getPosition: (_, {index}) => [
             positionArray[index * 2],
             positionArray[index * 2 + 1]
         ],
-
-        // Function accessors now use the 'index' argument
-        // to look up values in the original Arrow Table
         getRadius: 10,
         radiusUnits: 'pixels',
         getFillColor: (object, { index, data }) => {
-            // Get the displacement value from the Arrow Table using the index
             const displ = attributeTable.getChild('displacement')?.get(index);
-            const rgb = colorScale(displ);
+            const rgb = colorScale(displ ?? 0);
             return [rgb[0], rgb[1], rgb[2], 180];
         },
         pickable: true,
-        _fastCompare: true // Hint that data structure might not change often
+        _fastCompare: true
     });
-    // --- END UPDATED ---
 
     const layers = [baseMapLayer, pointsLayer].filter(Boolean);
+    // Simplified loading state
     const isLoading = !dbInitialized || isDatesLoading || pointsLoading;
 
-    // --- UPDATED Tooltip function ---
+    // Tooltip function
     const getTooltipContent = ({ index }) => {
-        // Use index to look up data in the attributeTable if an object is hovered
-        if (index === undefined || index < 0 || !attributeTable) {
-            return null;
-        }
+        if (index === undefined || index < 0 || !attributeTable) { return null; }
         const displacement = attributeTable.getChild('displacement')?.get(index);
         const currentDate = dates[timeIndex] || 'N/A';
-        // Format tooltip only if displacement is valid
         return (displacement !== null && displacement !== undefined)
             ? `Date: ${currentDate}\nDisplacement: ${displacement.toFixed(2)}`
             : null;
     };
-    // --- END UPDATED Tooltip ---
 
     // Render component
     return (
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh' }}>
-            {/* Slider UI */}
+            {/* Slider UI - Simplified disabled state */}
             <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', width: '80%', maxWidth: '800px', zIndex: 1, background: 'white', padding: '10px', fontFamily: 'sans-serif', borderRadius: '5px', boxShadow: '0 0 10px rgba(0,0,0,0.2)' }}>
-                {/* ... (same slider UI) ... */}
                 <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                     <button onClick={() => setTimeIndex(timeIndex - 1)} disabled={isLoading || timeIndex === 0}>Back</button>
                     <div style={{textAlign: 'center', flexGrow: 1}}>
@@ -226,10 +210,10 @@ function MinimalWasmMap() {
                 controller={true}
                 views={new MapView({ repeat: true })}
                 layers={layers}
-                getTooltip={getTooltipContent} // Use updated tooltip function
+                getTooltip={getTooltipContent}
             />
 
-            {/* Loading Indicator */}
+            {/* Loading Indicator - Simplified */}
             {(isLoading) && (
                 <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'white', background: 'rgba(0,0,0,0.7)', padding: '20px', borderRadius: '8px', zIndex: 1000 }}>
                     {pointsLoading ? '⏳ Querying data...' : '⏳ Initializing...'}
