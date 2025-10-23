@@ -38,13 +38,17 @@ const DATES_QUERY = `
 
 function MinimalWasmMap() {
     const [dbInitialized, setDbInitialized] = useState(false);
-    const [points, setPoints] = useState(null);
+    const [positionArray, setPositionArray] = useState(null); // Flat binary array for positions
+    const [attributeTable, setAttributeTable] = useState(null); // Arrow table for attributes
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
     const [visiblePointCount, setVisiblePointCount] = useState(0);
     const [dates, setDates] = useState([]);
     const [timeIndex, setTimeIndex] = useState(0);
     const [isDatesLoading, setIsDatesLoading] = useState(true);
     const mapContainerRef = useRef(null);
+    // Use refs for logging flags to prevent spam
+    const hasLoggedColorAccessor = useRef(false);
+    const hasLoggedTooltipAccessor = useRef(false);
 
     const debouncedViewState = useDebounce(viewState, 500);
     const debouncedTimeIndex = useDebounce(timeIndex, 200);
@@ -69,128 +73,82 @@ function MinimalWasmMap() {
     // Fetch Dates Effect
     useEffect(() => {
         if (dbInitialized && db) {
-            setIsDatesLoading(true);
-            console.log("⏳ Fetching dates...");
-
-            const fetchDates = async () => {
+            // ... (same working date fetching code) ...
+            setIsDatesLoading(true); console.log("⏳ Fetching dates...");
+            const fetchDates = async () => { /* ... */
                 let conn = null;
                 try {
-                    conn = await db.connect();
-                    const result = await conn.query(DATES_QUERY);
-
+                    conn = await db.connect(); const result = await conn.query(DATES_QUERY);
                     if (result && result.numRows > 0) {
-                        const datesVector = result.getChildAt(0);
-                        const arrowDatesListValue = datesVector?.get(0); // This is a Vector containing Timestamps (as BigInt)
-
-                        // Convert the Arrow Vector containing BigInt timestamps to a JS array (BigInt64Array)
+                        const datesVector = result.getChildAt(0); const arrowDatesListValue = datesVector?.get(0);
                         const rawTimestampArray = arrowDatesListValue?.toArray ? arrowDatesListValue.toArray() : [];
-                        console.log("Raw timestamp array type:", Object.prototype.toString.call(rawTimestampArray)); // Log the type
-
-                        // --- THIS IS THE FIX ---
-                        // Directly map over the BigInt array
                         const formattedDateStrings = Array.from(rawTimestampArray).map(timestampBigInt => {
                             try {
-                                // Ensure it's actually a BigInt before division
-                                if (typeof timestampBigInt !== 'bigint') {
-                                    throw new Error(`Expected BigInt, got ${typeof timestampBigInt}: ${timestampBigInt}`);
-                                }
-                                // Assuming microseconds since epoch
-                                const milliseconds = Number(timestampBigInt / 1000n);
-                                const dateObj = new Date(milliseconds);
-
-                                if (isNaN(dateObj)) {
-                                    throw new Error("Invalid Date created from timestamp");
-                                }
-                                return dateObj.toISOString().split('T')[0]; // Format as YYYY-MM-DD
-                            } catch (e) {
-                                console.warn(`⚠️ Error parsing date value: ${timestampBigInt}`, e.message);
-                                return "Invalid Date";
-                            }
-                        });
-                        // --- END FIX ---
-
-                        setDates(formattedDateStrings); // Store the formatted strings
-                        console.log(`✅ Dates fetched: ${formattedDateStrings.length} dates found.`);
-                        // console.log("First few formatted dates:", formattedDateStrings.slice(0, 3));
-
-                    } else {
-                        console.log("🗓️ No dates found in query result.");
-                        setDates([]);
-                    }
-                } catch (error) {
-                    console.error("❌ Error fetching dates:", error);
-                    setDates([]);
-                } finally {
-                    if (conn) {
-                        await conn.close();
-                    }
-                    setIsDatesLoading(false);
-                }
-            };
+                                if (typeof timestampBigInt !== 'bigint') { throw new Error(`Expected BigInt`); }
+                                const milliseconds = Number(timestampBigInt / 1000n); const dateObj = new Date(milliseconds);
+                                if (isNaN(dateObj)) { throw new Error("Invalid Date"); } return dateObj.toISOString().split('T')[0];
+                            } catch (e) { console.warn(`⚠️ Error parsing date value: ${timestampBigInt}`, e.message); return "Invalid Date"; }});
+                        setDates(formattedDateStrings); console.log(`✅ Dates fetched: ${formattedDateStrings.length} dates found.`);
+                    } else { console.log("🗓️ No dates found."); setDates([]); }
+                } catch (error) { console.error("❌ Error fetching dates:", error); setDates([]);
+                } finally { if (conn) { await conn.close(); } setIsDatesLoading(false); }};
             fetchDates();
         }
     }, [dbInitialized, db]);
 
     // Generate dynamic query for points
     const currentQuery = useMemo(() => {
+        // ... (same query generation code selecting x, y, displacement) ...
         if (!dbInitialized || !mapContainerRef.current || dates.length === 0) return null;
-
-        const { clientWidth, clientHeight } = mapContainerRef.current;
-        if (!clientWidth || !clientHeight) return null;
-
-        const viewport = new WebMercatorViewport({
-            ...debouncedViewState,
-            width: clientWidth,
-            height: clientHeight
-        });
-        const [minLon, minLat, maxLon, maxLat] = viewport.getBounds();
-
-        if ([minLon, minLat, maxLon, maxLat].some(isNaN)) {
-            return null;
-        }
-
+        const { clientWidth, clientHeight } = mapContainerRef.current; if (!clientWidth || !clientHeight) return null;
+        const viewport = new WebMercatorViewport({ ...debouncedViewState, width: clientWidth, height: clientHeight });
+        const [minLon, minLat, maxLon, maxLat] = viewport.getBounds(); if ([minLon, minLat, maxLon, maxLat].some(isNaN)) { return null; }
         console.log(`🗺️ Querying bounds: [${minLon.toFixed(4)}, ${minLat.toFixed(4)}, ${maxLon.toFixed(4)}, ${maxLat.toFixed(4)}] Index: ${debouncedTimeIndex}`);
         const dbIndex = debouncedTimeIndex + 1;
-
-        return `
-          LOAD httpfs;
-          LOAD spatial;
-          SELECT
-            [ST_X(geometry), ST_Y(geometry)] AS position,
-            displacements[${dbIndex}] AS displacement
-          FROM read_parquet('data_subset.geoparquet')
-          WHERE geometry IS NOT NULL
-          AND ST_Intersects(
-                geometry,
-                ST_MakeEnvelope(${minLon}, ${minLat}, ${maxLon}, ${maxLat})
-              )
-          AND displacement IS NOT NULL;
-        `;
+        return ` LOAD httpfs; LOAD spatial; SELECT ST_X(geometry) AS x, ST_Y(geometry) AS y, displacements[${dbIndex}] AS displacement FROM read_parquet('data_subset.geoparquet') WHERE geometry IS NOT NULL AND ST_Intersects( geometry, ST_MakeEnvelope(${minLon}, ${minLat}, ${maxLon}, ${maxLat}) ) AND displacement IS NOT NULL; `;
     }, [dbInitialized, debouncedViewState, debouncedTimeIndex, dates]);
 
     // Fetch point data
     const { arrow: data, loading: pointsLoading } = useDuckDbQuery(currentQuery);
 
-    // Process point data
+    // Process Arrow Table -> Flat Float64Array for positions
     useEffect(() => {
+        // Reset logging flags when new data comes in
+        hasLoggedColorAccessor.current = false;
+        hasLoggedTooltipAccessor.current = false;
+
         if (data && data.numRows > 0) {
-            console.log(`➡️ Arrow table loaded, numRows: ${data.numRows}`);
-            const arrowArray = data.toArray();
-            const jsArray = arrowArray.map(row => ({
-                position: Array.from(row.position.toArray()),
-                displacement: row.displacement
-            }));
-            setPoints(jsArray);
-            setVisiblePointCount(jsArray.length);
+            console.log(`➡️ Arrow table loaded/updated, numRows: ${data.numRows}`);
+            setVisiblePointCount(data.numRows);
+            setAttributeTable(data); // Keep original table for attribute access
+
+            const xVector = data.getChild('x');
+            const yVector = data.getChild('y');
+
+            if (!xVector || !yVector) {
+                console.error("❌ Could not find 'x' or 'y' columns."); setPositionArray(null); return;
+            }
+
+            console.log("⏳ Creating flat position array...");
+            const N = data.numRows;
+            const positions = new Float64Array(N * 2);
+            for (let i = 0; i < N; i++) {
+                positions[i * 2] = xVector.get(i);
+                positions[i * 2 + 1] = yVector.get(i);
+            }
+            setPositionArray(positions);
+            console.log(`✅ Flat position array created (length ${positions.length}).`);
+
         } else if (data) {
-            console.log("📊 Data loaded, but 0 rows returned (or all filtered).");
-            setPoints(null);
-            setVisiblePointCount(0);
+            console.log("📊 Data loaded, but 0 rows returned."); setVisiblePointCount(0); setPositionArray(null); setAttributeTable(null);
+        } else {
+            setVisiblePointCount(0); setPositionArray(null); setAttributeTable(null);
         }
     }, [data]);
 
     // Define Layers
     const baseMapLayer = new TileLayer({
+        // ... (same base map layer code) ...
         id: 'tile-layer', data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
         minZoom: 0, maxZoom: 19, tileSize: 256,
         renderSubLayers: props => {
@@ -199,54 +157,60 @@ function MinimalWasmMap() {
         }
     });
 
-    const pointsLayer = points && new ScatterplotLayer({
+    // --- UPDATED: Use ScatterplotLayer with separated binary/attribute data ---
+    const pointsLayer = attributeTable && positionArray && new ScatterplotLayer({
         id: 'scatterplot-layer',
-        data: points,
-        getPosition: d => d.position,
-        getRadius: 15,
-        // radiusUnits: 'pixels',
-        getFillColor: d => {
-            const rgb = colorScale(d.displacement);
+
+        // Give Deck.gl a simple way to count rows
+        data: { length: visiblePointCount},
+        // Use the flat binary array for positions
+        getPosition: (_, {index}) => [
+            positionArray[index * 2],
+            positionArray[index * 2 + 1]
+        ],
+
+        // Function accessors now use the 'index' argument
+        // to look up values in the original Arrow Table
+        getRadius: 10,
+        radiusUnits: 'pixels',
+        getFillColor: (object, { index, data }) => {
+            // Get the displacement value from the Arrow Table using the index
+            const displ = attributeTable.getChild('displacement')?.get(index);
+            const rgb = colorScale(displ);
             return [rgb[0], rgb[1], rgb[2], 180];
         },
         pickable: true,
+        _fastCompare: true // Hint that data structure might not change often
     });
+    // --- END UPDATED ---
 
     const layers = [baseMapLayer, pointsLayer].filter(Boolean);
     const isLoading = !dbInitialized || isDatesLoading || pointsLoading;
 
-    // --- Tooltip Function --- FIX IS HERE ---
-    const getTooltipContent = ({ object }) => {
-        if (!object) {
+    // --- UPDATED Tooltip function ---
+    const getTooltipContent = ({ index }) => {
+        // Use index to look up data in the attributeTable if an object is hovered
+        if (index === undefined || index < 0 || !attributeTable) {
             return null;
         }
-        const currentDate = dates[timeIndex] || 'N/A'; // Get current date string
-        return `Date: ${currentDate}\nDisplacement: ${object.displacement?.toFixed(2)}`;
+        const displacement = attributeTable.getChild('displacement')?.get(index);
+        const currentDate = dates[timeIndex] || 'N/A';
+        // Format tooltip only if displacement is valid
+        return (displacement !== null && displacement !== undefined)
+            ? `Date: ${currentDate}\nDisplacement: ${displacement.toFixed(2)}`
+            : null;
     };
-    // --- End Tooltip Function ---
+    // --- END UPDATED Tooltip ---
 
     // Render component
     return (
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh' }}>
-            {/* --- Slider UI --- FIX IS HERE --- */}
-            <div style={{
-                position: 'absolute',
-                bottom: 20,
-                left: '50%', // Center horizontally
-                transform: 'translateX(-50%)', // Adjust position to true center
-                width: '80%', // Keep width
-                maxWidth: '800px', // Optional: Add max-width for very wide screens
-                zIndex: 1,
-                background: 'white',
-                padding: '10px',
-                fontFamily: 'sans-serif',
-                borderRadius: '5px',
-                boxShadow: '0 0 10px rgba(0,0,0,0.2)'
-            }}>
+            {/* Slider UI */}
+            <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', width: '80%', maxWidth: '800px', zIndex: 1, background: 'white', padding: '10px', fontFamily: 'sans-serif', borderRadius: '5px', boxShadow: '0 0 10px rgba(0,0,0,0.2)' }}>
+                {/* ... (same slider UI) ... */}
                 <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                     <button onClick={() => setTimeIndex(timeIndex - 1)} disabled={isLoading || timeIndex === 0}>Back</button>
                     <div style={{textAlign: 'center', flexGrow: 1}}>
-                        {/* Ensure label text doesn't overflow */}
                         <label style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             Date: {isLoading ? 'Loading...' : (dates[timeIndex] || '...')}
                         </label>
@@ -255,7 +219,6 @@ function MinimalWasmMap() {
                     <button onClick={() => setTimeIndex(timeIndex + 1)} disabled={isLoading || timeIndex >= dates.length - 1}>Next</button>
                 </div>
             </div>
-            {/* --- End Slider UI --- */}
 
             <DeckGL
                 initialViewState={INITIAL_VIEW_STATE}
@@ -263,7 +226,7 @@ function MinimalWasmMap() {
                 controller={true}
                 views={new MapView({ repeat: true })}
                 layers={layers}
-                getTooltip={getTooltipContent} // Use the updated tooltip function
+                getTooltip={getTooltipContent} // Use updated tooltip function
             />
 
             {/* Loading Indicator */}
