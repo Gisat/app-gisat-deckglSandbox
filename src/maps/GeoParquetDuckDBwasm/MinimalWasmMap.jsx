@@ -1,5 +1,4 @@
-// src/maps/MinimalWasmMap.jsx
-import React, { useEffect, useState, useRef, useMemo } from 'react'; // Removed useTransition
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView, WebMercatorViewport } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
@@ -46,7 +45,6 @@ function MinimalWasmMap() {
     const [timeIndex, setTimeIndex] = useState(0);
     const [isDatesLoading, setIsDatesLoading] = useState(true);
     const mapContainerRef = useRef(null);
-    // Removed isPending, startTransition
 
     const debouncedViewState = useDebounce(viewState, 500);
     const debouncedTimeIndex = useDebounce(timeIndex, 200);
@@ -94,30 +92,64 @@ function MinimalWasmMap() {
         }
     }, [dbInitialized, db]);
 
-    // Generate dynamic query for points
+    // --- THIS IS THE FIXED useMemo HOOK ---
     const currentQuery = useMemo(() => {
         if (!dbInitialized || !mapContainerRef.current || dates.length === 0) return null;
-        const { clientWidth, clientHeight } = mapContainerRef.current; if (!clientWidth || !clientHeight) return null;
+
+        // 1. Define viewport and bounds *before* the query string
+        const { clientWidth, clientHeight } = mapContainerRef.current;
+        if (!clientWidth || !clientHeight) return null;
         const viewport = new WebMercatorViewport({ ...debouncedViewState, width: clientWidth, height: clientHeight });
-        const [minLon, minLat, maxLon, maxLat] = viewport.getBounds(); if ([minLon, minLat, maxLon, maxLat].some(isNaN)) { return null; }
-        // console.log(`🗺️ Querying bounds for index: ${debouncedTimeIndex}`); // Cleaned
+        const [minLon, minLat, maxLon, maxLat] = viewport.getBounds();
+        if ([minLon, minLat, maxLon, maxLat].some(isNaN)) { return null; }
+
+        // console.log(`🗺️ Querying bounds for index: ${debouncedTimeIndex}`);
         const dbIndex = debouncedTimeIndex + 1;
-        return ` LOAD httpfs; LOAD spatial; SELECT ST_X(geometry) AS x, ST_Y(geometry) AS y, displacements[${dbIndex}] AS displacement FROM read_parquet('data_subset.geoparquet') WHERE geometry IS NOT NULL AND ST_Intersects( geometry, ST_MakeEnvelope(${minLon}, ${minLat}, ${maxLon}, ${maxLat}) ) AND displacement IS NOT NULL; `;
+
+        // 2. Return the full two-stage query
+        return ` 
+            LOAD httpfs; 
+            LOAD spatial; 
+            SELECT 
+                x, -- Select from the subquery
+                y, 
+                displacement
+            FROM (
+                -- This subquery runs first
+                SELECT 
+                    ST_X(geometry) AS x, 
+                    ST_Y(geometry) AS y, 
+                    displacements[${dbIndex}] AS displacement,
+                    geometry, -- Keep geometry for the precise filter
+                    bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax -- Keep bbox cols
+                FROM read_parquet('data_subset.geoparquet') -- Assumes db.js points to the _bbox file
+                WHERE 
+                    -- STAGE 1: FAST FILTER (uses metadata for pruning)
+                    -- This is where the error was (minLon was not defined yet)
+                    bbox_xmax >= ${minLon} AND
+                    bbox_xmin <= ${maxLon} AND
+                    bbox_ymax >= ${minLat} AND
+                    bbox_ymin <= ${maxLat}
+            ) AS fast_filter
+            WHERE 
+                -- STAGE 2: PRECISE FILTER (runs only on downloaded data)
+                ST_Intersects(geometry, ST_MakeEnvelope(${minLon}, ${minLat}, ${maxLon}, ${maxLat}))
+            AND displacement IS NOT NULL;
+        `;
     }, [dbInitialized, debouncedViewState, debouncedTimeIndex, dates]);
+    // --- END FIXED useMemo HOOK ---
 
     // Fetch point data
     const { arrow: data, loading: pointsLoading } = useDuckDbQuery(currentQuery);
 
-    // Process Arrow Table -> Flat Float64Array
+    // Process Arrow Table -> Flat Float64Array (This logic is correct)
     useEffect(() => {
-        // Only update state if new, valid data arrives
         if (data && data.numRows > 0) {
             // console.log(`➡️ Arrow table loaded/updated, numRows: ${data.numRows}`);
             const xVector = data.getChild('x');
             const yVector = data.getChild('y');
             if (!xVector || !yVector) {
                 console.error("❌ Could not find 'x' or 'y' columns.");
-                // Avoid clearing state here to prevent flicker
                 return;
             }
 
@@ -128,22 +160,18 @@ function MinimalWasmMap() {
                 positions[i * 2] = xVector.get(i);
                 positions[i * 2 + 1] = yVector.get(i);
             }
-
-            // Set state only when processing is complete
             setPositionArray(positions);
             setAttributeTable(data);
             setVisiblePointCount(data.numRows);
             // console.log(`✅ Flat position array created (length ${positions.length}).`);
 
         } else if (data && data.numRows === 0) {
-            // Only clear state if the query explicitly returned 0 rows
             // console.log("📊 Data loaded, 0 rows returned.");
             setVisiblePointCount(0);
             setPositionArray(null);
             setAttributeTable(null);
         }
-        // If data is null (loading), do nothing, keep old state visible
-    }, [data]); // Only depends on data
+    }, [data]);
 
     // Define Layers
     const baseMapLayer = new TileLayer({
@@ -174,7 +202,6 @@ function MinimalWasmMap() {
     });
 
     const layers = [baseMapLayer, pointsLayer].filter(Boolean);
-    // Simplified loading state
     const isLoading = !dbInitialized || isDatesLoading || pointsLoading;
 
     // Tooltip function
@@ -190,7 +217,7 @@ function MinimalWasmMap() {
     // Render component
     return (
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh' }}>
-            {/* Slider UI - Simplified disabled state */}
+            {/* Slider UI */}
             <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', width: '80%', maxWidth: '800px', zIndex: 1, background: 'white', padding: '10px', fontFamily: 'sans-serif', borderRadius: '5px', boxShadow: '0 0 10px rgba(0,0,0,0.2)' }}>
                 <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                     <button onClick={() => setTimeIndex(timeIndex - 1)} disabled={isLoading || timeIndex === 0}>Back</button>
@@ -213,7 +240,7 @@ function MinimalWasmMap() {
                 getTooltip={getTooltipContent}
             />
 
-            {/* Loading Indicator - Simplified */}
+            {/* Loading Indicator */}
             {(isLoading) && (
                 <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'white', background: 'rgba(0,0,0,0.7)', padding: '20px', borderRadius: '8px', zIndex: 1000 }}>
                     {pointsLoading ? '⏳ Querying data...' : '⏳ Initializing...'}
@@ -229,3 +256,4 @@ function MinimalWasmMap() {
 }
 
 export default MinimalWasmMap;
+
