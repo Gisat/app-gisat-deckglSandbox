@@ -7,12 +7,11 @@ export async function setupDB() {
             castBigIntToDouble: true,
         },
     };
+    // initializeDuckDb handles downloading the Wasm file and spinning up the worker
     const db = await initializeDuckDb({ config, debug: true });
 
     // --- 1. Your optimized file (for the real app) ---
     // This URL should point to your subset or your full optimized file
-    // const YOUR_FILE_URL = "https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/egms_hybrid_subset.geoparquet";
-    // const YOUR_FILE_URL = "https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/egms_hybrid_optimized.geoparquet";
     const YOUR_FILE_URL = "https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/egms_hybrid_optimized_bbox.geoparquet";
     // This is the internal name used in your SQL queries
     const YOUR_FILE_NAME = "data_subset.geoparquet";

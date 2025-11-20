@@ -36,6 +36,10 @@ const DATES_QUERY = `
 `;
 
 function MinimalWasmMap() {
+    // --- NEW STATE for lazy loading ---
+    const [startWasm, setStartWasm] = useState(false);
+    // --- END NEW STATE ---
+
     const [dbInitialized, setDbInitialized] = useState(false);
     const [positionArray, setPositionArray] = useState(null);
     const [attributeTable, setAttributeTable] = useState(null);
@@ -51,8 +55,9 @@ function MinimalWasmMap() {
 
     const { db } = useDuckDb();
 
-    // Setup DB effect
+    // Setup DB effect - Runs only after the button is clicked (when startWasm becomes true)
     useEffect(() => {
+        if (!startWasm) return;
         async function setup() {
             try {
                 // console.log("Running DB setup...");
@@ -64,7 +69,7 @@ function MinimalWasmMap() {
             }
         }
         setup();
-    }, []);
+    }, [startWasm]);
 
     // Fetch Dates Effect
     useEffect(() => {
@@ -92,7 +97,7 @@ function MinimalWasmMap() {
         }
     }, [dbInitialized, db]);
 
-    // --- THIS IS THE FIXED useMemo HOOK ---
+    // Query Hook: Only runs when DB is initialized and viewport/time changes
     const currentQuery = useMemo(() => {
         if (!dbInitialized || !mapContainerRef.current || dates.length === 0) return null;
 
@@ -122,10 +127,9 @@ function MinimalWasmMap() {
                     displacements[${dbIndex}] AS displacement,
                     geometry, -- Keep geometry for the precise filter
                     bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax -- Keep bbox cols
-                FROM read_parquet('data_subset.geoparquet') -- Assumes db.js points to the _bbox file
+                FROM read_parquet('data_subset.geoparquet')
                 WHERE 
                     -- STAGE 1: FAST FILTER (uses metadata for pruning)
-                    -- This is where the error was (minLon was not defined yet)
                     bbox_xmax >= ${minLon} AND
                     bbox_xmin <= ${maxLon} AND
                     bbox_ymax >= ${minLat} AND
@@ -137,12 +141,11 @@ function MinimalWasmMap() {
             AND displacement IS NOT NULL;
         `;
     }, [dbInitialized, debouncedViewState, debouncedTimeIndex, dates]);
-    // --- END FIXED useMemo HOOK ---
 
     // Fetch point data
     const { arrow: data, loading: pointsLoading } = useDuckDbQuery(currentQuery);
 
-    // Process Arrow Table -> Flat Float64Array (This logic is correct)
+    // Process Arrow Table -> Flat Float64Array
     useEffect(() => {
         if (data && data.numRows > 0) {
             // console.log(`➡️ Arrow table loaded/updated, numRows: ${data.numRows}`);
@@ -214,46 +217,70 @@ function MinimalWasmMap() {
             : null;
     };
 
+    // --- Handler for the button click ---
+    const handleStartWasm = () => {
+        setStartWasm(true);
+    };
+
     // Render component
     return (
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh' }}>
-            {/* Slider UI */}
-            <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', width: '80%', maxWidth: '800px', zIndex: 1, background: 'white', padding: '10px', fontFamily: 'sans-serif', borderRadius: '5px', boxShadow: '0 0 10px rgba(0,0,0,0.2)' }}>
-                <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-                    <button onClick={() => setTimeIndex(timeIndex - 1)} disabled={isLoading || timeIndex === 0}>Back</button>
-                    <div style={{textAlign: 'center', flexGrow: 1}}>
-                        <label style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            Date: {isLoading ? 'Loading...' : (dates[timeIndex] || '...')}
-                        </label>
-                        <input type="range" min={0} max={dates.length > 0 ? dates.length - 1 : 0} step={1} value={timeIndex} onChange={e => setTimeIndex(Number(e.target.value))} style={{width: '100%'}} disabled={isLoading || dates.length === 0} />
+
+            {/* 🛑 CONDITIONAL RENDERING: Show Map or Start Button */}
+            {!startWasm ? (
+                // --- Start Button UI ---
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0', zIndex: 2000 }}>
+                    <h2 style={{ fontFamily: 'sans-serif', marginBottom: '20px' }}>DuckDB Wasm POC: GeoParquet Viewer</h2>
+                    <button
+                        onClick={handleStartWasm}
+                        style={{ padding: '15px 30px', fontSize: '1.2em', cursor: 'pointer', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '5px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+                        🚀 Start Wasm & Load Map
+                    </button>
+                    <p style={{ fontFamily: 'sans-serif', marginTop: '15px', fontSize: '0.9em', color: '#666' }}>
+                        The WebAssembly database core will load upon clicking.
+                    </p>
+                </div>
+            ) : (
+                // --- Map UI (Original Content) ---
+                <>
+                    {/* Slider UI */}
+                    <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', width: '80%', maxWidth: '800px', zIndex: 1, background: 'white', padding: '10px', fontFamily: 'sans-serif', borderRadius: '5px', boxShadow: '0 0 10px rgba(0,0,0,0.2)' }}>
+                        <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                            <button onClick={() => setTimeIndex(timeIndex - 1)} disabled={isLoading || timeIndex === 0}>Back</button>
+                            <div style={{textAlign: 'center', flexGrow: 1}}>
+                                <label style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    Date: {isLoading ? 'Loading...' : (dates[timeIndex] || '...')}
+                                </label>
+                                <input type="range" min={0} max={dates.length > 0 ? dates.length - 1 : 0} step={1} value={timeIndex} onChange={e => setTimeIndex(Number(e.target.value))} style={{width: '100%'}} disabled={isLoading || dates.length === 0} />
+                            </div>
+                            <button onClick={() => setTimeIndex(timeIndex + 1)} disabled={isLoading || timeIndex >= dates.length - 1}>Next</button>
+                        </div>
                     </div>
-                    <button onClick={() => setTimeIndex(timeIndex + 1)} disabled={isLoading || timeIndex >= dates.length - 1}>Next</button>
-                </div>
-            </div>
 
-            <DeckGL
-                initialViewState={INITIAL_VIEW_STATE}
-                onViewStateChange={({ viewState: newViewState }) => setViewState(newViewState)}
-                controller={true}
-                views={new MapView({ repeat: true })}
-                layers={layers}
-                getTooltip={getTooltipContent}
-            />
+                    <DeckGL
+                        initialViewState={INITIAL_VIEW_STATE}
+                        onViewStateChange={({ viewState: newViewState }) => setViewState(newViewState)}
+                        controller={true}
+                        views={new MapView({ repeat: true })}
+                        layers={layers}
+                        getTooltip={getTooltipContent}
+                    />
 
-            {/* Loading Indicator */}
-            {(isLoading) && (
-                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'white', background: 'rgba(0,0,0,0.7)', padding: '20px', borderRadius: '8px', zIndex: 1000 }}>
-                    {pointsLoading ? '⏳ Querying data...' : '⏳ Initializing...'}
-                </div>
+                    {/* Loading Indicator */}
+                    {(isLoading) && (
+                        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'white', background: 'rgba(0,0,0,0.7)', padding: '20px', borderRadius: '8px', zIndex: 1000 }}>
+                            {pointsLoading ? '⏳ Querying data...' : '⏳ Initializing...'}
+                        </div>
+                    )}
+
+                    {/* Point Count Display */}
+                    <div style={{ position: 'absolute', top: '10px', left: '10px', color: 'white', background: 'rgba(0,0,0,0.7)', padding: '5px 10px', borderRadius: '4px', zIndex: 1000, fontFamily: 'sans-serif' }}>
+                        📍 Visible Points: {visiblePointCount}
+                    </div>
+                </>
             )}
-
-            {/* Point Count Display */}
-            <div style={{ position: 'absolute', top: '10px', left: '10px', color: 'white', background: 'rgba(0,0,0,0.7)', padding: '5px 10px', borderRadius: '4px', zIndex: 1000, fontFamily: 'sans-serif' }}>
-                📍 Visible Points: {visiblePointCount}
-            </div>
         </div>
     );
 }
 
 export default MinimalWasmMap;
-
