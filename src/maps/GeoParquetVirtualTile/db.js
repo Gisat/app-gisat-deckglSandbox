@@ -12,7 +12,8 @@ export async function setupDB() {
 
     // 🛑 POINT TO THE NEW LOCAL SERVER (Port 8080)
     // We use 127.0.0.1 to match the http-server output
-    const FILE_URL = "http://127.0.0.1:8080/egms_virtual_tiles_lod.geoparquet";
+    const FILE_URL = "http://127.0.0.1:8080/egms_tiered_v2.geoparquet";
+    // const FILE_URL = "http://127.0.0.1:8080/egms_viz_layer.geoparquet";
 
     console.log("📂 Registering Dedicated Local File:", FILE_URL);
 
