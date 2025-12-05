@@ -7,6 +7,10 @@ import { useDuckDb } from 'duckdb-wasm-kit';
 import { setupDB } from './db';
 import { scaleLinear } from 'd3-scale';
 
+import MapHUD from './MapHUD';
+import TimeControl from './TimeControl';
+import './VirtualTilesMap.css';
+
 // 🛑 Configuration
 const GRID_SIZE = 0.03;
 const TILE_BUFFER = 1; // Fetch 1 extra tile around the view
@@ -83,7 +87,8 @@ export default function VirtualTilesMap() {
     // 2. Animation Loop
     useEffect(() => {
         let interval;
-        if (isPlaying && fullVectorsLoaded && dates.length > 0) {
+        // 🛑 FIX: Only run animation loop if data is fully fetched (Ready)
+        if (isPlaying && fullVectorsLoaded && dates.length > 0 && dataStatus === 'Ready') {
             interval = setInterval(() => {
                 setTimeIndex(prev => {
                     if (prev >= dates.length - 1) return 0;
@@ -92,7 +97,7 @@ export default function VirtualTilesMap() {
             }, 100);
         }
         return () => clearInterval(interval);
-    }, [isPlaying, fullVectorsLoaded, dates.length]);
+    }, [isPlaying, fullVectorsLoaded, dates.length, dataStatus]);
 
     // 3. Fetch Dates
     useEffect(() => {
@@ -115,8 +120,8 @@ export default function VirtualTilesMap() {
                     });
                     setDates(strDates);
                 }
-            } catch(e) { console.error("Date fetch error:", e); }
-            finally { if(conn) await conn.close(); }
+            } catch (e) { console.error("Date fetch error:", e); }
+            finally { if (conn) await conn.close(); }
         };
         fetchDates();
     }, [dbInitialized, db]);
@@ -197,7 +202,7 @@ export default function VirtualTilesMap() {
                     `;
                     const res0 = await conn.query(q0);
                     if (!isActive) return;
-                    if(res0.numRows > 0) {
+                    if (res0.numRows > 0) {
                         t0 = processArrowResult(res0, needsFullVector);
                         tileCache.current.set(viewKey0, t0);
                     }
@@ -238,7 +243,7 @@ export default function VirtualTilesMap() {
                         `;
                         const res1 = await conn.query(q1);
                         if (!isActive) return;
-                        if(res1.numRows > 0) {
+                        if (res1.numRows > 0) {
                             t1 = processArrowResult(res1, needsFullVector);
                             tileCache.current.set(viewKey1, t1);
                         }
@@ -280,7 +285,7 @@ export default function VirtualTilesMap() {
                         `;
                         const res2 = await conn.query(q2);
                         if (!isActive) return;
-                        if(res2.numRows > 0) {
+                        if (res2.numRows > 0) {
                             t2 = processArrowResult(res2, needsFullVector);
                             tileCache.current.set(viewKey2, t2);
                         }
@@ -402,7 +407,7 @@ export default function VirtualTilesMap() {
         return { positions, dVec: displacementData, tileInfo, count: N };
     };
 
-    const getFillColor = ({index}) => {
+    const getFillColor = ({ index }) => {
         if (!displacementVectors) return [100, 100, 100, 255];
 
         let localIndex = index;
@@ -455,10 +460,10 @@ export default function VirtualTilesMap() {
     const targetTier = queryParams ? queryParams.targetTier : 0;
 
     return (
-        <div ref={mapContainerRef} style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+        <div ref={mapContainerRef} className="vtm-container">
             {!startWasm ? (
-                <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#f5f5f5', zIndex: 10 }}>
-                    <button onClick={() => setStartWasm(true)} style={{ padding: '15px 30px', fontSize: '18px', cursor: 'pointer', background: '#2c3e50', color: 'white', border: 'none', borderRadius: '4px' }}>
+                <div className="vtm-start-screen">
+                    <button onClick={() => setStartWasm(true)} className="vtm-start-button">
                         🚀 Load 3-Tier Virtual Map
                     </button>
                 </div>
@@ -466,7 +471,7 @@ export default function VirtualTilesMap() {
                 <>
                     <DeckGL
                         initialViewState={INITIAL_VIEW_STATE}
-                        onViewStateChange={({viewState}) => setViewState(viewState)}
+                        onViewStateChange={({ viewState }) => setViewState(viewState)}
                         controller={true}
                         layers={[
                             new TileLayer({
@@ -481,7 +486,7 @@ export default function VirtualTilesMap() {
                             positionArray && new ScatterplotLayer({
                                 id: 'points',
                                 data: { length: visiblePointCount },
-                                getPosition: (_, {index}) => [positionArray[index * 2], positionArray[index * 2 + 1]],
+                                getPosition: (_, { index }) => [positionArray[index * 2], positionArray[index * 2 + 1]],
                                 getRadius: getPointRadius(viewState.zoom),
                                 radiusUnits: 'pixels',
                                 getFillColor: (_, { index }) => getFillColor({ index }),
@@ -493,7 +498,7 @@ export default function VirtualTilesMap() {
                             })
                         ].filter(Boolean)}
 
-                        getTooltip={({index}) => {
+                        getTooltip={({ index }) => {
                             if (index === -1 || !displacementVectors) return null;
                             let localIndex = index;
                             let displacement = null;
@@ -519,82 +524,28 @@ export default function VirtualTilesMap() {
                         }}
                     />
 
-                    {/* 🛑 DETAILED HUD: Restored to detailed view */}
-                    <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(0,0,0,0.8)', color: 'white', padding: '12px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '14px', pointerEvents: 'none' }}>
-                        <div>Zoom Level: <span style={{color: '#4fc3f7'}}>{viewState.zoom.toFixed(1)}</span></div>
-                        <div style={{marginTop: '4px', borderTop: '1px solid #555', paddingTop: '4px'}}>
-                            <strong>Mode: </strong>
-                            <span style={{color: fullVectorsLoaded ? '#4caf50' : '#ffb74d'}}>
-                                {fullVectorsLoaded ? 'FULL VECTORS (Animation)' : 'STATIC (Lightweight)'}
-                            </span>
-                        </div>
-                        <div style={{marginTop: '4px'}}>
-                            <strong>Target Tier: {targetTier}</strong>
-                            <span style={{color: '#ffb74d'}}> (Buffer: {TILE_BUFFER})</span>
-                        </div>
+                    <MapHUD
+                        zoom={viewState.zoom}
+                        fullVectorsLoaded={fullVectorsLoaded}
+                        targetTier={targetTier}
+                        tileBuffer={TILE_BUFFER}
+                        dataStatus={dataStatus}
+                        loadedTier={loadedTier}
+                        loadingStage={loadingStage}
+                        visiblePointCount={visiblePointCount}
+                    />
 
-                        <div style={{
-                            marginBottom: '8px',
-                            fontSize: '12px',
-                            color: dataStatus.includes('Cache') ? '#81c784' : (dataStatus.includes('Fetching') ? '#ffb74d' : '#ccc')
-                        }}>
-                            Status: <strong>{dataStatus}</strong>
-                        </div>
-
-                        <div style={{color: loadedTier >= 0 ? '#81c784' : (loadingStage === 'tier0' ? '#ffb74d' : '#555')}}>
-                            • Tier 0 (5%) {loadingStage === 'tier0' && '⏳'} {loadedTier >= 0 && '✅'}
-                        </div>
-                        <div style={{color: targetTier >= 1 ? (loadedTier >= 1 ? '#81c784' : '#ffb74d') : '#555', opacity: targetTier >= 1 ? 1 : 0.5}}>
-                            • Tier 1 (+30%) {loadingStage === 'tier1' && '⏳'} {loadingStage === 'pause1' && '⏸'} {loadedTier >= 1 && '✅'}
-                        </div>
-                        <div style={{color: targetTier >= 2 ? (loadedTier >= 2 ? '#81c784' : '#ffb74d') : '#555', opacity: targetTier >= 2 ? 1 : 0.5}}>
-                            • Tier 2 (+65%) {loadingStage === 'tier2' && '⏳'} {loadingStage === 'pause2' && '⏸'} {loadedTier >= 2 && '✅'}
-                        </div>
-
-                        <div style={{marginTop: '8px'}}>Points: <span style={{color: '#fff'}}>{visiblePointCount}</span></div>
-                    </div>
-
-                    {/* Time Slider */}
-                    <div style={{ position: 'absolute', bottom: 30, left: '50%', transform: 'translateX(-50%)', width: '60%', background: 'white', padding: '15px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <div style={{fontWeight: 'bold', minWidth: '100px', fontFamily: 'sans-serif'}}>
-                                {dates[timeIndex] || 'Loading...'}
-                            </div>
-                            <button
-                                onClick={() => handleToggleMode('static')}
-                                style={{
-                                    padding: '5px 15px',
-                                    background: fullVectorsLoaded ? '#f44336' : '#9e9e9e',
-                                    color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer',
-                                    opacity: fullVectorsLoaded ? 1 : 0.5,
-                                    marginRight: '10px'
-                                }}
-                                disabled={!fullVectorsLoaded}
-                            >
-                                🖼️ Static View
-                            </button>
-                            <button
-                                onClick={handlePlayPause}
-                                style={{
-                                    padding: '5px 15px',
-                                    background: isPlaying ? '#ff5252' : (fullVectorsLoaded ? '#4caf50' : '#2196f3'),
-                                    color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer'
-                                }}
-                            >
-                                {isPlaying ? '⏸ Pause' : (fullVectorsLoaded ? '▶ Play' : '💾 Load All + Play')}
-                            </button>
-                        </div>
-                        <input
-                            type="range" min={0} max={dates.length > 0 ? dates.length - 1 : 0}
-                            value={timeIndex}
-                            onChange={handleSliderChange}
-                            style={{ width: '100%' }}
-                            disabled={dates.length === 0}
-                        />
-                        <div style={{fontSize: '12px', color: '#666', textAlign: 'center'}}>
-                            {fullVectorsLoaded ? 'Animation enabled.' : 'In Lightweight mode, sliding will fetch data for the selected date.'}
-                        </div>
-                    </div>
+                    <TimeControl
+                        currentDate={dates[timeIndex]}
+                        timeIndex={timeIndex}
+                        maxIndex={dates.length > 0 ? dates.length - 1 : 0}
+                        isPlaying={isPlaying}
+                        fullVectorsLoaded={fullVectorsLoaded}
+                        dataReady={dataStatus === 'Ready'}
+                        onToggleMode={handleToggleMode}
+                        onPlayPause={handlePlayPause}
+                        onSliderChange={handleSliderChange}
+                    />
                 </>
             )}
         </div>

@@ -1,0 +1,159 @@
+/* VirtualTilesMap.css */
+
+.vtm-container {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+    overflow: hidden;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Start Screen */
+.vtm-start-screen {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background-color: #f5f5f5;
+    z-index: 10;
+}
+
+.vtm-start-button {
+    padding: 15px 30px;
+    font-size: 18px;
+    cursor: pointer;
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.vtm-start-button:hover {
+    background-color: #34495e;
+}
+
+/* HUD */
+.vtm-hud {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 12px;
+    border-radius: 4px;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 14px;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    min-width: 200px;
+}
+
+.vtm-hud-row {
+    margin-top: 4px;
+}
+
+.vtm-hud-divider {
+    margin-top: 4px;
+    border-top: 1px solid #555;
+    padding-top: 4px;
+}
+
+.vtm-status-text {
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+/* Time Control / Slider */
+.vtm-time-control {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60%;
+    min-width: 300px;
+    max-width: 800px;
+    background-color: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 5;
+}
+
+.vtm-control-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.vtm-date-display {
+    font-weight: bold;
+    min-width: 100px;
+    font-family: sans-serif;
+    color: #333;
+}
+
+.vtm-btn-group {
+    display: flex;
+    gap: 10px;
+}
+
+.vtm-btn {
+    padding: 6px 16px;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: opacity 0.2s, transform 0.1s;
+}
+
+.vtm-btn:active {
+    transform: scale(0.98);
+}
+
+.vtm-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.vtm-btn-static {
+    background-color: #9e9e9e;
+}
+.vtm-btn-static.active {
+    background-color: #f44336;
+}
+
+.vtm-btn-play {
+    background-color: #2196f3;
+}
+.vtm-btn-play.playing {
+    background-color: #ff5252;
+}
+.vtm-btn-play.ready {
+    background-color: #4caf50;
+}
+
+.vtm-slider {
+    width: 100%;
+    cursor: pointer;
+}
+
+.vtm-hint-text {
+    font-size: 12px;
+    color: #666;
+    text-align: center;
+}
+
+/* Utilities */
+.text-blue { color: #4fc3f7; }
+.text-green { color: #81c784; }
+.text-orange { color: #ffb74d; }
+.text-gray { color: #ccc; }
+.text-dim { color: #555; }
+.text-white { color: #fff; }
