@@ -12,7 +12,9 @@ export async function setupDB() {
 
     // 🛑 POINT TO THE NEW LOCAL SERVER (Port 8080)
     // We use 127.0.0.1 to match the http-server output
-    const FILE_URL = "http://127.0.0.1:8080/egms_tiered_v2.geoparquet";
+    const FILE_URL = "https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized.geoparquet";
+    // const FILE_URL = "http://127.0.0.1:8080/egms_optimized.geoparquet";
+    // const FILE_URL = "http://127.0.0.1:8080/egms_tiered_v2.geoparquet";
     // const FILE_URL = "http://127.0.0.1:8080/egms_viz_layer.geoparquet";
 
     console.log("📂 Registering Dedicated Local File:", FILE_URL);

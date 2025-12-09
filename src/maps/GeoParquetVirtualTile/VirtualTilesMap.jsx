@@ -13,7 +13,7 @@ import './VirtualTilesMap.css';
 
 // 🛑 Configuration
 const GRID_SIZE = 0.03;
-const TILE_BUFFER = 1; // Fetch 1 extra tile around the view
+const TILE_BUFFER = 0; // Fetch 1 extra tile around the view
 
 function useDebounce(value, delay) {
     const [debouncedValue, setDebouncedValue] = useState(value);
@@ -87,7 +87,6 @@ export default function VirtualTilesMap() {
     // 2. Animation Loop
     useEffect(() => {
         let interval;
-        // 🛑 FIX: Only run animation loop if data is fully fetched (Ready)
         if (isPlaying && fullVectorsLoaded && dates.length > 0 && dataStatus === 'Ready') {
             interval = setInterval(() => {
                 setTimeIndex(prev => {
@@ -131,18 +130,16 @@ export default function VirtualTilesMap() {
         if (!mapContainerRef.current) return null;
         const { clientWidth, clientHeight } = mapContainerRef.current;
         const viewport = new WebMercatorViewport({ ...debouncedViewState, width: clientWidth, height: clientHeight });
-        const bounds = viewport.getBounds();
+        const bounds = viewport.getBounds(); // [minLng, minLat, maxLng, maxLat]
 
-        const rawMinX = Math.floor(bounds[0] / GRID_SIZE);
-        const rawMaxX = Math.floor(bounds[2] / GRID_SIZE);
-        const rawMinY = Math.floor(bounds[1] / GRID_SIZE);
-        const rawMaxY = Math.floor(bounds[3] / GRID_SIZE);
+        const [minLng, minLat, maxLng, maxLat] = bounds;
+        const minX = Math.floor(minLng / GRID_SIZE) - TILE_BUFFER;
+        const maxX = Math.floor(maxLng / GRID_SIZE) + TILE_BUFFER;
+        const minY = Math.floor(minLat / GRID_SIZE) - TILE_BUFFER;
+        const maxY = Math.floor(maxLat / GRID_SIZE) + TILE_BUFFER;
 
         return {
-            minX: rawMinX - TILE_BUFFER,
-            maxX: rawMaxX + TILE_BUFFER,
-            minY: rawMinY - TILE_BUFFER,
-            maxY: rawMaxY + TILE_BUFFER,
+            minX, maxX, minY, maxY,
             targetTier: getTargetTier(debouncedViewState.zoom)
         };
     }, [debouncedViewState]);
@@ -154,158 +151,123 @@ export default function VirtualTilesMap() {
         let isActive = true;
         const { minX, maxX, minY, maxY, targetTier } = queryParams;
 
-        const modeSuffix = needsFullVector ? 'FULL' : `STATIC_${currentDbIndex}`;
-        const currentKey = `${minX}-${maxX}-${minY}-${maxY}-${targetTier}-${modeSuffix}`;
-
-        if (lastQueryParams.current.key === currentKey) return;
-        lastQueryParams.current = { key: currentKey };
-
-        // Cache Clearing
-        const isStaticMode = !needsFullVector;
-        tileCache.current.forEach((value, key) => {
-            const isFullKey = key.endsWith('FULL');
-            if (isStaticMode && isFullKey) {
-                tileCache.current.delete(key);
-            } else if (needsFullVector && !isFullKey) {
-                tileCache.current.delete(key);
-            } else if (isStaticMode && !isFullKey && key.includes('STATIC_') && !key.endsWith(`STATIC_${currentDbIndex}`)) {
-                tileCache.current.delete(key);
-            }
-        });
-
-        // We DO NOT reset loadedTier to -1 here. We wait.
-
         const loadData = async () => {
             let conn = null;
-
             try {
-                conn = await db.connect();
+                // 1. Identify Needed Tiles & Check Cache
+                const tilesToRender = [];
+                const tilesToFetchFull = [];     // Need Geometry + Data
+                const tilesToFetchDataOnly = []; // Have Geometry, Need Data
 
+                for (let x = minX; x <= maxX; x++) {
+                    for (let y = minY; y <= maxY; y++) {
+                        const key = `${x}_${y}_T${targetTier}`;
+                        let cached = tileCache.current.get(key);
+
+                        // Initialize cache entry if missing
+                        if (!cached) {
+                            cached = {
+                                key, x, y, tier: targetTier,
+                                positions: null,
+                                tileInfo: null,
+                                count: 0,
+                                fullVectors: null,
+                                staticValues: new Map()
+                            };
+                            tileCache.current.set(key, cached);
+                        }
+
+                        // Check Data Availability
+                        let hasData = false;
+                        if (needsFullVector) {
+                            if (cached.fullVectors) hasData = true;
+                        } else {
+                            if (cached.fullVectors || cached.staticValues.has(currentDbIndex)) hasData = true;
+                        }
+
+                        if (cached.positions) {
+                            if (hasData) {
+                                tilesToRender.push(cached);
+                            } else {
+                                tilesToFetchDataOnly.push(cached);
+                            }
+                        } else {
+                            // Missing positions -> Must fetch everything
+                            tilesToFetchFull.push(cached);
+                        }
+                    }
+                }
+
+                conn = await db.connect();
                 const DISPLACEMENT_COL = needsFullVector
                     ? "displacements"
                     : `displacements[${currentDbIndex}] AS displacements`;
 
-                setLoadingStage('tier0');
+                // 2. Fetch Full Tiles (Geometry + Data)
+                if (tilesToFetchFull.length > 0) {
+                    setLoadingStage(`tier${targetTier}`);
+                    setDataStatus(`Fetching ${tilesToFetchFull.length} new tiles...`);
 
-                // --- TIER 0 ---
-                const viewKey0 = `${minX}_${maxX}_${minY}_${maxY}_T0_${modeSuffix}`;
-                let t0 = tileCache.current.get(viewKey0);
+                    const whereClauses = tilesToFetchFull.map(t => `(tile_x = ${t.x} AND tile_y = ${t.y})`).join(' OR ');
+                    let query = '';
 
-                if (!t0) {
-                    setDataStatus(`Fetching T0 (${modeSuffix})`);
-                    const q0 = `
-                        SELECT tile_x, tile_y, x, y, ${DISPLACEMENT_COL}
-                        FROM read_parquet('data.geoparquet')
-                        WHERE tile_x BETWEEN ${minX} AND ${maxX}
-                          AND tile_y BETWEEN ${minY} AND ${maxY}
-                          AND tier_id = 0
-                    `;
-                    const res0 = await conn.query(q0);
-                    if (!isActive) return;
-                    if (res0.numRows > 0) {
-                        t0 = processArrowResult(res0, needsFullVector);
-                        tileCache.current.set(viewKey0, t0);
+                    if (tilesToFetchFull.length > (maxX - minX + 1) * (maxY - minY + 1) * 0.5) {
+                        query = `
+                            SELECT tile_x, tile_y, x, y, ${DISPLACEMENT_COL}
+                            FROM read_parquet('data.geoparquet')
+                            WHERE tile_x BETWEEN ${minX} AND ${maxX}
+                              AND tile_y BETWEEN ${minY} AND ${maxY}
+                              AND tier_id = ${targetTier}
+                        `;
+                    } else {
+                        query = `
+                            SELECT tile_x, tile_y, x, y, ${DISPLACEMENT_COL}
+                            FROM read_parquet('data.geoparquet')
+                            WHERE (${whereClauses})
+                              AND tier_id = ${targetTier}
+                        `;
                     }
-                } else {
-                    setDataStatus('Cache T0');
+
+                    const result = await conn.query(query);
+                    if (isActive) {
+                        processAndCache(result, true); // true = has geometry
+                    }
+                }
+
+                // 3. Fetch Data Only (Lazy Loading)
+                if (tilesToFetchDataOnly.length > 0) {
+                    setDataStatus(`Updating data for ${tilesToFetchDataOnly.length} tiles...`);
+
+                    const whereClauses = tilesToFetchDataOnly.map(t => `(tile_x = ${t.x} AND tile_y = ${t.y})`).join(' OR ');
+
+                    // 🛑 OPTIMIZATION: Do NOT select x, y. Only Data.
+                    const query = `
+                        SELECT tile_x, tile_y, ${DISPLACEMENT_COL}
+                        FROM read_parquet('data.geoparquet')
+                        WHERE (${whereClauses})
+                          AND tier_id = ${targetTier}
+                    `;
+
+                    const result = await conn.query(query);
+                    if (isActive) {
+                        processAndCache(result, false); // false = data only
+                    }
                 }
 
                 if (!isActive) return;
 
-                // 🛑 SMART UPDATE LOGIC
-                // Only render T0 immediately if we aren't waiting for higher tiers (Tier 1/2),
-                // OR if we have literally nothing on screen (loadedTier == -1).
-                if (targetTier === 0) {
-                    if (t0) updateDisplayState([t0], 0);
-                } else if (loadedTier === -1 && t0) {
-                    updateDisplayState([t0], 0);
-                }
-
-                // --- TIER 1 ---
-                if (targetTier >= 1) {
-                    const viewKey1 = `${minX}_${maxX}_${minY}_${maxY}_T1_${modeSuffix}`;
-                    let t1 = tileCache.current.get(viewKey1);
-
-                    if (!t1) {
-                        setLoadingStage('pause1');
-                        // Small delay not strictly needed with buffer, but helps debounce fetch storm on rapid zoom
-                        // await new Promise(r => setTimeout(r, 100));
-                        if (!isActive) return;
-
-                        setLoadingStage('tier1');
-                        setDataStatus(`Fetching T1 (${modeSuffix})`);
-                        const q1 = `
-                            SELECT tile_x, tile_y, x, y, ${DISPLACEMENT_COL}
-                            FROM read_parquet('data.geoparquet')
-                            WHERE tile_x BETWEEN ${minX} AND ${maxX}
-                              AND tile_y BETWEEN ${minY} AND ${maxY}
-                              AND tier_id = 1
-                        `;
-                        const res1 = await conn.query(q1);
-                        if (!isActive) return;
-                        if (res1.numRows > 0) {
-                            t1 = processArrowResult(res1, needsFullVector);
-                            tileCache.current.set(viewKey1, t1);
-                        }
-                    } else {
-                        setDataStatus('Cache T1');
-                    }
-
-                    if (!isActive) return;
-
-                    // Update Tier 1
-                    if (targetTier === 1) {
-                        if (t1 && t0) updateDisplayState([t0, t1], 1);
-                        else if (t1) updateDisplayState([t1], 1);
-                        // Only fallback to T0 if T1 is totally missing
-                        else if (t0 && loadedTier < 0) updateDisplayState([t0], 0);
-                    } else if (loadedTier === -1 && t1) {
-                        // Intermediate update if aiming for T2
-                        updateDisplayState(t0 ? [t0, t1] : [t1], 1);
+                // 4. Update Display
+                // Re-gather render list (some might have been fetched just now)
+                const finalRenderList = [];
+                for (let x = minX; x <= maxX; x++) {
+                    for (let y = minY; y <= maxY; y++) {
+                        const key = `${x}_${y}_T${targetTier}`;
+                        const cached = tileCache.current.get(key);
+                        if (cached && cached.positions) finalRenderList.push(cached);
                     }
                 }
 
-                // --- TIER 2 ---
-                if (targetTier >= 2) {
-                    const viewKey2 = `${minX}_${maxX}_${minY}_${maxY}_T2_${modeSuffix}`;
-                    let t2 = tileCache.current.get(viewKey2);
-
-                    if (!t2) {
-                        setLoadingStage('pause2');
-                        if (!isActive) return;
-
-                        setLoadingStage('tier2');
-                        setDataStatus(`Fetching T2 (${modeSuffix})`);
-                        const q2 = `
-                            SELECT tile_x, tile_y, x, y, ${DISPLACEMENT_COL}
-                            FROM read_parquet('data.geoparquet')
-                            WHERE tile_x BETWEEN ${minX} AND ${maxX}
-                              AND tile_y BETWEEN ${minY} AND ${maxY}
-                              AND tier_id = 2
-                        `;
-                        const res2 = await conn.query(q2);
-                        if (!isActive) return;
-                        if (res2.numRows > 0) {
-                            t2 = processArrowResult(res2, needsFullVector);
-                            tileCache.current.set(viewKey2, t2);
-                        }
-                    } else {
-                        setDataStatus('Cache T2');
-                    }
-
-                    if (t2) {
-                        const viewKey1 = `${minX}_${maxX}_${minY}_${maxY}_T1_${modeSuffix}`;
-                        const t1 = tileCache.current.get(viewKey1);
-
-                        const chunks = [];
-                        if (t0) chunks.push(t0);
-                        if (t1) chunks.push(t1);
-                        chunks.push(t2);
-
-                        updateDisplayState(chunks, 2);
-                    }
-                }
-
+                updateDisplayState(finalRenderList, targetTier);
                 setLoadingStage('idle');
                 setDataStatus('Ready');
 
@@ -315,6 +277,61 @@ export default function VirtualTilesMap() {
             } finally {
                 if (conn) await conn.close();
             }
+        };
+
+        const processAndCache = (result, hasGeometry) => {
+            const processed = processArrowResult(result, needsFullVector, hasGeometry);
+            const N = processed.count;
+
+            // Temporary map to group by tile
+            const tempMap = new Map();
+
+            for (let i = 0; i < N; i++) {
+                const tx = processed.tileInfo[i * 2];
+                const ty = processed.tileInfo[i * 2 + 1];
+                const key = `${tx}_${ty}_T${targetTier}`;
+
+                if (!tempMap.has(key)) {
+                    tempMap.set(key, {
+                        positions: [],
+                        dVec: [],
+                        tileInfo: [],
+                        count: 0
+                    });
+                }
+                const t = tempMap.get(key);
+
+                if (hasGeometry) {
+                    t.positions.push(processed.positions[i * 2], processed.positions[i * 2 + 1]);
+                }
+
+                if (needsFullVector) {
+                    t.dVec.push(processed.dVec.get(i));
+                } else {
+                    t.dVec.push(processed.dVec[i]);
+                }
+
+                t.tileInfo.push(tx, ty);
+                t.count++;
+            }
+
+            // Update Cache
+            tempMap.forEach((val, key) => {
+                const cached = tileCache.current.get(key);
+                if (cached) {
+                    if (hasGeometry) {
+                        cached.positions = new Float64Array(val.positions);
+                        cached.tileInfo = new Int32Array(val.tileInfo);
+                        cached.count = val.count;
+                    }
+
+                    if (needsFullVector) {
+                        cached.fullVectors = val.dVec;
+                    } else {
+                        cached.staticValues.set(currentDbIndex, new Float64Array(val.dVec));
+                    }
+                }
+            });
         };
 
         loadData();
@@ -331,6 +348,7 @@ export default function VirtualTilesMap() {
         let vectors = [];
         let tileInfos = [];
 
+        // For static display, we flatten the data into a single array if possible
         let staticDisplacements = null;
         let currentOffset = 0;
 
@@ -339,16 +357,35 @@ export default function VirtualTilesMap() {
         }
 
         for (const c of chunks) {
+            if (!c.positions) continue; // Skip incomplete tiles
+
             mergedPos.set(c.positions, offset);
             offset += c.positions.length;
 
             if (fullVectorsLoaded) {
-                vectors.push(c.dVec);
-            } else {
-                if (staticDisplacements) {
-                    staticDisplacements.set(c.dVec, currentOffset);
-                    currentOffset += c.count;
+                if (c.fullVectors) {
+                    vectors.push(c.fullVectors);
+                } else {
+                    vectors.push([]);
                 }
+            } else {
+                let dataSrc = null;
+                if (c.fullVectors) {
+                    const N = c.count;
+                    const slice = new Float64Array(N);
+                    for (let i = 0; i < N; i++) {
+                        const list = c.fullVectors[i];
+                        slice[i] = list ? list.get(timeIndex) : 0;
+                    }
+                    dataSrc = slice;
+                } else {
+                    dataSrc = c.staticValues.get(currentDbIndex);
+                }
+
+                if (staticDisplacements && dataSrc) {
+                    staticDisplacements.set(dataSrc, currentOffset);
+                }
+                currentOffset += c.count;
             }
 
             tileInfos.push(c.tileInfo);
@@ -372,36 +409,45 @@ export default function VirtualTilesMap() {
         setLoadedTier(tierReached);
     };
 
-    const processArrowResult = (result, isFullVector) => {
-        const xVec = result.getChild('x');
-        const yVec = result.getChild('y');
+    const processArrowResult = (result, isFullVector, hasGeometry = true) => {
+        // 🛑 ZERO-COPY OPTIMIZATION
         const dVec = result.getChild('displacements');
         const tileXVec = result.getChild('tile_x');
         const tileYVec = result.getChild('tile_y');
 
         const N = result.numRows;
 
-        const positions = new Float64Array(N * 2);
-        let displacementData;
+        // 1. Positions (Interleaved X, Y)
+        let positions = null;
+        if (hasGeometry) {
+            const xVec = result.getChild('x');
+            const yVec = result.getChild('y');
+            const xArray = xVec.toArray();
+            const yArray = yVec.toArray();
+            positions = new Float64Array(N * 2);
 
-        if (!isFullVector) {
-            displacementData = new Float64Array(N);
-        } else {
-            displacementData = dVec;
+            for (let i = 0; i < N; i++) {
+                positions[i * 2] = xArray[i];
+                positions[i * 2 + 1] = yArray[i];
+            }
         }
 
+        // 2. Tile Info
+        const txArray = tileXVec.toArray();
+        const tyArray = tileYVec.toArray();
         const tileInfo = new Int32Array(N * 2);
 
         for (let i = 0; i < N; i++) {
-            positions[i * 2] = xVec.get(i);
-            positions[i * 2 + 1] = yVec.get(i);
+            tileInfo[i * 2] = txArray[i];
+            tileInfo[i * 2 + 1] = tyArray[i];
+        }
 
-            if (!isFullVector) {
-                displacementData[i] = dVec.get(i);
-            }
-
-            tileInfo[i * 2] = tileXVec.get(i);
-            tileInfo[i * 2 + 1] = tileYVec.get(i);
+        // 3. Displacements
+        let displacementData;
+        if (!isFullVector) {
+            displacementData = dVec.toArray();
+        } else {
+            displacementData = dVec;
         }
 
         return { positions, dVec: displacementData, tileInfo, count: N };
@@ -418,15 +464,13 @@ export default function VirtualTilesMap() {
                 let dispValue;
 
                 if (fullVectorsLoaded) {
-                    const listVector = chunk;
-                    const list = listVector.get(localIndex);
+                    const list = chunk[localIndex];
                     dispValue = list ? list.get(timeIndex) : 0;
                 } else {
                     const staticArray = chunk;
                     dispValue = staticArray[localIndex];
                 }
 
-                // 🛑 RAW VALUE (No multiplication), Domain [-20, 0, 20]
                 const rgb = colorScale(dispValue ?? 0);
                 return [rgb[0], rgb[1], rgb[2], 255];
             }
@@ -448,7 +492,6 @@ export default function VirtualTilesMap() {
         if (mode === 'static' && fullVectorsLoaded) {
             setFullVectorsLoaded(false);
             setIsPlaying(false);
-            setTimeIndex(0);
         }
     };
 
@@ -507,7 +550,7 @@ export default function VirtualTilesMap() {
                                 if (localIndex < len) {
                                     const chunk = displacementVectors.vectors[i];
                                     if (fullVectorsLoaded) {
-                                        const list = chunk.get(localIndex);
+                                        const list = chunk[localIndex];
                                         displacement = list ? list.get(timeIndex) : null;
                                     } else {
                                         displacement = chunk[localIndex];
@@ -517,7 +560,6 @@ export default function VirtualTilesMap() {
                                 localIndex -= len;
                             }
                             const currentDate = dates[timeIndex] || 'N/A';
-                            // No unit in tooltip
                             return (displacement !== null && displacement !== undefined)
                                 ? `Date: ${currentDate}\nDisplacement: ${(displacement).toFixed(5)}`
                                 : null;

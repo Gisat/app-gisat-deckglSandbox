@@ -18,6 +18,7 @@ import geoParquetDuckDB3D from './GeoParquetDuckDB_3D/HybridMap3D.jsx';
 import geoParquetDuckDB2D from './GeoParquetDuckDB_2D/HybridMap.jsx';
 import geoParquetDuckDBwasm from './GeoParquetDuckDBwasm/MinimalWasmMap.jsx';
 import geoParquetTiled from './GeoParquetTiled/GeoParquetTiled.jsx';
+import geoParquetVirtualTiles from './GeoParquetVirtualTile/VirtualTilesMap.jsx';
 import geoParquetDuckDBpolygon from './GeoParquetDuckDB_polygon/PolygonMap3D.jsx';
 import MetroDarrows3D from "./MetroD_arrows_3D/index.jsx";
 
@@ -43,6 +44,7 @@ const mapApps = [
     { name: 'GeoParquet DuckDB polygon', path: '/geoparquet-duckdb-polygon', component: geoParquetDuckDBpolygon },
     { name: 'GeoParquet DuckDB Wasm', path: '/geoparquet-duckdb-wasm', component: geoParquetDuckDBwasm },
     { name: 'GeoParquet Tiled', path: '/geoparquet-tiled', component: geoParquetTiled },
+    { name: 'GeoParquet Virtual Tiles', path: '/geoparquet-virtual-tiles', component: geoParquetVirtualTiles },
 ];
 
 export default mapApps;
