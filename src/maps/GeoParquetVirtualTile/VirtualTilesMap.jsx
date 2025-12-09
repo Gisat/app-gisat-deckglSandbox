@@ -13,7 +13,7 @@ import './VirtualTilesMap.css';
 
 // 🛑 Configuration
 const GRID_SIZE = 0.03;
-const TILE_BUFFER = 0; // Fetch 1 extra tile around the view
+const TILE_BUFFER = 1; // Fetch 1 extra tile around the view
 
 function useDebounce(value, delay) {
     const [debouncedValue, setDebouncedValue] = useState(value);
