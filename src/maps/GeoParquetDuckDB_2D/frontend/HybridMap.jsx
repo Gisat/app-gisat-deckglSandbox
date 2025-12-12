@@ -7,6 +7,9 @@ import { scaleLinear } from 'd3-scale';
 import { load } from '@loaders.gl/core';
 import { ArrowLoader } from '@loaders.gl/arrow';
 
+import { HUD } from './components/HUD';
+import { PlaybackControls } from './components/PlaybackControls';
+
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 12, pitch: 0, bearing: 0 };
 const DATES_API_URL = 'http://localhost:5000/api/dates';
@@ -16,6 +19,8 @@ const DATA_API_URL = 'http://localhost:5000/api/hybrid-data';
 const GRID_SIZE = 0.06;
 // 🆕 BUFFER: Fetch 1 extra ring of tiles
 const TILE_BUFFER = 1;
+// 🆕 CACHE LIMIT: Max number of tiles to keep in memory (approx 100-200MB depending on density)
+const TILE_CACHE_LIMIT = 200;
 
 const colorScale = scaleLinear()
     .domain([-20, 0, 20])
@@ -27,6 +32,13 @@ function getTargetTier(zoom) {
     if (zoom >= 15) return 2; // Full Detail (100%)
     if (zoom >= 13) return 1; // Mid Detail (35%)
     return 0;                 // Overview (5%) - Global Fetch
+}
+
+// 🆕 Point Size Logic
+function getPointSize(zoom) {
+    if (zoom < 13) return 2;  // Tier 0 (Overview)
+    if (zoom < 15) return 3;  // Tier 1 (Mid)
+    return 5;                 // Tier 2 (Detail)
 }
 
 function HybridMap() {
@@ -44,9 +56,34 @@ function HybridMap() {
 
     const mapContainerRef = useRef(null);
     const tileCache = useRef(new Map());
-
     // 🛑 REMOVED DEBOUNCE HOOKS
     const pendingRequests = useRef(new Set()); // 🆕 Track in-flight requests
+
+    // --- HELPER: LRU Update ---
+    // Moves 'key' to the end of the Map (marking it as most recently used)
+    const touchCache = (key) => {
+        const val = tileCache.current.get(key);
+        if (val) {
+            tileCache.current.delete(key);
+            tileCache.current.set(key, val);
+        }
+    };
+
+    // --- HELPER: LRU Evict ---
+    const enforceCacheLimit = () => {
+        if (tileCache.current.size <= TILE_CACHE_LIMIT) return;
+
+        // Map.keys() returns iterator in insertion order (oldest first due to touchCache)
+        for (const key of tileCache.current.keys()) {
+            if (tileCache.current.size <= TILE_CACHE_LIMIT) break;
+
+            // 🛑 NEVER EVICT GLOBAL TIER 0
+            if (key.includes('global_t0')) continue;
+
+            // Evict oldest
+            tileCache.current.delete(key);
+        }
+    };
 
     // 1. Fetch Dates
     useEffect(() => {
@@ -92,6 +129,7 @@ function HybridMap() {
         // We always include Tier 0, but we fetch it as ONE big chunk, not tiles.
         const t0Key = mode === 'static' ? `global_t0_static_${timeIndex}` : `global_t0_anim`;
         if (tileCache.current.has(t0Key)) {
+            touchCache(t0Key); // Mark used
             visibleDataChunks.push(tileCache.current.get(t0Key));
         } else {
             // Check if pending
@@ -113,6 +151,7 @@ function HybridMap() {
                             : `${x}_${y}_T${t}_anim`;
 
                         if (tileCache.current.has(cacheKey)) {
+                            touchCache(cacheKey); // Mark used
                             visibleDataChunks.push(tileCache.current.get(cacheKey));
                         } else {
                             if (!pendingRequests.current.has(cacheKey)) {
@@ -125,11 +164,20 @@ function HybridMap() {
             }
         }
 
+        // Run eviction periodically (or purely on add)
+        // Here we run it every render to ensure we stay clean, 
+        // effectively cleaning up tiles that fell out of view.
+        enforceCacheLimit();
+
         setDisplayData(visibleDataChunks.flat());
 
-        if (neededTiles.length === 0) return;
+        if (neededTiles.length === 0) {
+            setFetchStatus(`Cached (${visibleDataChunks.length} chunks)`);
+            return;
+        }
 
         setIsLoading(true);
+        setFetchStatus(`Fetching ${neededTiles.length} new tiles...`);
 
         Promise.all(neededTiles.map(task => {
             let url = '';
@@ -160,7 +208,15 @@ function HybridMap() {
                     const dataArr = result.data || result;
                     pendingRequests.current.delete(task.key); // Clear pending
                     if (Array.isArray(dataArr)) {
+                        // Add to cache
                         tileCache.current.set(task.key, dataArr);
+                        // No need to touchCache here, it will be touched on next render
+
+                        // Check limit
+                        if (tileCache.current.size > TILE_CACHE_LIMIT) {
+                            enforceCacheLimit();
+                        }
+
                         return dataArr;
                     }
                     return [];
@@ -176,7 +232,9 @@ function HybridMap() {
             const allChunks = [];
 
             // 1. Get Global T0
-            if (tileCache.current.has(t0Key)) allChunks.push(tileCache.current.get(t0Key));
+            if (tileCache.current.has(t0Key)) {
+                allChunks.push(tileCache.current.get(t0Key));
+            }
 
             // 2. Get Tiled T1/T2
             if (targetTier > 0) {
@@ -191,6 +249,7 @@ function HybridMap() {
             }
             setDisplayData(allChunks.flat());
             setIsLoading(false);
+            setFetchStatus('Ready');
         });
 
     }, [viewState, timeIndex, dates, mode]);
@@ -209,7 +268,7 @@ function HybridMap() {
             id: 'data-layer',
             data: displayData,
             getPosition: d => [d.longitude, d.latitude],
-            getRadius: 5,
+            getRadius: getPointSize(viewState.zoom),
             radiusUnits: 'pixels',
             getFillColor: d => {
                 let val = 0;
@@ -240,6 +299,8 @@ function HybridMap() {
         }
     };
 
+    const [fetchStatus, setFetchStatus] = useState("Idle");
+
     return (
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
             <DeckGL
@@ -249,30 +310,27 @@ function HybridMap() {
                 layers={layers}
             />
 
-            <div style={{
-                position: 'absolute', bottom: 30, left: '50%', transform: 'translateX(-50%)',
-                width: '80%', maxWidth: '600px', backgroundColor: 'white', padding: '15px',
-                borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', fontFamily: 'sans-serif', zIndex: 10
-            }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <div style={{ fontWeight: 'bold' }}>
-                        {dates[timeIndex] || 'Loading...'}
-                        {isLoading && <span style={{ color: 'orange', marginLeft: '10px', fontSize: '0.8em' }}> Fetching...</span>}
-                    </div>
-                    <div>
-                        <span style={{ marginRight: '15px', fontWeight: 'bold', color: '#555', fontSize: '14px' }}>
-                            Tier {currentTierDisplay}
-                        </span>
-                        <button onClick={toggleMode} style={{ marginRight: '10px', padding: '5px 10px', background: mode === 'animation' ? '#4caf50' : '#e0e0e0', color: mode === 'animation' ? 'white' : 'black', border: 'none', borderRadius: '4px' }}>
-                            {mode === 'animation' ? 'Mode: Animation' : 'Mode: Static'}
-                        </button>
-                        <button onClick={() => setIsPlaying(!isPlaying)} disabled={mode === 'static' || isLoading} style={{ padding: '5px 15px', background: isPlaying ? '#ff5252' : '#2196f3', color: 'white', border: 'none', borderRadius: '4px' }}>
-                            {isPlaying ? 'Pause' : 'Play'}
-                        </button>
-                    </div>
-                </div>
-                <input type="range" min={0} max={dates.length > 0 ? dates.length - 1 : 0} value={timeIndex} onChange={e => { setIsPlaying(false); setTimeIndex(Number(e.target.value)); }} style={{ width: '100%' }} disabled={dates.length === 0} />
-            </div>
+            <HUD
+                viewState={viewState}
+                currentTierDisplay={currentTierDisplay}
+                totalPoints={displayData.length}
+                fetchStatus={fetchStatus}
+                isLoading={isLoading}
+                cacheSize={tileCache.current.size}
+                cacheLimit={TILE_CACHE_LIMIT}
+            />
+
+            <PlaybackControls
+                date={dates[timeIndex]}
+                mode={mode}
+                isPlaying={isPlaying}
+                isLoading={isLoading}
+                timeIndex={timeIndex}
+                totalDates={dates.length}
+                setMode={setMode}
+                setIsPlaying={setIsPlaying}
+                setTimeIndex={setTimeIndex}
+            />
         </div>
     );
 }
