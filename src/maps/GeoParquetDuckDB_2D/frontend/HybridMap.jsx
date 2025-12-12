@@ -96,13 +96,13 @@ function HybridMap() {
     // 2. Animation Loop
     useEffect(() => {
         let interval;
-        if (isPlaying && dates.length > 0) {
+        if (mode === 'animation' && isPlaying && dates.length > 0) {
             interval = setInterval(() => {
                 setTimeIndex(prev => (prev >= dates.length - 1 ? 0 : prev + 1));
             }, 100);
         }
         return () => clearInterval(interval);
-    }, [isPlaying, dates]);
+    }, [isPlaying, dates, mode]);
 
     // 3. Tile Fetching Logic (Hybrid: Global T0 + Tiled T1/T2)
     useEffect(() => {
@@ -277,6 +277,10 @@ function HybridMap() {
                     if (vec) {
                         if (typeof vec.get === 'function') val = vec.get(timeIndex);
                         else if (vec.length > timeIndex) val = vec[timeIndex];
+                    } else {
+                        // 🛑 FALLBACK: If we are in animation mode but data is still static 
+                        // (waiting for fetch), use the static value.
+                        val = d.displacement;
                     }
                 } else {
                     val = d.displacement;

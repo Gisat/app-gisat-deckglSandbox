@@ -22,11 +22,55 @@ export const PlaybackControls = ({
                     {date || 'Loading...'}
                     {isLoading && <span style={{ color: 'orange', marginLeft: '10px', fontSize: '0.8em' }}> Fetching...</span>}
                 </div>
-                <div>
-                    <button onClick={() => setMode(m => m === 'static' ? 'animation' : 'static')} style={{ marginRight: '10px', padding: '5px 10px', background: mode === 'animation' ? '#4caf50' : '#e0e0e0', color: mode === 'animation' ? 'white' : 'black', border: 'none', borderRadius: '4px' }}>
-                        {mode === 'animation' ? 'Mode: Animation' : 'Mode: Static'}
-                    </button>
-                    <button onClick={() => setIsPlaying(!isPlaying)} disabled={mode === 'static' || isLoading} style={{ padding: '5px 15px', background: isPlaying ? '#ff5252' : '#2196f3', color: 'white', border: 'none', borderRadius: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                    {/* MODE TOGGLE */}
+                    <div style={{ display: 'flex', background: '#e0e0e0', borderRadius: '20px', padding: '2px', marginRight: '15px' }}>
+                        <button
+                            onClick={() => setMode('static')}
+                            style={{
+                                padding: '5px 15px',
+                                background: mode === 'static' ? 'white' : 'transparent',
+                                color: mode === 'static' ? 'black' : '#666',
+                                border: 'none',
+                                borderRadius: '18px',
+                                boxShadow: mode === 'static' ? '0 1px 3px rgba(0,0,0,0.2)' : 'none',
+                                cursor: 'pointer',
+                                fontWeight: mode === 'static' ? 'bold' : 'normal',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            Static
+                        </button>
+                        <button
+                            onClick={() => setMode('animation')}
+                            style={{
+                                padding: '5px 15px',
+                                background: mode === 'animation' ? '#4caf50' : 'transparent',
+                                color: mode === 'animation' ? 'white' : '#666',
+                                border: 'none',
+                                borderRadius: '18px',
+                                boxShadow: mode === 'animation' ? '0 1px 3px rgba(0,0,0,0.2)' : 'none',
+                                cursor: 'pointer',
+                                fontWeight: mode === 'animation' ? 'bold' : 'normal',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            Animation
+                        </button>
+                    </div>
+                    <button
+                        onClick={() => setIsPlaying(!isPlaying)}
+                        disabled={mode === 'static' || isLoading}
+                        style={{
+                            padding: '5px 15px',
+                            background: isPlaying ? '#ff5252' : '#2196f3',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            opacity: (mode === 'static' || isLoading) ? 0.5 : 1,
+                            cursor: (mode === 'static' || isLoading) ? 'not-allowed' : 'pointer'
+                        }}
+                    >
                         {isPlaying ? 'Pause' : 'Play'}
                     </button>
                 </div>
