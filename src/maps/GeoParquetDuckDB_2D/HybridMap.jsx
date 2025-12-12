@@ -1,101 +1,203 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { DeckGL } from 'deck.gl';
-import { MapView, WebMercatorViewport } from '@deck.gl/core';
+import { WebMercatorViewport } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
-import { ScatterplotLayer } from '@deck.gl/layers';
-import { BitmapLayer } from '@deck.gl/layers';
+import { ScatterplotLayer, BitmapLayer } from '@deck.gl/layers';
 import { scaleLinear } from 'd3-scale';
 import { load } from '@loaders.gl/core';
 import { ArrowLoader } from '@loaders.gl/arrow';
-
-// A custom hook to delay updates
-function useDebounce(value, delay) {
-    const [debouncedValue, setDebouncedValue] = useState(value);
-    useEffect(() => {
-        const handler = setTimeout(() => { setDebouncedValue(value); }, delay);
-        return () => { clearTimeout(handler); };
-    }, [value, delay]);
-    return debouncedValue;
-}
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 12, pitch: 0, bearing: 0 };
 const DATES_API_URL = 'http://localhost:5000/api/dates';
 const DATA_API_URL = 'http://localhost:5000/api/hybrid-data';
+
+// 🛑 MUST MATCH 'generate_virtual_tiles.py'
+const GRID_SIZE = 0.06;
+// 🆕 BUFFER: Fetch 1 extra ring of tiles
+const TILE_BUFFER = 1;
+
 const colorScale = scaleLinear()
     .domain([-20, 0, 20])
     .range([[65, 182, 196], [254, 254, 191], [215, 25, 28]])
     .clamp(true);
-const USE_FUZZY_CACHE = true;
+
+// 🆕 LOD LOGIC
+function getTargetTier(zoom) {
+    if (zoom >= 15) return 2; // Full Detail (100%)
+    if (zoom >= 13) return 1; // Mid Detail (35%)
+    return 0;                 // Overview (5%) - Global Fetch
+}
 
 function HybridMap() {
-    const [data, setData] = useState([]);
+    const [displayData, setDisplayData] = useState([]);
     const [dates, setDates] = useState([]);
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
     const [timeIndex, setTimeIndex] = useState(0);
-    const [isLoading, setIsLoading] = useState(true);
-    const dataCache = useRef({});
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Debug state to show current tier in HUD
+    const [currentTierDisplay, setCurrentTierDisplay] = useState(0);
+
+    const [mode, setMode] = useState('static');
+    const [isPlaying, setIsPlaying] = useState(false);
+
     const mapContainerRef = useRef(null);
+    const tileCache = useRef(new Map());
 
-    const debouncedViewState = useDebounce(viewState, 300);
-    const debouncedTimeIndex = useDebounce(timeIndex, 200);
+    // 🛑 REMOVED DEBOUNCE HOOKS
+    const pendingRequests = useRef(new Set()); // 🆕 Track in-flight requests
 
-    // Effect 1: Fetch the list of dates once on startup
+    // 1. Fetch Dates
     useEffect(() => {
         fetch(DATES_API_URL)
             .then(res => res.json())
-            .then(d => { setDates(d); setIsLoading(false); });
+            .then(d => setDates(d))
+            .catch(console.error);
     }, []);
 
-    // Effect 2: Fetch map data using debounced values and fuzzy caching
+    // 2. Animation Loop
     useEffect(() => {
-        if (dates.length === 0 || !mapContainerRef.current || mapContainerRef.current.clientWidth === 0) {
-            return;
+        let interval;
+        if (isPlaying && dates.length > 0) {
+            interval = setInterval(() => {
+                setTimeIndex(prev => (prev >= dates.length - 1 ? 0 : prev + 1));
+            }, 100);
         }
+        return () => clearInterval(interval);
+    }, [isPlaying, dates]);
+
+    // 3. Tile Fetching Logic (Hybrid: Global T0 + Tiled T1/T2)
+    useEffect(() => {
+        if (!mapContainerRef.current || dates.length === 0) return;
+        if (mode === 'animation' && isPlaying) return;
 
         const { clientWidth, clientHeight } = mapContainerRef.current;
-        const viewport = new WebMercatorViewport({ ...debouncedViewState, width: clientWidth, height: clientHeight });
+        const viewport = new WebMercatorViewport({ ...viewState, width: clientWidth, height: clientHeight });
         const [minLon, minLat, maxLon, maxLat] = viewport.getBounds();
 
-        // --- FUZZY CACHING LOGIC ---
-        // This logic creates a simplified key to represent the current view.
-        // Instead of using the exact, high-precision bounding box for the cache key,
-        // we round the view parameters. This means small pans or zooms will
-        // resolve to the same key, allowing us to reuse cached data and avoid
-        // unnecessary backend requests.
-        let cacheKey;
-        if (USE_FUZZY_CACHE) {
-            const roundedZoom = Math.round(debouncedViewState.zoom);
-            const roundedLat = debouncedViewState.latitude.toFixed(2);
-            const roundedLon = debouncedViewState.longitude.toFixed(2);
-            cacheKey = `${roundedZoom}-${roundedLat}-${roundedLon}-${debouncedTimeIndex}`;
+        // Grid Calculation
+        const minTx = Math.floor(minLon / GRID_SIZE) - TILE_BUFFER;
+        const maxTx = Math.floor(maxLon / GRID_SIZE) + TILE_BUFFER;
+        const minTy = Math.floor(minLat / GRID_SIZE) - TILE_BUFFER;
+        const maxTy = Math.floor(maxLat / GRID_SIZE) + TILE_BUFFER;
+
+        const targetTier = getTargetTier(viewState.zoom);
+        setCurrentTierDisplay(targetTier);
+
+        const neededTiles = [];
+        const visibleDataChunks = [];
+
+        // --- STEP A: HANDLE TIER 0 (GLOBAL) ---
+        // We always include Tier 0, but we fetch it as ONE big chunk, not tiles.
+        const t0Key = mode === 'static' ? `global_t0_static_${timeIndex}` : `global_t0_anim`;
+        if (tileCache.current.has(t0Key)) {
+            visibleDataChunks.push(tileCache.current.get(t0Key));
         } else {
-            // For comparison, the precise key uses exact, unrounded values.
-            const {zoom, latitude, longitude} = debouncedViewState;
-            cacheKey = `${zoom}-${latitude}-${longitude}-${debouncedTimeIndex}`;
+            // Check if pending
+            if (!pendingRequests.current.has(t0Key)) {
+                neededTiles.push({ type: 'global', tier: 0, key: t0Key });
+                pendingRequests.current.add(t0Key); // Mark pending
+            }
         }
 
-        if (dataCache.current[cacheKey]) {
-            setData(dataCache.current[cacheKey]);
-            return;
+        // --- STEP B: HANDLE TIER 1 & 2 (TILED) ---
+        // Only loop grid for tiers > 0
+        if (targetTier > 0) {
+            for (let x = minTx; x <= maxTx; x++) {
+                for (let y = minTy; y <= maxTy; y++) {
+                    // Loop T1 to TargetTier (skip T0 because it's handled above)
+                    for (let t = 1; t <= targetTier; t++) {
+                        const cacheKey = mode === 'static'
+                            ? `${x}_${y}_T${t}_static_${timeIndex}`
+                            : `${x}_${y}_T${t}_anim`;
+
+                        if (tileCache.current.has(cacheKey)) {
+                            visibleDataChunks.push(tileCache.current.get(cacheKey));
+                        } else {
+                            if (!pendingRequests.current.has(cacheKey)) {
+                                neededTiles.push({ type: 'tile', x, y, tier: t, key: cacheKey });
+                                pendingRequests.current.add(cacheKey); // Mark pending
+                            }
+                        }
+                    }
+                }
+            }
         }
+
+        setDisplayData(visibleDataChunks.flat());
+
+        if (neededTiles.length === 0) return;
 
         setIsLoading(true);
-        const backendQueryUrl = `${DATA_API_URL}?minx=${minLon}&miny=${minLat}&maxx=${maxLon}&maxy=${maxLat}&date_index=${debouncedTimeIndex}&zoom=${debouncedViewState.zoom}`;
 
-        load(backendQueryUrl, ArrowLoader, { arrow: { shape: 'object-row-table' } })
-            .then(loadedData => {
-                dataCache.current[cacheKey] = loadedData;
-                setData(loadedData);
-            })
-            .catch(error => console.error("Backend Load Error:", error))
-            .finally(() => setIsLoading(false));
+        Promise.all(neededTiles.map(task => {
+            let url = '';
 
-    }, [debouncedViewState, debouncedTimeIndex, dates]);
+            if (task.type === 'global') {
+                // Special Endpoint/Param for Global Tier 0
+                // We pass a dummy tile_x/y or handle it in backend
+                const params = new URLSearchParams({
+                    date_index: timeIndex,
+                    mode: mode,
+                    tier: 0,
+                    global: 'true' // Explicit flag
+                });
+                url = `${DATA_API_URL}?${params.toString()}`;
+            } else {
+                const params = new URLSearchParams({
+                    tile_x: task.x,
+                    tile_y: task.y,
+                    date_index: timeIndex,
+                    mode: mode,
+                    tier: task.tier
+                });
+                url = `${DATA_API_URL}?${params.toString()}`;
+            }
+
+            return load(url, ArrowLoader, { arrow: { shape: 'object-row-table' } })
+                .then(result => {
+                    const dataArr = result.data || result;
+                    pendingRequests.current.delete(task.key); // Clear pending
+                    if (Array.isArray(dataArr)) {
+                        tileCache.current.set(task.key, dataArr);
+                        return dataArr;
+                    }
+                    return [];
+                })
+                .catch(e => {
+                    console.error(`Failed ${task.key}`, e);
+                    pendingRequests.current.delete(task.key); // Clear pending on error
+                    tileCache.current.set(task.key, []); // Prevent infinite retry loop
+                    return [];
+                });
+        })).then(() => {
+            // Re-gather logic (Must mirror the selection logic above)
+            const allChunks = [];
+
+            // 1. Get Global T0
+            if (tileCache.current.has(t0Key)) allChunks.push(tileCache.current.get(t0Key));
+
+            // 2. Get Tiled T1/T2
+            if (targetTier > 0) {
+                for (let x = minTx; x <= maxTx; x++) {
+                    for (let y = minTy; y <= maxTy; y++) {
+                        for (let t = 1; t <= targetTier; t++) {
+                            const k = mode === 'static' ? `${x}_${y}_T${t}_static_${timeIndex}` : `${x}_${y}_T${t}_anim`;
+                            if (tileCache.current.has(k)) allChunks.push(tileCache.current.get(k));
+                        }
+                    }
+                }
+            }
+            setDisplayData(allChunks.flat());
+            setIsLoading(false);
+        });
+
+    }, [viewState, timeIndex, dates, mode]);
 
     const layers = [
         new TileLayer({
-            id: 'tile-layer',
+            id: 'base-map',
             data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
             minZoom: 0, maxZoom: 19, tileSize: 256,
             renderSubLayers: props => {
@@ -105,60 +207,72 @@ function HybridMap() {
         }),
         new ScatterplotLayer({
             id: 'data-layer',
-            data,
+            data: displayData,
             getPosition: d => [d.longitude, d.latitude],
-            getFillColor: d => {
-                const rgb = colorScale(d.displacement);
-                return [rgb[0], rgb[1], rgb[2], 180];
-            },
             getRadius: 5,
-            pickable: true,
+            radiusUnits: 'pixels',
+            getFillColor: d => {
+                let val = 0;
+                if (mode === 'animation') {
+                    const vec = d.displacements;
+                    if (vec) {
+                        if (typeof vec.get === 'function') val = vec.get(timeIndex);
+                        else if (vec.length > timeIndex) val = vec[timeIndex];
+                    }
+                } else {
+                    val = d.displacement;
+                }
+                const rgb = colorScale(val || 0);
+                return [rgb[0], rgb[1], rgb[2], 200];
+            },
+            updateTriggers: {
+                getFillColor: [timeIndex, mode]
+            },
+            pickable: true
         })
     ];
 
-    // --- JSX STRUCTURE ---
-    // This layout is now identical to the 3D map.
-    // The main <div> is given a specific size and relative positioning,
-    // and the <DeckGL> component automatically fills it.
-    return (
-        <div ref={mapContainerRef} style={{ position: 'relative', width: '80vw', height: '100vh' }}>
-            <div style={{ position: 'absolute', bottom: 20, left: '10%', width: '80%', zIndex: 1, background: 'white', padding: '10px', fontFamily: 'sans-serif', borderRadius: '5px', boxShadow: '0 0 10px rgba(0,0,0,0.2)' }}>
-                <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-                    <button
-                        onClick={() => setTimeIndex(timeIndex - 1)}
-                        disabled={isLoading || timeIndex === 0}
-                    >
-                        Back
-                    </button>
-                    <div style={{textAlign: 'center', flexGrow: 1}}>
-                        <label>Date: {isLoading ? 'Loading...' : (dates[timeIndex] || '...')}</label>
-                        <input
-                            type="range"
-                            min={0}
-                            max={dates.length > 0 ? dates.length - 1 : 0}
-                            step={1}
-                            value={timeIndex}
-                            onChange={e => setTimeIndex(Number(e.target.value))}
-                            style={{width: '100%'}}
-                            disabled={isLoading || dates.length === 0}
-                        />
-                    </div>
-                    <button
-                        onClick={() => setTimeIndex(timeIndex + 1)}
-                        disabled={isLoading || timeIndex >= dates.length - 1}
-                    >
-                        Next
-                    </button>
-                </div>
-            </div>
+    const toggleMode = () => {
+        if (mode === 'static') setMode('animation');
+        else {
+            setMode('static');
+            setIsPlaying(false);
+        }
+    };
 
+    return (
+        <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
             <DeckGL
                 initialViewState={INITIAL_VIEW_STATE}
                 onViewStateChange={({ viewState }) => setViewState(viewState)}
                 controller={true}
-                views={new MapView({ repeat: true })}
                 layers={layers}
             />
+
+            <div style={{
+                position: 'absolute', bottom: 30, left: '50%', transform: 'translateX(-50%)',
+                width: '80%', maxWidth: '600px', backgroundColor: 'white', padding: '15px',
+                borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', fontFamily: 'sans-serif', zIndex: 10
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div style={{ fontWeight: 'bold' }}>
+                        {dates[timeIndex] || 'Loading...'}
+                        {isLoading && <span style={{ color: 'orange', marginLeft: '10px', fontSize: '0.8em' }}> Fetching...</span>}
+                    </div>
+                    <div>
+                        <span style={{ marginRight: '15px', fontWeight: 'bold', color: '#555', fontSize: '14px' }}>
+                            Tier {currentTierDisplay}
+                        </span>
+                        <button onClick={toggleMode} style={{ marginRight: '10px', padding: '5px 10px', background: mode === 'animation' ? '#4caf50' : '#e0e0e0', color: mode === 'animation' ? 'white' : 'black', border: 'none', borderRadius: '4px' }}>
+                            {mode === 'animation' ? 'Mode: Animation' : 'Mode: Static'}
+                        </button>
+                        <button onClick={() => setIsPlaying(!isPlaying)} disabled={mode === 'static' || isLoading} style={{ padding: '5px 15px', background: isPlaying ? '#ff5252' : '#2196f3', color: 'white', border: 'none', borderRadius: '4px' }}>
+                            {isPlaying ? 'Pause' : 'Play'}
+                        </button>
+                    </div>
+                </div>
+                <input type="range" min={0} max={dates.length > 0 ? dates.length - 1 : 0} value={timeIndex} onChange={e => { setIsPlaying(false); setTimeIndex(Number(e.target.value)); }} style={{ width: '100%' }} disabled={dates.length === 0} />
+            </div>
         </div>
     );
 }
