@@ -92,7 +92,13 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
         };
 
         // --- STEP A: TIER 0 ---
-        const t0Key = mode === 'static' ? `global_t0_static_${dateIndex}` : `global_t0_anim`;
+        // Smart Caching: If we are in static mode, check if we have the ANIMATION tile cached first.
+        // If we do, we use it because it contains the data for all time steps (including this one).
+        let t0Key = mode === 'static' ? `global_t0_static_${dateIndex}` : `global_t0_anim`;
+        if (mode === 'static' && tileCache.has(`global_t0_anim`)) {
+            t0Key = `global_t0_anim`;
+        }
+
         currentVisibleKeys.add(t0Key);
 
         if (tileCache.has(t0Key)) {
@@ -110,9 +116,14 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
             for (let x = minTx; x <= maxTx; x++) {
                 for (let y = minTy; y <= maxTy; y++) {
                     for (let t = 1; t <= targetTier; t++) {
-                        const cacheKey = mode === 'static'
+                        let cacheKey = mode === 'static'
                             ? `${x}_${y}_T${t}_static_${dateIndex}`
                             : `${x}_${y}_T${t}_anim`;
+
+                        // Smart Caching Check
+                        if (mode === 'static' && tileCache.has(`${x}_${y}_T${t}_anim`)) {
+                            cacheKey = `${x}_${y}_T${t}_anim`;
+                        }
 
                         currentVisibleKeys.add(cacheKey);
 
@@ -215,13 +226,26 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
         const allChunks = [];
         const { tileCache } = this.state;
 
-        if (tileCache.has(t0Key)) allChunks.push(tileCache.get(t0Key));
+        // Apply same Smart Logic here (or pass the key in? Passing key is safer but loop logic is complex)
+        // Actually, we passed t0Key, but t0Key from the caller might be the OLD one if caller didn't update it?
+        // Wait, caller passes the calculated key, but we need to recalculate inside loops if we want to be robust. 
+        // OR we trust the caller. The caller of _reGatherData is _fetchTiles, which calculated it.
+        // BUT the loop for T1/T2 inside _fetchTiles passes individual tasks, but _reGatherData rebuilds everything.
+        // So we MUST replicate logic here.
+
+        // 1. T0 Logic
+        let effectiveT0 = mode === 'static' ? `global_t0_static_${dateIndex}` : `global_t0_anim`;
+        if (mode === 'static' && tileCache.has(`global_t0_anim`)) effectiveT0 = `global_t0_anim`;
+
+        if (tileCache.has(effectiveT0)) allChunks.push(tileCache.get(effectiveT0));
 
         if (targetTier > 0) {
             for (let x = minTx; x <= maxTx; x++) {
                 for (let y = minTy; y <= maxTy; y++) {
                     for (let t = 1; t <= targetTier; t++) {
-                        const k = mode === 'static' ? `${x}_${y}_T${t}_static_${dateIndex}` : `${x}_${y}_T${t}_anim`;
+                        let k = mode === 'static' ? `${x}_${y}_T${t}_static_${dateIndex}` : `${x}_${y}_T${t}_anim`;
+                        if (mode === 'static' && tileCache.has(`${x}_${y}_T${t}_anim`)) k = `${x}_${y}_T${t}_anim`;
+
                         if (tileCache.has(k)) allChunks.push(tileCache.get(k));
                     }
                 }

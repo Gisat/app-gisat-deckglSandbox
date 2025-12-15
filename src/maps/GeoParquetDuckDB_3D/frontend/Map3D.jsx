@@ -129,14 +129,11 @@ function Map3D() {
                     mesh: sphere,
                     getPosition: d => {
                         let val = 0;
-                        if (mode === 'animation') {
-                            const cum = d.cumulative_displacements;
-                            if (cum) {
-                                const idx = Math.min(timeIndex, cum.length - 1);
-                                val = cum[idx];
-                            } else {
-                                val = d.displacement || 0;
-                            }
+                        // Always try to use cached vector data if available (Smart Caching)
+                        const cum = d.cumulative_displacements;
+                        if (cum) {
+                            const idx = Math.min(timeIndex, cum.length - 1);
+                            val = cum[idx];
                         } else {
                             val = d.displacement || 0;
                         }
@@ -144,14 +141,11 @@ function Map3D() {
                     },
                     getColor: d => {
                         let val = 0;
-                        if (mode === 'animation') {
-                            const vec = d.displacements;
-                            if (vec) {
-                                const idx = Math.min(timeIndex, vec.length - 1);
-                                val = vec[idx];
-                            } else {
-                                val = d.displacement || 0;
-                            }
+                        // Always try to use cached vector data if available (Smart Caching)
+                        const vec = d.displacements;
+                        if (vec) {
+                            const idx = Math.min(timeIndex, vec.length - 1);
+                            val = vec[idx];
                         } else {
                             val = d.displacement || 0;
                         }

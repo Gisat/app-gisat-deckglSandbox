@@ -132,16 +132,14 @@ function Map2D() {
                     radiusUnits: 'pixels',
                     getFillColor: d => {
                         let val = 0;
-                        if (mode === 'animation') {
-                            const vec = d.displacements;
-                            if (vec) {
-                                if (typeof vec.get === 'function') val = vec.get(timeIndex);
-                                else if (vec.length > timeIndex) val = vec[timeIndex];
-                            } else {
-                                val = d.displacement;
-                            }
+                        // Always try to use cached vector data if available (Smart Caching)
+                        const vec = d.displacements;
+                        if (vec) {
+                            // Note: After _processData in layer, vec is normalized to Float32Array
+                            const idx = Math.min(timeIndex, vec.length - 1);
+                            val = vec[idx];
                         } else {
-                            val = d.displacement;
+                            val = d.displacement || 0;
                         }
                         const rgb = colorScale(val || 0);
                         return [rgb[0], rgb[1], rgb[2], 200];
