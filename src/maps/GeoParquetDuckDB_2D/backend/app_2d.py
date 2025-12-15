@@ -9,8 +9,8 @@ app = Flask(__name__)
 CORS(app)
 
 # 🛑 CONFIGURATION
-# GEOPARQUET_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet'
-GEOPARQUET_PATH = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet'
+GEOPARQUET_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet'
+# GEOPARQUET_PATH = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet'
 
 print("--- Initializing DuckDB and Loading Extensions ---")
 # 1. Connect once at startup

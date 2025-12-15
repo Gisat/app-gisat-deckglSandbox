@@ -15,8 +15,8 @@ import { PlaybackControls } from './components/PlaybackControls';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch: 45, bearing: 0 };
-const DATES_API_URL = 'http://localhost:5000/api/dates';
-const DATA_API_URL = 'http://localhost:5000/api/3d-data';
+const DATES_API_URL = 'http://localhost:5001/api/dates';
+const DATA_API_URL = 'http://localhost:5001/api/3d-data';
 
 const GRID_SIZE = 0.06;
 const TILE_BUFFER = 1;
@@ -38,7 +38,7 @@ function getTargetTier(zoom) {
     return 0;
 }
 
-function HybridMap3D() {
+function Map3D() {
     const [displayData, setDisplayData] = useState([]);
     const [dates, setDates] = useState([]);
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
@@ -411,4 +411,4 @@ function HybridMap3D() {
     );
 }
 
-export default HybridMap3D;
+export default Map3D;

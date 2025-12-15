@@ -115,4 +115,4 @@ def get_3d_data():
 if __name__ == '__main__':
     print("\n--- Starting 3D Backend ---")
     # Threaded=False for stability
-    app.run(debug=True, port=5000, host='0.0.0.0', threaded=False)
+    app.run(debug=True, port=5001, host='0.0.0.0', threaded=False)

@@ -41,7 +41,7 @@ function getPointSize(zoom) {
     return 5;                 // Tier 2 (Detail)
 }
 
-function HybridMap() {
+function Map2D() {
     const [displayData, setDisplayData] = useState([]);
     const [dates, setDates] = useState([]);
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
@@ -353,4 +353,4 @@ function HybridMap() {
     );
 }
 
-export default HybridMap;
+export default Map2D;
