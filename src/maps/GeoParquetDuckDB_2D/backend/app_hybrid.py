@@ -9,7 +9,8 @@ app = Flask(__name__)
 CORS(app)
 
 # 🛑 CONFIGURATION
-GEOPARQUET_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet'
+# GEOPARQUET_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet'
+GEOPARQUET_PATH = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized.geoparquet'
 
 print("--- Initializing DuckDB and Loading Extensions ---")
 # 1. Connect once at startup
@@ -23,7 +24,7 @@ print(f"--- Creating View for {GEOPARQUET_PATH} ---")
 try:
     start_time = time.time()
     duckdb_con.execute(f"CREATE OR REPLACE VIEW egms_data AS SELECT * FROM read_parquet('{GEOPARQUET_PATH}')")
-    
+
     # 3. Warm up / Verification
     # Running a simple count forces DuckDB to read the footer and row groups layout.
     row_count = duckdb_con.execute("SELECT count(*) FROM egms_data").fetchone()[0]
@@ -61,7 +62,7 @@ def get_hybrid_data():
             # We don't need params for selection_col in animation mode
         else:
             selection_col = "displacements[?] AS displacement"
-            
+
         is_global = request.args.get('global') == 'true'
 
         if is_global:
@@ -70,7 +71,7 @@ def get_hybrid_data():
             SELECT x AS longitude, y AS latitude, {selection_col}
             FROM egms_data WHERE tier_id = 0
             """
-            
+
             if mode == 'animation':
                  # Query: SELECT ... displacements ... WHERE tier_id = 0
                  # Params: None
@@ -96,7 +97,7 @@ def get_hybrid_data():
                 AND tile_y = ?
                 AND tier_id = ?
             """
-            
+
             if mode == 'animation':
                 # Query: ... displacements ... WHERE tile_x=? AND tile_y=? AND tier_id=?
                 final_params = [tile_x, tile_y, target_tier]

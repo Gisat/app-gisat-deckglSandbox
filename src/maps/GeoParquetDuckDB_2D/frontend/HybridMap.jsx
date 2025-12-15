@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { DeckGL } from 'deck.gl';
 import { WebMercatorViewport } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
@@ -49,7 +49,11 @@ function HybridMap() {
     const [isLoading, setIsLoading] = useState(false);
 
     // Debug state to show current tier in HUD
-    const [currentTierDisplay, setCurrentTierDisplay] = useState(0);
+    const [currentTierDisplay, setCurrentTierDisplay] = useState(() => {
+        const t = getTargetTier(INITIAL_VIEW_STATE.zoom);
+        const percentages = ['5%', '35%', '100%'];
+        return `${t} (${percentages[t]})`;
+    });
 
     const [mode, setMode] = useState('static');
     const [isPlaying, setIsPlaying] = useState(false);
@@ -104,10 +108,27 @@ function HybridMap() {
         return () => clearInterval(interval);
     }, [isPlaying, dates, mode]);
 
+    // 🚀 Performance: Debounce fetching in static mode to avoid requests while sliding
+    const [debouncedTimeIndex, setDebouncedTimeIndex] = useState(0);
+
+    useEffect(() => {
+        if (mode === 'animation') {
+            setDebouncedTimeIndex(timeIndex);
+        } else {
+            const handler = setTimeout(() => {
+                setDebouncedTimeIndex(timeIndex);
+            }, 500); // 500ms debounce for slider
+            return () => clearTimeout(handler);
+        }
+    }, [timeIndex, mode]);
+
     // 3. Tile Fetching Logic (Hybrid: Global T0 + Tiled T1/T2)
     useEffect(() => {
         if (!mapContainerRef.current || dates.length === 0) return;
         if (mode === 'animation' && isPlaying) return;
+
+        // Use the DEBOUNCED index for fetching static snapshots
+        const fetchIndex = debouncedTimeIndex;
 
         const { clientWidth, clientHeight } = mapContainerRef.current;
         const viewport = new WebMercatorViewport({ ...viewState, width: clientWidth, height: clientHeight });
@@ -120,14 +141,15 @@ function HybridMap() {
         const maxTy = Math.floor(maxLat / GRID_SIZE) + TILE_BUFFER;
 
         const targetTier = getTargetTier(viewState.zoom);
-        setCurrentTierDisplay(targetTier);
+        const percentages = ['5%', '35%', '100%'];
+        setCurrentTierDisplay(`${targetTier} (${percentages[targetTier]})`);
 
         const neededTiles = [];
         const visibleDataChunks = [];
 
         // --- STEP A: HANDLE TIER 0 (GLOBAL) ---
         // We always include Tier 0, but we fetch it as ONE big chunk, not tiles.
-        const t0Key = mode === 'static' ? `global_t0_static_${timeIndex}` : `global_t0_anim`;
+        const t0Key = mode === 'static' ? `global_t0_static_${fetchIndex}` : `global_t0_anim`;
         if (tileCache.current.has(t0Key)) {
             touchCache(t0Key); // Mark used
             visibleDataChunks.push(tileCache.current.get(t0Key));
@@ -147,7 +169,7 @@ function HybridMap() {
                     // Loop T1 to TargetTier (skip T0 because it's handled above)
                     for (let t = 1; t <= targetTier; t++) {
                         const cacheKey = mode === 'static'
-                            ? `${x}_${y}_T${t}_static_${timeIndex}`
+                            ? `${x}_${y}_T${t}_static_${fetchIndex}`
                             : `${x}_${y}_T${t}_anim`;
 
                         if (tileCache.current.has(cacheKey)) {
@@ -165,7 +187,7 @@ function HybridMap() {
         }
 
         // Run eviction periodically (or purely on add)
-        // Here we run it every render to ensure we stay clean, 
+        // Here we run it every render to ensure we stay clean,
         // effectively cleaning up tiles that fell out of view.
         enforceCacheLimit();
 
@@ -186,7 +208,7 @@ function HybridMap() {
                 // Special Endpoint/Param for Global Tier 0
                 // We pass a dummy tile_x/y or handle it in backend
                 const params = new URLSearchParams({
-                    date_index: timeIndex,
+                    date_index: fetchIndex,
                     mode: mode,
                     tier: 0,
                     global: 'true' // Explicit flag
@@ -196,7 +218,7 @@ function HybridMap() {
                 const params = new URLSearchParams({
                     tile_x: task.x,
                     tile_y: task.y,
-                    date_index: timeIndex,
+                    date_index: fetchIndex,
                     mode: mode,
                     tier: task.tier
                 });
@@ -241,7 +263,7 @@ function HybridMap() {
                 for (let x = minTx; x <= maxTx; x++) {
                     for (let y = minTy; y <= maxTy; y++) {
                         for (let t = 1; t <= targetTier; t++) {
-                            const k = mode === 'static' ? `${x}_${y}_T${t}_static_${timeIndex}` : `${x}_${y}_T${t}_anim`;
+                            const k = mode === 'static' ? `${x}_${y}_T${t}_static_${fetchIndex}` : `${x}_${y}_T${t}_anim`;
                             if (tileCache.current.has(k)) allChunks.push(tileCache.current.get(k));
                         }
                     }
@@ -252,7 +274,7 @@ function HybridMap() {
             setFetchStatus('Ready');
         });
 
-    }, [viewState, timeIndex, dates, mode]);
+    }, [viewState, debouncedTimeIndex, dates, mode]);
 
     const layers = [
         new TileLayer({
@@ -278,7 +300,7 @@ function HybridMap() {
                         if (typeof vec.get === 'function') val = vec.get(timeIndex);
                         else if (vec.length > timeIndex) val = vec[timeIndex];
                     } else {
-                        // 🛑 FALLBACK: If we are in animation mode but data is still static 
+                        // 🛑 FALLBACK: If we are in animation mode but data is still static
                         // (waiting for fetch), use the static value.
                         val = d.displacement;
                     }
@@ -294,14 +316,6 @@ function HybridMap() {
             pickable: true
         })
     ];
-
-    const toggleMode = () => {
-        if (mode === 'static') setMode('animation');
-        else {
-            setMode('static');
-            setIsPlaying(false);
-        }
-    };
 
     const [fetchStatus, setFetchStatus] = useState("Idle");
 

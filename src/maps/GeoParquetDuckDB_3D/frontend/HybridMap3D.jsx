@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { DeckGL } from 'deck.gl';
 import { WebMercatorViewport } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
@@ -46,7 +46,11 @@ function HybridMap3D() {
     const [isLoading, setIsLoading] = useState(false);
     const [fetchStatus, setFetchStatus] = useState("Idle");
 
-    const [currentTierDisplay, setCurrentTierDisplay] = useState(0);
+    const [currentTierDisplay, setCurrentTierDisplay] = useState(() => {
+        const t = getTargetTier(INITIAL_VIEW_STATE.zoom);
+        const percentages = ['5%', '35%', '100%'];
+        return `${t} (${percentages[t]})`;
+    });
 
     const [mode, setMode] = useState('static');
     const [isPlaying, setIsPlaying] = useState(false);
@@ -75,6 +79,20 @@ function HybridMap3D() {
         }
     };
 
+    // 🚀 Performance: Debounce fetching in static mode to avoid requests while sliding
+    const [debouncedTimeIndex, setDebouncedTimeIndex] = useState(0);
+
+    useEffect(() => {
+        if (mode === 'animation') {
+            setDebouncedTimeIndex(timeIndex);
+        } else {
+            const handler = setTimeout(() => {
+                setDebouncedTimeIndex(timeIndex);
+            }, 500); // 500ms debounce for slider
+            return () => clearTimeout(handler);
+        }
+    }, [timeIndex, mode]);
+
     // 1. Fetch Dates
     useEffect(() => {
         fetch(DATES_API_URL)
@@ -99,6 +117,10 @@ function HybridMap3D() {
         if (!mapContainerRef.current || dates.length === 0) return;
         if (mode === 'animation' && isPlaying) return;
 
+        // Use the DEBOUNCED index for fetching static snapshots
+        // This prevents fetching every single frame while dragging the slider
+        const fetchIndex = debouncedTimeIndex;
+
         const { clientWidth, clientHeight } = mapContainerRef.current;
         const viewport = new WebMercatorViewport({ ...viewState, width: clientWidth, height: clientHeight });
         const [minLon, minLat, maxLon, maxLat] = viewport.getBounds();
@@ -109,14 +131,15 @@ function HybridMap3D() {
         const maxTy = Math.floor(maxLat / GRID_SIZE) + TILE_BUFFER;
 
         const targetTier = getTargetTier(viewState.zoom);
-        setCurrentTierDisplay(targetTier);
+        const percentages = ['5%', '35%', '100%'];
+        setCurrentTierDisplay(`${targetTier} (${percentages[targetTier]})`);
 
         const neededTiles = [];
         const visibleDataChunks = [];
         const currentVisibleKeys = new Set();
 
         // TEO 0 Check
-        const t0Key = mode === 'static' ? `global_t0_static_${timeIndex}` : `global_t0_anim`;
+        const t0Key = mode === 'static' ? `global_t0_static_${fetchIndex}` : `global_t0_anim`;
         currentVisibleKeys.add(t0Key);
 
         if (tileCache.current.has(t0Key)) {
@@ -135,7 +158,7 @@ function HybridMap3D() {
                 for (let y = minTy; y <= maxTy; y++) {
                     for (let t = 1; t <= targetTier; t++) {
                         const cacheKey = mode === 'static'
-                            ? `${x}_${y}_T${t}_static_${timeIndex}`
+                            ? `${x}_${y}_T${t}_static_${fetchIndex}`
                             : `${x}_${y}_T${t}_anim`;
 
                         currentVisibleKeys.add(cacheKey);
@@ -189,7 +212,7 @@ function HybridMap3D() {
 
             if (task.type === 'global') {
                 const params = new URLSearchParams({
-                    date_index: timeIndex,
+                    date_index: fetchIndex,
                     mode: mode,
                     tier: 0,
                     global: 'true'
@@ -199,7 +222,7 @@ function HybridMap3D() {
                 const params = new URLSearchParams({
                     tile_x: task.x,
                     tile_y: task.y,
-                    date_index: timeIndex,
+                    date_index: fetchIndex,
                     mode: mode,
                     tier: task.tier
                 });
@@ -212,6 +235,47 @@ function HybridMap3D() {
                     pendingRequests.current.delete(task.key);
 
                     if (Array.isArray(dataArr)) {
+                        // ⚡ PRE-CALCULATION: Cumulative Sum for Animation
+                        // Doing this once on load prevents lag during animation loop
+                        for (let i = 0; i < dataArr.length; i++) {
+                            const d = dataArr[i];
+                            const vec = d.displacements;
+                            if (vec) {
+                                const len = vec.length || vec.byteLength; // Handle different array types safely
+                                if (len > 0) {
+                                    const cum = new Float32Array(len);
+                                    let sum = 0;
+
+                                    // ⚡ OPTIMIZATION: Normalize Arrow Vectors to TypedArray for O(1) Access
+                                    // This removes the need for .get() checks in the high-frequency render loop
+                                    // If it's already an array/typed array, we just use it.
+                                    // If it's an Arrow vector, we create a fast Float32Array copy.
+                                    let fastDisplacements = vec;
+                                    const isArrow = typeof vec.get === 'function';
+
+                                    if (isArrow) {
+                                        fastDisplacements = new Float32Array(len);
+                                        for (let t = 0; t < len; t++) {
+                                            const val = vec.get(t);
+                                            fastDisplacements[t] = val; // Store optimized copy
+                                            sum += val;
+                                            cum[t] = sum;
+                                        }
+                                        // Replace original slow object with fast array
+                                        d.displacements = fastDisplacements;
+                                    } else {
+                                        // Standard array path
+                                        for (let t = 0; t < len; t++) {
+                                            const val = vec[t];
+                                            sum += val;
+                                            cum[t] = sum;
+                                        }
+                                    }
+                                    d.cumulative_displacements = cum;
+                                }
+                            }
+                        }
+
                         tileCache.current.set(task.key, dataArr);
                         if (tileCache.current.size > TILE_CACHE_LIMIT) enforceCacheLimit();
                         return dataArr;
@@ -234,7 +298,7 @@ function HybridMap3D() {
                 for (let x = minTx; x <= maxTx; x++) {
                     for (let y = minTy; y <= maxTy; y++) {
                         for (let t = 1; t <= targetTier; t++) {
-                            const k = mode === 'static' ? `${x}_${y}_T${t}_static_${timeIndex}` : `${x}_${y}_T${t}_anim`;
+                            const k = mode === 'static' ? `${x}_${y}_T${t}_static_${fetchIndex}` : `${x}_${y}_T${t}_anim`;
                             if (tileCache.current.has(k)) allChunks.push(tileCache.current.get(k));
                         }
                     }
@@ -245,9 +309,9 @@ function HybridMap3D() {
             setFetchStatus('Ready');
         });
 
-    }, [viewState, timeIndex, dates, mode]);
+    }, [viewState, debouncedTimeIndex, dates, mode]);
 
-    const layers = [
+    const layers = useMemo(() => [
         new TileLayer({
             id: 'base-map',
             data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
@@ -258,7 +322,6 @@ function HybridMap3D() {
             }
         }),
         // 3D SPHERES
-        // 3D SPHERES
         new SimpleMeshLayer({
             id: 'mesh-layer',
             data: displayData,
@@ -267,11 +330,14 @@ function HybridMap3D() {
             getPosition: d => {
                 let val = 0;
                 if (mode === 'animation') {
-                    const vec = d.displacements;
-                    if (vec) {
-                        if (typeof vec.get === 'function') val = vec.get(timeIndex);
-                        else if (vec.length > timeIndex) val = vec[timeIndex];
+                    // 🚀 O(1) LOOKUP: Use pre-calculated cumulative array
+                    const cum = d.cumulative_displacements;
+                    if (cum) {
+                        // Safe index access
+                        const idx = Math.min(timeIndex, cum.length - 1);
+                        val = cum[idx];
                     } else {
+                        // Fallback: This shouldn't happen if data has displacements
                         val = d.displacement || 0;
                     }
                 } else {
@@ -280,15 +346,16 @@ function HybridMap3D() {
 
                 // EXAGGERATION: Multiply by 0.5 to make movement visible but not crazy
                 // Base Height + (Displacement * Factor)
-                return [d.longitude, d.latitude, d.height + (val * 0.5)];
+                return [d.longitude, d.latitude, d.height + (val * 0.2)];
             },
             getColor: d => {
                 let val = 0;
                 if (mode === 'animation') {
+                    // 🚀 O(1) Access: We normalized d.displacements in pre-calc
                     const vec = d.displacements;
                     if (vec) {
-                        if (typeof vec.get === 'function') val = vec.get(timeIndex);
-                        else if (vec.length > timeIndex) val = vec[timeIndex];
+                        const idx = Math.min(timeIndex, vec.length - 1);
+                        val = vec[idx];
                     } else {
                         val = d.displacement || 0;
                     }
@@ -308,7 +375,7 @@ function HybridMap3D() {
             },
             pickable: true,
         })
-    ];
+    ], [displayData, timeIndex, mode]);
 
     return (
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
