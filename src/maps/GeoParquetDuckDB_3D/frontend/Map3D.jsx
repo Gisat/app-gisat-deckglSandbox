@@ -12,14 +12,13 @@ import { ArrowLoader } from '@loaders.gl/arrow';
 // Import local components
 import { HUD } from './components/HUD';
 import { PlaybackControls } from './components/PlaybackControls';
+import DuckDBGeoParquetLayer from '../../../layers/DuckDBGeoParquetLayer';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch: 45, bearing: 0 };
 const DATES_API_URL = 'http://localhost:5001/api/dates';
 const DATA_API_URL = 'http://localhost:5001/api/3d-data';
 
-const GRID_SIZE = 0.06;
-const TILE_BUFFER = 1;
 const TILE_CACHE_LIMIT = 200;
 
 const sphere = new SphereGeometry({ radius: 1, nlat: 6, nlong: 6 });
@@ -38,8 +37,10 @@ function getTargetTier(zoom) {
     return 0;
 }
 
+// Map3D Component
 function Map3D() {
-    const [displayData, setDisplayData] = useState([]);
+    const [totalPoints, setTotalPoints] = useState(0);
+    const [cacheSize, setCacheSize] = useState(0);
     const [dates, setDates] = useState([]);
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
     const [timeIndex, setTimeIndex] = useState(0);
@@ -56,28 +57,13 @@ function Map3D() {
     const [isPlaying, setIsPlaying] = useState(false);
 
     const mapContainerRef = useRef(null);
-    const tileCache = useRef(new Map());
-    const pendingRequests = useRef(new Set());
-    const previousVisibleKeys = useRef(new Set());
 
-    // --- HELPER: LRU Update ---
-    const touchCache = (key) => {
-        const val = tileCache.current.get(key);
-        if (val) {
-            tileCache.current.delete(key);
-            tileCache.current.set(key, val);
-        }
-    };
-
-    // --- HELPER: LRU Evict ---
-    const enforceCacheLimit = () => {
-        if (tileCache.current.size <= TILE_CACHE_LIMIT) return;
-        for (const key of tileCache.current.keys()) {
-            if (tileCache.current.size <= TILE_CACHE_LIMIT) break;
-            if (key.includes('global_t0')) continue;
-            tileCache.current.delete(key);
-        }
-    };
+    // 🆕 HUD Update Logic
+    useEffect(() => {
+        const targetTier = getTargetTier(viewState.zoom);
+        const percentages = ['5%', '35%', '100%'];
+        setCurrentTierDisplay(`${targetTier} (${percentages[targetTier]})`);
+    }, [viewState.zoom]);
 
     // 🚀 Performance: Debounce fetching in static mode to avoid requests while sliding
     const [debouncedTimeIndex, setDebouncedTimeIndex] = useState(0);
@@ -112,204 +98,7 @@ function Map3D() {
         return () => clearInterval(interval);
     }, [isPlaying, dates, mode]);
 
-    // 3. Tile Fetching Logic (Hybrid: Global T0 + Tiled T1/T2)
-    useEffect(() => {
-        if (!mapContainerRef.current || dates.length === 0) return;
-        if (mode === 'animation' && isPlaying) return;
-
-        // Use the DEBOUNCED index for fetching static snapshots
-        // This prevents fetching every single frame while dragging the slider
-        const fetchIndex = debouncedTimeIndex;
-
-        const { clientWidth, clientHeight } = mapContainerRef.current;
-        const viewport = new WebMercatorViewport({ ...viewState, width: clientWidth, height: clientHeight });
-        const [minLon, minLat, maxLon, maxLat] = viewport.getBounds();
-
-        const minTx = Math.floor(minLon / GRID_SIZE) - TILE_BUFFER;
-        const maxTx = Math.floor(maxLon / GRID_SIZE) + TILE_BUFFER;
-        const minTy = Math.floor(minLat / GRID_SIZE) - TILE_BUFFER;
-        const maxTy = Math.floor(maxLat / GRID_SIZE) + TILE_BUFFER;
-
-        const targetTier = getTargetTier(viewState.zoom);
-        const percentages = ['5%', '35%', '100%'];
-        setCurrentTierDisplay(`${targetTier} (${percentages[targetTier]})`);
-
-        const neededTiles = [];
-        const visibleDataChunks = [];
-        const currentVisibleKeys = new Set();
-
-        // TEO 0 Check
-        const t0Key = mode === 'static' ? `global_t0_static_${fetchIndex}` : `global_t0_anim`;
-        currentVisibleKeys.add(t0Key);
-
-        if (tileCache.current.has(t0Key)) {
-            touchCache(t0Key);
-            visibleDataChunks.push(tileCache.current.get(t0Key));
-        } else {
-            if (!pendingRequests.current.has(t0Key)) {
-                neededTiles.push({ type: 'global', tier: 0, key: t0Key });
-                pendingRequests.current.add(t0Key);
-            }
-        }
-
-        // TIER 1 & 2 Check
-        if (targetTier > 0) {
-            for (let x = minTx; x <= maxTx; x++) {
-                for (let y = minTy; y <= maxTy; y++) {
-                    for (let t = 1; t <= targetTier; t++) {
-                        const cacheKey = mode === 'static'
-                            ? `${x}_${y}_T${t}_static_${fetchIndex}`
-                            : `${x}_${y}_T${t}_anim`;
-
-                        currentVisibleKeys.add(cacheKey);
-
-                        if (tileCache.current.has(cacheKey)) {
-                            touchCache(cacheKey);
-                            visibleDataChunks.push(tileCache.current.get(cacheKey));
-                        } else {
-                            if (!pendingRequests.current.has(cacheKey)) {
-                                neededTiles.push({ type: 'tile', x, y, tier: t, key: cacheKey });
-                                pendingRequests.current.add(cacheKey);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 🛑 OPTIMIZATION: Set Comparison
-        let isSameSet = true;
-        if (currentVisibleKeys.size !== previousVisibleKeys.current.size) {
-            isSameSet = false;
-        } else {
-            for (let key of currentVisibleKeys) {
-                if (!previousVisibleKeys.current.has(key)) {
-                    isSameSet = false;
-                    break;
-                }
-            }
-        }
-
-        if (isSameSet && neededTiles.length === 0) return;
-        previousVisibleKeys.current = currentVisibleKeys;
-
-        enforceCacheLimit();
-
-        if (visibleDataChunks.length > 0) {
-            setDisplayData(visibleDataChunks.flat());
-        }
-
-        if (neededTiles.length === 0) {
-            setFetchStatus(`Cached (${visibleDataChunks.length} chunks)`);
-            return;
-        }
-
-        setIsLoading(true);
-        setFetchStatus(`Fetching ${neededTiles.length} new tiles...`);
-
-        Promise.all(neededTiles.map(task => {
-            let url = '';
-
-            if (task.type === 'global') {
-                const params = new URLSearchParams({
-                    date_index: fetchIndex,
-                    mode: mode,
-                    tier: 0,
-                    global: 'true'
-                });
-                url = `${DATA_API_URL}?${params.toString()}`;
-            } else {
-                const params = new URLSearchParams({
-                    tile_x: task.x,
-                    tile_y: task.y,
-                    date_index: fetchIndex,
-                    mode: mode,
-                    tier: task.tier
-                });
-                url = `${DATA_API_URL}?${params.toString()}`;
-            }
-
-            return load(url, ArrowLoader, { arrow: { shape: 'object-row-table' } })
-                .then(result => {
-                    const dataArr = result.data || result;
-                    pendingRequests.current.delete(task.key);
-
-                    if (Array.isArray(dataArr)) {
-                        // ⚡ PRE-CALCULATION: Cumulative Sum for Animation
-                        // Doing this once on load prevents lag during animation loop
-                        for (let i = 0; i < dataArr.length; i++) {
-                            const d = dataArr[i];
-                            const vec = d.displacements;
-                            if (vec) {
-                                const len = vec.length || vec.byteLength; // Handle different array types safely
-                                if (len > 0) {
-                                    const cum = new Float32Array(len);
-                                    let sum = 0;
-
-                                    // ⚡ OPTIMIZATION: Normalize Arrow Vectors to TypedArray for O(1) Access
-                                    // This removes the need for .get() checks in the high-frequency render loop
-                                    // If it's already an array/typed array, we just use it.
-                                    // If it's an Arrow vector, we create a fast Float32Array copy.
-                                    let fastDisplacements = vec;
-                                    const isArrow = typeof vec.get === 'function';
-
-                                    if (isArrow) {
-                                        fastDisplacements = new Float32Array(len);
-                                        for (let t = 0; t < len; t++) {
-                                            const val = vec.get(t);
-                                            fastDisplacements[t] = val; // Store optimized copy
-                                            sum += val;
-                                            cum[t] = sum;
-                                        }
-                                        // Replace original slow object with fast array
-                                        d.displacements = fastDisplacements;
-                                    } else {
-                                        // Standard array path
-                                        for (let t = 0; t < len; t++) {
-                                            const val = vec[t];
-                                            sum += val;
-                                            cum[t] = sum;
-                                        }
-                                    }
-                                    d.cumulative_displacements = cum;
-                                }
-                            }
-                        }
-
-                        tileCache.current.set(task.key, dataArr);
-                        if (tileCache.current.size > TILE_CACHE_LIMIT) enforceCacheLimit();
-                        return dataArr;
-                    }
-                    return [];
-                })
-                .catch(e => {
-                    console.error(`Failed ${task.key}`, e);
-                    pendingRequests.current.delete(task.key);
-                    tileCache.current.set(task.key, []);
-                    return [];
-                });
-        })).then(() => {
-            // Re-gather logic
-            const allChunks = [];
-
-            if (tileCache.current.has(t0Key)) allChunks.push(tileCache.current.get(t0Key));
-
-            if (targetTier > 0) {
-                for (let x = minTx; x <= maxTx; x++) {
-                    for (let y = minTy; y <= maxTy; y++) {
-                        for (let t = 1; t <= targetTier; t++) {
-                            const k = mode === 'static' ? `${x}_${y}_T${t}_static_${fetchIndex}` : `${x}_${y}_T${t}_anim`;
-                            if (tileCache.current.has(k)) allChunks.push(tileCache.current.get(k));
-                        }
-                    }
-                }
-            }
-            setDisplayData(allChunks.flat());
-            setIsLoading(false);
-            setFetchStatus('Ready');
-        });
-
-    }, [viewState, debouncedTimeIndex, dates, mode]);
+    // 3. Tile Fetching Logic moved to DuckDBHybridLayer
 
     const layers = useMemo(() => [
         new TileLayer({
@@ -321,61 +110,67 @@ function Map3D() {
                 return new BitmapLayer(props, { data: null, image: props.data, bounds: [west, south, east, north] });
             }
         }),
-        // 3D SPHERES
-        new SimpleMeshLayer({
-            id: 'mesh-layer',
-            data: displayData,
-            mesh: sphere,
-            // 🆕 ANIMATED POSITION (Z-Axis)
-            getPosition: d => {
-                let val = 0;
-                if (mode === 'animation') {
-                    // 🚀 O(1) LOOKUP: Use pre-calculated cumulative array
-                    const cum = d.cumulative_displacements;
-                    if (cum) {
-                        // Safe index access
-                        const idx = Math.min(timeIndex, cum.length - 1);
-                        val = cum[idx];
-                    } else {
-                        // Fallback: This shouldn't happen if data has displacements
-                        val = d.displacement || 0;
-                    }
-                } else {
-                    val = d.displacement || 0;
-                }
+        new DuckDBGeoParquetLayer({
+            id: 'duckdb-geoparquet-layer',
+            dataUrl: DATA_API_URL,
+            dateIndex: debouncedTimeIndex,
+            mode: mode,
+            onStatusChange: (status) => {
+                setTotalPoints(status.totalPoints);
+                setCacheSize(status.cacheSize);
+                setIsLoading(status.isLoading);
+                setFetchStatus(status.isLoading ? "Fetching..." : "Ready");
+            },
 
-                // EXAGGERATION: Multiply by 0.5 to make movement visible but not crazy
-                // Base Height + (Displacement * Factor)
-                return [d.longitude, d.latitude, d.height + (val * 0.2)];
-            },
-            getColor: d => {
-                let val = 0;
-                if (mode === 'animation') {
-                    // 🚀 O(1) Access: We normalized d.displacements in pre-calc
-                    const vec = d.displacements;
-                    if (vec) {
-                        const idx = Math.min(timeIndex, vec.length - 1);
-                        val = vec[idx];
-                    } else {
-                        val = d.displacement || 0;
-                    }
-                } else {
-                    val = d.displacement || 0;
-                }
-                const rgb = colorScale(val || 0);
-                return [rgb[0], rgb[1], rgb[2], 255];
-            },
-            getScale: d => {
-                const size = sizeScale(Math.abs(d.mean_velocity || 1));
-                return [size, size, size];
-            },
-            updateTriggers: {
-                getColor: [timeIndex, mode],
-                getPosition: [timeIndex, mode] // 🆕 Trigger position update
-            },
-            pickable: true,
+            renderSubLayers: (props) => {
+                return new SimpleMeshLayer({
+                    id: 'mesh-layer',
+                    data: props.data,
+                    mesh: sphere,
+                    getPosition: d => {
+                        let val = 0;
+                        if (mode === 'animation') {
+                            const cum = d.cumulative_displacements;
+                            if (cum) {
+                                const idx = Math.min(timeIndex, cum.length - 1);
+                                val = cum[idx];
+                            } else {
+                                val = d.displacement || 0;
+                            }
+                        } else {
+                            val = d.displacement || 0;
+                        }
+                        return [d.longitude, d.latitude, d.height + (val * 0.2)];
+                    },
+                    getColor: d => {
+                        let val = 0;
+                        if (mode === 'animation') {
+                            const vec = d.displacements;
+                            if (vec) {
+                                const idx = Math.min(timeIndex, vec.length - 1);
+                                val = vec[idx];
+                            } else {
+                                val = d.displacement || 0;
+                            }
+                        } else {
+                            val = d.displacement || 0;
+                        }
+                        const rgb = colorScale(val || 0);
+                        return [rgb[0], rgb[1], rgb[2], 255];
+                    },
+                    getScale: d => {
+                        const size = sizeScale(Math.abs(d.mean_velocity || 1));
+                        return [size, size, size];
+                    },
+                    updateTriggers: {
+                        getColor: [timeIndex, mode],
+                        getPosition: [timeIndex, mode]
+                    },
+                    pickable: true,
+                });
+            }
         })
-    ], [displayData, timeIndex, mode]);
+    ], [debouncedTimeIndex, timeIndex, mode]);
 
     return (
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
@@ -389,10 +184,10 @@ function Map3D() {
             <HUD
                 viewState={viewState}
                 currentTierDisplay={currentTierDisplay}
-                totalPoints={displayData.length}
+                totalPoints={totalPoints}
                 fetchStatus={fetchStatus}
                 isLoading={isLoading}
-                cacheSize={tileCache.current.size}
+                cacheSize={cacheSize}
                 cacheLimit={TILE_CACHE_LIMIT}
             />
 
