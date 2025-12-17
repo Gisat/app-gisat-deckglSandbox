@@ -21,7 +21,7 @@ const TILE_CACHE_LIMIT = 200;
 
 const colorScale = scaleLinear()
     .domain([-20, 0, 20])
-    .range([[65, 182, 196], [254, 254, 191], [215, 25, 28]])
+    .range([[215, 25, 28], [254, 254, 191], [65, 182, 196]])
     .clamp(true);
 
 // 🆕 LOD LOGIC

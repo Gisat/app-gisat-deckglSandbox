@@ -25,7 +25,7 @@ const sphere = new SphereGeometry({ radius: 1, nlat: 6, nlong: 6 });
 
 const colorScale = scaleLinear()
     .domain([-20, 0, 20])
-    .range([[65, 182, 196], [254, 254, 191], [215, 25, 28]])
+    .range([[215, 25, 28], [254, 254, 191], [65, 182, 196]])
     .clamp(true);
 
 const sizeScale = scaleLinear().domain([0, 5]).range([1, 10]).clamp(true);
