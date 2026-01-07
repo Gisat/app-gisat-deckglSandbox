@@ -16,7 +16,7 @@ def get_dates():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@bp.route('/data', methods=['GET'])
+@bp.route('/api/data', methods=['GET'])
 def get_data():
     try:
         tile_x = request.args.get('tile_x', type=int)
