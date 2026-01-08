@@ -21,6 +21,7 @@ import geoParquetTiled from './GeoParquetTiled/GeoParquetTiled.jsx';
 import geoParquetVirtualTiles from './GeoParquetVirtualTile/VirtualTilesMap.jsx';
 import geoParquetDuckDBpolygon from './GeoParquetDuckDB_polygon/PolygonMap3D.jsx';
 import MetroDarrows3D from "./MetroD_arrows_3D/index.jsx";
+import devSeedCOG from "./DevSeedCOG/CogMap.jsx";
 
 const mapApps = [
     { name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
@@ -45,6 +46,7 @@ const mapApps = [
     { name: 'GeoParquet DuckDB Wasm', path: '/geoparquet-duckdb-wasm', component: geoParquetDuckDBwasm },
     { name: 'GeoParquet Tiled', path: '/geoparquet-tiled', component: geoParquetTiled },
     { name: 'GeoParquet Virtual Tiles', path: '/geoparquet-virtual-tiles', component: geoParquetVirtualTiles },
+    { name: 'Deck.gl-raster COG', path: '/deck.gl-raster', component: devSeedCOG },
 ];
 
 export default mapApps;
