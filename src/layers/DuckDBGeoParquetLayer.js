@@ -8,7 +8,7 @@ const DEFAULT_PROPS = {
     dateIndex: 0,
     mode: 'static',
     // Callbacks
-    renderSubLayers: { type: 'function', value: props => null },
+    renderSubLayers: { type: 'function', value: () => null },
     onStatusChange: { type: 'function', value: () => { } },
 
     // Grid Config
@@ -228,7 +228,7 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
 
         // Apply same Smart Logic here (or pass the key in? Passing key is safer but loop logic is complex)
         // Actually, we passed t0Key, but t0Key from the caller might be the OLD one if caller didn't update it?
-        // Wait, caller passes the calculated key, but we need to recalculate inside loops if we want to be robust. 
+        // Wait, caller passes the calculated key, but we need to recalculate inside loops if we want to be robust.
         // OR we trust the caller. The caller of _reGatherData is _fetchTiles, which calculated it.
         // BUT the loop for T1/T2 inside _fetchTiles passes individual tasks, but _reGatherData rebuilds everything.
         // So we MUST replicate logic here.
