@@ -1,7 +1,7 @@
 import duckdb
 from .config import Config
 
-class SingletonDB:
+class Database:
     _instance = None
 
     def __new__(cls):
@@ -11,7 +11,7 @@ class SingletonDB:
         return cls._instance
 
     def _init_db(self):
-        self.conn = duckdb.connect()
+        self.conn = duckdb.connect(database=':memory:', read_only=False)
         self.conn.execute("INSTALL spatial; LOAD spatial;")
         # Use the path from config and create the view as 'egms_data' for compatibility
         self.conn.execute(f"CREATE OR REPLACE VIEW egms_data AS SELECT * FROM read_parquet('{Config.GEOPARQUET_PATH}')")
@@ -19,5 +19,5 @@ class SingletonDB:
     def get_conn(self):
         return self.conn
 
-db = SingletonDB()
+db = Database()
 

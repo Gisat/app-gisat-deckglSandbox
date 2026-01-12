@@ -14,7 +14,7 @@ import DuckDBGeoParquetLayer from '../../../layers/DuckDBGeoParquetLayer';
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 12, pitch: 0, bearing: 0 };
 const DATES_API_URL = 'http://localhost:5000/api/dates';
-const DATA_API_URL = 'http://localhost:5000/api/hybrid-data';
+const DATA_API_URL = 'http://localhost:5000/api/data';
 
 // 🛑 MUST MATCH 'generate_virtual_tiles.py'
 const TILE_CACHE_LIMIT = 200;
