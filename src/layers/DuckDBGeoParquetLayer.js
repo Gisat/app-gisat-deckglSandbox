@@ -183,6 +183,10 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
                 tier: task.tier
             });
 
+            if (this.props.is3D) {
+                params.append('is3D', 'true');
+            }
+
             if (task.type === 'global') {
                 params.append('global', 'true');
             } else {

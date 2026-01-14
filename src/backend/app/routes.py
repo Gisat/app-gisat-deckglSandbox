@@ -25,7 +25,14 @@ def get_data():
         date_index = request.args.get('date_index', type=int, default=0)
         mode = request.args.get('mode', type=str, default='static')
         target_tier = request.args.get('tier', type=int, default=0)
+        is_3d = request.args.get('is3D') == 'true'
+
         db_index = date_index + 1
+
+        base_cols = "x AS longitude, y AS latitude"
+        if is_3d:
+            base_cols += ", height, mean_velocity"
+
         if mode == 'animation':
             selection_col = "displacements"
         else:
@@ -33,15 +40,15 @@ def get_data():
         is_global = request.args.get('global') == 'true'
         if is_global:
             query = f"""
-            SELECT x AS longitude, y AS latitude, {selection_col}
-            FROM egms_data WHERE tier_id = ?
+            SELECT {base_cols}, {selection_col}
+            FROM egms_data WHERE tier_id = 0
             """
-            final_params = [target_tier] if mode == 'animation' else [db_index, target_tier]
+            final_params = [] if mode == 'animation' else [db_index]
         else:
             if tile_x is None or tile_y is None:
                 return jsonify({'error': 'tile_x and tile_y are required for tiled requests'}), 400
             query = f"""
-            SELECT x AS longitude, y AS latitude, {selection_col}
+            SELECT {base_cols}, {selection_col}
             FROM egms_data
             WHERE tile_x = ? AND tile_y = ? AND tier_id = ?
             """

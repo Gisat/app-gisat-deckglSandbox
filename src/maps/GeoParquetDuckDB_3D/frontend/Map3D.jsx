@@ -1,13 +1,10 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { DeckGL } from 'deck.gl';
-import { WebMercatorViewport } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers'; // 3D Layer
 import { BitmapLayer } from '@deck.gl/layers';
 import { scaleLinear } from 'd3-scale';
 import { SphereGeometry } from '@luma.gl/engine'; // Geometries
-import { load } from '@loaders.gl/core';
-import { ArrowLoader } from '@loaders.gl/arrow';
 
 // Import local components
 import { HUD } from './components/HUD';
@@ -16,8 +13,8 @@ import DuckDBGeoParquetLayer from '../../../layers/DuckDBGeoParquetLayer';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch: 45, bearing: 0 };
-const DATES_API_URL = 'http://localhost:5001/api/dates';
-const DATA_API_URL = 'http://localhost:5001/api/3d-data';
+const DATES_API_URL = 'http://localhost:5000/api/dates';
+const DATA_API_URL = 'http://localhost:5000/api/data';
 
 const TILE_CACHE_LIMIT = 200;
 
@@ -115,6 +112,7 @@ function Map3D() {
             dataUrl: DATA_API_URL,
             dateIndex: debouncedTimeIndex,
             mode: mode,
+            is3D: true,
             onStatusChange: (status) => {
                 setTotalPoints(status.totalPoints);
                 setCacheSize(status.cacheSize);
@@ -128,7 +126,7 @@ function Map3D() {
                     data: props.data,
                     mesh: sphere,
                     getPosition: d => {
-                        let val = 0;
+                        let val;
                         // Always try to use cached vector data if available (Smart Caching)
                         const cum = d.cumulative_displacements;
                         if (cum) {
@@ -140,7 +138,7 @@ function Map3D() {
                         return [d.longitude, d.latitude, d.height + (val * 0.2)];
                     },
                     getColor: d => {
-                        let val = 0;
+                        let val;
                         // Always try to use cached vector data if available (Smart Caching)
                         const vec = d.displacements;
                         if (vec) {
