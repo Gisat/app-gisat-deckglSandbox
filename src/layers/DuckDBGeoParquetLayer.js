@@ -5,6 +5,7 @@ import { ArrowLoader } from '@loaders.gl/arrow';
 
 const DEFAULT_PROPS = {
     dataUrl: null,
+    geoparquetPath: null,
     dateIndex: 0,
     mode: 'static',
     columnMap: {
@@ -21,6 +22,8 @@ const DEFAULT_PROPS = {
     // Callbacks
     renderSubLayers: { type: 'function', value: () => null },
     onStatusChange: { type: 'function', value: () => { } },
+    onError: { type: 'function', value: (error) => console.error(error) },
+    processData: { type: 'function', value: (data) => data },
 
     // Grid Config
     gridSize: 0.06,
@@ -188,7 +191,7 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
 
         // Perform Fetches
         Promise.all(neededTiles.map(task => {
-            const { columnMap, timeSeries } = this.props;
+            const { columnMap, timeSeries, geoparquetPath } = this.props;
             const params = new URLSearchParams({
                 date_index: dateIndex,
                 mode: mode,
@@ -200,6 +203,10 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
                 color_col: columnMap.color,
                 displacements_col: timeSeries.displacements
             });
+
+            if (geoparquetPath) {
+                params.append('geoparquet_path', geoparquetPath);
+            }
 
             if (this.props.is3D) {
                 params.append('is3D', 'true');
@@ -221,16 +228,15 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
 
                     if (Array.isArray(dataArr)) {
                         // Pre-calc Logic (Optimization from Map3D)
-                        this._processData(dataArr);
-
-                        this.state.tileCache.set(task.key, dataArr);
+                        const processedData = this.props.processData(dataArr);
+                        this.state.tileCache.set(task.key, processedData);
                         if (this.state.tileCache.size > cacheLimit) this._enforceCacheLimit();
-                        return dataArr;
+                        return processedData;
                     }
                     return [];
                 })
                 .catch(e => {
-                    console.error(`Failed ${task.key}`, e);
+                    this.props.onError(e);
                     this.state.pendingRequests.delete(task.key);
                     this.state.tileCache.set(task.key, []);
                     return [];

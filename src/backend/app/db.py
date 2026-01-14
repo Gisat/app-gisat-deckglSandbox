@@ -2,19 +2,14 @@ import duckdb
 from .config import Config
 
 class Database:
-    _instance = None
+    def __init__(self, geoparquet_path=None):
+        self._init_db(geoparquet_path)
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._init_db()
-        return cls._instance
-
-    def _init_db(self):
+    def _init_db(self, geoparquet_path):
         self.conn = duckdb.connect(database=':memory:', read_only=False)
         self.conn.execute("INSTALL spatial; LOAD spatial;")
-        # Use the path from config and create the view as 'egms_data' for compatibility
-        self.conn.execute(f"CREATE OR REPLACE VIEW egms_data AS SELECT * FROM read_parquet('{Config.GEOPARQUET_PATH}')")
+        path = geoparquet_path if geoparquet_path else Config.GEOPARQUET_PATH
+        self.conn.execute(f"CREATE OR REPLACE VIEW egms_data AS SELECT * FROM read_parquet('{path}')")
 
     def get_conn(self):
         return self.conn

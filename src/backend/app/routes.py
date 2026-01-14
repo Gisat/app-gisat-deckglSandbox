@@ -1,6 +1,6 @@
 
 from flask import Blueprint, request, jsonify, send_file
-from .db import db
+from .db import Database
 import io
 import pyarrow as pa
 import traceback
@@ -10,6 +10,8 @@ bp = Blueprint('api', __name__, url_prefix='/api')
 @bp.route('/dates', methods=['GET'])
 def get_dates():
     try:
+        geoparquet_path = request.args.get('geoparquet_path')
+        db = Database(geoparquet_path)
         query = "SELECT dates FROM egms_data LIMIT 1"
         dates_list_objects = db.get_conn().execute(query).fetchone()[0]
         dates_list_strings = [d.strftime('%Y-%m-%d') for d in dates_list_objects]
@@ -20,6 +22,8 @@ def get_dates():
 @bp.route('/data', methods=['GET'])
 def get_data():
     try:
+        geoparquet_path = request.args.get('geoparquet_path')
+        db = Database(geoparquet_path)
         tile_x = request.args.get('tile_x', type=int)
         tile_y = request.args.get('tile_y', type=int)
         date_index = request.args.get('date_index', type=int, default=0)

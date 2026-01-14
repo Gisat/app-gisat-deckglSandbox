@@ -116,6 +116,7 @@ function Map2D() {
             dataUrl: DATA_API_URL,
             dateIndex: debouncedTimeIndex,
             mode: mode,
+            geoparquetPath: '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet',
             columnMap: {
                 latitude: 'y',
                 longitude: 'x',
