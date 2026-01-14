@@ -23,7 +23,6 @@ const DEFAULT_PROPS = {
     renderSubLayers: { type: 'function', value: () => null },
     onStatusChange: { type: 'function', value: () => { } },
     onError: { type: 'function', value: (error) => console.error(error) },
-    processData: { type: 'function', value: (data) => data },
 
     // Grid Config
     gridSize: 0.06,
@@ -228,10 +227,10 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
 
                     if (Array.isArray(dataArr)) {
                         // Pre-calc Logic (Optimization from Map3D)
-                        const processedData = this.props.processData(dataArr);
-                        this.state.tileCache.set(task.key, processedData);
+                        this._processData(dataArr);
+                        this.state.tileCache.set(task.key, dataArr);
                         if (this.state.tileCache.size > cacheLimit) this._enforceCacheLimit();
-                        return processedData;
+                        return dataArr;
                     }
                     return [];
                 })

@@ -1,11 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { DeckGL } from 'deck.gl';
-import { WebMercatorViewport } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { ScatterplotLayer, BitmapLayer } from '@deck.gl/layers';
 import { scaleLinear } from 'd3-scale';
-import { load } from '@loaders.gl/core';
-import { ArrowLoader } from '@loaders.gl/arrow';
 
 import { HUD } from './components/HUD';
 import { PlaybackControls } from './components/PlaybackControls';
