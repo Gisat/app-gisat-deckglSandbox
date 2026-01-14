@@ -7,6 +7,17 @@ const DEFAULT_PROPS = {
     dataUrl: null,
     dateIndex: 0,
     mode: 'static',
+    columnMap: {
+        latitude: 'latitude',
+        longitude: 'longitude',
+        height: 'height',
+        size: 'size',
+        color: 'color'
+    },
+    timeSeries: {
+        dates: 'dates',
+        displacements: 'displacements'
+    },
     // Callbacks
     renderSubLayers: { type: 'function', value: () => null },
     onStatusChange: { type: 'function', value: () => { } },
@@ -177,10 +188,17 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
 
         // Perform Fetches
         Promise.all(neededTiles.map(task => {
+            const { columnMap, timeSeries } = this.props;
             const params = new URLSearchParams({
                 date_index: dateIndex,
                 mode: mode,
-                tier: task.tier
+                tier: task.tier,
+                latitude_col: columnMap.latitude,
+                longitude_col: columnMap.longitude,
+                height_col: columnMap.height,
+                size_col: columnMap.size,
+                color_col: columnMap.color,
+                displacements_col: timeSeries.displacements
             });
 
             if (this.props.is3D) {

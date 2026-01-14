@@ -116,6 +116,15 @@ function Map2D() {
             dataUrl: DATA_API_URL,
             dateIndex: debouncedTimeIndex,
             mode: mode,
+            columnMap: {
+                latitude: 'y',
+                longitude: 'x',
+                color: 'displacements'
+            },
+            timeSeries: {
+                dates: 'dates',
+                displacements: 'displacements'
+            },
             onStatusChange: (status) => {
                 setTotalPoints(status.totalPoints);
                 setCacheSize(status.cacheSize);

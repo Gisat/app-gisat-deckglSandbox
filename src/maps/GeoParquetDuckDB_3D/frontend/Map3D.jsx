@@ -113,6 +113,17 @@ function Map3D() {
             dateIndex: debouncedTimeIndex,
             mode: mode,
             is3D: true,
+            columnMap: {
+                latitude: 'y',
+                longitude: 'x',
+                height: 'height',
+                size: 'mean_velocity',
+                color: 'displacements'
+            },
+            timeSeries: {
+                dates: 'dates',
+                displacements: 'displacements'
+            },
             onStatusChange: (status) => {
                 setTotalPoints(status.totalPoints);
                 setCacheSize(status.cacheSize);

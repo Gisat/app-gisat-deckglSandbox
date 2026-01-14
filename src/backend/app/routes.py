@@ -26,17 +26,26 @@ def get_data():
         mode = request.args.get('mode', type=str, default='static')
         target_tier = request.args.get('tier', type=int, default=0)
         is_3d = request.args.get('is3D') == 'true'
+        latitude_col = request.args.get('latitude_col', 'latitude')
+        longitude_col = request.args.get('longitude_col', 'longitude')
+        height_col = request.args.get('height_col', 'height')
+        size_col = request.args.get('size_col', 'mean_velocity')
+        color_col = request.args.get('color_col', 'color')
+        dates_col = request.args.get('dates_col', 'dates')
+        displacements_col = request.args.get('displacements_col', 'displacements')
 
         db_index = date_index + 1
 
-        base_cols = "x AS longitude, y AS latitude"
+        base_cols = f"{longitude_col} AS longitude, {latitude_col} AS latitude"
         if is_3d:
-            base_cols += ", height, mean_velocity"
+            base_cols += f", {height_col} AS height, {size_col} AS mean_velocity"
+
+        base_cols += f", {color_col} AS color"
 
         if mode == 'animation':
-            selection_col = "displacements"
+            selection_col = f"{displacements_col} AS displacements"
         else:
-            selection_col = "displacements[?] AS displacement"
+            selection_col = f"{displacements_col}[?] AS displacement"
         is_global = request.args.get('global') == 'true'
         if is_global:
             query = f"""
