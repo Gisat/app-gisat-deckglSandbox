@@ -23,6 +23,7 @@
     "@geoarrow/deck.gl-layers": "^0.3.1",
     "@gisatcz/deckgl-geolib": "^1.10.2-dev.6",
     "@loaders.gl/3d-tiles": "^4.2.2",
+    "@loaders.gl/arrow": "^4.3.4",
     "@loaders.gl/core": "^4.3.4",
     "@loaders.gl/i3s": "^4.2.2",
     "@loaders.gl/obj": "^4.2.2",

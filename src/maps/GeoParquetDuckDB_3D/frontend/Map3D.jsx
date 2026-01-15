@@ -133,48 +133,51 @@ function Map3D() {
             },
 
             renderSubLayers: (props) => {
-                return new SimpleMeshLayer({
-                    id: 'mesh-layer',
-                    data: props.data,
-                    mesh: sphere,
-                    getPosition: d => {
-                        let val;
-                        // Always try to use cached vector data if available (Smart Caching)
-                        const cum = d.cumulative_displacements;
-                        if (cum) {
-                            const idx = Math.min(timeIndex, cum.length - 1);
-                            val = cum[idx];
-                        } else {
-                            val = d.displacement || 0;
-                        }
-                        return [d.longitude, d.latitude, d.height + (val * 0.2)];
-                    },
-                    getColor: d => {
-                        let val;
-                        // Always try to use cached vector data if available (Smart Caching)
-                        const vec = d.displacements;
-                        if (vec) {
-                            const idx = Math.min(timeIndex, vec.length - 1);
-                            val = vec[idx];
-                        } else {
-                            val = d.displacement || 0;
-                        }
-                        const rgb = colorScale(val || 0);
-                        return [rgb[0], rgb[1], rgb[2], 255];
-                    },
-                    getScale: d => {
-                        const size = sizeScale(Math.abs(d.mean_velocity || 1));
-                        return [size, size, size];
-                    },
-                    updateTriggers: {
-                        getColor: [timeIndex, mode],
-                        getPosition: [timeIndex, mode]
-                    },
-                    pickable: true,
+                const { data } = props;
+
+                if (!data || data.length === 0) return null;
+
+                return data.map((tableData) => {
+                    return new SimpleMeshLayer({
+                        id: `mesh-layer-${tableData.tableIndex}`,
+                        data: Array.from({ length: tableData.numRows }, (_, i) => i),
+                        mesh: sphere,
+
+                        getPosition: (rowIndex) => {
+                            const { lon, lat, height } = tableData.getPosition(rowIndex);
+                            const displacement = tableData.getDisplacementValue(rowIndex, mode, debouncedTimeIndex);
+                            return [lon, lat, height + (displacement * 0.2)]; // Scale displacement for visibility
+                        },
+
+                        getColor: (rowIndex) => {
+                            const val = tableData.getDisplacementValue(rowIndex, mode, debouncedTimeIndex);
+                            const rgb = colorScale(val);
+                            return [rgb[0], rgb[1], rgb[2], 255];
+                        },
+
+                        getScale: (rowIndex) => {
+                            const meanVelocity = tableData.getMeanVelocity(rowIndex);
+                            const size = sizeScale(Math.abs(meanVelocity || 1));
+                            return [size, size, size];
+                        },
+
+                        updateTriggers: {
+                            getColor: [debouncedTimeIndex, mode],
+                            getPosition: [debouncedTimeIndex, mode]
+                        },
+
+                        // Disable transitions for instant updates
+                        transitions: {
+                            getColor: 0,
+                            getPosition: 0
+                        },
+
+                        pickable: true
+                    });
                 });
             }
         })
-    ], [debouncedTimeIndex, timeIndex, mode]);
+    ], [debouncedTimeIndex, mode]);
 
     return (
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>

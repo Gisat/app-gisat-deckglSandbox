@@ -131,30 +131,41 @@ function Map2D() {
             },
 
             renderSubLayers: (props) => {
-                return new ScatterplotLayer({
-                    id: 'data-layer',
-                    data: props.data,
-                    getPosition: d => [d.longitude, d.latitude],
-                    getRadius: getPointSize(viewState.zoom),
-                    radiusUnits: 'pixels',
-                    getFillColor: d => {
-                        let val = 0;
-                        // Always try to use cached vector data if available (Smart Caching)
-                        const vec = d.displacements;
-                        if (vec) {
-                            // Note: After _processData in layer, vec is normalized to Float32Array
-                            const idx = Math.min(timeIndex, vec.length - 1);
-                            val = vec[idx];
-                        } else {
-                            val = d.displacement || 0;
-                        }
-                        const rgb = colorScale(val || 0);
-                        return [rgb[0], rgb[1], rgb[2], 200];
-                    },
-                    updateTriggers: {
-                        getFillColor: [timeIndex, mode]
-                    },
-                    pickable: true
+                const { data } = props;
+
+                if (!data || data.length === 0) return null;
+
+                return data.map((tableData) => {
+                    return new ScatterplotLayer({
+                        id: `arrow-table-${tableData.tableIndex}`,
+                        data: Array.from({ length: tableData.numRows }, (_, i) => i),
+
+                        getPosition: (rowIndex) => {
+                            const { lon, lat } = tableData.getPosition(rowIndex);
+                            return [lon, lat];
+                        },
+
+                        getRadius: getPointSize(viewState.zoom),
+                        radiusUnits: 'pixels',
+
+                        getFillColor: (rowIndex) => {
+                            const val = tableData.getDisplacementValue(rowIndex, mode, debouncedTimeIndex);
+                            const rgb = colorScale(val);
+                            return [rgb[0], rgb[1], rgb[2], 200];
+                        },
+
+                        updateTriggers: {
+                            getFillColor: [debouncedTimeIndex, mode],
+                            getPosition: [mode],
+                        },
+
+                        // Disable transitions for instant updates
+                        transitions: {
+                            getFillColor: 0
+                        },
+
+                        pickable: true
+                    });
                 });
             }
         })
