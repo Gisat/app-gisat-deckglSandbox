@@ -131,30 +131,17 @@ function Map2D() {
             },
 
             renderSubLayers: (props) => {
-                // Handle Arrow tables directly - avoid JS object conversion
-                const arrowTables = Array.isArray(props.data) ? props.data : [props.data];
-                const validTables = arrowTables.filter(table => table && table.numRows > 0);
+                const { data } = props;
 
-                if (validTables.length === 0) return null;
+                if (!data || data.length === 0) return null;
 
-                return validTables.map((table, tableIndex) => {
-                    // Pre-cache column references for performance (avoid repeated getChild calls)
-                    const lonColumn = table.getChild('longitude');
-                    const latColumn = table.getChild('latitude');
-                    const displacementsColumn = table.getChild('displacements'); // animation mode
-                    const displacementColumn = table.getChild('displacement');   // static mode
-
-                    // Debug: Try alternative column names if primary ones fail
-                    const altLonColumn = !lonColumn ? table.getChild('x') : null;
-                    const altLatColumn = !latColumn ? table.getChild('y') : null;
-
+                return data.map((tableData) => {
                     return new ScatterplotLayer({
-                        id: `arrow-table-${tableIndex}`,
-                        data: Array.from({ length: table.numRows }, (_, i) => i),
+                        id: `arrow-table-${tableData.tableIndex}`,
+                        data: Array.from({ length: tableData.numRows }, (_, i) => i),
 
                         getPosition: (rowIndex) => {
-                            const lon = lonColumn ? lonColumn.get(rowIndex) : altLonColumn?.get(rowIndex);
-                            const lat = latColumn ? latColumn.get(rowIndex) : altLatColumn?.get(rowIndex);
+                            const { lon, lat } = tableData.getPosition(rowIndex);
                             return [lon, lat];
                         },
 
@@ -162,54 +149,14 @@ function Map2D() {
                         radiusUnits: 'pixels',
 
                         getFillColor: (rowIndex) => {
-                            let val = 0;
-
-                            if (mode === 'animation') {
-                                // Animation mode: prefer displacements array, fallback to displacement single value
-                                if (displacementsColumn) {
-                                    const displacements = displacementsColumn.get(rowIndex);
-
-                                    if (displacements) {
-                                        if (Array.isArray(displacements)) {
-                                            val = displacements[debouncedTimeIndex] || 0;
-                                        } else if (displacements.get && typeof displacements.get === 'function') {
-                                            val = displacements.get(debouncedTimeIndex) || 0;
-                                        } else if (displacements.toArray && typeof displacements.toArray === 'function') {
-                                            const arr = displacements.toArray();
-                                            val = arr[debouncedTimeIndex] || 0;
-                                        }
-                                    }
-                                } else if (displacementColumn) {
-                                    // Fallback: use single displacement value (cached static data)
-                                    val = displacementColumn.get(rowIndex) || 0;
-                                }
-                            } else {
-                                // Static mode: prefer displacement single value, fallback to displacements array
-                                if (displacementColumn) {
-                                    val = displacementColumn.get(rowIndex) || 0;
-                                } else if (displacementsColumn) {
-                                    // Fallback: extract single value from displacements array (cached animation data)
-                                    const displacements = displacementsColumn.get(rowIndex);
-                                    if (displacements) {
-                                        if (Array.isArray(displacements)) {
-                                            val = displacements[debouncedTimeIndex] || 0;
-                                        } else if (displacements.get && typeof displacements.get === 'function') {
-                                            val = displacements.get(debouncedTimeIndex) || 0;
-                                        } else if (displacements.toArray && typeof displacements.toArray === 'function') {
-                                            const arr = displacements.toArray();
-                                            val = arr[debouncedTimeIndex] || 0;
-                                        }
-                                    }
-                                }
-                            }
-
+                            const val = tableData.getDisplacementValue(rowIndex, mode, debouncedTimeIndex);
                             const rgb = colorScale(val);
                             return [rgb[0], rgb[1], rgb[2], 200];
                         },
 
                         updateTriggers: {
-                            getFillColor: [debouncedTimeIndex, mode],  // Use consistent time index and mode
-                            getPosition: [mode],  // Also trigger position updates on mode change
+                            getFillColor: [debouncedTimeIndex, mode],
+                            getPosition: [mode],
                         },
 
                         // Disable transitions for instant updates

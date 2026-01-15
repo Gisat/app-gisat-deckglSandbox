@@ -61,11 +61,116 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
         const { displayData } = this.state;
 
         if (renderSubLayers) {
+            // Process Arrow tables and provide pre-cached column references
+            const processedData = this._processArrowTables(displayData);
+
             return renderSubLayers({
-                data: displayData,
+                data: processedData,
             });
         }
         return null;
+    }
+
+    _processArrowTables(displayData) {
+        if (!displayData || !Array.isArray(displayData) || displayData.length === 0) {
+            return [];
+        }
+
+        // Handle Arrow tables and provide pre-cached column references
+        const arrowTables = Array.isArray(displayData) ? displayData : [displayData];
+        const validTables = arrowTables.filter(table => table && table.numRows > 0);
+
+        if (validTables.length === 0) return [];
+
+        return validTables.map((table, tableIndex) => {
+            // Pre-cache column references for performance (avoid repeated getChild calls)
+            const lonColumn = table.getChild('longitude');
+            const latColumn = table.getChild('latitude');
+            const heightColumn = table.getChild('height');
+            const meanVelocityColumn = table.getChild('mean_velocity');
+            const displacementsColumn = table.getChild('displacements'); // animation mode
+            const displacementColumn = table.getChild('displacement');   // static mode
+
+            // Try alternative column names if primary ones fail
+            const altLonColumn = !lonColumn ? table.getChild('x') : null;
+            const altLatColumn = !latColumn ? table.getChild('y') : null;
+
+            return {
+                tableIndex,
+                numRows: table.numRows,
+                schema: table.schema,
+
+                // Pre-cached column references
+                columns: {
+                    longitude: lonColumn,
+                    latitude: latColumn,
+                    height: heightColumn,
+                    meanVelocity: meanVelocityColumn,
+                    displacements: displacementsColumn,
+                    displacement: displacementColumn,
+
+                    // Alternative column names
+                    altLongitude: altLonColumn,
+                    altLatitude: altLatColumn
+                },
+
+                // Helper methods for common operations
+                getPosition: (rowIndex) => {
+                    const lon = lonColumn ? lonColumn.get(rowIndex) : altLonColumn?.get(rowIndex);
+                    const lat = latColumn ? latColumn.get(rowIndex) : altLatColumn?.get(rowIndex);
+                    const height = heightColumn ? heightColumn.get(rowIndex) : 0;
+                    return { lon, lat, height };
+                },
+
+                getDisplacementValue: (rowIndex, mode, timeIndex) => {
+                    let val = 0;
+
+                    if (mode === 'animation') {
+                        // Animation mode: prefer displacements array, fallback to displacement single value
+                        if (displacementsColumn) {
+                            const displacements = displacementsColumn.get(rowIndex);
+                            if (displacements) {
+                                if (Array.isArray(displacements)) {
+                                    val = displacements[timeIndex] || 0;
+                                } else if (displacements.get && typeof displacements.get === 'function') {
+                                    val = displacements.get(timeIndex) || 0;
+                                } else if (displacements.toArray && typeof displacements.toArray === 'function') {
+                                    const arr = displacements.toArray();
+                                    val = arr[timeIndex] || 0;
+                                }
+                            }
+                        } else if (displacementColumn) {
+                            // Fallback: use single displacement value (cached static data)
+                            val = displacementColumn.get(rowIndex) || 0;
+                        }
+                    } else {
+                        // Static mode: prefer displacement single value, fallback to displacements array
+                        if (displacementColumn) {
+                            val = displacementColumn.get(rowIndex) || 0;
+                        } else if (displacementsColumn) {
+                            // Fallback: extract single value from displacements array (cached animation data)
+                            const displacements = displacementsColumn.get(rowIndex);
+                            if (displacements) {
+                                if (Array.isArray(displacements)) {
+                                    val = displacements[timeIndex] || 0;
+                                } else if (displacements.get && typeof displacements.get === 'function') {
+                                    val = displacements.get(timeIndex) || 0;
+                                } else if (displacements.toArray && typeof displacements.toArray === 'function') {
+                                    const arr = displacements.toArray();
+                                    val = arr[timeIndex] || 0;
+                                }
+                            }
+                        }
+                    }
+
+                    return val;
+                },
+
+                getMeanVelocity: (rowIndex) => {
+                    return meanVelocityColumn ? meanVelocityColumn.get(rowIndex) : 1;
+                }
+            };
+        });
     }
 
     _fetchTiles(currentViewport) {
