@@ -44,19 +44,17 @@ def get_data():
         if is_3d:
             base_cols += f", {height_col} AS height, {size_col} AS mean_velocity"
 
-        base_cols += f", {color_col} AS color"
-
         if mode == 'animation':
             selection_col = f"{displacements_col} AS displacements"
         else:
-            selection_col = f"{displacements_col}[?] AS displacement"
+            selection_col = f"{displacements_col}[{db_index}] AS displacement"
         is_global = request.args.get('global') == 'true'
         if is_global:
             query = f"""
             SELECT {base_cols}, {selection_col}
             FROM egms_data WHERE tier_id = 0
             """
-            final_params = [] if mode == 'animation' else [db_index]
+            final_params = []
         else:
             if tile_x is None or tile_y is None:
                 return jsonify({'error': 'tile_x and tile_y are required for tiled requests'}), 400
@@ -65,7 +63,7 @@ def get_data():
             FROM egms_data
             WHERE tile_x = ? AND tile_y = ? AND tier_id = ?
             """
-            final_params = [tile_x, tile_y, target_tier] if mode == 'animation' else [db_index, tile_x, tile_y, target_tier]
+            final_params = [tile_x, tile_y, target_tier]
 
         arrow_table = db.get_conn().execute(query, final_params).fetch_arrow_table()
 
