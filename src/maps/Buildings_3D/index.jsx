@@ -12,8 +12,7 @@ import {SphereGeometry} from "@luma.gl/engine";
 import chroma from "chroma-js";
 import {scaleLinear} from "d3-scale";
 import {OBJLoader} from "@loaders.gl/obj";
-import geolib from "@gisatcz/deckgl-geolib";
-const CogTerrainLayer = geolib.CogTerrainLayer;
+import { CogTerrainLayer } from "@gisatcz/deckgl-geolib";
 
 const INITIAL_VIEW_STATE = {
     longitude: 14.41188380380868,

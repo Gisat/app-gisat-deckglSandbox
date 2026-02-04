@@ -5,9 +5,7 @@ import { MVTLayer, TileLayer } from "@deck.gl/geo-layers";
 import { BitmapLayer, PointCloudLayer } from "@deck.gl/layers";
 import * as dat from "dat.gui";
 import chroma from "chroma-js";
-import geolib from "@gisatcz/deckgl-geolib";
-
-const CogTerrainLayer = geolib.CogTerrainLayer;
+import { CogTerrainLayer } from "@gisatcz/deckgl-geolib";
 const FRAME_MIN_TIME = 1000 / 30; // 30 FPS
 const frameCount = 40;
 

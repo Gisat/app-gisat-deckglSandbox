@@ -9,9 +9,8 @@ import {_TerrainExtension as TerrainExtension } from "@deck.gl/extensions";
 import {SimpleMeshLayer} from "@deck.gl/mesh-layers";
 import chroma from "chroma-js";
 import {OBJLoader} from "@loaders.gl/obj";
-import geolib from "@gisatcz/deckgl-geolib";
 import {SphereGeometry} from "@luma.gl/engine";
-const CogTerrainLayer = geolib.CogTerrainLayer;
+import { CogTerrainLayer } from "@gisatcz/deckgl-geolib";
 
 const INITIAL_VIEW_STATE = {
     longitude: 14.440544794048083,

@@ -10,8 +10,7 @@ import {Tiles3DLoader, CesiumIonLoader} from '@loaders.gl/3d-tiles';
 import {BitmapLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
 import {_TerrainExtension as TerrainExtension, PathStyleExtension} from "@deck.gl/extensions";
-import geolib from "@gisatcz/deckgl-geolib";
-const CogTerrainLayer = geolib.CogTerrainLayer;
+import { CogTerrainLayer } from "@gisatcz/deckgl-geolib";
 // import cesium1 from '../../assets/3d-tiles-samples/1.0/TilesetWithDiscreteLOD/tileset.json';
 // import cesium2 from '../../assets/3d-tiles-samples/1.0/TilesetWithTreeBillboards/tileset.json';
 
