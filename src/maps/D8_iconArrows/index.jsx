@@ -10,10 +10,8 @@ import { MVTLayer } from "@deck.gl/geo-layers";
 import * as dat from 'dat.gui';
 import {SimpleMeshLayer} from "@deck.gl/mesh-layers";
 import chroma from "chroma-js";
-import geolib from "@gisatcz/deckgl-geolib";
 import {_TerrainExtension as TerrainExtension, DataFilterExtension} from '@deck.gl/extensions';
-
-const CogTerrainLayer = geolib.CogTerrainLayer;
+import { CogTerrainLayer } from "@gisatcz/deckgl-geolib";
 
 const INITIAL_VIEW_STATE = {
     longitude: 14.015511800867504,

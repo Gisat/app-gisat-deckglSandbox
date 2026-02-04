@@ -5,15 +5,13 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { MVTLayer } from "@deck.gl/geo-layers";
 import { PointCloudLayer } from '@deck.gl/layers';
-import geolib from "@gisatcz/deckgl-geolib";
 import chroma from "chroma-js";
 import { scaleLinear } from 'd3-scale';
 import {SimpleMeshLayer} from '@deck.gl/mesh-layers';
 import {SphereGeometry} from '@luma.gl/engine';
 import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
 import {COORDINATE_SYSTEM} from '@deck.gl/core';
-
-const CogTerrainLayer = geolib.CogTerrainLayer;
+import { CogTerrainLayer } from "@gisatcz/deckgl-geolib";
 
 const colorScale = chroma
     .scale(['#b1001d', '#ca2d2f', '#e25b40', '#ffaa00', '#ffff00', '#a0f000', '#4ce600', '#50d48e', '#00c3ff', '#0f80d1', '#004ca8', '#003e8a'])

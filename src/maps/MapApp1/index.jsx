@@ -6,8 +6,7 @@ import {MVTLayer, TileLayer} from '@deck.gl/geo-layers';
 import {BitmapLayer, GeoJsonLayer, PolygonLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
 import {_TerrainExtension as TerrainExtension, PathStyleExtension} from "@deck.gl/extensions";
-import geolib from "@gisatcz/deckgl-geolib";
-const CogTerrainLayer = geolib.CogTerrainLayer;
+import { CogTerrainLayer } from "@gisatcz/deckgl-geolib";
 
 const INITIAL_VIEW_STATE = {
     longitude: 14.41188380380868,
