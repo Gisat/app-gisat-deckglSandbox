@@ -49,7 +49,7 @@ const mapApps = [
     { name: 'GeoParquet Tiled', path: '/geoparquet-tiled', component: geoParquetTiled },
     { name: 'GeoParquet Virtual Tiles', path: '/geoparquet-virtual-tiles', component: geoParquetVirtualTiles },
     { name: 'Deck.gl-raster COG', path: '/deck.gl-raster', component: devSeedCOG },
-    { name: 'Test Gisat Geotiff', path: '/test-gisat-geotiff', component: GisatGeotiffMap, description: 'Testing Gisat Geotiff rendering' },
+    // { name: 'Test Gisat Geotiff', path: '/test-gisat-geotiff', component: GisatGeotiffMap, description: 'Testing Gisat Geotiff rendering' },
     { name: 'COG Kernel', path: '/cog-kernel', component: CogTerrainKernel, description: 'Showcase kernel calculation and hover features with deck.gl-geotiff' },
 ];
 
