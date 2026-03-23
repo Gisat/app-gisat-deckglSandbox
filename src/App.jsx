@@ -1,12 +1,12 @@
 // src/App.jsx
 import React from 'react';
-import { BrowserRouter as Router, Route, Link, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Link, Routes } from 'react-router-dom';
 import mapApps from './maps/config';
 import './App.css'; // Import the CSS file for styling
 
 function App() {
     return (
-        <Router>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <div className="app-container">
                 <nav className="sidebar">
                     <h1>Map Apps</h1>
@@ -26,7 +26,7 @@ function App() {
                     </Routes>
                 </main>
             </div>
-        </Router>
+        </BrowserRouter>
     );
 }
 
