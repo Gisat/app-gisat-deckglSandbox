@@ -8,9 +8,9 @@ import { CogTerrainLayer } from '@gisatcz/deckgl-geolib';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_terrain/DEM_COP30_float32_wgs84_deflate_cog_float32.tif';
 const INITIAL_VIEW_STATE = {
-  longitude: 85.3,
-  latitude: 27.7,
-  zoom: 9,
+  longitude: 86,
+  latitude: 28,
+  zoom: 8,
   pitch: 40,
   bearing: 0,
 };
