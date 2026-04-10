@@ -1,10 +1,10 @@
 // Adapted from deck.gl-geotiff CogTerrainKernelExample
-import React, { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { BitmapLayer } from '@deck.gl/layers';
 import { TileLayer } from '@deck.gl/geo-layers';
-import { CogTerrainLayer } from '@gisatcz/deckgl-geolib';
+import { CogTerrainLayer, CogTiles } from '@gisatcz/deckgl-geolib';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_terrain/DEM_COP30_float32_wgs84_deflate_cog_float32.tif';
 const INITIAL_VIEW_STATE = {
@@ -59,7 +59,6 @@ function buildTerrainOptions(mode) {
   };
 }
 
-
 function getElevationAtInfo(info){
   const tileResult = info.tile?.content?.[0];
   if (!tileResult?.raw) return null;
@@ -102,34 +101,28 @@ function getDerivedAtInfo(info){
   return rawDerived[y * width + x];
 }
 
-import { CogTiles } from '@gisatcz/deckgl-geolib';
-
 function CogTerrainKernel() {
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
   const [mode, setMode] = useState('elevation');
   const [cogState, setCogState] = useState({ cog: null, mode: 'elevation' });
-  const [isTransitioning, setIsTransitioning] = useState(false);
 
-  // Initial load
-  React.useEffect(() => {
-    let mounted = true;
-    const cog = new CogTiles(buildTerrainOptions(mode));
-    cog.initializeCog(DEM_COG_URL).then(() => {
-      if (mounted) setCogState({ cog, mode });
+  // Initialize CogTiles ONCE on mount
+  useEffect(() => {
+    const cogInstance = new CogTiles(buildTerrainOptions('elevation'));
+    cogInstance.initializeCog(DEM_COG_URL).then(() => {
+      setCogState({ cog: cogInstance, mode: 'elevation' });
     });
-    return () => { mounted = false; };
   }, []);
 
-  // Mode change
-  React.useEffect(() => {
-    if (!cogState.cog || cogState.mode === mode) return;
-    setIsTransitioning(true);
-    const cog = new CogTiles(buildTerrainOptions(mode));
-    cog.initializeCog(DEM_COG_URL).then(() => {
-      setCogState({ cog, mode });
-      setIsTransitioning(false);
+  // Reinitialize CogTiles when mode changes (needed for kernel computation)
+  useEffect(() => {
+    if (!cogState.cog || mode === cogState.mode) return;
+    
+    const newCog = new CogTiles(buildTerrainOptions(mode));
+    newCog.initializeCog(DEM_COG_URL).then(() => {
+      setCogState({ cog: newCog, mode });
     });
-  }, [mode]);
+  }, [mode, cogState.cog, cogState.mode]);
 
   const layers = useMemo(() => {
     if (!cogState.cog) return [];
@@ -141,15 +134,17 @@ function CogTerrainKernel() {
         maxZoom: 19,
         tileSize: 256,
         pickable: false,
+        /* eslint-disable react/prop-types */
         renderSubLayers: (props) => {
-          const { bbox } = props.tile;
+          const { bbox, data } = props.tile;
           const { west, south, east, north } = bbox;
           return new BitmapLayer(props, {
             data: undefined,
-            image: props.data,
+            image: data,
             bounds: [west, south, east, north],
           });
         },
+        /* eslint-enable react/prop-types */
       }),
       new CogTerrainLayer({
         id: 'cog-terrain-kernel',
@@ -162,7 +157,9 @@ function CogTerrainKernel() {
         pickable: true,
       }),
     ];
-  }, [viewState, cogState]);
+  }, [cogState]);
+
+  const isTransitioning = cogState.mode !== mode;
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
@@ -180,24 +177,17 @@ function CogTerrainKernel() {
           controller={true}
           layers={layers}
           views={new MapView({ repeat: true })}
-          getTooltip={(info) => {
+          getTooltip={useCallback((info) => {
             const elevation = getElevationAtInfo(info);
             const derived = getDerivedAtInfo(info);
             if (elevation === null) return null;
-            // const displayMode = cogState?.mode ?? mode;
             const lines = [`Elevation: ${elevation.toFixed(1)} m`];
-if (derived !== null) {
-  if (mode === 'slope') lines.push(`Slope: ${derived.toFixed(1)}\xB0`);
-  if (mode === 'hillshade') lines.push(`Hillshade: ${derived.toFixed(0)}`);
-}
-            // lines.push(`Slope: ${derived.toFixed(1)}\xB0`);
-            // if (derived !== null) {
-            //   if (displayMode === 'slope') lines.push(`Slope: ${derived.toFixed(1)}\xB0`);
-              // if (displayMode === 'hillshade') lines.push(`Hillshade: ${derived.toFixed(0)}`);
-            // }
+            if (derived !== null) {
+              if (cogState.mode === 'slope') lines.push(`Slope: ${derived.toFixed(1)}\xB0`);
+              if (cogState.mode === 'hillshade') lines.push(`Hillshade: ${derived.toFixed(0)}`);
+            }
             return { text: lines.join('\n') };
-          }}
-
+          }, [cogState.mode])}
       />
     </div>
   );

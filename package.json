@@ -21,7 +21,7 @@
     "@developmentseed/deck.gl-geotiff": "^0.1.0",
     "@duckdb/duckdb-wasm": "^1.29.0",
     "@geoarrow/deck.gl-layers": "^0.3.1",
-    "@gisatcz/deckgl-geolib": "^2.4.0-dev.1",
+    "@gisatcz/deckgl-geolib": "^2.4.0-dev.5",
     "@loaders.gl/3d-tiles": "^4.3.4",
     "@loaders.gl/arrow": "^4.3.4",
     "@loaders.gl/core": "^4.3.4",
