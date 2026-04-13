@@ -5,8 +5,9 @@ import mapApps from './maps/config';
 import './App.css'; // Import the CSS file for styling
 
 function App() {
+    const basename = import.meta.env.MODE === 'production' ? '/app-gisat-deckglSandbox/' : '/';
     return (
-        <BrowserRouter basename="/app-gisat-deckglSandbox/" future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <BrowserRouter basename={basename} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <div className="app-container">
                 <nav className="sidebar">
                     <h1>Map Apps</h1>
