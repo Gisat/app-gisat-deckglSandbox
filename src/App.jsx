@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Route, Link, Routes, useLocation } from 'react-router-dom';
 import mapApps from './maps/config';
 import './App.css'; // Import the CSS file for styling
@@ -31,6 +31,17 @@ function AppContent() {
     // Define group order
     const groupOrder = ['3DFLUS CCN', '3DFLUS', 'GeoParquet', 'Other'];
     const sortedGroups = groupOrder.filter(g => g in groupedMaps);
+
+    // Auto-expand group when path changes
+    useEffect(() => {
+        const currentMap = mapApps.find(app => app.path === location.pathname);
+        if (currentMap && !expandedGroups[currentMap.category]) {
+            setExpandedGroups(prev => ({
+                ...prev,
+                [currentMap.category]: true
+            }));
+        }
+    }, [location.pathname]);
 
     return (
         <div className="app-container">
