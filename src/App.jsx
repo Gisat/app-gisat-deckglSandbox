@@ -1,11 +1,11 @@
 // src/App.jsx
 import React, { useState } from 'react';
-import { BrowserRouter, Route, Link, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Link, Routes, useLocation } from 'react-router-dom';
 import mapApps from './maps/config';
 import './App.css'; // Import the CSS file for styling
 
-function App() {
-    const basename = import.meta.env.MODE === 'production' ? '/app-gisat-deckglSandbox/' : '/';
+function AppContent() {
+    const location = useLocation();
     const [expandedGroups, setExpandedGroups] = useState({
         '3DFLUS CCN': true,
         '3DFLUS': false,
@@ -33,39 +33,47 @@ function App() {
     const sortedGroups = groupOrder.filter(g => g in groupedMaps);
 
     return (
-        <BrowserRouter basename={basename} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <div className="app-container">
-                <nav className="sidebar">
-                    <h1>Sandbox</h1>
-                    {sortedGroups.map((category) => (
-                        <div key={category} className="map-group">
-                            <button 
-                                className="group-title-btn" 
-                                onClick={() => toggleGroup(category)}
-                            >
-                                <span className="group-chevron">{expandedGroups[category] ? '▼' : '▶'}</span>
-                                <span className="group-title-text">{category}</span>
-                            </button>
-                            {expandedGroups[category] && (
-                                <ul>
-                                    {groupedMaps[category].map((app) => (
-                                        <li key={app.path}>
-                                            <Link to={app.path}>{app.name}</Link>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                        </div>
+        <div className="app-container">
+            <nav className="sidebar">
+                <h1>Sandbox</h1>
+                {sortedGroups.map((category) => (
+                    <div key={category} className="map-group">
+                        <button 
+                            className="group-title-btn" 
+                            onClick={() => toggleGroup(category)}
+                        >
+                            <span className="group-chevron">{expandedGroups[category] ? '▼' : '▶'}</span>
+                            <span className="group-title-text">{category}</span>
+                        </button>
+                        {expandedGroups[category] && (
+                            <ul>
+                                {groupedMaps[category].map((app) => (
+                                    <li key={app.path} className={location.pathname === app.path ? 'active' : ''}>
+                                        <Link to={app.path}>{app.name}</Link>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                ))}
+            </nav>
+            <main className="main-content">
+                <Routes>
+                    {mapApps.map((app) => (
+                        <Route key={app.path} path={app.path} element={<app.component />} />
                     ))}
-                </nav>
-                <main className="main-content">
-                    <Routes>
-                        {mapApps.map((app) => (
-                            <Route key={app.path} path={app.path} element={<app.component />} />
-                        ))}
-                    </Routes>
-                </main>
-            </div>
+                </Routes>
+            </main>
+        </div>
+    );
+}
+
+function App() {
+    const basename = import.meta.env.MODE === 'production' ? '/app-gisat-deckglSandbox/' : '/';
+    
+    return (
+        <BrowserRouter basename={basename} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <AppContent />
         </BrowserRouter>
     );
 }
