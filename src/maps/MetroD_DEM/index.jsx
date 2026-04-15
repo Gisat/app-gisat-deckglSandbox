@@ -77,7 +77,7 @@ const layerConfigs = [
         id: 'razba-zona',
         type: GeoJsonLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/razba_zona-ovlivneni_buffer_chronologie_v2.geojson',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/razba_zona-ovlivneni_buffer_chronologie_v2.geojson',
             filled: true,
             pickable: true,
             getFillColor: (d) => zoneColors[d.properties.CL_START] || [0, 0, 0, 0],
@@ -94,7 +94,7 @@ const layerConfigs = [
         id: 'razba-osa',
         type: GeoJsonLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/razba_osa.geojson',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/razba_osa.geojson',
             pickable: true,
             stroked: true,
             getLineColor: [15, 15, 15],
@@ -108,30 +108,11 @@ const layerConfigs = [
         name: 'Axis',
         showVisibilityToggle: true, // Show visibility toggle for this layer
     },
-    // {
-    //     id: 'insar-points-mvt',
-    //     type: MVTLayer,
-    //     options: {
-    //         data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326/{z}/{x}/{y}.pbf',
-    //         binary: false,
-    //         minZoom: 10,
-    //         maxZoom: 16,
-    //         stroked: false,
-    //         filled: true,
-    //         pointType: 'circle',
-    //         visible: false,
-    //         getFillColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
-    //         getPointRadius: (d) => pointSizeScale(d.properties.coh), // coh interval (0.13-0.98)
-    //         extensions: [new TerrainExtension()],
-    //     },
-    //     name: 'InSAR points MVT',
-    //     showVisibilityToggle: true, // Show visibility toggle for this layer
-    // },
     {
         id: 'insar-points-sphere',
         type: SimpleMeshLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.json',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.json',
             mesh: new SphereGeometry(),
             visible: true,
             getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
@@ -153,8 +134,8 @@ const layerConfigs = [
         id: 'insar-points-arrow',
         type: SimpleMeshLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.json',
-            mesh: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/assets/arrow_v3.obj',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.json',
+            mesh: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_v3.obj',
             getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
             getOrientation: (d) => {
                 if (d.properties.vel_rel > 0) {
@@ -195,7 +176,7 @@ const layerConfigs = [
         id: 'cog-terrain-dtm-praha',
         type: CogTerrainLayer,
         options: {
-            elevationData:  'https://gisat-data.eu-central-1.linodeobjects.com/3DFlus_GST-22/app-esa3DFlusMetroD/dev/rasters/dtm1m_4326_cog_nodata.tif',
+            elevationData:  'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/dtm1m_4326_cog_nodata.tif',
             minZoom: 12,
             maxZoom: 17,
             // opacity: 0.7,
@@ -218,7 +199,7 @@ const layerConfigs = [
         id: 'buildings',
         type: MVTLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/SO_Praha_Neratovice_4326/{z}/{x}/{y}.pbf',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/SO_Praha_Neratovice_4326/{z}/{x}/{y}.pbf',
             binary: true,
             minZoom: 10,
             maxZoom: 14,
@@ -238,7 +219,7 @@ const layerConfigs = [
 const scaleXYArrowWidth = scaleLinear([0.1, 20], [0.1 , 0.3]).clamp(true);
 const scaleZArrowLength = scaleLinear([0.1, 20], [0.05, 2]).clamp(true);
 
-const ARROW_SIZE = 67; // eyeball measured, only for this object: https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_v3.obj
+const ARROW_SIZE = 67; // eyeball measured, only for this object: https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_v3.obj
 
 
 // Function to create a layer based on its configuration, visibility, and properties

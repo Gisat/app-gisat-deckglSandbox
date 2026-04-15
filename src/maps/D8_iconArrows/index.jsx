@@ -29,7 +29,7 @@ const colorScale = chroma
 // const scaleXYArrowWidth = scaleLinear([0.1, 20], [0.1 , 0.3*1000]).clamp(true);
 // const scaleZArrowLength = scaleLinear([0.1, 20], [0.05, 2*1000]).clamp(true);
 //
-// const ARROW_SIZE = 67; // eyeball measured, only for this object: https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_v3.obj
+// const ARROW_SIZE = 67; // eyeball measured, only for this object: https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_v3.obj
 
 const insarPointRelLenThresholdInterval = [0.45, 1000000];
 
@@ -63,7 +63,7 @@ const getWidth = (num) => {
 };
 
 const arrowIconOptions = {
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_selected_arrows.geojson',
+    data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_DESC_upd3_psd_los_4326_selected_arrows.geojson',
     getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
     getIcon: (d) => {
         let length = getLength(Math.abs(d.properties.vel_last));
@@ -88,10 +88,10 @@ const arrowIconOptions = {
     // getSize: (d) => iconScale(Math.abs(d.properties.vel_last)),
     getSize: 20,
     // mask: true,
-    // iconAtlas: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/right-arrow-atlas.png',
-    iconAtlas: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icon_atlas/v4/arrow-atlas-v4.png',
-    // iconMapping: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/right-arrow-atlas.json',
-    iconMapping: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icon_atlas/v4/arrow-atlas-v4.json',
+    // iconAtlas: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/right-arrow-atlas.png',
+    iconAtlas: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/icon_atlas/v4/arrow-atlas-v4.png',
+    // iconMapping: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/right-arrow-atlas.json',
+    iconMapping: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/icon_atlas/v4/arrow-atlas-v4.json',
     getFilterValue: d => (d.properties.rel_len),
     filterRange: insarPointRelLenThresholdInterval,
     extensions: [new DataFilterExtension({filterSize: 1}), new TerrainExtension()],
@@ -125,8 +125,8 @@ const layerConfigs = [
         id: 'insar-points-arrow-mesh',
         type: SimpleMeshLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_mesh_v3.json',
-            mesh: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_filled.obj',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_DESC_upd3_psd_los_4326_height_mesh_v3.json',
+            mesh: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_filled.obj',
             id: 'insar-points-arrow-mesh',
             getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
             // [0,azimuth (horizontalni) - aby sipka ukazovala nahoru, hodnota je 90, hodnota 90 - aby sipka byla placata]
@@ -154,7 +154,7 @@ const layerConfigs = [
         id: 'insar-points-mvt',
         type: MVTLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_v3/{z}/{x}/{y}.pbf',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_DESC_upd3_psd_los_4326_height_v3/{z}/{x}/{y}.pbf',
             binary: false,
             id: `insarpoints`,
             getFilterValue: d => [d.properties.rel_len, Math.abs(d.properties.vel_last)],
@@ -170,7 +170,7 @@ const layerConfigs = [
         id: 'insar-points-arrow-icon-mvt-los',
         type: MVTLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_v3/{z}/{x}/{y}.pbf',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_DESC_upd3_psd_los_4326_height_v3/{z}/{x}/{y}.pbf',
                 binary: false,
                 renderSubLayers: (props) => {
                     if (props.data) {
@@ -180,9 +180,9 @@ const layerConfigs = [
                             getIcon: d => (d.properties.vel_last !== null ? 'right-arrow' : ''),
                             getSize: d => arrow2DiconScale(Math.abs(d.properties.vel_last)) || 0,
                             iconAtlas:
-                                'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icon_atlas/v1/right-arrow-atlas.png',
+                                'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/icon_atlas/v1/right-arrow-atlas.png',
                             iconMapping:
-                                'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/icon_atlas/v1/right-arrow-atlas.json',
+                                'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/icon_atlas/v1/right-arrow-atlas.json',
                             id: `${props.id}-icon`,
                             getFilterValue: d => d.properties.rel_len,
                             filterRange: insarPointRelLenThresholdInterval,
@@ -201,7 +201,7 @@ const layerConfigs = [
         id: 'insar-points-arrow-icon-mvt-dts',
         type: MVTLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_v3/{z}/{x}/{y}.pbf',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_DESC_upd3_psd_los_4326_height_v3/{z}/{x}/{y}.pbf',
             binary: false,
             renderSubLayers: (props) => {
                 if (props.data) {
@@ -226,7 +226,7 @@ const layerConfigs = [
         id: 'CogTerrainLayerCUZK',
         type: CogTerrainLayer,
         options: {
-            elevationData:  'https://gisat-data.eu-central-1.linodeobjects.com/3DFlus_GST-22/app-esa3DFlusPilot3Geology/dev/rasters/EL-GRID_COGeoN.tif',
+            elevationData:  'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/EL-GRID_COGeoN.tif',
             minZoom: 12,
             maxZoom: 14,
             opacity: 1,
