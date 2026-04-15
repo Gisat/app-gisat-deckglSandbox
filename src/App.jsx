@@ -46,7 +46,7 @@ function AppContent() {
     return (
         <div className="app-container">
             <nav className="sidebar">
-                <h1>Sandbox</h1>
+                <h1><Link to="/">Sandbox</Link></h1>
                 {sortedGroups.map((category) => (
                     <div key={category} className="map-group">
                         <button 

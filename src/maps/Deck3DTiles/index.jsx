@@ -1,5 +1,4 @@
-// src/maps/MapApp1.jsx
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import {MVTLayer, TileLayer} from '@deck.gl/geo-layers';
@@ -9,10 +8,6 @@ import {} from '@loaders.gl/3d-tiles';
 import {Tiles3DLoader, CesiumIonLoader} from '@loaders.gl/3d-tiles';
 import {BitmapLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
-import {_TerrainExtension as TerrainExtension, PathStyleExtension} from "@deck.gl/extensions";
-import { CogTerrainLayer } from "@gisatcz/deckgl-geolib";
-// import cesium1 from '../../assets/3d-tiles-samples/1.0/TilesetWithDiscreteLOD/tileset.json';
-// import cesium2 from '../../assets/3d-tiles-samples/1.0/TilesetWithTreeBillboards/tileset.json';
 
 const INITIAL_VIEW_STATE = {
     // cesium 1.1
@@ -28,6 +23,8 @@ const INITIAL_VIEW_STATE = {
     bearing: 0,
 };
 
+const cesiumToken = import.meta.env.VITE_CESIUM_ION_TOKEN;
+
 // Layer configurations
 const layerConfigs = [
     {
@@ -40,7 +37,7 @@ const layerConfigs = [
             data: 'https://assets.cesium.com/2499258/tileset.json',
             loader: CesiumIonLoader,
             loadOptions: {
-                'cesium-ion': {accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI4NGNhMzk5NC1kYjk5LTQ5ZDEtOTM5Yy0zYmUyYWEwMjY5MmQiLCJpZCI6NTgyNjksImlhdCI6MTYyMzA1NTMyMX0.7jidfR2a2M5t8KsvDho5TJcBLBZl04UBj3jdeAB1otY'}
+                'cesium-ion': {accessToken: cesiumToken}
             },
             onTilesetLoad: (tileset) => {
                 // Recenter to cover the tileset
@@ -63,11 +60,11 @@ const layerConfigs = [
         options: {
             visible: true,
             // data: cesium2,
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/cesium_3dtiles_v1_dragon/tileset.json',
-            // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/3d-tiles-samples/1.0/TilesetWithDiscreteLOD/tileset.json',
-            // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/3d-tiles-samples/1.0/TilesetWithRequestVolume/tileset.json',
-            // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/3d-tiles-samples/1.1/SparseImplicitOctree/tileset.json',
-            // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/Prah_7-1_3D_Tiles_v2/tileset.json',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/3dtiles/cesium_3dtiles_v1_dragon/tileset.json',
+            // data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/3dtiles/3d-tiles-samples/1.0/TilesetWithDiscreteLOD/tileset.json',
+            // data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/3dtiles/3d-tiles-samples/1.0/TilesetWithRequestVolume/tileset.json',
+            // data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/3dtiles/3d-tiles-samples/1.1/SparseImplicitOctree/tileset.json',
+            // data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/3dtiles/Prah_7-1_3D_Tiles_v2/tileset.json',
             loadOptions: {
                 '3d-tiles': { decodeQuantizedPositions: true }
             },
@@ -91,10 +88,7 @@ const layerConfigs = [
         type: Tile3DLayer,
         options: {
             visible: false,
-            // data: cesium1,
-            // data: '/3d-tiles-samples/1.0/TilesetWithDiscreteLOD/tileset.json',
-            // data: '/3d-tiles-samples/1.0/TilesetWithRequestVolume/tileset.json',
-            data: '/3d-tiles-samples/1.1/MetadataGranularities/tileset.json',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/3dtiles/3d-tiles-samples/1.1/MetadataGranularities/tileset.json',
             loader: Tiles3DLoader,
             onTilesetLoad: (tileset) => {
                 // Recenter to cover the tileset
@@ -115,7 +109,6 @@ const layerConfigs = [
         type: Tile3DLayer,
         options: {
             visible: false,
-            // data: '/dragon_i3s/SceneServer/layers/0',
             data: 'https://tiles.arcgis.com/tiles/z2tnIkrLQ2BRzr6P/arcgis/rest/services/SanFrancisco_Bldgs/SceneServer/layers/0',
             loader: I3SLoader,
             onTilesetLoad: (tileset) => {
