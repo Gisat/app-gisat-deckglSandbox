@@ -4,7 +4,6 @@ import MetroD_Google3DTiles from "./MetroD_Google3DTiles/index.jsx";
 import MetroD_DEM from "./MetroD_DEM/index.jsx";
 import Google3DTiles from "./Google3DTiles/index.jsx";
 import D8_iconArrows from "./D8_iconArrows/index.jsx";
-import MapApp1 from './MapApp1';
 import D8_filter from "./D8_filter/index.jsx";
 import vertical_profile from "./vertical_profiles/index.jsx";
 import building3D from './Buildings_3D/index.jsx';
@@ -34,8 +33,7 @@ const mapApps = [
     { category: '3DFLUS', name: 'P3 D8: 3D arrows', path: '/d8-filter', component: D8_filter },
     { category: '3DFLUS', name: 'P3 D8: vertical profile', path: '/vertical_profile', component: vertical_profile },
     // { name: 'Google 3D Tiles', path: '/google-3d-tiles', component: Google3DTiles },
-    { category: 'Other', name: 'Test App', path: '/test-app', component: MapApp1 },
-    { category: 'Other', name: 'Buildings 3D', path: 'buildings-3D', component: building3D },
+    { category: 'Other', name: 'Buildings 3D', path: '/buildings-3D', component: building3D },
     { category: 'Other', name: '3D Tiles Layer', path: '/deck-3d-tiles', component: deck3DTiles },
     { category: 'GeoParquet', name: 'GeoParquet Gisat', path: '/geo-parquet-gisat', component: geoParquetGisat },
     { category: 'GeoParquet', name: 'GeoParquet Demo', path: '/geo-parquet-demo', component: geoParquetDemo },
