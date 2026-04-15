@@ -17,7 +17,7 @@ const INITIAL_VIEW_STATE = {
     pitch: 0,
 };
 
-const COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-gis/3dflus/ndviMAX_2025_11_blues_cog.tif';
+const COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/ndviMAX_2025_11_blues_cog.tif';
 
 async function geoKeysParser(geoKeys) {
   const projDefinition = toProj4(geoKeys);
@@ -99,7 +99,7 @@ function CogMap() {
         }),
         new CogBitmapLayer({
             id: 'cog-bitmap-layer',
-            rasterData: 'https://eu-central-1.linodeobjects.com/gisat-gis/3dflus/COG_ndviMAX_2021_11.tif',
+            rasterData: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/COG_ndviMAX_2021_11.tif',
             isTiled: true,
             cogBitmapOptions: {
                 type: 'image',

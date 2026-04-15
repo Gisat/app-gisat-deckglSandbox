@@ -1,17 +1,11 @@
-// src/maps/MapApp1.jsx
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView, AmbientLight, LightingEffect } from '@deck.gl/core';
 import {_SunLight as SunLight} from '@deck.gl/core';
 import {MVTLayer, TileLayer} from '@deck.gl/geo-layers';
 import {BitmapLayer, GeoJsonLayer, PolygonLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
-import {_TerrainExtension as TerrainExtension, PathStyleExtension} from "@deck.gl/extensions";
-import {SimpleMeshLayer} from "@deck.gl/mesh-layers";
-import {SphereGeometry} from "@luma.gl/engine";
-import chroma from "chroma-js";
-import {scaleLinear} from "d3-scale";
-import {OBJLoader} from "@loaders.gl/obj";
+import {_TerrainExtension as TerrainExtension} from "@deck.gl/extensions";
 import { CogTerrainLayer } from "@gisatcz/deckgl-geolib";
 
 const INITIAL_VIEW_STATE = {
@@ -74,7 +68,7 @@ const layerConfigs = [
         id: 'cog-terrain-dtm-praha',
         type: CogTerrainLayer,
         options: {
-            elevationData:  'https://gisat-data.eu-central-1.linodeobjects.com/3DFlus_GST-22/app-esa3DFlusMetroD/dev/rasters/dtm1m_4326_cog_nodata.tif',
+            elevationData:  'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/dtm1m_4326_cog_nodata.tif',
             minZoom: 12,
             maxZoom: 17,
             // opacity: 0.7,
@@ -85,6 +79,9 @@ const layerConfigs = [
             visible: true,
             operation: 'terrain+draw',
             terrainOptions: {
+                useHeatMap: false,
+                useSingleColor: true,
+                color: [200, 200, 200, 255],
                 type: 'terrain',
                 multiplier: 1,
                 terrainSkirtHeight: 1,
@@ -97,7 +94,7 @@ const layerConfigs = [
         id: 'buildings',
         type: MVTLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/SO_Praha_Neratovice_4326/{z}/{x}/{y}.pbf',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/SO_Praha_Neratovice_4326/{z}/{x}/{y}.pbf',
             binary: true,
             minZoom: 10,
             maxZoom: 14,
@@ -116,7 +113,7 @@ const layerConfigs = [
         id: 'shp-geojson-mvt',
         type: MVTLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/Prah_7-1_vectortiles/{z}/{x}/{y}.pbf',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/Prah_7-1_vectortiles/{z}/{x}/{y}.pbf',
             binary: true,
             minZoom: 10,
             maxZoom: 14,
@@ -169,7 +166,7 @@ const layerConfigs = [
         type: GeoJsonLayer,
         options: {
             // data: 'https://raw.githubusercontent.com/visgl/deck.gl-data/master/website/sf-zipcodes.json',
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/3dtiles/Prah_7-1_4326.geojson',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/Prah_7-1_4326.geojson',
             getFillColor: (d) => {
                 if (d.properties.TYP === 'Strecha'){
                     // https://mycolor.space/?hex=%23A00F0F&sub=1
