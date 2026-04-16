@@ -269,7 +269,7 @@ const FAKE_DATES = [
     '2023-12-27'
 ];
 const ACTUAL_HASHED_FILE_NAME = 'd5da031a332c4dbb977017ffb9035858-0.parquet';
-const BASE_URL_ROOT = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_tiled_detail_v2';
+const BASE_URL_ROOT = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_tiled_detail_v2';
 
 // MAIN QUERY TEMPLATE - FIXED: Uses geom_wkb and BBOX filter
 const MAIN_QUERY_TEMPLATE = (fileListStr, dbIndex, minLon, minLat, maxLon, maxLat) => {

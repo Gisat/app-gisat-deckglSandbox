@@ -2,7 +2,7 @@
 
 const GRID_SIZE = 0.10;
 // 🛑 BASE URL: Must match the directory where the V2 partitions were uploaded.
-const BASE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_tiled_detail_v2';
+const BASE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_tiled_detail_v2';
 
 // 🛑 HASHED FILENAME: Must match the output of the final successful generation script.
 const ACTUAL_TILE_FILE_NAME = 'data_0.parquet';
