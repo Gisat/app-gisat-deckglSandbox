@@ -58,7 +58,7 @@ function Animation() {
             type: MVTLayer,
             options: {
                 visible: layerVisibility["animated-vector-tiles"],
-                data: "https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/mvt/emsn091_32_01_ps_los_velavg/{z}/{x}/{y}.pbf",
+                data: "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/emsn091_32_01_ps_los_velavg/{z}/{x}/{y}.pbf",
                 binary: false,
                 updateTriggers: {
                     // getPosition: [currentFrame],
