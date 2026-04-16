@@ -12,7 +12,7 @@ html, body, #root {
 }
 
 .sidebar {
-  width: 250px;
+  width: 300px;
   background-color: #f4f4f4;
   padding: 20px;
   box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
@@ -32,6 +32,72 @@ html, body, #root {
 .sidebar ul {
   list-style: none;
   padding: 0;
+}
+
+.map-group {
+  margin-bottom: 25px;
+}
+
+.group-title-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  margin: 15px 0 8px -8px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid #ddd;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;
+}
+
+.group-title-btn:hover {
+  color: #0066cc;
+  background-color: #f0f0f0;
+}
+
+.group-chevron {
+  display: inline-block;
+  width: 12px;
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+.group-title-text {
+  flex: 1;
+  text-align: left;
+}
+
+.map-group ul {
+  padding-left: 0;
+}
+
+.map-group li {
+  margin: 8px 0;
+  padding-left: 10px;
+  border-left: 3px solid transparent;
+}
+
+.map-group li.active {
+  background-color: #e3f2fd;
+  border-left-color: #0066cc;
+}
+
+.map-group li.active a {
+  color: #0066cc;
+  font-weight: bold;
+}
+
+.map-group li:hover {
+  border-left-color: #0066cc;
+  background-color: #f0f0f0;
+  padding-left: 8px;
 }
 
 .sidebar li {

@@ -12,6 +12,7 @@ from lonboard._geoarrow.geopandas_interop import geopandas_to_geoarrow
 # --- Configuration Variables (Easily changeable) ---
 # Path to your input CSV file
 INPUT_CSV_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/EGMS_L2b_146_0296_IW2_VV_2019_2023_1.csv'
+# input saved on s3 https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/EGMS_L2b_146_0296_IW2_VV_2019_2023_1.csv
 # Path for your output GeoParquet file (changed name for clarity for geometry-only output)
 OUTPUT_GEOPARQUET_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/EGMS_L2b_146_0296_IW2_VV_2019_2023_1_geom_only.parquet'
 # Column names for longitude and latitude in your CSV

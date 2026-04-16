@@ -203,6 +203,7 @@ Python backend provides data processing APIs. Environment variables in `.env` an
 
 ## Important Notes
 
+- **Semantic-release commit messages:** This project uses [semantic-release](https://semantic-release.gitbook.io/semantic-release/) conventions for commit messages. Use types like `feat`, `fix`, `docs`, etc., and follow the format `type(scope?): subject`. See SEMANTIC_COMMITS.md for details and examples.
 - **SharedArrayBuffer requirement:** DuckDB Wasm requires CORS headers to enable SharedArrayBuffer. Ensure `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy` headers are present (already configured in vite.config.js).
 - **Large dependencies:** Deck.GL and DuckDB Wasm are substantial. Expect longer initial build times.
 - **Hot Module Replacement (HMR):** Works well for component changes; full page reload may be needed for layer configuration changes in some cases.

@@ -6,11 +6,11 @@ import { BitmapLayer } from '@deck.gl/layers';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { CogTerrainLayer, CogTiles } from '@gisatcz/deckgl-geolib';
 
-const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_terrain/DEM_COP30_float32_wgs84_deflate_cog_float32.tif';
+const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog.tif';
 const INITIAL_VIEW_STATE = {
-  longitude: 86,
-  latitude: 28,
-  zoom: 8,
+  longitude: -66.33,
+  latitude: -17.09,
+  zoom: 12,
   pitch: 40,
   bearing: 0,
 };
@@ -24,11 +24,11 @@ const MODE_OPTIONS = {
   elevation: {
     useHeatMap: true,
     colorScale: [
-      [75, 120, 90], [100, 145, 100], [130, 170, 110], [185, 210, 145],
-      [235, 235, 185], [225, 195, 160], [195, 160, 130], [170, 155, 150],
-      [245, 245, 240], [255, 255, 255],
+      [0, 60, 48], [1, 102, 94], [90, 180, 172], [128, 205, 193],
+      [245, 245, 245], [223, 194, 125], [166, 97, 26], [140, 81, 10],
+      [84, 48, 5],
     ],
-    colorScaleValueRange: [1000, 6500],
+    colorScaleValueRange: [2500, 5000],
   },
   slope: {
     useSlope: true,

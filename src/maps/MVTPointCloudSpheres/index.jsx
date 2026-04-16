@@ -10,7 +10,6 @@ import { scaleLinear } from 'd3-scale';
 import {SimpleMeshLayer} from '@deck.gl/mesh-layers';
 import {SphereGeometry} from '@luma.gl/engine';
 import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
-import {COORDINATE_SYSTEM} from '@deck.gl/core';
 import { CogTerrainLayer } from "@gisatcz/deckgl-geolib";
 
 const colorScale = chroma
@@ -31,7 +30,7 @@ const INITIAL_VIEW_STATE = {
 const layers = [
     new CogTerrainLayer({
         id: 'CogTerrainLayerD8Dem',
-        elevationData:  'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/LITC52_53_4g_5m_4326_cog_nodata.tif',
+        elevationData:  'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/LITC52_53_4g_5m_4326_cog_nodata.tif',
         minZoom: 12,
         maxZoom: 14,
         opacity: 1,
@@ -44,6 +43,9 @@ const layers = [
             type: 'terrain',
             multiplier: 1,
             terrainSkirtHeight: 1,
+            useSingleColor: true,   
+            color: [200, 200, 200, 255],
+            useHeatMap: false
         }
     }),
     new TileLayer({
@@ -69,9 +71,7 @@ const layers = [
     }),
     // new MVTLayer({
     //     // data ascending
-    //     data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_ASC_upd3_psd_los_4326_height/{z}/{x}/{y}.pbf',
-    //     // data descending
-    //     // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height/{z}/{x}/{y}.pbf',
+    //     data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height/{z}/{x}/{y}.pbf',
     //     binary: false,
     //     renderSubLayers: (props) => {
     //         if (props.data) {
@@ -112,7 +112,7 @@ const layers = [
     //     maxZoom: 14,
     // }),
     new SimpleMeshLayer({
-        data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_selected_arrows.geojson',
+        data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_DESC_upd3_psd_los_4326_selected_arrows.geojson',
         id: 'sphere-mesh',
         mesh: new SphereGeometry(),
         getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],

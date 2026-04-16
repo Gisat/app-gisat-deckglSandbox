@@ -7,6 +7,7 @@ import matplotlib.colors as colors # Import colors module
 
 # --- Configuration Variables (Easily changeable) ---
 INPUT_CSV_PATH = '/Users/marianakecova/Library/CloudStorage/GoogleDrive-mariana.kecova@gisat.cz/Sdílené disky/Projects/Metro D1 GST-30/DATA/results_e5/sipky/compo_area_vellast_sipky.csv'
+# input saved on s3 https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/sipky/compo_area_vellast_sipky.csv
 OUTPUT_GEOJSON_PATH = '/Users/marianakecova/Library/CloudStorage/GoogleDrive-mariana.kecova@gisat.cz/Sdílené disky/Projects/Metro D1 GST-30/DATA/results_e5/sipky/compo_area_vellast_sipky_colors.geojson'
 LON_COLUMN_NAME = 'LON_CENTER'
 LAT_COLUMN_NAME = 'LAT_CENTER'

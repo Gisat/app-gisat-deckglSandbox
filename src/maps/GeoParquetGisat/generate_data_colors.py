@@ -11,6 +11,7 @@ from lonboard._geoarrow.geopandas_interop import geopandas_to_geoarrow
 
 # --- Configuration Variables (Easily changeable) ---
 INPUT_CSV_PATH = '/Users/marianakecova/Library/CloudStorage/GoogleDrive-mariana.kecova@gisat.cz/Sdílené disky/Projects/Metro D1 GST-30/DATA/results_e5/sipky/compo_area_vellast_sipky.csv'
+# input saved on s3 https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/sipky/compo_area_vellast_sipky.cs
 OUTPUT_GEOPARQUET_PATH = '/Users/marianakecova/Library/CloudStorage/GoogleDrive-mariana.kecova@gisat.cz/Sdílené disky/Projects/Metro D1 GST-30/DATA/results_e5/sipky/compo_area_vellast_sipky_MK_colors.parquet' # Changed output name for clarity
 
 LON_COLUMN_NAME = 'LON_CENTER'

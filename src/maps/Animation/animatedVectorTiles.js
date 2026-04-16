@@ -12,14 +12,12 @@ const colorScale = chroma
 export function createAnimatedVectorTilesLayer(currentFrame) {
 
     return new MVTLayer({
-            // data: `https://gisat-gis.eu-central-1.linodeobjects.com/eman/mvt/142_decimated_2/{z}/{x}/{y}.mvt`,
-            // data: `https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/mvt/142_decimated.mbtiles`,
             // entire dataset but only vel avg property
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/mvt/emsn091_32_01_ps_los_velavg/{z}/{x}/{y}.pbf',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/emsn091_32_01_ps_los_velavg/{z}/{x}/{y}.pbf',
             // testing data set with timeline properties
-            // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/mvt/threePoints_timeline/{z}/{x}/{y}.pbf',
+            // data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/threePoints_timeline/{z}/{x}/{y}.pbf',
             // entire dataset with timeline properties
-            // data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/mvt/emsn091_32_01_ps_los_timeline/{z}/{x}/{y}.pbf',
+            // data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/emsn091_32_01_ps_los_timeline/{z}/{x}/{y}.pbf',
             binary: false,
             updateTriggers: {
                 getPosition: [currentFrame],

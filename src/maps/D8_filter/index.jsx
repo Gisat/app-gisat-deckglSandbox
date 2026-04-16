@@ -26,7 +26,7 @@ const colorScale = chroma
 const scaleXYArrowWidth = scaleLinear([0.1, 20], [0.1, 0.3]).clamp(true);
 const scaleZArrowLength = scaleLinear([0.1, 20], [0.05, 2]).clamp(true);
 
-const ARROW_SIZE = 67; // eyeball measured, only for this object: https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_v3.obj
+const ARROW_SIZE = 67; // eyeball measured, only for this object: https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_v3.obj
 
 const getScale = item => {
     if (item.properties.vel_rel > 0) {
@@ -100,7 +100,7 @@ const layerConfigs = [
         id: 'insar-points-geojson',
         type: GeoJsonLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_ASC_upd3_psd_los_4326.geojson',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326.geojson',
             binary: false,
             getFillColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
             // getFillColor: "red",
@@ -118,9 +118,9 @@ const layerConfigs = [
         id: 'trim_d8_ASC_arrows',
         type: SimpleMeshLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_ASC_upd3_psd_los_4326_height_mesh.json',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh.json',
             id: 'trim_d8_ASC_arrows',
-            mesh: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_v3.obj',
+            mesh: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_v3.obj',
             getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
             getOrientation: getOrientation,
             // getPosition: d => [...d.geometry.coordinates, d.properties.h_dtm],
@@ -139,7 +139,7 @@ const layerConfigs = [
         id: 'insar-points-DESC-geojson',
         type: GeoJsonLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326.geojson',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_DESC_upd3_psd_los_4326.geojson',
             binary: false,
             getFillColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
             // getFillColor: "red",
@@ -157,9 +157,9 @@ const layerConfigs = [
         id: 'trim_d8_DESC_arrows',
         type: SimpleMeshLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/InSAR/trim_d8_DESC_upd3_psd_los_4326_height_mesh.json',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_DESC_upd3_psd_los_4326_height_mesh.json',
             id: 'trim_d8_DESC_arrows',
-            mesh: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_v3.obj',
+            mesh: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_v3.obj',
             getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
             getOrientation: getOrientation,
             // getPosition: d => [...d.geometry.coordinates, d.properties.h_dtm],

@@ -11,7 +11,7 @@ CORS(app)
 
 # --- Configuration ---
 GEOPARQUET_PATH = '/Users/marianakecova/GST/3DFLUS_CCN/SO_Praha_Neratovice+h-z-geoportalu+cl_risk_4326.geoparquet'
-
+# input saved on s3 https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/SO_Praha_Neratovice%2Bh-z-geoportalu%2Bcl_risk_4326.geoparquet
 # --- DuckDB Connection ---
 duckdb_con = duckdb.connect(database=':memory:', read_only=False)
 duckdb_con.install_extension("spatial")

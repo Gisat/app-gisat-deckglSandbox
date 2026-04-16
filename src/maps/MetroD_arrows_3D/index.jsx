@@ -39,7 +39,7 @@ const meshIconFlatArrowDiscreteScaleMVT = (value) => {
     return 0.06;
 }
 
-const FLAT_ARROW_SIZE = 0.451564; // value taken from Blender, for flat arrow: https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/arrows/arrow_filled_v2.obj
+const FLAT_ARROW_SIZE = 0.451564; // value taken from Blender, for flat arrow: https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_filled_v2.obj
 
 // Layer configurations
 const layerConfigs = [
@@ -69,8 +69,8 @@ const layerConfigs = [
         id: 'insar-arrow-mvt',
         type: MVTLayer,
         options: {
-            // data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_mvt/compo_area_vellast_e4e5_sipky/{z}/{x}/{y}.pbf',
-            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_mvt_v4/{z}/{x}/{y}.pbf',
+            // data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/compo_area_vellast_e4e5_sipky/{z}/{x}/{y}.pbf',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/compo_area_vellast_sipky_mvt_v4/{z}/{x}/{y}.pbf',
             binary: false,
             renderSubLayers: (props) => {
                 if (props.data) {
@@ -78,7 +78,7 @@ const layerConfigs = [
                         ...props,
                         id: `${props.id}-arrowObject`, // Create a unique ID for each tile's mesh sublayer
                         data: props.data, // Crucially, pass the parsed data for the current tile to SimpleMeshLayer
-                        mesh: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/arrows/arrow_filled_v2.obj',
+                        mesh: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_filled_v2.obj',
                         getColor: (d) => [...colorScale(d.properties.VEL_L_EW_e5).rgb(), 255],
                         getOrientation: (d) => {
                             const orientation = d.properties.VEL_L_EW_e5 >= 0 ? 90 : -90;
@@ -113,7 +113,7 @@ const layerConfigs = [
         id: 'insar-sphere-mvt',
         type: MVTLayer,
         options: {
-            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_mvt_v4/{z}/{x}/{y}.pbf',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/compo_area_vellast_sipky_mvt_v4/{z}/{x}/{y}.pbf',
             binary: false,
             renderSubLayers: (props) => {
                 if (props.data) {
@@ -141,7 +141,7 @@ const layerConfigs = [
         id: 'cog-terrain-dtm-praha',
         type: CogTerrainLayer,
         options: {
-            elevationData:  'https://gisat-data.eu-central-1.linodeobjects.com/3DFlus_GST-22/app-esa3DFlusMetroD/dev/rasters/dtm1m_4326_cog_nodata.tif',
+            elevationData:  'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/dtm1m_4326_cog_nodata.tif',
             minZoom: 12,
             maxZoom: 17,
             // opacity: 0.7,
@@ -164,7 +164,7 @@ const layerConfigs = [
         id: 'buildings',
         type: MVTLayer,
         options: {
-            data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/SO_Praha_Neratovice_4326/{z}/{x}/{y}.pbf',
+            data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/SO_Praha_Neratovice_4326/{z}/{x}/{y}.pbf',
             binary: true,
             minZoom: 10,
             maxZoom: 14,

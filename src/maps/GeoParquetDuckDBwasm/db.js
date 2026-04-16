@@ -12,7 +12,7 @@ export async function setupDB() {
 
     // --- 1. Your optimized file (for the real app) ---
     // This URL should point to your subset or your full optimized file
-    const YOUR_FILE_URL = "https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/egms_hybrid_optimized_bbox.geoparquet";
+    const YOUR_FILE_URL = "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/UC5_PRAHA_EGMS/t146/egms_hybrid_optimized_bbox.geoparquet";
     // This is the internal name used in your SQL queries
     const YOUR_FILE_NAME = "data_subset.geoparquet";
 

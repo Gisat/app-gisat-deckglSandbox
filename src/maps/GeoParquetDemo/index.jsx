@@ -19,7 +19,7 @@ const INITIAL_VIEW_STATE = {
 };
 
 // Data URL for the polygon file (moved from top-level await)
-const POLYGON_GEO_PARQUET_PATH = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/demo_data/Utah@1.parquet';
+const POLYGON_GEO_PARQUET_PATH = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/demo_data/Utah@1.parquet';
 
 
 // Helper function to create a Deck.gl layer instance from its configuration

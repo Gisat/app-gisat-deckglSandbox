@@ -1,8 +1,36 @@
-# React + Vite
+# app-gisat-deckglSandbox
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A sandbox application for exploring geospatial data visualization using Deck.GL, React, and Vite.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Multiple interactive map demos (3D Tiles, GeoParquet, terrain, point clouds, and more)
+- Modern React frontend with Vite for fast development
+- Custom Deck.GL layers (e.g., DuckDBGeoParquetLayer)
+- Easily extensible with new map apps in `src/maps/`
+
+## Getting Started
+
+```bash
+npm install
+npm run dev
+```
+Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+## Project Structure
+
+- `src/maps/` — Individual map demo apps (see `src/maps/config.js`)
+- `src/layers/` — Custom Deck.GL layers
+- `src/App.jsx` — Main app and router
+
+## Build & Deploy
+
+```bash
+npm run build
+npm run preview
+npm run deploy
+```
+
+## Live Demo
+
+The latest version is deployed at: [https://gisat.github.io/app-gisat-deckglSandbox/](https://gisat.github.io/app-gisat-deckglSandbox/)

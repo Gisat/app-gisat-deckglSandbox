@@ -24,7 +24,7 @@ const INITIAL_VIEW_STATE = {
 
 const buildings =  new MVTLayer({
     id: 'prague_buildings',
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/SO_Praha_Neratovice_4326/{z}/{x}/{y}.pbf',
+    data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/SO_Praha_Neratovice_4326/{z}/{x}/{y}.pbf',
     binary: true,
     minZoom: 10,
     maxZoom: 14,
@@ -66,7 +66,7 @@ const google3Dtile = new Tile3DLayer({
 const sphereSizeScale = scaleLinear([0.45, 1], [0.5, 2.5]).clamp(true);
 
 const inSAR_mesh_spheres = new SimpleMeshLayer({
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.json',
+    data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.json',
     id: 'sphere-mesh',
     mesh: new SphereGeometry(),
     getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
@@ -80,12 +80,12 @@ const inSAR_mesh_spheres = new SimpleMeshLayer({
 const scaleXYArrowWidth = scaleLinear([0.1, 20], [0.1 , 0.3]).clamp(true);
 const scaleZArrowLength = scaleLinear([0.1, 20], [0.05, 2]).clamp(true);
 
-const ARROW_SIZE = 67; // eyeball measured, only for this object: https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/d8/arrow_v3.obj
+const ARROW_SIZE = 67; // eyeball measured, only for this object: https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_v3.obj
 
 const inSAR_mesh_arrow = new SimpleMeshLayer({
-    data: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.json',
+    data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/gisat_metrod_insar_tsx_los_etapa3_pilot1_4326_selected_mesh.json',
     id: 'arrow-mesh',
-    mesh: 'https://gisat-gis.eu-central-1.linodeobjects.com/3dflus/app-esa3DFlusMetroD/dev/assets/arrow_v3.obj',
+    mesh: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_v3.obj',
     getColor: (d) => [...colorScale(d.properties.vel_rel).rgb(), 255],
     getOrientation: (d) => {
         if (d.properties.vel_rel > 0) {
