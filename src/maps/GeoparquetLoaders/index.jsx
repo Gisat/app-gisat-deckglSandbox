@@ -20,7 +20,7 @@ const INITIAL_VIEW_STATE = {
 };
 
 // URL to the GeoParquet file
-const GEO_PARQUET_FILE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK.parquet';
+const GEO_PARQUET_FILE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/sipky/compo_area_vellast_sipky_MK.parquet';
 
 // --- Toggle between full load and batch load ---
 // Set to 'true' for incremental batch loading, 'false' for single full file load.
