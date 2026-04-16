@@ -26,14 +26,14 @@ const colorScale = chroma
 
 // --- Define Data Paths (Constants) ---
 // not zipped file
-// const GEO_PARQUET_PATH_CLIENT_COLOR = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK.parquet';
+// const GEO_PARQUET_PATH_CLIENT_COLOR = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/sipky/compo_area_vellast_sipky_MK.parquet';
 // zipped file
-const GEO_PARQUET_PATH_CLIENT_COLOR = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK_zipped.parquet';
-const GEO_PARQUET_PATH_PRECOMPUTED_COLOR = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_MK_colors.parquet';
-const GEO_JSON_PATH_CLIENT_COLOR = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky.geojson`;
-const GEO_JSON_PATH_PRECOMPUTED_COLOR = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/sipky/compo_area_vellast_sipky_colors.geojson`;
-const GEO_PARQUET_PATH_EGMS_GEOM_ONLY = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/EGMS_L2b_146_0296_IW2_VV_2019_2023_1_geom_only.parquet';
-// const GEO_PARQUET_PATH_EGMS = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlusCCN_GST-93/project/data_geoparquet/UC5_PRAHA_EGMS/t146/EGMS_L2b_146_0296_IW2_VV_2019_2023_1.parquet';
+const GEO_PARQUET_PATH_CLIENT_COLOR = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/sipky/compo_area_vellast_sipky_MK_zipped.parquet';
+const GEO_PARQUET_PATH_PRECOMPUTED_COLOR = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/sipky/compo_area_vellast_sipky_MK_colors.parquet';
+const GEO_JSON_PATH_CLIENT_COLOR = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/sipky/compo_area_vellast_sipky.geojson`;
+const GEO_JSON_PATH_PRECOMPUTED_COLOR = `https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/sipky/compo_area_vellast_sipky_colors.geojson`;
+const GEO_PARQUET_PATH_EGMS_GEOM_ONLY = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/UC5_PRAHA_EGMS/t146/EGMS_L2b_146_0296_IW2_VV_2019_2023_1_geom_only.parquet';
+// const GEO_PARQUET_PATH_EGMS = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/UC5_PRAHA_EGMS/t146/EGMS_L2b_146_0296_IW2_VV_2019_2023_1.parquet';
 
 
 // Helper function to create a layer instance

@@ -10,6 +10,7 @@ from lonboard._geoarrow.geopandas_interop import geopandas_to_geoarrow # Require
 # --- Configuration Variables (Easily changeable) ---
 # Path to your input CSV file
 INPUT_CSV_PATH = '/Users/marianakecova/Library/CloudStorage/GoogleDrive-mariana.kecova@gisat.cz/Sdílené disky/Projects/Metro D1 GST-30/DATA/results_e5/sipky/compo_area_vellast_sipky.csv'
+# input saved on s3 https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/sipky/compo_area_vellast_sipky.csv
 # Path for your output GeoParquet file
 OUTPUT_GEOPARQUET_PATH = '/Users/marianakecova/Library/CloudStorage/GoogleDrive-mariana.kecova@gisat.cz/Sdílené disky/Projects/Metro D1 GST-30/DATA/results_e5/sipky/compo_area_vellast_sipky_MK.parquet'
 # Column names for longitude and latitude in your CSV
