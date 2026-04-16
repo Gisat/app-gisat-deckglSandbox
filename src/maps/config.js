@@ -18,7 +18,6 @@ import geoParquetDuckDB2D from './GeoParquetDuckDB_2D/frontend/Map2D.jsx';
 import geoParquetDuckDBwasm from './GeoParquetDuckDBwasm/MinimalWasmMap.jsx';
 import geoParquetTiled from './GeoParquetTiled/GeoParquetTiled.jsx';
 import geoParquetVirtualTiles from './GeoParquetVirtualTile/VirtualTilesMap.jsx';
-import geoParquetDuckDBpolygon from './GeoParquetDuckDB_polygon/PolygonMap3D.jsx';
 import MetroDarrows3D from "./MetroD_arrows_3D/index.jsx";
 import devSeedCOG from "./DevSeedCOG/CogMap.jsx";
 import GisatGeotiffMap from './TestGisatGeotiff/GisatGeotiffMap';
@@ -32,7 +31,6 @@ const mapApps = [
     { category: '3DFLUS', name: 'P3 D8: 2D arrows', path: '/d8-icon-arrows', component: D8_iconArrows },
     { category: '3DFLUS', name: 'P3 D8: 3D arrows', path: '/d8-filter', component: D8_filter },
     { category: '3DFLUS', name: 'P3 D8: vertical profile', path: '/vertical_profile', component: vertical_profile },
-    // { name: 'Google 3D Tiles', path: '/google-3d-tiles', component: Google3DTiles },
     { category: 'Other', name: 'Buildings 3D', path: '/buildings-3D', component: building3D },
     { category: 'Other', name: '3D Tiles Layer', path: '/deck-3d-tiles', component: deck3DTiles },
     { category: 'GeoParquet', name: 'GeoParquet Gisat', path: '/geo-parquet-gisat', component: geoParquetGisat },
@@ -42,7 +40,6 @@ const mapApps = [
     // { name: 'GeoParquet DuckDB', path: '/geo-parquet-duckdb', component: geoParquetDuckDB },
     { category: 'GeoParquet', name: 'GeoParquet DuckDB 2D', path: '/geoparquet-duckdb-2d', component: geoParquetDuckDB2D },
     { category: 'GeoParquet', name: 'GeoParquet DuckDB 3D', path: '/geoparquet-duckdb-3d', component: geoParquetDuckDB3D },
-    { category: 'GeoParquet', name: 'GeoParquet DuckDB polygon', path: '/geoparquet-duckdb-polygon', component: geoParquetDuckDBpolygon },
     { category: 'GeoParquet', name: 'GeoParquet DuckDB Wasm', path: '/geoparquet-duckdb-wasm', component: geoParquetDuckDBwasm },
     { category: 'GeoParquet', name: 'GeoParquet Tiled', path: '/geoparquet-tiled', component: geoParquetTiled },
     { category: 'GeoParquet', name: 'GeoParquet Virtual Tiles', path: '/geoparquet-virtual-tiles', component: geoParquetVirtualTiles },
