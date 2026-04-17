@@ -1,0 +1,11 @@
+<!--
+  SPA redirect for GitHub Pages
+  Redirects all 404s to index.html for React Router support
+-->
+<script type="text/javascript">
+  // If the current path is not the root, redirect to index.html with the path as a hash
+  if (location.pathname !== '/app-gisat-deckglSandbox/' && !location.pathname.endsWith('index.html')) {
+    var newUrl = '/app-gisat-deckglSandbox/index.html#' + location.pathname.replace('/app-gisat-deckglSandbox', '') + location.search + location.hash;
+    location.replace(newUrl);
+  }
+</script>
