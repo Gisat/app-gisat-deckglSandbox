@@ -43,9 +43,6 @@ const layers = [
             type: 'terrain',
             multiplier: 1,
             terrainSkirtHeight: 1,
-            useSingleColor: true,   
-            color: [200, 200, 200, 255],
-            useHeatMap: false
         }
     }),
     new TileLayer({

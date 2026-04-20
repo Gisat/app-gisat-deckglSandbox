@@ -79,7 +79,6 @@ const layerConfigs = [
             visible: true,
             operation: 'terrain+draw',
             terrainOptions: {
-                useHeatMap: false,
                 useSingleColor: true,
                 color: [200, 200, 200, 255],
                 type: 'terrain',
