@@ -2,17 +2,22 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
-import { BitmapLayer } from '@deck.gl/layers';
+import { BitmapLayer, GeoJsonLayer } from '@deck.gl/layers';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { CogTerrainLayer, CogTiles } from '@gisatcz/deckgl-geolib';
+import { MaskExtension } from '@deck.gl/extensions';
 
-const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog.tif';
+// const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog.tif';
+const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
 const INITIAL_VIEW_STATE = {
   longitude: -66.33,
   latitude: -17.09,
   zoom: 12,
   pitch: 40,
   bearing: 0,
+  minZoom: 8,
+  maxZoom: 13.5,
+  maxPitch: 60
 };
 const MODES = [
   { key: 'elevation', label: 'Elevation' },
@@ -22,6 +27,8 @@ const MODES = [
 
 const MODE_OPTIONS = {
   elevation: {
+    useSwissRelief: true,
+    meshMaxError: 10,
     useHeatMap: true,
     colorScale: [
       [0, 60, 48],    // #003c30 (2500)
@@ -133,26 +140,36 @@ function CogTerrainKernel() {
 
   const layers = useMemo(() => {
     if (!cogState.cog) return [];
+
+    // The "Stencil" - defines the high-res shape of the water
+    const maskLayer = new GeoJsonLayer({
+      id: 'water-mask',
+      data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/misicuni_max_mask.geojson', // Your QGIS export (EPSG:4326)
+      operation: 'mask',
+      maskInverted: true,
+    });
+
     return [
-      new TileLayer({
-        id: 'osm',
-        data: 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        minZoom: 0,
-        maxZoom: 19,
-        tileSize: 256,
-        pickable: false,
-        /* eslint-disable react/prop-types */
-        renderSubLayers: (props) => {
-          const { bbox, data } = props.tile;
-          const { west, south, east, north } = bbox;
-          return new BitmapLayer(props, {
-            data: undefined,
-            image: data,
-            bounds: [west, south, east, north],
-          });
-        },
-        /* eslint-enable react/prop-types */
-      }),
+      maskLayer, 
+      // new TileLayer({
+      //   id: 'osm',
+      //   data: 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      //   minZoom: 0,
+      //   maxZoom: 19,
+      //   tileSize: 256,
+      //   pickable: false,
+      //   /* eslint-disable react/prop-types */
+      //   renderSubLayers: (props) => {
+      //     const { bbox, data } = props.tile;
+      //     const { west, south, east, north } = bbox;
+      //     return new BitmapLayer(props, {
+      //       data: undefined,
+      //       image: data,
+      //       bounds: [west, south, east, north],
+      //     });
+      //   },
+      //   /* eslint-enable react/prop-types */
+      // }),
       new CogTerrainLayer({
         id: 'cog-terrain-kernel',
         elevationData: DEM_COG_URL,
@@ -161,6 +178,26 @@ function CogTerrainKernel() {
         tileSize: 256,
         operation: 'terrain+draw',
         terrainOptions: buildTerrainOptions(cogState.mode),
+        pickable: true,
+      }),
+      new CogTerrainLayer({
+        id: 'cog-terrain-kernel-dam-surface',
+        // elevationData: "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_3000_10x10_intermediate_cog.tif",
+        elevationData: "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_Max_10x10_cog.tif",
+        isTiled: true,
+        tileSize: 256,
+        extensions: [new MaskExtension()],
+        maskId: 'water-mask',
+        // useSwissRelief: true,
+        operation: 'terrain+draw',
+        terrainOptions: {
+          type: 'terrain',
+          terrainSkirtHeight: 0,
+          useChannel: 1  ,
+          meshMaxError: 650,
+          useSingleColor: true,
+          color: [0, 105, 148, 180], // Deep Ocean Blue, 70% opacity
+        },
         pickable: true,
       }),
     ];
@@ -183,7 +220,12 @@ function CogTerrainKernel() {
           onViewStateChange={({ viewState }) => setViewState(viewState)}
           controller={true}
           layers={layers}
-          views={new MapView({ repeat: true })}
+          views={new MapView({ 
+            repeat: true,
+            minZoom: 2,
+            maxZoom: 2,
+            maxPitch: 60
+          })}
           getTooltip={useCallback((info) => {
             const elevation = getElevationAtInfo(info);
             const derived = getDerivedAtInfo(info);
