@@ -11,6 +11,7 @@ function AppContent() {
         '3DFLUS': false,
         'GeoParquet': false,
         'Other': false,
+        'GDA Water': true,
     });
 
     const toggleGroup = (category) => {
@@ -29,7 +30,7 @@ function AppContent() {
     }, {});
 
     // Define group order
-    const groupOrder = ['3DFLUS CCN', '3DFLUS', 'GeoParquet', 'Other'];
+    const groupOrder = ['GDA Water', '3DFLUS CCN', '3DFLUS', 'GeoParquet', 'Other'];
     const sortedGroups = groupOrder.filter(g => g in groupedMaps);
 
     // Auto-expand group when path changes

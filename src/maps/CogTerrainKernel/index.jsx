@@ -7,8 +7,7 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { CogTerrainLayer, CogTiles } from '@gisatcz/deckgl-geolib';
 import { MaskExtension } from '@deck.gl/extensions';
 
-// const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog.tif';
-const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
+const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
 const INITIAL_VIEW_STATE = {
   longitude: -66.33,
   latitude: -17.09,
@@ -144,7 +143,7 @@ function CogTerrainKernel() {
     // The "Stencil" - defines the high-res shape of the water
     const maskLayer = new GeoJsonLayer({
       id: 'water-mask',
-      data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/misicuni_max_mask.geojson', // Your QGIS export (EPSG:4326)
+      data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/misicuni_max_mask.geojson', // Your QGIS export (EPSG:4326)
       operation: 'mask',
       maskInverted: true,
     });
