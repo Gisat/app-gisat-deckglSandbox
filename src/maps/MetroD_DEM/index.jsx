@@ -183,10 +183,11 @@ const layerConfigs = [
             isTiled: true,
             useChannel: null,
             tileSize: 256,
-            meshMaxError: 1,
+            // meshMaxError: 1,
             visible: true,
             operation: 'terrain+draw',
             terrainOptions: {
+                noDataValue: 0,
                 type: 'terrain',
                 multiplier: 1,
                 terrainSkirtHeight: 1,

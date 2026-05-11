@@ -27,7 +27,6 @@ const MODES = [
 const MODE_OPTIONS = {
   elevation: {
     useSwissRelief: true,
-    meshMaxError: 10,
     useHeatMap: true,
     colorScale: [
       [0, 60, 48],    // #003c30 (2500)
@@ -182,18 +181,17 @@ function CogTerrainKernel() {
       new CogTerrainLayer({
         id: 'cog-terrain-kernel-dam-surface',
         // elevationData: "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_3000_10x10_intermediate_cog.tif",
-        elevationData: "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_Max_10x10_cog.tif",
+        // elevationData: "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_Max_10x10_cog.tif",
+        elevationData: "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_30_10x10_intermediate_cog.tif",
         isTiled: true,
         tileSize: 256,
         extensions: [new MaskExtension()],
         maskId: 'water-mask',
-        // useSwissRelief: true,
         operation: 'terrain+draw',
         terrainOptions: {
           type: 'terrain',
           terrainSkirtHeight: 0,
-          useChannel: 1  ,
-          meshMaxError: 650,
+          useChannel: 20  ,
           useSingleColor: true,
           color: [0, 105, 148, 180], // Deep Ocean Blue, 70% opacity
         },
