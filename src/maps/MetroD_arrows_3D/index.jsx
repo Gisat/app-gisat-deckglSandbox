@@ -121,11 +121,18 @@ const layerConfigs = [
                         ...props,
                         id: `${props.id}-sphereObject`, // Create a unique ID for each tile's mesh sublayer
                         data: props.data, // Crucially, pass the parsed data for the current tile to SimpleMeshLayer
-                        mesh: new SphereGeometry(),
+                        mesh: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/sphere_trian_sub3_z065.obj',
                         getScale: [0.001,0.001,1],
                         getColor: (d) => [...colorScale(d.properties.VEL_L_EW_e5).rgb(), 255],
                         getOrientation: [0,0,0],
                         getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.H_DSM+4],
+                        loaders: [OBJLoader],
+                        material: {
+                            ambient: 0.6,   // Lifts the shadows significantly
+                            diffuse: 0.4,   // Softens the directional contrast
+                            shininess: 0,   // Keeps it matte
+                            specularColor: [0, 0, 0] // No harsh white glare
+                        }
                     });
                 }
                 return null;
