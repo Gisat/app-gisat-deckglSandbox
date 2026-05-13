@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import {MVTLayer, TileLayer} from '@deck.gl/geo-layers';
-import {BitmapLayer} from '@deck.gl/layers';
+import {BitmapLayer, IconLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
 import {_TerrainExtension as TerrainExtension } from "@deck.gl/extensions";
 import {SimpleMeshLayer} from "@deck.gl/mesh-layers";
@@ -38,6 +38,39 @@ const meshIconFlatArrowDiscreteScaleMVT = (value) => {
     if (value < 2) return 0.03;
     return 0.06;
 }
+
+// SVG 1: Base color - slightly more inset (58.5) to ensure zero white edges
+const baseCircleSvg = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`
+    <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="64" cy="64" r="58.5" fill="#ffffff" />
+    </svg>
+`);
+
+// SVG 2: High-end "Soft" Shading
+const shadingOverlaySvg = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`
+    <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <radialGradient id="mainHighlight" cx="35%" cy="30%" r="55%" fx="25%" fy="25%">
+                <stop offset="0%" stop-color="#ffffff" stop-opacity="0.7"/>
+                <stop offset="80%" stop-color="#ffffff" stop-opacity="0"/>
+            </radialGradient>
+            
+            <radialGradient id="edgeShadow" cx="50%" cy="50%" r="50%">
+                <stop offset="75%" stop-color="#222222" stop-opacity="0"/>
+                <stop offset="100%" stop-color="#222222" stop-opacity="0.3"/>
+            </radialGradient>
+
+            <radialGradient id="bounceLight" cx="75%" cy="75%" r="40%">
+                <stop offset="0%" stop-color="#ffffff" stop-opacity="0.2"/>
+                <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+            </radialGradient>
+        </defs>
+        
+        <circle cx="64" cy="64" r="60" fill="url(#edgeShadow)" />
+        <circle cx="64" cy="64" r="60" fill="url(#bounceLight)" />
+        <circle cx="64" cy="64" r="60" fill="url(#mainHighlight)" />
+    </svg>
+`);
 
 const FLAT_ARROW_SIZE = 0.451564; // value taken from Blender, for flat arrow: https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_filled_v2.obj
 
@@ -109,6 +142,41 @@ const layerConfigs = [
         name: 'arrows MVT',
         showVisibilityToggle: true, // Show visibility toggle for this layer
     },
+    // {
+    //     id: 'insar-sphere-mvt',
+    //     type: MVTLayer,
+    //     options: {
+    //         data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/compo_area_vellast_sipky_mvt_v4/{z}/{x}/{y}.pbf',
+    //         binary: false,
+    //         renderSubLayers: (props) => {
+    //             if (props.data) {
+    //                 return new SimpleMeshLayer({
+    //                     ...props,
+    //                     id: `${props.id}-sphereObject`, // Create a unique ID for each tile's mesh sublayer
+    //                     data: props.data, // Crucially, pass the parsed data for the current tile to SimpleMeshLayer
+    //                     mesh: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/sphere_trian_sub3_z065.obj',
+    //                     getScale: [0.001,0.001,0.001],
+    //                     getColor: (d) => [...colorScale(d.properties.VEL_L_EW_e5).rgb(), 255],
+    //                     getOrientation: [0,0,0],
+    //                     getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.H_DSM+4],
+    //                     loaders: [OBJLoader],
+    //                     material: {
+    //                         ambient: 0.6,   // Lifts the shadows significantly
+    //                         diffuse: 0.4,   // Softens the directional contrast
+    //                         shininess: 0,   // Keeps it matte
+    //                         specularColor: [0, 0, 0] // No harsh white glare
+    //                     }
+    //                 });
+    //             }
+    //             return null;
+    //         },
+    //         visible: true,
+    //         minZoom: 8,
+    //         maxZoom: 15,
+    //     },
+    //     name: 'spheres MVT',
+    //     showVisibilityToggle: true, // Show visibility toggle for this layer
+    // },
     {
         id: 'insar-sphere-mvt',
         type: MVTLayer,
@@ -117,23 +185,32 @@ const layerConfigs = [
             binary: false,
             renderSubLayers: (props) => {
                 if (props.data) {
-                    return new SimpleMeshLayer({
-                        ...props,
-                        id: `${props.id}-sphereObject`, // Create a unique ID for each tile's mesh sublayer
-                        data: props.data, // Crucially, pass the parsed data for the current tile to SimpleMeshLayer
-                        mesh: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/sphere_trian_sub3_z065.obj',
-                        getScale: [0.001,0.001,1],
-                        getColor: (d) => [...colorScale(d.properties.VEL_L_EW_e5).rgb(), 255],
-                        getOrientation: [0,0,0],
-                        getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.H_DSM+4],
-                        loaders: [OBJLoader],
-                        material: {
-                            ambient: 0.6,   // Lifts the shadows significantly
-                            diffuse: 0.4,   // Softens the directional contrast
-                            shininess: 0,   // Keeps it matte
-                            specularColor: [0, 0, 0] // No harsh white glare
-                        }
-                    });
+                    return [
+                        new IconLayer({
+                            ...props,
+                            id: `${props.id}-baseIcon`,
+                            data: props.data,
+                            iconAtlas: baseCircleSvg,
+                            iconMapping: { marker: { x: 0, y: 0, width: 128, height: 128, mask: true } },
+                            getIcon: d => 'marker',
+                            getSize: 10, // Slightly larger to feel more "present" like screen 2
+                            getColor: (d) => [...colorScale(d.properties.VEL_L_EW_e5).rgb(), 255],
+                            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.H_DSM + 4],
+                            billboard: true
+                        }),
+                        
+                        new IconLayer({
+                            ...props,
+                            id: `${props.id}-shadingIcon`,
+                            data: props.data,
+                            iconAtlas: shadingOverlaySvg,
+                            iconMapping: { marker: { x: 0, y: 0, width: 128, height: 128, mask: false } },
+                            getIcon: d => 'marker',
+                            getSize: 10, 
+                            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.H_DSM + 4.01],
+                            billboard: true
+                        })
+                    ];
                 }
                 return null;
             },
@@ -142,7 +219,7 @@ const layerConfigs = [
             maxZoom: 15,
         },
         name: 'spheres MVT',
-        showVisibilityToggle: true, // Show visibility toggle for this layer
+        showVisibilityToggle: true,
     },
     {
         id: 'cog-terrain-dtm-praha',
