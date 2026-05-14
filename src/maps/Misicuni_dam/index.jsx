@@ -10,40 +10,41 @@ import { SphereGeometry } from '@luma.gl/engine';
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
 const MULTIBAND_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_100_10x10_intermediate_cog.tif';
 
-const INSAR_POINTS = [  
+const VECTOR_POINT_DATA = [  
   {
     id: 'mesh-layer-dam',
     name: 'GDA-AID-WR IADB',
-    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/GISAT_GDA-AID-WR_IADB_001_Misicuni-dam_v1.0%20%E2%80%94%20GISAT_GDA-AID-WR_IADB_001_Misicuni-dam_v1_elev_mesh.json',
+    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/GISAT_GDA-AID-WR_IADB_001_Misicuni-dam_v1_elev_mesh.json',
     color: [255, 100, 0],
     useVelRelColor: false,
+    scale: 5,
   },
   {
     id: 'mesh-layer-003a',
     name: 'WLT-LOS-003A',
-    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/GISAT_GDA-AID-WR_IADB_001_Misicuni_Small_WLT-LOS-003A_v1.0_20240601_mesh.json',
+    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/GISAT_GDA-AID-WR_IADB_001_Misicuni_Small_WLT-LOS-003A_v1.0_20240601_elev_selected_mesh_v2.json',
     color: [0, 150, 200],
     useVelRelColor: true,
   },
   {
     id: 'mesh-layer-076a',
     name: 'WLT-LOS-076A',
-    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/GISAT_GDA-AID-WR_IADB_001_Misicuni_Small_WLT-LOS-076A_v1.0_20240601_mesh.json',
+    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/GISAT_GDA-AID-WR_IADB_001_Misicuni_Small_WLT-LOS-076A_v1_elev_selected_mesh.json',
     color: [150, 255, 0],
     useVelRelColor: true,
   },
   {
     id: 'mesh-layer-156d',
     name: 'WLT-LOS-156D',
-    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/GISAT_GDA-AID-WR_IADB_001_Misicuni_Small_WLT-LOS-156D_v1.0_20240601_mesh.json',
+    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/GISAT_GDA-AID-WR_IADB_001_Misicuni_Small_WLT-LOS-156D_v1.0_20240601_elev_selected_mesh.json',
     color: [0, 255, 255],
     useVelRelColor: true,
   },
   {
     id: 'mesh-layer-geodetic-points',
     name: 'Geodetic Points',
-    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geodetic_points_elev_mesh.json',
-    color: [100, 200, 255],
+    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geodetic_points_elev_4326_mesh.json',
+    color: [255, 255, 0],
     useVelRelColor: false,
   },
   {
@@ -148,7 +149,7 @@ function MisicuniDam() {
   const [currentBandIndex, setCurrentBandIndex] = useState(0);
   const [isFetched, setIsFetched] = useState(false);
   const [layerVisibility, setLayerVisibility] = useState(
-    Object.fromEntries(INSAR_POINTS.map(layer => [layer.id, true]))
+    Object.fromEntries(VECTOR_POINT_DATA.map(layer => [layer.id, true]))
   );
   const [showLegend, setShowLegend] = useState(false);
   
@@ -226,13 +227,13 @@ function MisicuniDam() {
       }
     });
 
-    const meshLayers = INSAR_POINTS
+    const meshLayers = VECTOR_POINT_DATA
       .filter(config => layerVisibility[config.id])
       .map(config => new SimpleMeshLayer({
         id: config.id,
         data: config.url,
         mesh: new SphereGeometry(),
-        getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.elev_1],
+        getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.elev_1+10],
         getColor: (d) => {
           if (config.useVelRelColor && d.properties.VEL_REL !== undefined) {
             const color = getColorForVelRel(d.properties.VEL_REL);
@@ -244,9 +245,14 @@ function MisicuniDam() {
           if (config.useVelRelColor && d.properties.VEL_REL !== undefined) {
             return getScaleForVelRel(d.properties.VEL_REL);
           }
-          return [10, 10, 10];
+          const baseScale = config.scale ?? 10;
+          return [baseScale, baseScale, baseScale];
         },
         pickable: true,
+        updateTriggers: {
+          getColor: [config.useVelRelColor],
+          getScale: [config.useVelRelColor]
+        }
       }));
 
     return [maskLayer, backgroundDem, ...meshLayers, multibandDem];
@@ -339,7 +345,7 @@ function MisicuniDam() {
           <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '14px' }}>
             InSAR Points
           </div>
-          {INSAR_POINTS.map((layer) => (
+          {VECTOR_POINT_DATA.map((layer) => (
             <div key={layer.id} style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <input
                 type="checkbox"
@@ -373,7 +379,7 @@ function MisicuniDam() {
               color: '#333',
             }}
           >
-            {showLegend ? '▼ VEL_REL Scale' : '▶ VEL_REL Scale'}
+            {showLegend ? '▼ VEL_REL legend' : '▶ VEL_REL legend'}
           </button>
           {showLegend && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
