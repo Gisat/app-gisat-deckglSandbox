@@ -8,13 +8,13 @@ import { MaskExtension } from '@deck.gl/extensions';
 import { SphereGeometry } from '@luma.gl/engine';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
-const MULTIBAND_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_30_10x10_intermediate_cog.tif';
+const MULTIBAND_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_100_10x10_intermediate_cog.tif';
 
-const INSAR_POINTS = [
+const INSAR_POINTS = [  
   {
     id: 'mesh-layer-dam',
     name: 'GDA-AID-WR IADB',
-    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/GISAT_GDA-AID-WR_IADB_001_Misicuni-dam_v1.0_mesh.json',
+    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/GISAT_GDA-AID-WR_IADB_001_Misicuni-dam_v1.0%20%E2%80%94%20GISAT_GDA-AID-WR_IADB_001_Misicuni-dam_v1_elev_mesh.json',
     color: [255, 100, 0],
     useVelRelColor: false,
   },
@@ -39,6 +39,20 @@ const INSAR_POINTS = [
     color: [0, 255, 255],
     useVelRelColor: true,
   },
+  {
+    id: 'mesh-layer-geodetic-points',
+    name: 'Geodetic Points',
+    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geodetic_points_elev_mesh.json',
+    color: [100, 200, 255],
+    useVelRelColor: false,
+  },
+  {
+    id: 'mesh-layer-geodetic-red',
+    name: 'Geodetic Red MGD PRM',
+    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/point_geodetic_red_mgd_prm_4326_elev_mesh.json',
+    color: [255, 50, 50],
+    useVelRelColor: false,
+  },
 ];
 
 const INITIAL_VIEW_STATE = {
@@ -48,8 +62,8 @@ const INITIAL_VIEW_STATE = {
   pitch: 40,
   bearing: 90,
   minZoom: 11,
-  maxZoom: 14,
-  maxPitch: 60
+  maxZoom: 13.6,
+  maxPitch: 50
 };
 
 // VEL_REL color scale: subsidence (red) to uplift (green/blue)
@@ -80,7 +94,7 @@ function getColorForVelRel(value) {
 function getScaleForVelRel(value) {
   const absValue = Math.abs(value);
   // Base scale of 4, increases with absolute magnitude
-  const scale = 4 + (absValue * 0.7);
+  const scale = 4 + (absValue * 0);
   return [scale, scale, scale];
 }
 
@@ -218,12 +232,7 @@ function MisicuniDam() {
         id: config.id,
         data: config.url,
         mesh: new SphereGeometry(),
-        getPosition: (d) => {
-          const lon = d.properties.LON ?? d.geometry?.coordinates?.[0];
-          const lat = d.properties.LAT ?? d.geometry?.coordinates?.[1];
-          const h = d.properties.H ?? 0;
-          return [lon, lat, h];
-        },
+        getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.elev_1],
         getColor: (d) => {
           if (config.useVelRelColor && d.properties.VEL_REL !== undefined) {
             const color = getColorForVelRel(d.properties.VEL_REL);
