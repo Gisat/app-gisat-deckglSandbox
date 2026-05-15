@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { GeoJsonLayer } from '@deck.gl/layers';
@@ -6,6 +6,7 @@ import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { CogTerrainLayer, CogTiles } from '@gisatcz/deckgl-geolib';
 import { MaskExtension } from '@deck.gl/extensions';
 import { SphereGeometry, CubeGeometry } from '@luma.gl/engine';
+import { OBJLoader } from '@loaders.gl/obj';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
 const MULTIBAND_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_100_10x10_intermediate_cog.tif';
@@ -13,13 +14,20 @@ const MULTIBAND_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DF
 const VECTOR_POINT_DATA = [  
   {
     id: 'mesh-layer-dam',
-    name: 'GDA-AID-WR IADB',
+    name: 'GDA-AID-WR IADB (VEL_RE_UP)',
     url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/GISAT_GDA-AID-WR_IADB_001_Misicuni-dam_v1_elev_mesh.json',
     color: [255, 100, 0],
     useVelReUpColor: true,
-    useVelRelColor: false,
     scale: 10,
     propertyName: 'VEL_RE_UP',
+  },
+  {
+    id: 'mesh-layer-dam-ew',
+    name: 'GDA-AID-WR IADB (VEL_RE_EW)',
+    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/GISAT_GDA-AID-WR_IADB_001_Misicuni-dam_v1_elev_mesh.json',
+    mesh: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_v3.obj',
+    useVelReEwColor: true,
+    propertyName: 'VEL_RE_EW',
   },
   {
     id: 'mesh-layer-003a',
@@ -62,6 +70,9 @@ const VECTOR_POINT_DATA = [
   },
 ];
 
+const ARROW_SIZE = 67; // eyeball measured, only for this object: https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_v3.obj
+
+
 const INITIAL_VIEW_STATE = {
   longitude: -66.3,
   latitude: -17.12,
@@ -90,7 +101,25 @@ const VELOCITY_COLOR_SCALE = [
   { range: [5, 100], color: [0, 100, 200], label: '> 5 (Uplift)' },
 ];
 
+// VEL_RE_EW color scale: East-West movement (West to East)
+const VEL_RE_EW_COLOR_SCALE = [
+  { range: [-100, -3], color: [202, 0, 32], label: '< -3 (West)' },
+  { range: [-3, -2], color: [230, 110, 97], label: '-3 - -2' },
+  { range: [-2, -1], color: [245, 193, 41], label: '-2 - -1' },
+  { range: [-1, 1], color: [197, 255, 183], label: '-1 - 1 (not visualized)' },
+  { range: [1, 2], color: [42, 214, 231], label: '1 - 2' },
+  { range: [2, 3], color: [99, 169, 207], label: '2 - 3' },
+  { range: [3, 100], color: [5, 113, 176], label: '> 3 (East)' },
+];
 
+function getColorForVelReEw(value) {
+  for (const entry of VEL_RE_EW_COLOR_SCALE) {
+    if (value >= entry.range[0] && value <= entry.range[1]) {
+      return entry.color;
+    }
+  }
+  return [128, 128, 128];
+}
 
 function getColorForVelRel(value) {
   for (const entry of VELOCITY_COLOR_SCALE) {
@@ -113,37 +142,14 @@ function getColorForVelReUp(value) {
 
 function getScaleForVelRel(value) {
   const absValue = Math.abs(value);
-  // Base scale of 4, increases with absolute magnitude
   const scale = 4 + (absValue * 0);
   return [scale, scale, scale];
 }
 
 function getScaleForVelReUp(value) {
   const absValue = Math.abs(value);
-  // Direct scaling: larger absolute values = larger spheres
-  // scale = 5 + (0.5 * |VEL_RE_UP|)
-  const scale = 5 + (0.5 * absValue);
+  const scale = 4 + (0 * absValue);
   return [scale, scale, scale];
-}
-
-function getElevationAtInfo(info) {
-  const tileResult = info.tile?.content?.[0];
-  if (!tileResult?.raw) return null;
-  const { raw, width, height } = tileResult;
-
-  let u, v;
-  if (info.uv) {
-    [u, v] = info.uv;
-  } else if (info.coordinate && info.tile?._bbox) {
-    const { west, south, east, north } = info.tile._bbox;
-    u = (info.coordinate[0] - west) / (east - west);
-    v = (north - info.coordinate[1]) / (north - south);
-  }
-  if (u === undefined || v === undefined) return null;
-
-  const x = Math.min(width - 1, Math.max(0, Math.floor(u * (width - 1))));
-  const y = Math.min(height - 1, Math.max(0, Math.floor(v * (height - 1))));
-  return raw[y * width + x];
 }
 
 function formatDate(dateString) {
@@ -179,6 +185,7 @@ function MisicuniDam() {
     Object.fromEntries(VECTOR_POINT_DATA.map(layer => [layer.id, layer.id === 'mesh-layer-dam']))
   );
   const [showLegend, setShowLegend] = useState(false);
+  const [showLegend2, setShowLegend2] = useState(false);
   
   const totalBands = cogInstance?.getNumChannels?.() || 30;
   const bandDescriptions = cogInstance?.getBandDescriptions?.() ?? [];
@@ -209,7 +216,6 @@ function MisicuniDam() {
       data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/misicuni_max_mask.geojson',
       operation: 'mask',
       maskInverted: true,
-      pickable: false,
     });
 
     const backgroundDem = new CogTerrainLayer({
@@ -224,9 +230,7 @@ function MisicuniDam() {
         useChannel: 1,
         colorScale: ["#016656", "#80cdc1", "#f5f5f4", "#dfc27d", "#b9823c"],
         colorScaleValueRange: [3500, 4054],
-        // colorScaleValueRange: [3600, 4100],
       },
-      pickable: false,
     });
 
     const multibandDem = new CogTerrainLayer({
@@ -243,7 +247,6 @@ function MisicuniDam() {
         color: [0, 105, 148, 180],
         cacheAllBands: isFetched,
       },
-      pickable: true,
       extensions: [new MaskExtension()],
       maskId: 'water-mask',
       updateTriggers: {
@@ -253,47 +256,109 @@ function MisicuniDam() {
 
     const meshLayers = VECTOR_POINT_DATA
       .filter(config => layerVisibility[config.id])
-      .map(config => new SimpleMeshLayer({
-        id: config.id,
-        data: config.url,
-        mesh: config.geometryType === 'cube' ? new CubeGeometry() : new SphereGeometry(),
-        getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.elev_1+10],
-        getColor: (d) => {
-          if (config.useVelReUpColor && d.properties.VEL_RE_UP !== undefined) {
-            const color = getColorForVelReUp(d.properties.VEL_RE_UP);
-            return [...color, 255];
-          }
-          if (config.useVelRelColor && d.properties.VEL_REL !== undefined) {
-            const color = getColorForVelRel(d.properties.VEL_REL);
-            return [...color, 255];
-          }
-          return [...config.color, 255];
-        },
-        getScale: (d) => {
-          if (config.useVelReUpColor && d.properties.VEL_RE_UP !== undefined) {
-            return getScaleForVelReUp(d.properties.VEL_RE_UP);
-          }
-          if (config.useVelRelColor && d.properties.VEL_REL !== undefined) {
-            return getScaleForVelRel(d.properties.VEL_REL);
-          }
-          const baseScale = config.scale ?? 10;
-          return [baseScale, baseScale, baseScale];
-        },
-        pickable: true,
-        updateTriggers: {
-          getColor: [config.useVelRelColor, config.useVelReUpColor],
-          getScale: [config.useVelRelColor, config.useVelReUpColor]
+      .map(config => {
+        const baseOptions = {
+          id: config.id,
+          data: config.url,
+          getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.elev_1 + 15],
+          loaders: config.mesh ? [OBJLoader] : [],
+        };
+
+        // Arrow mesh for E-W visualization
+        if (config.mesh) {
+          return new SimpleMeshLayer({
+            ...baseOptions,
+            mesh: config.mesh,
+            getColor: (d) => {
+              if (d.properties.VEL_RE_EW !== undefined) {
+                const color = getColorForVelReEw(d.properties.VEL_RE_EW);
+                return [...color, 255];
+              }
+              return [128, 128, 128, 255];
+            },
+            getScale: (d) => {
+              if (d.properties.VEL_RE_EW !== undefined) {
+                const vel = d.properties.VEL_RE_EW;
+                // Don't visualize arrows for -1 to 1 range
+                if (vel >= -1 && vel <= 1) {
+                  return [0, 0, 0]; // Make invisible
+                }
+                const absValue = Math.abs(vel);
+                const scaleVal = 0.12 + (absValue * 0.02);
+                return [scaleVal, scaleVal, scaleVal * 2];
+              }
+              return [0.12, 0.12, 0.24];
+            },
+            getOrientation: (d) => {
+              const vel = d.properties.VEL_RE_EW;
+              if (vel < 0) {
+                return [-90, 0, 180]; // Point West
+              } else if (vel > 0) {
+                return [90, 0, 180]; // Point East
+              }
+              return [90, 0, 180]; // Default East
+            },
+            getTranslation: (d) => {
+              const vel = d.properties.VEL_RE_EW;
+              const absValue = Math.abs(vel);
+              const scaleVal = 0.12 + (absValue * 0.02);
+              const arrowLength = scaleVal * 2; // Z scale
+              const offset = ARROW_SIZE * arrowLength;
+              // Translate in the direction the arrow points
+              if (vel < 0) {
+                return [-offset, 0, 0]; // Translate West
+              } else if (vel > 0) {
+                return [offset, 0, 0]; // Translate East
+              }
+              return [0, 0, 0];
+            },
+            updateTriggers: {
+              getColor: [config.useVelReEwColor],
+              getScale: [config.useVelReEwColor],
+              getOrientation: [config.useVelReEwColor],
+              getTranslation: [config.useVelReEwColor]
+            }
+          });
         }
-      }));
+
+        // Sphere/Cube mesh for other visualizations
+        return new SimpleMeshLayer({
+          ...baseOptions,
+          mesh: config.geometryType === 'cube' ? new CubeGeometry() : new SphereGeometry(),
+          getColor: (d) => {
+            if (config.useVelReEwColor && d.properties.VEL_RE_EW !== undefined) {
+              const color = getColorForVelReEw(d.properties.VEL_RE_EW);
+              return [...color, 255];
+            }
+            if (config.useVelReUpColor && d.properties.VEL_RE_UP !== undefined) {
+              const color = getColorForVelReUp(d.properties.VEL_RE_UP);
+              return [...color, 255];
+            }
+            if (config.useVelRelColor && d.properties.VEL_REL !== undefined) {
+              const color = getColorForVelRel(d.properties.VEL_REL);
+              return [...color, 255];
+            }
+            return [...config.color, 255];
+          },
+          getScale: (d) => {
+            if (config.useVelReUpColor && d.properties.VEL_RE_UP !== undefined) {
+              return getScaleForVelReUp(d.properties.VEL_RE_UP);
+            }
+            if (config.useVelRelColor && d.properties.VEL_REL !== undefined) {
+              return getScaleForVelRel(d.properties.VEL_REL);
+            }
+            const baseScale = config.scale ?? 10;
+            return [baseScale, baseScale, baseScale];
+          },
+          updateTriggers: {
+            getColor: [config.useVelRelColor, config.useVelReUpColor, config.useVelReEwColor],
+            getScale: [config.useVelRelColor, config.useVelReUpColor]
+          }
+        });
+      });
 
     return [maskLayer, backgroundDem, ...meshLayers, multibandDem];
   }, [currentBandIndex, cogInstance, isFetched, layerVisibility]);
-
-  const getTooltip = useCallback((info) => {
-    const elevation = getElevationAtInfo(info);
-    if (elevation === null) return null;
-    return { text: `Elevation: ${elevation.toFixed(1)} m` };
-  }, []);
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
@@ -302,8 +367,6 @@ function MisicuniDam() {
         onViewStateChange={({ viewState }) => setViewState(viewState)}
         controller={true}
         layers={layers}
-        getCursor={() => 'crosshair'}
-          getTooltip={getTooltip}
         views={new MapView({ repeat: true })}
       />
 
@@ -383,38 +446,80 @@ function MisicuniDam() {
           />
         </div>
 
-        {/* Velocity Color Legend - THIRD */}
-        <div style={{ marginBottom: '0px', paddingTop: '8px', borderTop: '1px solid #ddd' }}>
+        {/* VEL_RE_UP Color Legend */}
+        <div style={{ marginBottom: '8px', paddingTop: '4px' }}>
           <button
             onClick={() => setShowLegend(!showLegend)}
             style={{
               width: '100%',
-              padding: '6px 8px',
-              marginBottom: showLegend ? '8px' : '0',
-              backgroundColor: showLegend ? '#f0f0f0' : '#fff',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
+              padding: '4px 6px',
+              marginBottom: showLegend ? '4px' : '0',
+              backgroundColor: 'transparent',
+              border: 'none',
+              borderRadius: '0px',
               cursor: 'pointer',
-              fontSize: '12px',
+              fontSize: '11px',
               fontWeight: '500',
               textAlign: 'left',
               color: '#333',
             }}
           >
-            {showLegend ? '▼ Velocity legend' : '▶ Velocity legend'}
+            {showLegend ? '▼ legend VEL_REL & VEL_RE_UP' : '▶ legend VEL_REL & VEL_RE_UP'}
           </button>
           {showLegend && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' }}>
               {VELOCITY_COLOR_SCALE.map((entry, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}>
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '9px' }}>
                   <span 
                     style={{ 
                       display: 'inline-block', 
-                      width: '12px', 
-                      height: '12px', 
+                      width: '10px', 
+                      height: '10px', 
                       backgroundColor: `rgb(${entry.color.join(',')})`, 
-                      borderRadius: '1px',
-                      border: '1px solid #999',
+                      borderRadius: '0px',
+                      border: 'none',
+                      flexShrink: 0
+                    }}
+                  ></span>
+                  <span style={{ whiteSpace: 'nowrap' }}>{entry.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* VEL_RE_EW Color Legend */}
+        <div style={{ marginBottom: '0px', paddingTop: '4px' }}>
+          <button
+            onClick={() => setShowLegend2(!showLegend2)}
+            style={{
+              width: '100%',
+              padding: '4px 6px',
+              marginBottom: showLegend2 ? '4px' : '0',
+              backgroundColor: 'transparent',
+              border: 'none',
+              borderRadius: '0px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontWeight: '500',
+              textAlign: 'left',
+              color: '#333',
+            }}
+          >
+            {showLegend2 ? '▼ legend VEL_RE_EW' : '▶ legend VEL_RE_EW'}
+          </button>
+          {showLegend2 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' }}>
+              {VEL_RE_EW_COLOR_SCALE.map((entry, idx) => (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '9px' }}>
+                  <span 
+                    style={{ 
+                      display: 'inline-block', 
+                      width: '10px', 
+                      height: '10px', 
+                      backgroundColor: entry.label.includes('not visualized') ? '#ffffff' : `rgb(${entry.color.join(',')})`, 
+                      border: entry.label.includes('not visualized') ? '1px solid #ccc' : 'none',
+                      borderRadius: '0px',
                       flexShrink: 0
                     }}
                   ></span>
