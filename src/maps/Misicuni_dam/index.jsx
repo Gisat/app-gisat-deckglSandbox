@@ -16,8 +16,10 @@ const VECTOR_POINT_DATA = [
     name: 'GDA-AID-WR IADB',
     url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/GISAT_GDA-AID-WR_IADB_001_Misicuni-dam_v1_elev_mesh.json',
     color: [255, 100, 0],
+    useVelReUpColor: true,
     useVelRelColor: false,
-    scale: 5,
+    scale: 10,
+    propertyName: 'VEL_RE_UP',
   },
   {
     id: 'mesh-layer-003a',
@@ -71,8 +73,9 @@ const INITIAL_VIEW_STATE = {
   maxPitch: 50
 };
 
-// VEL_REL color scale: subsidence (red) to uplift (green/blue)
-const VEL_REL_COLOR_SCALE = [
+// Velocity color scale: subsidence (red) to uplift (blue)
+// Used for both VEL_REL (horizontal) and VEL_RE_UP (vertical) components
+const VELOCITY_COLOR_SCALE = [
   { range: [-100, -5], color: [139, 0, 0], label: '< -5 (Subsidence)' },
   { range: [-5, -4], color: [205, 51, 51], label: '-5 - -4' },
   { range: [-4, -3], color: [220, 100, 80], label: '-4 - -3' },
@@ -87,8 +90,10 @@ const VEL_REL_COLOR_SCALE = [
   { range: [5, 100], color: [0, 100, 200], label: '> 5 (Uplift)' },
 ];
 
+
+
 function getColorForVelRel(value) {
-  for (const entry of VEL_REL_COLOR_SCALE) {
+  for (const entry of VELOCITY_COLOR_SCALE) {
     if (value >= entry.range[0] && value <= entry.range[1]) {
       return entry.color;
     }
@@ -96,10 +101,28 @@ function getColorForVelRel(value) {
   return [128, 128, 128];
 }
 
+function getColorForVelReUp(value) {
+  for (const entry of VELOCITY_COLOR_SCALE) {
+    if (value >= entry.range[0] && value <= entry.range[1]) {
+      return entry.color;
+    }
+  }
+  return [128, 128, 128];
+}
+
+
 function getScaleForVelRel(value) {
   const absValue = Math.abs(value);
   // Base scale of 4, increases with absolute magnitude
   const scale = 4 + (absValue * 0);
+  return [scale, scale, scale];
+}
+
+function getScaleForVelReUp(value) {
+  const absValue = Math.abs(value);
+  // Direct scaling: larger absolute values = larger spheres
+  // scale = 5 + (0.5 * |VEL_RE_UP|)
+  const scale = 5 + (0.5 * absValue);
   return [scale, scale, scale];
 }
 
@@ -153,7 +176,7 @@ function MisicuniDam() {
   const [currentBandIndex, setCurrentBandIndex] = useState(0);
   const [isFetched, setIsFetched] = useState(false);
   const [layerVisibility, setLayerVisibility] = useState(
-    Object.fromEntries(VECTOR_POINT_DATA.map(layer => [layer.id, true]))
+    Object.fromEntries(VECTOR_POINT_DATA.map(layer => [layer.id, layer.id === 'mesh-layer-dam']))
   );
   const [showLegend, setShowLegend] = useState(false);
   
@@ -199,12 +222,9 @@ function MisicuniDam() {
         useSwissRelief: true,
         useHeatMap: true,
         useChannel: 1,
-        colorScale: [
-          [0, 60, 48], [1, 102, 94], [90, 180, 172],
-          [128, 205, 193], [245, 245, 245], [223, 194, 125],
-          [166, 97, 26], [140, 81, 10], [84, 48, 5],
-        ],
-        colorScaleValueRange: [2500, 5000],
+        colorScale: ["#016656", "#80cdc1", "#f5f5f4", "#dfc27d", "#b9823c"],
+        colorScaleValueRange: [3500, 4054],
+        // colorScaleValueRange: [3600, 4100],
       },
       pickable: false,
     });
@@ -239,6 +259,10 @@ function MisicuniDam() {
         mesh: config.geometryType === 'cube' ? new CubeGeometry() : new SphereGeometry(),
         getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.elev_1+10],
         getColor: (d) => {
+          if (config.useVelReUpColor && d.properties.VEL_RE_UP !== undefined) {
+            const color = getColorForVelReUp(d.properties.VEL_RE_UP);
+            return [...color, 255];
+          }
           if (config.useVelRelColor && d.properties.VEL_REL !== undefined) {
             const color = getColorForVelRel(d.properties.VEL_REL);
             return [...color, 255];
@@ -246,6 +270,9 @@ function MisicuniDam() {
           return [...config.color, 255];
         },
         getScale: (d) => {
+          if (config.useVelReUpColor && d.properties.VEL_RE_UP !== undefined) {
+            return getScaleForVelReUp(d.properties.VEL_RE_UP);
+          }
           if (config.useVelRelColor && d.properties.VEL_REL !== undefined) {
             return getScaleForVelRel(d.properties.VEL_REL);
           }
@@ -254,8 +281,8 @@ function MisicuniDam() {
         },
         pickable: true,
         updateTriggers: {
-          getColor: [config.useVelRelColor],
-          getScale: [config.useVelRelColor]
+          getColor: [config.useVelRelColor, config.useVelReUpColor],
+          getScale: [config.useVelRelColor, config.useVelReUpColor]
         }
       }));
 
@@ -280,75 +307,25 @@ function MisicuniDam() {
         views={new MapView({ repeat: true })}
       />
 
-      {/* Band Selection Control Panel */}
+      {/* Control Panel */}
       <div
         style={{
           position: 'absolute',
           bottom: 20,
           left: 20,
           background: 'rgba(255, 255, 255, 0.95)',
-          padding: '16px',
+          padding: '12px',
           borderRadius: '8px',
           boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
           fontFamily: 'system-ui, sans-serif',
           fontSize: '14px',
           color: '#333',
-          width: '280px',
+          width: '220px',
           zIndex: 1000,
         }}
       >
-        <div style={{ marginBottom: '16px', fontWeight: 'bold', fontSize: '16px' }}>
-          Band Selection
-        </div>
-
-        <div style={{ marginBottom: '12px' }}>
-          <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: '500' }}>
-            Band: {currentBandIndex + 1} / {totalBands}
-            {currentDescription && (
-              <span style={{ marginLeft: '8px', color: '#555', fontWeight: 'normal' }}>
-                — {currentDescription}
-              </span>
-            )}
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={totalBands - 1}
-            value={currentBandIndex}
-            disabled={!isFetched}
-            onMouseUp={(e) => setCurrentBandIndex(parseInt(e.currentTarget.value, 10))}
-            onTouchEnd={(e) => setCurrentBandIndex(parseInt(e.currentTarget.value, 10))}
-            onChange={(e) => setCurrentBandIndex(parseInt(e.currentTarget.value, 10))}
-            style={{ width: '100%', cursor: isFetched ? 'pointer' : 'not-allowed', opacity: isFetched ? 1 : 0.5 }}
-          />
-        </div>
-
-        <button
-          onClick={() => setIsFetched(true)}
-          disabled={isFetched}
-          style={{
-            width: '100%',
-            padding: '8px',
-            cursor: isFetched ? 'default' : 'pointer',
-            backgroundColor: isFetched ? '#e0e0e0' : '#4CAF50',
-            color: isFetched ? '#999' : 'white',
-            border: 'none',
-            borderRadius: '4px',
-            fontWeight: '500',
-          }}
-        >
-          {isFetched ? '✅ All Bands Cached' : '⬇️ Fetch All Bands'}
-        </button>
-        
-        <div style={{ fontSize: '12px', color: '#666', marginTop: '10px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #ddd' }}>
-          {!isFetched ? 'Click "Fetch All Bands" to enable band selection.' : 'Use the slider to select bands!'}
-        </div>
-
-        {/* InSAR Points Layer Visibility */}
-        <div style={{ marginBottom: '16px' }}>
-          <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '14px' }}>
-            InSAR Points
-          </div>
+        {/* Layer Visibility - Checkboxes FIRST */}
+        <div style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #ddd' }}>
           {VECTOR_POINT_DATA.map((layer) => (
             <div key={layer.id} style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <input
@@ -365,8 +342,49 @@ function MisicuniDam() {
           ))}
         </div>
 
-        {/* VEL_REL Color Legend - Collapsible */}
-        <div style={{ marginBottom: '16px', paddingTop: '12px', borderTop: '1px solid #ddd' }}>
+        {/* Band Selection Slider - SECOND */}
+        <div style={{ marginBottom: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div style={{ fontSize: '13px', fontWeight: '500' }}>
+              Dam Water Level
+            </div>
+            <button
+              onClick={() => setIsFetched(true)}
+              disabled={isFetched}
+              style={{
+                padding: '4px 8px',
+                cursor: isFetched ? 'default' : 'pointer',
+                backgroundColor: isFetched ? '#e0e0e0' : '#4CAF50',
+                color: isFetched ? '#999' : 'white',
+                border: 'none',
+                borderRadius: '3px',
+                fontWeight: 'normal',
+                fontSize: '10px',
+              }}
+            >
+              {isFetched ? '✅ Ready' : '⬇️ Load data'}
+            </button>
+          </div>
+          {currentDescription && (
+            <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: '500', color: '#555' }}>
+              Date: {currentDescription} ({currentBandIndex + 1}/{totalBands})
+            </div>
+          )}
+          <input
+            type="range"
+            min={0}
+            max={totalBands - 1}
+            value={currentBandIndex}
+            disabled={!isFetched}
+            onMouseUp={(e) => setCurrentBandIndex(parseInt(e.currentTarget.value, 10))}
+            onTouchEnd={(e) => setCurrentBandIndex(parseInt(e.currentTarget.value, 10))}
+            onChange={(e) => setCurrentBandIndex(parseInt(e.currentTarget.value, 10))}
+            style={{ width: '100%', cursor: isFetched ? 'pointer' : 'not-allowed', opacity: isFetched ? 1 : 0.5 }}
+          />
+        </div>
+
+        {/* Velocity Color Legend - THIRD */}
+        <div style={{ marginBottom: '0px', paddingTop: '8px', borderTop: '1px solid #ddd' }}>
           <button
             onClick={() => setShowLegend(!showLegend)}
             style={{
@@ -383,11 +401,11 @@ function MisicuniDam() {
               color: '#333',
             }}
           >
-            {showLegend ? '▼ VEL_REL legend' : '▶ VEL_REL legend'}
+            {showLegend ? '▼ Velocity legend' : '▶ Velocity legend'}
           </button>
           {showLegend && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {VEL_REL_COLOR_SCALE.map((entry, idx) => (
+              {VELOCITY_COLOR_SCALE.map((entry, idx) => (
                 <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}>
                   <span 
                     style={{ 
