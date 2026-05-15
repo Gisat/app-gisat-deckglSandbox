@@ -5,7 +5,7 @@ import { GeoJsonLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { CogTerrainLayer, CogTiles } from '@gisatcz/deckgl-geolib';
 import { MaskExtension } from '@deck.gl/extensions';
-import { SphereGeometry } from '@luma.gl/engine';
+import { SphereGeometry, CubeGeometry } from '@luma.gl/engine';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
 const MULTIBAND_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_100_10x10_intermediate_cog.tif';
@@ -44,15 +44,19 @@ const VECTOR_POINT_DATA = [
     id: 'mesh-layer-geodetic-points',
     name: 'Geodetic Points',
     url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geodetic_points_elev_4326_mesh.json',
-    color: [255, 255, 0],
+    color: [80, 80, 80],
     useVelRelColor: false,
+    geometryType: 'cube',
+    scale: 4.5,
   },
   {
     id: 'mesh-layer-geodetic-red',
     name: 'Geodetic Red MGD PRM',
     url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/point_geodetic_red_mgd_prm_4326_elev_mesh.json',
-    color: [255, 50, 50],
+    color: [130, 100, 70],
     useVelRelColor: false,
+    geometryType: 'cube',
+    scale: 4.5,
   },
 ];
 
@@ -63,7 +67,7 @@ const INITIAL_VIEW_STATE = {
   pitch: 40,
   bearing: 90,
   minZoom: 11,
-  maxZoom: 13.6,
+  maxZoom: 13.8,
   maxPitch: 50
 };
 
@@ -232,7 +236,7 @@ function MisicuniDam() {
       .map(config => new SimpleMeshLayer({
         id: config.id,
         data: config.url,
-        mesh: new SphereGeometry(),
+        mesh: config.geometryType === 'cube' ? new CubeGeometry() : new SphereGeometry(),
         getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.elev_1+10],
         getColor: (d) => {
           if (config.useVelRelColor && d.properties.VEL_REL !== undefined) {
