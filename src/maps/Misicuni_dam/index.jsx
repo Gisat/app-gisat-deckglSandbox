@@ -80,7 +80,7 @@ const INITIAL_VIEW_STATE = {
   pitch: 40,
   bearing: 90,
   minZoom: 11,
-  maxZoom: 13.8,
+  maxZoom: 14.1,
   maxPitch: 50
 };
 
@@ -367,7 +367,7 @@ function MisicuniDam() {
         onViewStateChange={({ viewState }) => setViewState(viewState)}
         controller={true}
         layers={layers}
-        views={new MapView({ repeat: true })}
+        views={[new MapView({ id: 'main', controller: true, nearZMultiplier: viewState.zoom > 14 ? 0.0001 : 0.1 })]}
       />
 
       {/* Control Panel */}
