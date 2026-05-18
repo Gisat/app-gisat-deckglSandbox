@@ -4,6 +4,7 @@ import { TileLayer, MVTLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer, IconLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { SphereGeometry } from '@luma.gl/engine';
+import { COORDINATE_SYSTEM } from '@deck.gl/core';
 import chroma from 'chroma-js';
 
 const INITIAL_VIEW_STATE = {
@@ -49,11 +50,14 @@ const shadingOverlaySvg = 'data:image/svg+xml;charset=utf-8,' + encodeURICompone
     </svg>
 `);
 
+const sphereGeometry = new SphereGeometry();
+
 export default function LargeVectorData() {
-  const [mvtVisible, setMvtVisible] = useState(true);
-  const [meshVisible, setMeshVisible] = useState(true);
-  const [iconsVisible, setIconsVisible] = useState(true);
-  const [mvtSpheresVisible, setMvtSpheresVisible] = useState(true);
+  const [mvtVisible, setMvtVisible] = useState(false);
+  const [meshVisible, setMeshVisible] = useState(false);
+  const [iconsVisible, setIconsVisible] = useState(false);
+  const [mvtSpheresVisible, setMvtSpheresVisible] = useState(false);
+  const [mvtLatlonSpheresVisible, setMvtLatlonSpheresVisible] = useState(true);
 
   const baseMapLayer = new TileLayer({
     id: 'tile-layer',
@@ -86,7 +90,7 @@ export default function LargeVectorData() {
   const sphereMeshLayer = new SimpleMeshLayer({
     id: '3d-json-spheres',
     data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3.json',
-    mesh: new SphereGeometry(),
+    mesh: sphereGeometry,
     sizeScale: 5,
     getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm],
     getColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],
@@ -142,7 +146,7 @@ export default function LargeVectorData() {
         return new SimpleMeshLayer({
           ...props,
           id: `${props.id}-spheres`,
-          mesh: new SphereGeometry(),
+          mesh: sphereGeometry,
           getScale: [0.005,0.005,5],
           getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm],
           getColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],
@@ -152,7 +156,37 @@ export default function LargeVectorData() {
     },
   });
 
-  const layers = [baseMapLayer, pointsLayer, sphereMeshLayer, iconsLayer, mvtSpheresLayer];
+ const mvtLatlonSpheresLayer = new MVTLayer({
+    id: '3d-mvt-latlon-spheres',
+    data: 'https://pantherdocs-dev.gisat.cz/be-gisdata/query/mvt-attributes/insar-points-d8-asc-height-latlon/{z}/{x}/{y}',
+    binary: false,
+    minZoom: 0,
+    maxZoom: 14,
+    visible: mvtLatlonSpheresVisible,
+    renderSubLayers: (props) => {
+      if (props.data) {
+        const { 
+          modelMatrix, 
+          coordinateOrigin, 
+          _offset, 
+          ...safeProps 
+        } = props;
+        return new SimpleMeshLayer({
+          ...safeProps,
+          id: `${props.id}-spheres`,
+          mesh: new SphereGeometry(),
+          coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
+          extensions: [], 
+          getPosition: (d) => [d.properties.lon, d.properties.lat, d.properties.h_dtm || 0],
+          getColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],  
+          sizeScale: 8, 
+        });
+      }
+      return null;
+    },
+  });
+
+  const layers = [baseMapLayer, pointsLayer, sphereMeshLayer, iconsLayer, mvtSpheresLayer, mvtLatlonSpheresLayer];
 
   return (
     <>
@@ -188,6 +222,14 @@ export default function LargeVectorData() {
             onChange={(e) => setMvtSpheresVisible(e.target.checked)}
           />
           <span>3D MVT spheres</span>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0 0 0', fontSize: '14px' }}>
+          <input
+            type="checkbox"
+            checked={mvtLatlonSpheresVisible}
+            onChange={(e) => setMvtLatlonSpheresVisible(e.target.checked)}
+          />
+          <span>3D MVT latlon spheres</span>
         </label>
       </div>
       <DeckGL
