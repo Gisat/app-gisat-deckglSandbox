@@ -23,6 +23,7 @@ import devSeedCOG from "./DevSeedCOG/CogMap.jsx";
 import GisatGeotiffMap from './TestGisatGeotiff/GisatGeotiffMap';
 import CogTerrainKernel from './CogTerrainKernel';
 import MisicuniDam from './Misicuni_dam/index.jsx';
+import LargeVectorData from './LargeVectorData/index.jsx';
 
 const mapApps = [
     { category: '3DFLUS', name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
@@ -47,6 +48,7 @@ const mapApps = [
     { category: 'Other', name: 'Deck.gl-raster COG', path: '/deck.gl-raster', component: devSeedCOG },
     // { name: 'Test Gisat Geotiff', path: '/test-gisat-geotiff', component: GisatGeotiffMap, description: 'Testing Gisat Geotiff rendering' },
     { category: '3DFLUS CCN', name: 'COG Kernel', path: '/cog-kernel', component: CogTerrainKernel, description: 'Showcase kernel calculation and hover features with deck.gl-geotiff' },
+    { category: '3DFLUS CCN', name: 'Large vector data', path: '/large-vector-data', component: LargeVectorData },
     { category: 'GDA Water', name: 'Misicuni Dam', path: '/misicuni-dam', component: MisicuniDam, description: 'Simple dam presentation map connected to GDA Water group' },
 ];
 
