@@ -52,12 +52,201 @@ const shadingOverlaySvg = 'data:image/svg+xml;charset=utf-8,' + encodeURICompone
 
 const sphereGeometry = new SphereGeometry();
 
+// Helper: create icon sublayers (base + shading)
+const createIconSublayers = (props, getPosition) => {
+  if (!props.data) return null;
+  return [
+    new IconLayer({
+      ...props,
+      id: `${props.id}-baseIcon`,
+      iconAtlas: baseCircleSvg,
+      iconMapping: { marker: { x: 0, y: 0, width: 128, height: 128, mask: true } },
+      getIcon: () => 'marker',
+      getPosition,
+      getSize: 20,
+      getColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],
+      billboard: true,
+    }),
+    new IconLayer({
+      ...props,
+      id: `${props.id}-shadingIcon`,
+      iconAtlas: shadingOverlaySvg,
+      iconMapping: { marker: { x: 0, y: 0, width: 128, height: 128, mask: false } },
+      getIcon: () => 'marker',
+      getPosition,
+      getSize: 20,
+      billboard: true,
+    }),
+  ];
+};
+
+// Helper: create latlon sphere sublayer with LNGLAT coordinate system
+const createLatlonSphereSublayer = (props) => {
+  if (!props.data) return null;
+  const { modelMatrix, coordinateOrigin, _offset, ...safeProps } = props;
+  return new SimpleMeshLayer({
+    ...safeProps,
+    id: `${props.id}-spheres`,
+    mesh: sphereGeometry,
+    coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
+    extensions: [],
+    getPosition: (d) => [d.properties.lon, d.properties.lat, d.properties.h_dtm || 0],
+    getColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],
+    sizeScale: 8,
+  });
+};
+
+// Layer configuration
+const LAYER_CONFIGS = [
+  {
+    id: 'mvt-2d-points-ds',
+    name: '2D MVT points (data service)',
+    type: 'mvt-points',
+    source: 'ds',
+    data: 'https://pantherdocs-dev.gisat.cz/be-gisdata/query/mvt-attributes/insar-points-d8-asc-height/{z}/{x}/{y}',
+    visible: false,
+  },
+  {
+    id: 'mvt-2d-points-s3',
+    name: '2D MVT points (s3)',
+    type: 'mvt-points',
+    source: 's3',
+    data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3_latlon/{z}/{x}/{y}.pbf',
+    visible: false,
+  },
+  {
+    id: 'mesh-3d-spheres-s3',
+    name: '3D json spheres (s3)',
+    type: 'mesh-spheres-simple',
+    source: 's3',
+    data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3.json',
+    visible: false,
+  },
+  {
+    id: 'mvt-3d-icons-ds',
+    name: '3D MVT icons (data service)',
+    type: 'mvt-icons',
+    source: 'ds',
+    data: 'https://pantherdocs-dev.gisat.cz/be-gisdata/query/mvt-attributes/insar-points-d8-asc-height/{z}/{x}/{y}',
+    visible: false,
+  },
+  {
+    id: 'mvt-3d-icons-s3',
+    name: '3D MVT icons (s3)',
+    type: 'mvt-icons',
+    source: 's3',
+    data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3_latlon/{z}/{x}/{y}.pbf',
+    visible: false,
+  },
+  {
+    id: 'mvt-3d-spheres-ds',
+    name: '3D MVT spheres (data service)',
+    type: 'mvt-spheres',
+    source: 'ds',
+    data: 'https://pantherdocs-dev.gisat.cz/be-gisdata/query/mvt-attributes/insar-points-d8-asc-height/{z}/{x}/{y}',
+    visible: false,
+  },
+  {
+    id: 'mvt-3d-latlon-spheres-ds',
+    name: '3D MVT latlon spheres (data service)',
+    type: 'mvt-latlon-spheres',
+    source: 'ds',
+    data: 'https://pantherdocs-dev.gisat.cz/be-gisdata/query/mvt-attributes/insar-points-d8-asc-height-latlon/{z}/{x}/{y}',
+    visible: false,
+  },
+  {
+    id: 'mvt-3d-latlon-spheres-s3',
+    name: '3D MVT latlon spheres (s3)',
+    type: 'mvt-latlon-spheres',
+    source: 's3',
+    data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3_latlon/{z}/{x}/{y}.pbf',
+    visible: true,
+  },
+];
+
+// Create layer from config
+const createLayer = (config, visible) => {
+  const baseProps = {
+    id: config.id,
+    data: config.data,
+    binary: false,
+    minZoom: 0,
+    maxZoom: 14,
+    visible,
+  };
+
+  if (config.type === 'mvt-points') {
+    return new MVTLayer({
+      ...baseProps,
+      getFillColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],
+      pointRadiusMinPixels: 4,
+      getLineWidth: 1,
+    });
+  }
+
+  if (config.type === 'mesh-spheres-simple') {
+    return new SimpleMeshLayer({
+      ...baseProps,
+      mesh: sphereGeometry,
+      sizeScale: 5,
+      getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm],
+      getColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],
+    });
+  }
+
+  if (config.type === 'mvt-icons') {
+    const getPosition = (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm];
+
+    return new MVTLayer({
+      ...baseProps,
+      renderSubLayers: (props) => createIconSublayers(props, getPosition),
+    });
+  }
+
+  if (config.type === 'mvt-spheres') {
+    return new MVTLayer({
+      ...baseProps,
+      renderSubLayers: (props) => {
+        if (props.data) {
+          return new SimpleMeshLayer({
+            ...props,
+            id: `${props.id}-spheres`,
+            mesh: sphereGeometry,
+            getScale: [0.005, 0.005, 5],
+            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm],
+            getColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],
+          });
+        }
+        return null;
+      },
+    });
+  }
+
+  if (config.type === 'mvt-latlon-spheres') {
+    return new MVTLayer({
+      ...baseProps,
+      renderSubLayers: (props) => createLatlonSphereSublayer(props),
+    });
+  }
+
+  return null;
+};
+
 export default function LargeVectorData() {
-  const [mvtVisible, setMvtVisible] = useState(false);
-  const [meshVisible, setMeshVisible] = useState(false);
-  const [iconsVisible, setIconsVisible] = useState(false);
-  const [mvtSpheresVisible, setMvtSpheresVisible] = useState(false);
-  const [mvtLatlonSpheresVisible, setMvtLatlonSpheresVisible] = useState(true);
+  const [layerVisibility, setLayerVisibility] = useState(() => {
+    const initial = {};
+    LAYER_CONFIGS.forEach((config) => {
+      initial[config.id] = config.visible;
+    });
+    return initial;
+  });
+
+  const toggleLayer = (layerId) => {
+    setLayerVisibility((prev) => ({
+      ...prev,
+      [layerId]: !prev[layerId],
+    }));
+  };
 
   const baseMapLayer = new TileLayer({
     id: 'tile-layer',
@@ -75,162 +264,24 @@ export default function LargeVectorData() {
     },
   });
 
-  const pointsLayer = new MVTLayer({
-    id: '2d-mvt-points',
-    data: 'https://pantherdocs-dev.gisat.cz/be-gisdata/query/mvt-attributes/insar-points-d8-asc-height/{z}/{x}/{y}',
-    binary: false,
-    minZoom: 0,
-    maxZoom: 14,
-    visible: mvtVisible,
-    getFillColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],
-    pointRadiusMinPixels: 4,
-    getLineWidth: 1
-  });
-
-  const sphereMeshLayer = new SimpleMeshLayer({
-    id: '3d-json-spheres',
-    data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3.json',
-    mesh: sphereGeometry,
-    sizeScale: 5,
-    getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm],
-    getColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],
-    visible: meshVisible,
-  });
-
-  const iconsLayer = new MVTLayer({
-    id: '3d-mvt-icons',
-    data: 'https://pantherdocs-dev.gisat.cz/be-gisdata/query/mvt-attributes/insar-points-d8-asc-height/{z}/{x}/{y}',
-    binary: false,
-    minZoom: 0,
-    maxZoom: 14,
-    visible: iconsVisible,
-    renderSubLayers: (props) => {
-      if (props.data) {
-        return [
-          new IconLayer({
-            ...props,
-            id: `${props.id}-baseIcon`,
-            iconAtlas: baseCircleSvg,
-            iconMapping: { marker: { x: 0, y: 0, width: 128, height: 128, mask: true } },
-            getIcon: () => 'marker',
-            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm],
-            getSize: 20,
-            getColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],
-            billboard: true,
-          }),
-          new IconLayer({
-            ...props,
-            id: `${props.id}-shadingIcon`,
-            iconAtlas: shadingOverlaySvg,
-            iconMapping: { marker: { x: 0, y: 0, width: 128, height: 128, mask: false } },
-            getIcon: () => 'marker',
-            getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm],
-            getSize: 20,
-            billboard: true,
-          }),
-        ];
-      }
-      return null;
-    },
-  });
-
-  const mvtSpheresLayer = new MVTLayer({
-    id: '3d-mvt-spheres',
-    data: 'https://pantherdocs-dev.gisat.cz/be-gisdata/query/mvt-attributes/insar-points-d8-asc-height/{z}/{x}/{y}',
-    binary: false,
-    minZoom: 0,
-    maxZoom: 14,
-    visible: mvtSpheresVisible,
-    renderSubLayers: (props) => {
-      if (props.data) {
-        return new SimpleMeshLayer({
-          ...props,
-          id: `${props.id}-spheres`,
-          mesh: sphereGeometry,
-          getScale: [0.005,0.005,5],
-          getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm],
-          getColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],
-        });
-      }
-      return null;
-    },
-  });
-
- const mvtLatlonSpheresLayer = new MVTLayer({
-    id: '3d-mvt-latlon-spheres',
-    data: 'https://pantherdocs-dev.gisat.cz/be-gisdata/query/mvt-attributes/insar-points-d8-asc-height-latlon/{z}/{x}/{y}',
-    binary: false,
-    minZoom: 0,
-    maxZoom: 14,
-    visible: mvtLatlonSpheresVisible,
-    renderSubLayers: (props) => {
-      if (props.data) {
-        const { 
-          modelMatrix, 
-          coordinateOrigin, 
-          _offset, 
-          ...safeProps 
-        } = props;
-        return new SimpleMeshLayer({
-          ...safeProps,
-          id: `${props.id}-spheres`,
-          mesh: new SphereGeometry(),
-          coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
-          extensions: [], 
-          getPosition: (d) => [d.properties.lon, d.properties.lat, d.properties.h_dtm || 0],
-          getColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],  
-          sizeScale: 8, 
-        });
-      }
-      return null;
-    },
-  });
-
-  const layers = [baseMapLayer, pointsLayer, sphereMeshLayer, iconsLayer, mvtSpheresLayer, mvtLatlonSpheresLayer];
+  const dataLayers = LAYER_CONFIGS.map((config) =>
+    createLayer(config, layerVisibility[config.id])
+  );
+  const layers = [baseMapLayer, ...dataLayers];
 
   return (
     <>
       <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 10, backgroundColor: '#f0f0f0', padding: '10px', borderRadius: '4px', boxShadow: '0 0 0 2px rgba(0,0,0,0.1)' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 8px 0', fontSize: '14px' }}>
-          <input
-            type="checkbox"
-            checked={mvtVisible}
-            onChange={(e) => setMvtVisible(e.target.checked)}
-          />
-          <span>2D MVT points</span>
-        </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0, fontSize: '14px' }}>
-          <input
-            type="checkbox"
-            checked={meshVisible}
-            onChange={(e) => setMeshVisible(e.target.checked)}
-          />
-          <span>3D json spheres</span>
-        </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0 0 0', fontSize: '14px' }}>
-          <input
-            type="checkbox"
-            checked={iconsVisible}
-            onChange={(e) => setIconsVisible(e.target.checked)}
-          />
-          <span>3D MVT icons</span>
-        </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0 0 0', fontSize: '14px' }}>
-          <input
-            type="checkbox"
-            checked={mvtSpheresVisible}
-            onChange={(e) => setMvtSpheresVisible(e.target.checked)}
-          />
-          <span>3D MVT spheres</span>
-        </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0 0 0', fontSize: '14px' }}>
-          <input
-            type="checkbox"
-            checked={mvtLatlonSpheresVisible}
-            onChange={(e) => setMvtLatlonSpheresVisible(e.target.checked)}
-          />
-          <span>3D MVT latlon spheres</span>
-        </label>
+        {LAYER_CONFIGS.map((config) => (
+          <label key={config.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: config === LAYER_CONFIGS[0] ? '0 0 8px 0' : '8px 0 0 0', fontSize: '14px' }}>
+            <input
+              type="checkbox"
+              checked={layerVisibility[config.id]}
+              onChange={() => toggleLayer(config.id)}
+            />
+            <span>{config.name}</span>
+          </label>
+        ))}
       </div>
       <DeckGL
         initialViewState={INITIAL_VIEW_STATE}
