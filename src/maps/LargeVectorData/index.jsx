@@ -60,22 +60,48 @@ const createIconSublayers = (props, getPosition) => {
       ...props,
       id: `${props.id}-baseIcon`,
       iconAtlas: baseCircleSvg,
-      iconMapping: { marker: { x: 0, y: 0, width: 128, height: 128, mask: true } },
+      iconMapping: {
+        marker: {
+          x: 0,
+          y: 0,
+          width: 128,
+          height: 128,
+          anchorX: 64,
+          anchorY: 64,
+          mask: true,
+        },
+      },
       getIcon: () => 'marker',
       getPosition,
       getSize: 20,
       getColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],
       billboard: true,
+      depthTest: true,
+      sizeMinPixels: 12,
+      sizeMaxPixels: 40,
     }),
     new IconLayer({
       ...props,
       id: `${props.id}-shadingIcon`,
       iconAtlas: shadingOverlaySvg,
-      iconMapping: { marker: { x: 0, y: 0, width: 128, height: 128, mask: false } },
+      iconMapping: {
+        marker: {
+          x: 0,
+          y: 0,
+          width: 128,
+          height: 128,
+          anchorX: 64,
+          anchorY: 64,
+          mask: false,
+        },
+      },
       getIcon: () => 'marker',
       getPosition,
       getSize: 20,
       billboard: true,
+      depthTest: true,
+      sizeMinPixels: 12,
+      sizeMaxPixels: 40,
     }),
   ];
 };
@@ -136,7 +162,7 @@ const LAYER_CONFIGS = [
     type: 'mvt-icons',
     source: 's3',
     data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3_latlon/{z}/{x}/{y}.pbf',
-    visible: false,
+    visible: true,
   },
   {
     id: 'mvt-3d-spheres-ds',
@@ -160,7 +186,7 @@ const LAYER_CONFIGS = [
     type: 'mvt-latlon-spheres',
     source: 's3',
     data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3_latlon/{z}/{x}/{y}.pbf',
-    visible: true,
+    visible: false,
   },
 ];
 
@@ -199,6 +225,12 @@ const createLayer = (config, visible) => {
 
     return new MVTLayer({
       ...baseProps,
+      pickable: true,
+      onClick: (info) => {
+        if (info.picked) {
+          console.log(`Clicked on ${config.id}:`, info);
+        }
+      },
       renderSubLayers: (props) => createIconSublayers(props, getPosition),
     });
   }
@@ -287,6 +319,7 @@ export default function LargeVectorData() {
         initialViewState={INITIAL_VIEW_STATE}
         controller={true}
         layers={layers}
+        pickingRadius={20}
         className="deckgl-map"
       />
     </>
