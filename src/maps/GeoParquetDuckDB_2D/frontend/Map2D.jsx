@@ -1,12 +1,15 @@
 import { useEffect, useState, useRef } from 'react';
-import { DeckGL } from 'deck.gl';
+import { DeckGL, WebMercatorViewport } from 'deck.gl';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { ScatterplotLayer, BitmapLayer } from '@deck.gl/layers';
 import { scaleLinear } from 'd3-scale';
 
 import { HUD } from './components/HUD';
 import { PlaybackControls } from './components/PlaybackControls';
+import { SelectionControls } from './components/SelectionControls';
+import { DrawingOverlay } from './components/DrawingOverlay';
 import DuckDBGeoParquetLayer from '../../../layers/DuckDBGeoParquetLayer';
+import { normalizeGeometry, filterPointsByGeometryInBounds } from './utils/geometryUtils';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 12, pitch: 0, bearing: 0 };
@@ -54,7 +57,27 @@ function Map2D() {
     const [mode, setMode] = useState('static');
     const [isPlaying, setIsPlaying] = useState(false);
 
+    // Selection state
+    const [selectionMode, setSelectionMode] = useState('polygon');
+    const [isDrawing, setIsDrawing] = useState(false);
+    const [bufferDistance, setBufferDistance] = useState(100);
+    const [selectedPoints, setSelectedPoints] = useState(new Set());
+    const [drawnGeometry, setDrawnGeometry] = useState(null);
+
     const mapContainerRef = useRef(null);
+
+    // Handle geometry completion from drawing overlay
+    const handleGeometryComplete = (mode, coords, bufferDist = 100) => {
+        const geometry = normalizeGeometry(mode, coords, bufferDist);
+        if (!geometry) return;
+
+        setDrawnGeometry(geometry);
+        setIsDrawing(false);
+
+        // Filter currently visible points (only tiles that are cached)
+        const newSelected = new Set();
+        // This will be populated when the layers render below
+    };
 
     // 🆕 HUD Update Logic
     useEffect(() => {
@@ -136,6 +159,39 @@ function Map2D() {
 
                 if (!data || data.length === 0) return null;
 
+                // When geometry is drawn, filter all visible table data for selected points
+                if (drawnGeometry && !isDrawing) {
+                    const newSelected = new Set();
+                    
+                    // Get current viewport bounds
+                    const { longitude, latitude, zoom } = viewState;
+                    const containerWidth = mapContainerRef.current?.clientWidth || 800;
+                    const containerHeight = mapContainerRef.current?.clientHeight || 600;
+                    
+                    const viewport = new WebMercatorViewport({
+                        width: containerWidth,
+                        height: containerHeight,
+                        longitude,
+                        latitude,
+                        zoom
+                    });
+                    
+                    const bounds = viewport.getBounds();
+                    
+                    data.forEach(tableData => {
+                        // Only filter points within viewport bounds
+                        const filtered = filterPointsByGeometryInBounds(
+                            tableData, 
+                            drawnGeometry,
+                            bounds
+                        );
+                        filtered.forEach(key => newSelected.add(key));
+                    });
+                    if (newSelected.size > 0) {
+                        setSelectedPoints(newSelected);
+                    }
+                }
+
                 return data.map((tableData) => {
                     return new ScatterplotLayer({
                         id: `arrow-table-${tableData.tableIndex}`,
@@ -150,13 +206,27 @@ function Map2D() {
                         radiusUnits: 'pixels',
 
                         getFillColor: (rowIndex) => {
+                            const { lon, lat } = tableData.getPosition(rowIndex);
+                            const coordKey = `${lon.toFixed(5)}_${lat.toFixed(5)}`;
+                            
+                            // If point is selected, highlight it
+                            if (selectedPoints.has(coordKey)) {
+                                return [66, 212, 244, 255]; // Bright cyan
+                            }
+                            
+                            // If there are selected points, dim unselected
+                            if (selectedPoints.size > 0) {
+                                return [200, 200, 200, 100]; // Dim gray
+                            }
+                            
+                            // Normal displacement color
                             const val = tableData.getDisplacementValue(rowIndex, mode, debouncedTimeIndex);
                             const rgb = colorScale(val);
                             return [rgb[0], rgb[1], rgb[2], 200];
                         },
 
                         updateTriggers: {
-                            getFillColor: [debouncedTimeIndex, mode],
+                            getFillColor: [debouncedTimeIndex, mode, selectedPoints],
                             getPosition: [mode],
                         },
 
@@ -201,6 +271,29 @@ function Map2D() {
                 setMode={setMode}
                 setIsPlaying={setIsPlaying}
                 setTimeIndex={setTimeIndex}
+            />
+
+            <SelectionControls
+                selectionMode={selectionMode}
+                onModeChange={setSelectionMode}
+                onDraw={() => setIsDrawing(true)}
+                onClear={() => {
+                    setSelectedPoints(new Set());
+                    setDrawnGeometry(null);
+                    setIsDrawing(false);
+                }}
+                isDrawing={isDrawing}
+                selectedCount={selectedPoints.size}
+                bufferDistance={bufferDistance}
+                onBufferChange={setBufferDistance}
+            />
+
+            <DrawingOverlay
+                viewState={viewState}
+                selectionMode={selectionMode}
+                isDrawing={isDrawing}
+                onGeometryComplete={handleGeometryComplete}
+                bufferDistance={bufferDistance}
             />
         </div>
     );
