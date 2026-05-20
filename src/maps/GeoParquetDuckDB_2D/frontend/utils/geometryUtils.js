@@ -107,11 +107,15 @@ export function pointInPolygon(point, polygon) {
 
 /**
  * Filter visible Arrow table rows by polygon geometry AND viewport bounds
- * Returns a Set of coordinate keys that are selected
+ * Returns an array of point IDs that are selected
  */
 export function filterPointsByGeometryInBounds(tableData, geometry, bounds) {
-    const selectedSet = new Set();
+    const selectedIds = [];
     const [minLon, minLat, maxLon, maxLat] = bounds;
+
+    let boundsCt = 0;
+    let geomCt = 0;
+    let pidCt = 0;
 
     for (let i = 0; i < tableData.numRows; i++) {
         try {
@@ -119,10 +123,17 @@ export function filterPointsByGeometryInBounds(tableData, geometry, bounds) {
             
             // First check: is point within viewport bounds?
             if (lon >= minLon && lon <= maxLon && lat >= minLat && lat <= maxLat) {
+                boundsCt++;
+                
                 // Second check: is point within drawn geometry?
                 if (pointInPolygon([lon, lat], geometry)) {
-                    const key = `${lon.toFixed(5)}_${lat.toFixed(5)}`;
-                    selectedSet.add(key);
+                    geomCt++;
+                    
+                    const pointId = tableData.getPointId(i);
+                    if (pointId !== null && pointId !== undefined && pointId !== '') {
+                        pidCt++;
+                        selectedIds.push(pointId);
+                    }
                 }
             }
         } catch (e) {
@@ -131,7 +142,7 @@ export function filterPointsByGeometryInBounds(tableData, geometry, bounds) {
         }
     }
 
-    return selectedSet;
+    return selectedIds;
 }
 
 

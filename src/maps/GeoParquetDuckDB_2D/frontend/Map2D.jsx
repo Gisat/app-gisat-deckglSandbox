@@ -61,8 +61,10 @@ function Map2D() {
     const [selectionMode, setSelectionMode] = useState('polygon');
     const [isDrawing, setIsDrawing] = useState(false);
     const [bufferDistance, setBufferDistance] = useState(100);
-    const [selectedPoints, setSelectedPoints] = useState(new Set());
+    const [selectedPointIds, setSelectedPointIds] = useState(new Set());  // Point IDs (pid column)
     const [drawnGeometry, setDrawnGeometry] = useState(null);
+    const [selectedFeatures, setSelectedFeatures] = useState(null); // Backend response with time-series data
+    const [isSelectingBackend, setIsSelectingBackend] = useState(false);
 
     const mapContainerRef = useRef(null);
 
@@ -73,11 +75,45 @@ function Map2D() {
 
         setDrawnGeometry(geometry);
         setIsDrawing(false);
-
-        // Filter currently visible points (only tiles that are cached)
-        const newSelected = new Set();
-        // This will be populated when the layers render below
     };
+
+    // Send selected point IDs to backend for time-series data
+    const queryBackendForSelection = (pointIds) => {
+        if (!pointIds || pointIds.length === 0) return;
+
+        setIsSelectingBackend(true);
+        
+        const payload = {
+            point_ids: Array.from(pointIds)  // Convert Set to array
+        };
+
+        fetch(`${DATA_API_URL.replace('/api/data', '')}/api/select`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        })
+            .then(res => res.json())
+            .then(data => {
+                setSelectedFeatures(data);
+            })
+            .catch(err => {
+                console.error('❌ Backend selection error:', err);
+                setSelectedFeatures(null);
+            })
+            .finally(() => setIsSelectingBackend(false));
+    };
+
+    // When selected point IDs change, query backend
+    useEffect(() => {
+        if (selectedPointIds.size > 0) {
+            queryBackendForSelection(selectedPointIds);
+        }
+    }, [selectedPointIds]);
+
+    // Track when geometry was last processed to avoid re-filtering every frame
+    const lastProcessedGeometryRef = useRef(null);
 
     // 🆕 HUD Update Logic
     useEffect(() => {
@@ -159,36 +195,46 @@ function Map2D() {
 
                 if (!data || data.length === 0) return null;
 
-                // When geometry is drawn, filter all visible table data for selected points
+                // Only compute expensive data key if there's actually a geometry to filter
                 if (drawnGeometry && !isDrawing) {
-                    const newSelected = new Set();
+                    // Track both geometry AND total row count to detect new data
+                    const geometryKey = JSON.stringify(drawnGeometry);
+                    const totalRows = data.reduce((sum, td) => sum + td.numRows, 0);
+                    const dataKey = `${geometryKey}-${totalRows}-${data.length}`;
                     
-                    // Get current viewport bounds
-                    const { longitude, latitude, zoom } = viewState;
-                    const containerWidth = mapContainerRef.current?.clientWidth || 800;
-                    const containerHeight = mapContainerRef.current?.clientHeight || 600;
-                    
-                    const viewport = new WebMercatorViewport({
-                        width: containerWidth,
-                        height: containerHeight,
-                        longitude,
-                        latitude,
-                        zoom
-                    });
-                    
-                    const bounds = viewport.getBounds();
-                    
-                    data.forEach(tableData => {
-                        // Only filter points within viewport bounds
-                        const filtered = filterPointsByGeometryInBounds(
-                            tableData, 
-                            drawnGeometry,
-                            bounds
-                        );
-                        filtered.forEach(key => newSelected.add(key));
-                    });
-                    if (newSelected.size > 0) {
-                        setSelectedPoints(newSelected);
+                    if (lastProcessedGeometryRef.current !== dataKey) {
+                        lastProcessedGeometryRef.current = dataKey;
+                        
+                        const newSelected = new Set();
+                        
+                        // Get current viewport bounds
+                        const { longitude, latitude, zoom } = viewState;
+                        const containerWidth = mapContainerRef.current?.clientWidth || 800;
+                        const containerHeight = mapContainerRef.current?.clientHeight || 600;
+                        
+                        const viewport = new WebMercatorViewport({
+                            width: containerWidth,
+                            height: containerHeight,
+                            longitude,
+                            latitude,
+                            zoom
+                        });
+                        
+                        const bounds = viewport.getBounds();
+                        
+                        // Filter all visible table data for selected points
+                        data.forEach(tableData => {
+                            const pointIds = filterPointsByGeometryInBounds(
+                                tableData, 
+                                drawnGeometry,
+                                bounds
+                            );
+                            pointIds.forEach(id => newSelected.add(id));
+                        });
+
+                        if (newSelected.size > 0) {
+                            setSelectedPointIds(newSelected);
+                        }
                     }
                 }
 
@@ -206,16 +252,15 @@ function Map2D() {
                         radiusUnits: 'pixels',
 
                         getFillColor: (rowIndex) => {
-                            const { lon, lat } = tableData.getPosition(rowIndex);
-                            const coordKey = `${lon.toFixed(5)}_${lat.toFixed(5)}`;
+                            const pointId = tableData.getPointId(rowIndex);
                             
                             // If point is selected, highlight it
-                            if (selectedPoints.has(coordKey)) {
+                            if (selectedPointIds.has(pointId)) {
                                 return [66, 212, 244, 255]; // Bright cyan
                             }
                             
                             // If there are selected points, dim unselected
-                            if (selectedPoints.size > 0) {
+                            if (selectedPointIds.size > 0) {
                                 return [200, 200, 200, 100]; // Dim gray
                             }
                             
@@ -226,7 +271,7 @@ function Map2D() {
                         },
 
                         updateTriggers: {
-                            getFillColor: [debouncedTimeIndex, mode, selectedPoints],
+                            getFillColor: [debouncedTimeIndex, mode, selectedPointIds],
                             getPosition: [mode],
                         },
 
@@ -278,12 +323,15 @@ function Map2D() {
                 onModeChange={setSelectionMode}
                 onDraw={() => setIsDrawing(true)}
                 onClear={() => {
-                    setSelectedPoints(new Set());
+                    setSelectedPointIds(new Set());
                     setDrawnGeometry(null);
+                    setSelectedFeatures(null);
                     setIsDrawing(false);
                 }}
                 isDrawing={isDrawing}
-                selectedCount={selectedPoints.size}
+                selectedCount={selectedPointIds.size}
+                backendFeatureCount={selectedFeatures?.features?.length || 0}
+                isLoadingBackend={isSelectingBackend}
                 bufferDistance={bufferDistance}
                 onBufferChange={setBufferDistance}
             />

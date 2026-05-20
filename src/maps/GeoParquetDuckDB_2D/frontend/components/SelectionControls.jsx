@@ -7,6 +7,8 @@ export function SelectionControls({
     onClear,
     isDrawing,
     selectedCount,
+    backendFeatureCount = 0,
+    isLoadingBackend = false,
     bufferDistance = 100,
     onBufferChange
 }) {
@@ -112,7 +114,7 @@ export function SelectionControls({
                 </button>
             </div>
 
-            {/* Selected Count */}
+            {/* Selected Count - Frontend */}
             {selectedCount > 0 && (
                 <div
                     style={{
@@ -122,10 +124,13 @@ export function SelectionControls({
                         textAlign: 'center',
                         fontSize: '11px',
                         color: '#0066cc',
-                        fontWeight: '600'
+                        fontWeight: '600',
+                        marginBottom: '8px'
                     }}
                 >
-                    {selectedCount} point{selectedCount !== 1 ? 's' : ''} selected
+                    {selectedCount} tile point{selectedCount !== 1 ? 's' : ''} selected
+                    {isLoadingBackend && ' • ⚡ Fetching...'}
+                    {backendFeatureCount > 0 && !isLoadingBackend && ` • ✅ ${backendFeatureCount}`}
                 </div>
             )}
         </div>
