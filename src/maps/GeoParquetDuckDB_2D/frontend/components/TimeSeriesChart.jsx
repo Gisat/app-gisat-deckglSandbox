@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ResponsiveScatterPlot } from '@nivo/scatterplot';
 import './TimeSeriesChart.css';
 
@@ -9,8 +9,12 @@ import './TimeSeriesChart.css';
  * X-axis: point index (0, 1, 2, ...)
  * Y-axis: mean_velocity for each point
  * One dot per selected point
+ * 
+ * Fires onPointHover callback when user hovers over/leaves points
  */
-export function TimeSeriesChart({ selectedFeatures, isLoading }) {
+export function TimeSeriesChart({ selectedFeatures, isLoading, onPointHover }) {
+    const [chartHoveredId, setChartHoveredId] = useState(null);
+
     if (!selectedFeatures || !selectedFeatures.features || selectedFeatures.features.length === 0) {
         return (
             <div className="DSI-TimeSeriesChart" style={{ display: 'none' }}>
@@ -44,6 +48,27 @@ export function TimeSeriesChart({ selectedFeatures, isLoading }) {
         },
     ];
 
+    // Handle point hover - Nivo calls this when mouse enters a node
+    const handleNodeMouseEnter = (node) => {
+        setChartHoveredId(node.data.id);
+        if (onPointHover && node.data) {
+            onPointHover(node.data.id);
+        }
+    };
+
+    // Handle point leave - Nivo calls this when mouse leaves a node
+    const handleNodeMouseLeave = () => {
+        setChartHoveredId(null);
+        if (onPointHover) {
+            onPointHover(null);
+        }
+    };
+
+    // Dynamic node sizing - larger when hovered
+    const getNodeSize = (node) => {
+        return chartHoveredId === node.data.id ? 14 : 8;
+    };
+
     return (
         <div className="DSI-TimeSeriesChart">
             {isLoading && (
@@ -76,8 +101,10 @@ export function TimeSeriesChart({ selectedFeatures, isLoading }) {
                         tickPadding: 5,
                     }}
                     colors={['#0066cc']}
-                    nodeSize={8}
+                    nodeSize={getNodeSize}
                     useMesh={false}
+                    onMouseEnter={handleNodeMouseEnter}
+                    onMouseLeave={handleNodeMouseLeave}
                     tooltip={({ node }) => (
                         <div className="DSI-TimeSeriesChart-tooltip">
                             <strong>{node.data.fid}</strong>

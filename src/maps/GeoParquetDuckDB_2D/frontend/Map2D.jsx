@@ -66,6 +66,7 @@ function Map2D() {
     const [drawnGeometry, setDrawnGeometry] = useState(null);
     const [selectedFeatures, setSelectedFeatures] = useState(null); // Backend response with time-series data
     const [isSelectingBackend, setIsSelectingBackend] = useState(false);
+    const [hoveredPointId, setHoveredPointId] = useState(null);
 
     const mapContainerRef = useRef(null);
 
@@ -255,6 +256,11 @@ function Map2D() {
                         getFillColor: (rowIndex) => {
                             const pointId = tableData.getPointId(rowIndex);
                             
+                            // If point is hovered, show bright red
+                            if (hoveredPointId === pointId) {
+                                return [255, 0, 0, 255]; // Bright red
+                            }
+                            
                             // If point is selected, highlight it
                             if (selectedPointIds.has(pointId)) {
                                 return [66, 212, 244, 255]; // Bright cyan
@@ -272,7 +278,7 @@ function Map2D() {
                         },
 
                         updateTriggers: {
-                            getFillColor: [debouncedTimeIndex, mode, selectedPointIds],
+                            getFillColor: [debouncedTimeIndex, mode, selectedPointIds, hoveredPointId],
                             getPosition: [mode],
                         },
 
@@ -357,6 +363,7 @@ function Map2D() {
                     <TimeSeriesChart 
                         selectedFeatures={selectedFeatures}
                         isLoading={isSelectingBackend}
+                        onPointHover={setHoveredPointId}
                     />
                 </div>
             )}
