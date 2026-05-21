@@ -6,9 +6,7 @@ import { scaleLinear } from 'd3-scale';
 
 import { HUD } from './components/HUD';
 import { PlaybackControls } from './components/PlaybackControls';
-import { SelectionControls } from './components/SelectionControls';
-import { DrawingOverlay } from './components/DrawingOverlay';
-import { TimeSeriesChart } from './components/TimeSeriesChart';
+import { SelectionControls, DrawingOverlay, TimeSeriesChart } from '../../../components/PointSelection';
 import DuckDBGeoParquetLayer from '../../../layers/DuckDBGeoParquetLayer';
 import { normalizeGeometry, filterPointsByGeometryInBounds } from './utils/geometryUtils';
 
