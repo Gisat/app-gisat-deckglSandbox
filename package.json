@@ -33,6 +33,7 @@
     "@luma.gl/core": "^9.2.6",
     "@luma.gl/engine": "^9.2.6",
     "@luma.gl/shadertools": "^9.2.6",
+    "@nivo/scatterplot": "^0.99.0",
     "@turf/buffer": "^7.3.5",
     "@turf/circle": "^7.3.5",
     "@turf/helpers": "^7.3.5",

@@ -8,6 +8,7 @@ import { HUD } from './components/HUD';
 import { PlaybackControls } from './components/PlaybackControls';
 import { SelectionControls } from './components/SelectionControls';
 import { DrawingOverlay } from './components/DrawingOverlay';
+import { TimeSeriesChart } from './components/TimeSeriesChart';
 import DuckDBGeoParquetLayer from '../../../layers/DuckDBGeoParquetLayer';
 import { normalizeGeometry, filterPointsByGeometryInBounds } from './utils/geometryUtils';
 
@@ -343,6 +344,22 @@ function Map2D() {
                 onGeometryComplete={handleGeometryComplete}
                 bufferDistance={bufferDistance}
             />
+
+            {selectedFeatures && (
+                <div style={{
+                    position: 'absolute',
+                    bottom: '10px',
+                    left: '10px',
+                    right: '10px',
+                    maxWidth: '600px',
+                    zIndex: 999,
+                }}>
+                    <TimeSeriesChart 
+                        selectedFeatures={selectedFeatures}
+                        isLoading={isSelectingBackend}
+                    />
+                </div>
+            )}
         </div>
     );
 }
