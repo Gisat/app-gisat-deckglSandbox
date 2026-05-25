@@ -421,8 +421,8 @@ function Map3D() {
                     touchRotate: !isDrawing,
                     keyboard: !isDrawing
                 }}
+                getCursor={() => isDrawing ? 'crosshair' : 'grab'}
                 layers={layers}
-                style={{ cursor: isDrawing ? 'crosshair' : 'grab' }}
                 onHover={(info) => {
                     if (info.layer?.id === 'terrain-layer' && info.coordinate) {
                         const coord = extractTerrainCoordinate(info);
@@ -444,15 +444,11 @@ function Map3D() {
                     }
                 }}
                 onClick={(info) => {
-                    console.log(`[Map3D onClick] Called: isDrawing=${isDrawing}, layer=${info.layer?.id}, hasCoord=${!!info.coordinate}`);
-                    
                     // In 3D mode with drawing active: use the correct 3D terrain coordinates
                     if (isDrawing) {
                         if (info.layer?.id === 'terrain-layer' && info.coordinate) {
                             const coord = extractTerrainCoordinate(info);
                             if (coord) {
-                                console.log(`[Map3D DrawClick] Got 3D terrain: Lat=${coord.latitude.toFixed(6)}, Lon=${coord.longitude.toFixed(6)}, Elev=${coord.elevation.toFixed(2)}m`);
-                                
                                 // Single click = add point
                                 window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
                                     detail: {
@@ -469,7 +465,6 @@ function Map3D() {
                     if (!isDrawing && info.layer?.id === 'terrain-layer' && info.coordinate) {
                         const coord = extractTerrainCoordinate(info);
                         if (coord) {
-                            console.log(`[Map3D Click] Lat=${coord.latitude.toFixed(6)}, Lon=${coord.longitude.toFixed(6)}, Elev=${coord.elevation.toFixed(2)}m`);
                             window.dispatchEvent(new CustomEvent('coordinateDebug', {
                                 detail: {
                                     type: 'click',

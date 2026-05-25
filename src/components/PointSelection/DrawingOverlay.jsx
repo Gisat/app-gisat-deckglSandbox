@@ -33,11 +33,8 @@ export function DrawingOverlay({
     // Helper function to finalize drawing
     const finalizeDraw = (coords) => {
         if (coords.length >= 2) {
-            console.log(`[DrawingOverlay] Finalizing drawing with ${coords.length} points`);
             onGeometryComplete?.(selectionMode, coords, bufferDistance);
             setLocalCoords([]);
-        } else {
-            console.log(`[DrawingOverlay] Not enough points to finalize (${coords.length} < 2)`);
         }
     };
 
@@ -66,16 +63,10 @@ export function DrawingOverlay({
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas || !isDrawing) {
-            console.log(`[DrawingOverlay] useEffect skipped: canvas=${canvas?'yes':'no'}, isDrawing=${isDrawing}`);
             return;
         }
 
-        console.log(`[DrawingOverlay] Setting up event handlers, is3D=${is3D}, isDrawing=${isDrawing}`);
-
         const handleMouseMove = (e) => {
-            // Prevent DeckGL from processing mouse move during drawing
-            e.stopPropagation();
-            
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
@@ -100,22 +91,17 @@ export function DrawingOverlay({
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
 
-            console.log(`[DrawingOverlay] Screen coords: (${x.toFixed(1)}, ${y.toFixed(1)}), canvas size: ${canvas.width}x${canvas.height}`);
-
             const coord = screenToGeo(viewState, x, y, canvas.width, canvas.height);
-            console.log(`[DrawingOverlay] screenToGeo returned:`, coord);
 
             if (is3D) {
                 // 3D mode: accumulate {geo, screenPos, elevation} objects
                 setLocalCoords(prev => {
                     const newCoords = [...prev, coord];
-                    console.log(`[DrawingOverlay] 3D: Added point, total=${newCoords.length}, coord=`, coord);
 
                     if (selectionMode === 'circle' && newCoords.length === 2) {
                         // Circle complete after 2 clicks
                         // Extract just geo for normalizeGeometry
                         const geoCoords = newCoords.map(c => c.geo);
-                        console.log(`[DrawingOverlay] Circle complete, calling onGeometryComplete with:`, geoCoords);
                         onGeometryComplete?.('circle', geoCoords, bufferDistance);
                         return [];
                     }
@@ -126,11 +112,9 @@ export function DrawingOverlay({
                 // 2D mode: accumulate plain [lon, lat] arrays
                 setLocalCoords(prev => {
                     const newCoords = [...prev, coord.geo];
-                    console.log(`[DrawingOverlay] 2D: Added point, total=${newCoords.length}, coord=`, coord.geo);
 
                     if (selectionMode === 'circle' && newCoords.length === 2) {
                         // Circle complete after 2 clicks
-                        console.log(`[DrawingOverlay] Circle complete, calling onGeometryComplete with:`, newCoords);
                         onGeometryComplete?.('circle', newCoords, bufferDistance);
                         return [];
                     }
@@ -146,26 +130,29 @@ export function DrawingOverlay({
             
             // Both 2D and 3D: double-click to finish drawing
             if (displayCoords.length >= 2) {
-                console.log(`[DrawingOverlay] Double-click - completing drawing with ${displayCoords.length} points`);
                 onGeometryComplete?.(selectionMode, displayCoords, bufferDistance);
                 setLocalCoords([]);
             }
         };
 
-        canvas.addEventListener('mousemove', handleMouseMove);
-        
-        // In 2D mode: use canvas clicks
-        // In 3D mode: use DeckGL onClick (which has correct 3D coordinates)
+        // In 2D: attach to canvas
+        // In 3D: attach to document since canvas has pointerEvents:none
         if (!is3D) {
+            canvas.addEventListener('mousemove', handleMouseMove);
             canvas.addEventListener('click', handleClick);
             canvas.addEventListener('dblclick', handleDoubleClick);
+        } else {
+            // In 3D: listen to document mousemove for cursor preview
+            document.addEventListener('mousemove', handleMouseMove);
         }
 
         return () => {
-            canvas.removeEventListener('mousemove', handleMouseMove);
             if (!is3D) {
+                canvas.removeEventListener('mousemove', handleMouseMove);
                 canvas.removeEventListener('click', handleClick);
                 canvas.removeEventListener('dblclick', handleDoubleClick);
+            } else {
+                document.removeEventListener('mousemove', handleMouseMove);
             }
         };
     }, [isDrawing, displayCoords, selectionMode, viewState, onGeometryComplete, bufferDistance, is3D]);
@@ -193,25 +180,19 @@ export function DrawingOverlay({
     // In 3D mode: listen for DeckGL onClick coordinates from Map3D
     useEffect(() => {
         if (!is3D || !isDrawing) {
-            console.log(`[DrawingOverlay] 3D listener setup skipped: is3D=${is3D}, isDrawing=${isDrawing}`);
             return;
         }
 
-        console.log(`[DrawingOverlay] Setting up 3D click listener...`);
-
         const handleMap3DClick = (event) => {
             const { geo, screenPos, elevation } = event.detail;
-            console.log(`[DrawingOverlay] Received map3dDrawingClick: geo=[${geo[0].toFixed(6)}, ${geo[1].toFixed(6)}], elev=${elevation?.toFixed(2)}`);
             
             setLocalCoords(prev => {
                 const coord = { geo, screenPos, elevation };
                 const newCoords = [...prev, coord];
-                console.log(`[DrawingOverlay] 3D click processed: total=${newCoords.length}`);
 
                 if (selectionMode === 'circle' && newCoords.length === 2) {
                     // Circle complete after 2 clicks
                     const geoCoords = newCoords.map(c => c.geo);
-                    console.log(`[DrawingOverlay] Circle complete, calling onGeometryComplete`);
                     onGeometryComplete?.(selectionMode, geoCoords, bufferDistance);
                     return [];
                 }
@@ -221,11 +202,9 @@ export function DrawingOverlay({
         };
 
         window.addEventListener('map3dDrawingClick', handleMap3DClick);
-        console.log(`[DrawingOverlay] 3D click listener attached`);
         
         return () => {
             window.removeEventListener('map3dDrawingClick', handleMap3DClick);
-            console.log(`[DrawingOverlay] 3D click listener removed`);
         };
     }, [is3D, isDrawing, selectionMode, bufferDistance, onGeometryComplete]);
 
@@ -238,7 +217,9 @@ export function DrawingOverlay({
                 left: 0,
                 width: '100%',
                 height: '100%',
-                cursor: isDrawing ? 'crosshair' : 'default',
+                // In 2D: canvas captures clicks, show cursor
+                // In 3D: canvas has pointerEvents:none, inherit cursor from parent
+                cursor: (isDrawing && !is3D) ? 'crosshair' : 'inherit',
                 // In 2D: canvas needs to capture clicks
                 // In 3D: canvas must have pointerEvents:none so clicks reach DeckGL onClick handler
                 pointerEvents: (isDrawing && !is3D) ? 'auto' : 'none'
