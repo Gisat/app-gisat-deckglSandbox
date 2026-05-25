@@ -83,8 +83,6 @@ export function DrawingOverlay({
             // Stop DeckGL from processing this click
             e.stopPropagation();
             
-            console.log(`[DrawingOverlay] Click detected, is3D=${is3D}`);
-            
             // Both 2D and 3D use canvas click handling
             // The difference: screenToGeo intelligently uses terrain picking in 3D
             const rect = canvas.getBoundingClientRect();
@@ -142,8 +140,9 @@ export function DrawingOverlay({
             canvas.addEventListener('click', handleClick);
             canvas.addEventListener('dblclick', handleDoubleClick);
         } else {
-            // In 3D: listen to document mousemove for cursor preview
+            // In 3D: listen to document for mousemove and double-click
             document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('dblclick', handleDoubleClick);
         }
 
         return () => {
@@ -153,6 +152,7 @@ export function DrawingOverlay({
                 canvas.removeEventListener('dblclick', handleDoubleClick);
             } else {
                 document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('dblclick', handleDoubleClick);
             }
         };
     }, [isDrawing, displayCoords, selectionMode, viewState, onGeometryComplete, bufferDistance, is3D]);
@@ -169,7 +169,6 @@ export function DrawingOverlay({
         if (!isDrawing) return;
 
         const handleFinalize = () => {
-            console.log(`[DrawingOverlay] Received finalizeDrawing event`);
             finalizeDraw(localCoords);
         };
 

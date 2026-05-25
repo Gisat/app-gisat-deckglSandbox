@@ -264,8 +264,6 @@ function Map3D() {
                             // Use terrain picking for bounds calculation
                             // Try to pick multiple points to get better coverage
                             try {
-                                console.log(`[Map3D] Attempting terrain-aware bounds with pitch=${pitch}`);
-                                
                                 // Pick from a grid of screen points instead of just corners
                                 const gridPoints = [];
                                 const gridSize = 5; // 5x5 grid
@@ -280,8 +278,6 @@ function Map3D() {
                                     }
                                 }
                                 
-                                console.log(`[Map3D] Terrain picks from grid: ${gridPoints.length} hits out of ${(gridSize+1)*(gridSize+1)}`);
-                                
                                 if (gridPoints.length > 0) {
                                     // Calculate bounds from all grid hits
                                     const lons = gridPoints.map(p => p[0]);
@@ -295,24 +291,19 @@ function Map3D() {
                                     topRight = [maxLon, maxLat];
                                     bottomLeft = [minLon, minLat];
                                     bottomRight = [maxLon, minLat];
-                                    
-                                    console.log(`[Map3D] Grid-based bounds calculated from ${gridPoints.length} picks`);
                                 } else {
-                                    console.log(`[Map3D] No terrain picks from grid, falling back to z=0`);
                                     topLeft = viewport.unproject([0, 0], { targetZ: 0 });
                                     topRight = viewport.unproject([containerWidth, 0], { targetZ: 0 });
                                     bottomLeft = viewport.unproject([0, containerHeight], { targetZ: 0 });
                                     bottomRight = viewport.unproject([containerWidth, containerHeight], { targetZ: 0 });
                                 }
                             } catch (err) {
-                                console.log(`[Map3D] Terrain bounds calc failed: ${err.message}, using z=0 fallback`);
                                 topLeft = viewport.unproject([0, 0], { targetZ: 0 });
                                 topRight = viewport.unproject([containerWidth, 0], { targetZ: 0 });
                                 bottomLeft = viewport.unproject([0, containerHeight], { targetZ: 0 });
                                 bottomRight = viewport.unproject([containerWidth, containerHeight], { targetZ: 0 });
                             }
                         } else {
-                            console.log(`[Map3D] Using flat bounds (pitch=${pitch}, deckGLRef=${deckGLRef.current ? 'set' : 'not set'})`);
                             // Flat view: simple unproject
                             topLeft = viewport.unproject([0, 0], { targetZ: 0 });
                             topRight = viewport.unproject([containerWidth, 0], { targetZ: 0 });
@@ -326,9 +317,6 @@ function Map3D() {
                         const maxLat = Math.max(topLeft[1], topRight[1], bottomLeft[1], bottomRight[1]);
                         
                         const bounds = [minLon, minLat, maxLon, maxLat];
-                        
-                        console.log(`[Map3D] Bounds: [${minLon.toFixed(6)}, ${minLat.toFixed(6)}, ${maxLon.toFixed(6)}, ${maxLat.toFixed(6)}]`);
-                        console.log(`[Map3D] Drawn geometry: ${JSON.stringify(drawnGeometry).substring(0, 100)}...`);
                         
                         // Filter all visible table data for selected points
                         data.forEach(tableData => {
@@ -475,6 +463,15 @@ function Map3D() {
                                 }
                             }));
                         }
+                    }
+                }}
+                onDoubleClick={(info) => {
+                    // Prevent DeckGL zoom on double-click during drawing
+                    // (DrawingOverlay's document dblclick listener handles finalization)
+                    if (isDrawing) {
+                        info.rightButton = false;
+                        info.leftButton = false;
+                        info.middleButton = false;
                     }
                 }}
             />
