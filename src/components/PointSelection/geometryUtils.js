@@ -113,16 +113,6 @@ export function filterPointsByGeometryInBounds(tableData, geometry, bounds) {
     const selectedIds = [];
     const [minLon, minLat, maxLon, maxLat] = bounds;
 
-    let boundsCt = 0;
-    let geomCt = 0;
-    let pidCt = 0;
-
-    // Debug: log bounds
-    if (tableData.numRows > 0) {
-        console.log('🎯 Geometry filtering - bounds:', {minLon, minLat, maxLon, maxLat});
-        console.log('🎯 Geometry filtering - geometry type:', geometry.type);
-    }
-
     for (let i = 0; i < tableData.numRows; i++) {
         try {
             const pos = tableData.getPosition(i);
@@ -130,15 +120,10 @@ export function filterPointsByGeometryInBounds(tableData, geometry, bounds) {
             
             // First check: is point within viewport bounds?
             if (lon >= minLon && lon <= maxLon && lat >= minLat && lat <= maxLat) {
-                boundsCt++;
-                
                 // Second check: is point within drawn geometry?
                 if (pointInPolygon([lon, lat], geometry)) {
-                    geomCt++;
-                    
                     const pointId = tableData.getPointId(i);
                     if (pointId !== null && pointId !== undefined && pointId !== '') {
-                        pidCt++;
                         selectedIds.push(pointId);
                     }
                 }
@@ -148,8 +133,6 @@ export function filterPointsByGeometryInBounds(tableData, geometry, bounds) {
             break;
         }
     }
-    
-    console.log(`🎯 Geometry filtering summary: checked=${tableData.numRows}, inBounds=${boundsCt}, inGeometry=${geomCt}, withValidIds=${pidCt}, selected=${selectedIds.length}`);
     
     return selectedIds;
 }
