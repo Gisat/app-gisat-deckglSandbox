@@ -11,7 +11,6 @@ import {_TerrainExtension as TerrainExtension } from "@deck.gl/extensions";
 import { HUD } from './components/HUD';
 import { PlaybackControls } from './components/PlaybackControls';
 import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../../components/PointSelection';
-import { CoordinateDebugger } from '../../../components/CoordinateDebugger';
 import DuckDBGeoParquetLayer from '../../../layers/DuckDBGeoParquetLayer';
 import { setDeckGLInstance } from '../../../components/PointSelection/drawingUtils';
 
@@ -402,24 +401,7 @@ function Map3D() {
                 getCursor={() => isDrawing ? 'crosshair' : 'grab'}
                 layers={layers}
                 onHover={(info) => {
-                    if (info.layer?.id === 'terrain-layer' && info.coordinate) {
-                        const coord = extractTerrainCoordinate(info);
-                        // console.log(`[Map3D Hover] Raw coordinate: [${info.coordinate[0]?.toFixed(6)}, ${info.coordinate[1]?.toFixed(6)}, ${info.coordinate[2]?.toFixed(2)}]`);
-                        if (coord) {
-                            // console.log(`[Map3D Hover] Extracted: Lat=${coord.latitude.toFixed(6)}, Lon=${coord.longitude.toFixed(6)}, Elev=${coord.elevation.toFixed(2)}m`);
-                            window.dispatchEvent(new CustomEvent('coordinateDebug', {
-                                detail: {
-                                    type: 'hover',
-                                    latitude: coord.latitude,
-                                    longitude: coord.longitude,
-                                    elevation: coord.elevation,
-                                    screen: [info.x, info.y]
-                                }
-                            }));
-                        } else {
-                            // console.log(`[Map3D Hover] extractTerrainCoordinate returned null`);
-                        }
-                    }
+                    // Hover is not used for drawing
                 }}
                 onClick={(info) => {
                     // In 3D mode with drawing active: use the correct 3D terrain coordinates
@@ -436,22 +418,6 @@ function Map3D() {
                                     }
                                 }));
                             }
-                        }
-                    }
-                    
-                    // Debug display for non-drawing clicks
-                    if (!isDrawing && info.layer?.id === 'terrain-layer' && info.coordinate) {
-                        const coord = extractTerrainCoordinate(info);
-                        if (coord) {
-                            window.dispatchEvent(new CustomEvent('coordinateDebug', {
-                                detail: {
-                                    type: 'click',
-                                    latitude: coord.latitude,
-                                    longitude: coord.longitude,
-                                    elevation: coord.elevation,
-                                    screen: [info.x, info.y]
-                                }
-                            }));
                         }
                     }
                 }}
@@ -532,8 +498,6 @@ function Map3D() {
                     />
                 </div>
             )}
-
-            <CoordinateDebugger />
         </div>
     );
 }
