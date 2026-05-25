@@ -1,13 +1,31 @@
 import { WebMercatorViewport } from '@deck.gl/core';
+import { extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
 
 /**
- * Convert screen coordinates to geographic coordinates
+ * Global reference to DeckGL instance - set by Map3D component
+ * Used to pick objects from the rendered scene to find actual 3D coordinates
+ */
+let deckGLInstance = null;
+
+/**
+ * Set the DeckGL reference (called by Map3D component)
+ */
+export function setDeckGLInstance(deckGL) {
+    deckGLInstance = deckGL;
+    console.log(`[drawingUtils] setDeckGLInstance called, instance is now:`, deckGL ? 'set' : 'null');
+}
+
+/**
+ * Convert screen coordinates to geographic coordinates.
+ * When terrain is visible (pitch > 0) and deckGL instance available, uses 3D terrain picking.
+ * Otherwise uses viewport unprojection.
+ * 
  * @param {Object} viewState - Deck.GL view state
- * @param {number} x - Screen X coordinate
- * @param {number} y - Screen Y coordinate
+ * @param {number} x - Screen X coordinate (click position)
+ * @param {number} y - Screen Y coordinate (click position)
  * @param {number} canvasWidth - Canvas width
  * @param {number} canvasHeight - Canvas height
- * @returns {[number, number]} [lon, lat]
+ * @returns {Object} { geo: [lon, lat], screenPos: [x, y], elevation } 
  */
 export function screenToGeo(viewState, x, y, canvasWidth, canvasHeight) {
     const viewport = new WebMercatorViewport({
@@ -15,7 +33,98 @@ export function screenToGeo(viewState, x, y, canvasWidth, canvasHeight) {
         width: canvasWidth,
         height: canvasHeight
     });
-    return viewport.unproject([x, y]);
+    
+    console.log(`[drawingUtils] screenToGeo at screen (${x.toFixed(1)}, ${y.toFixed(1)}), pitch=${viewState.pitch}`);
+    
+    // For flat views, use simple viewport unprojection
+    if (viewState.pitch <= 0) {
+        const coord = viewport.unproject([x, y], { targetZ: 0 });
+        console.log(`[drawingUtils] Flat view: unproject [${coord[0].toFixed(6)}, ${coord[1].toFixed(6)}]`);
+        return { geo: coord, screenPos: [x, y], elevation: null };
+    }
+    
+    // For 3D terrain views, try to pick the terrain layer using 3D ray-casting
+    if (!deckGLInstance) {
+        console.log(`[drawingUtils] 3D view but deckGLInstance not set, falling back to z=0`);
+        const fallback = viewport.unproject([x, y], { targetZ: 0 });
+        return { geo: fallback, screenPos: [x, y], elevation: null };
+    }
+    
+    try {
+        console.log(`[drawingUtils] Attempting 3D terrain picking at screen (${x.toFixed(0)}, ${y.toFixed(0)})`);
+        
+        // Try terrain layer picking with explicit layer ID first
+        let pick = deckGLInstance.pickObject({
+            x,
+            y,
+            layerIds: ['terrain-layer']
+        });
+        
+        console.log(`[drawingUtils] pickObject with layerIds=['terrain-layer']:`, {
+            found: !!pick,
+            hasCoordinate: !!pick?.coordinate,
+            layerId: pick?.layer?.id
+        });
+        
+        // If that didn't work, try all layers
+        if (!pick?.coordinate) {
+            console.log(`[drawingUtils] No terrain hit - trying all layers...`);
+            pick = deckGLInstance.pickObject({
+                x,
+                y,
+                radius: 1
+            });
+            console.log(`[drawingUtils] pickObject all layers:`, {
+                found: !!pick,
+                hasCoordinate: !!pick?.coordinate,
+                layerId: pick?.layer?.id,
+                coordinate: pick?.coordinate ? `[${pick.coordinate[0]?.toFixed(6)}, ${pick.coordinate[1]?.toFixed(6)}, ${pick.coordinate[2]?.toFixed(2)}]` : 'null'
+            });
+        }
+        
+        if (pick?.coordinate) {
+            console.log(`[drawingUtils] Got coordinate from pick:`, pick.coordinate);
+            
+            // Use extractTerrainCoordinate to parse the result
+            const terrainCoord = extractTerrainCoordinate(pick);
+            console.log(`[drawingUtils] extractTerrainCoordinate result:`, terrainCoord);
+            
+            if (terrainCoord) {
+                console.log(
+                    `[drawingUtils] ✅ SUCCESS - Terrain: ` +
+                    `lon=${terrainCoord.longitude.toFixed(6)}, ` +
+                    `lat=${terrainCoord.latitude.toFixed(6)}, ` +
+                    `elevation=${terrainCoord.elevation?.toFixed(2) || 'N/A'}m`
+                );
+                return {
+                    geo: [terrainCoord.longitude, terrainCoord.latitude],
+                    screenPos: [x, y],
+                    elevation: terrainCoord.elevation
+                };
+            }
+            
+            // If extractTerrainCoordinate failed, try direct access as fallback
+            console.log(`[drawingUtils] extractTerrainCoordinate failed, trying direct array access`);
+            if (Array.isArray(pick.coordinate) && pick.coordinate.length >= 3) {
+                console.log(`[drawingUtils] ⚠️  Using raw coordinate (no extraction): [${pick.coordinate[0]}, ${pick.coordinate[1]}, ${pick.coordinate[2]}]`);
+                return {
+                    geo: [pick.coordinate[0], pick.coordinate[1]],
+                    screenPos: [x, y],
+                    elevation: pick.coordinate[2]
+                };
+            }
+        }
+        
+        console.log(`[drawingUtils] No valid pick result - will use z=0 fallback`);
+        
+    } catch (err) {
+        console.error(`[drawingUtils] ❌ Terrain picking error:`, err.message);
+    }
+    
+    // Fallback: Use viewport unprojection at z=0
+    const fallbackCoord = viewport.unproject([x, y], { targetZ: 0 });
+    console.log(`[drawingUtils] ⚠️  FALLBACK to z=0: [${fallbackCoord[0].toFixed(6)}, ${fallbackCoord[1].toFixed(6)}] (should have used terrain!)`);
+    return { geo: fallbackCoord, screenPos: [x, y], elevation: null };
 }
 
 /**
@@ -54,7 +163,16 @@ export function redrawCanvas(canvas, coords, mode, viewState, cursorX = null, cu
     ctx.lineWidth = 2;
     ctx.fillStyle = 'rgba(0, 102, 204, 0.1)';
 
-    const screenCoords = coords.map(c => geoToScreen(viewState, c, canvas.width, canvas.height));
+    // Convert all coordinates to screen positions
+    // For 3D views with terrain, we must use the stored screen positions, not reproject
+    const screenCoords = coords.map(c => {
+        // If this is a stored coordinate object with screenPos, use it
+        if (c.screenPos !== undefined) {
+            return c.screenPos;
+        }
+        // Otherwise convert using standard geo-to-screen (works for flat views)
+        return geoToScreen(viewState, c, canvas.width, canvas.height);
+    });
 
     if (mode === 'circle' && coords.length >= 1) {
         const [cx, cy] = screenCoords[0];

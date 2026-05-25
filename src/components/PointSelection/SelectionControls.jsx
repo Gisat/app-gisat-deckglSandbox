@@ -8,6 +8,7 @@ import React from 'react';
  * @param {string} props.selectionMode - Current mode: 'polygon', 'circle', 'line'
  * @param {Function} props.onModeChange - Called with new mode
  * @param {Function} props.onDraw - Called to start drawing
+ * @param {Function} props.onFinish - Called to finish drawing
  * @param {Function} props.onClear - Called to clear selection
  * @param {boolean} props.isDrawing - Whether drawing is active
  * @param {number} props.selectedCount - Number of selected points
@@ -20,6 +21,7 @@ export function SelectionControls({
     selectionMode,
     onModeChange,
     onDraw,
+    onFinish,
     onClear,
     isDrawing,
     selectedCount,
@@ -96,23 +98,41 @@ export function SelectionControls({
 
             {/* Action Buttons */}
             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                <button
-                    onClick={onDraw}
-                    disabled={isDrawing}
-                    style={{
-                        flex: 1,
-                        padding: '8px 12px',
-                        background: isDrawing ? '#0066cc' : '#f0f0f0',
-                        color: isDrawing ? '#fff' : '#000',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: isDrawing ? 'not-allowed' : 'pointer',
-                        fontSize: '11px',
-                        fontWeight: '600'
-                    }}
-                >
-                    {isDrawing ? 'Drawing...' : 'Draw'}
-                </button>
+                {isDrawing ? (
+                    <button
+                        onClick={onFinish}
+                        style={{
+                            flex: 1,
+                            padding: '8px 12px',
+                            background: '#28a745',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontWeight: '600'
+                        }}
+                    >
+                        Finish
+                    </button>
+                ) : (
+                    <button
+                        onClick={onDraw}
+                        style={{
+                            flex: 1,
+                            padding: '8px 12px',
+                            background: '#f0f0f0',
+                            color: '#000',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontWeight: '600'
+                        }}
+                    >
+                        Draw
+                    </button>
+                )}
                 <button
                     onClick={onClear}
                     style={{

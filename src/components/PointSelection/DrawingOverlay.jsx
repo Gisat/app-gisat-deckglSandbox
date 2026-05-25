@@ -1,27 +1,47 @@
-import React, { useRef, useEffect } from 'react';
-import { screenToGeo, geoToScreen, redrawCanvas } from './drawingUtils';
+import { useRef, useEffect, useState } from 'react';
+import { screenToGeo, redrawCanvas } from './drawingUtils';
 
 /**
- * DrawingOverlay - Reusable component for drawing selection geometries on canvas
- * Supports polygon, circle, and line modes
+ * DrawingOverlay - Canvas overlay for drawing selection geometries
+ * Works identically for both 2D and 3D modes
  * 
  * @param {Object} props
  * @param {Object} props.viewState - Deck.GL view state
  * @param {string} props.selectionMode - 'polygon', 'circle', or 'line'
  * @param {boolean} props.isDrawing - Whether drawing is active
- * @param {Function} props.onGeometryComplete - Called with (mode, coords, bufferDistance?)
+ * @param {Function} props.onGeometryComplete - Called with (mode, coords, bufferDist) when drawing completes
  * @param {number} props.bufferDistance - Buffer distance for line mode
+ * @param {boolean} props.is3D - Whether we're in 3D mode (uses terrain picking instead of flat projection)
  */
 export function DrawingOverlay({
     viewState,
     selectionMode,
     isDrawing,
     onGeometryComplete,
-    bufferDistance
+    bufferDistance,
+    is3D = false
 }) {
     const canvasRef = useRef(null);
-    const drawingStateRef = useRef({ coords: [], isActive: false });
+    const lastCursorRef = useRef({ x: null, y: null });
+    const [localCoords, setLocalCoords] = useState([]); // For 2D mode: local coordinate state
+    const lastClickTimeRef = useRef(0);  // For tracking double-click in 3D
 
+    // In both 2D and 3D, use localCoords for drawing
+    // The difference is only in what data format we store (coordinates only vs with elevation)
+    const displayCoords = localCoords;
+
+    // Helper function to finalize drawing
+    const finalizeDraw = (coords) => {
+        if (coords.length >= 2) {
+            console.log(`[DrawingOverlay] Finalizing drawing with ${coords.length} points`);
+            onGeometryComplete?.(selectionMode, coords, bufferDistance);
+            setLocalCoords([]);
+        } else {
+            console.log(`[DrawingOverlay] Not enough points to finalize (${coords.length} < 2)`);
+        }
+    };
+
+    // Redraw whenever drawing state changes
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -31,83 +51,183 @@ export function DrawingOverlay({
         canvas.width = rect.width;
         canvas.height = rect.height;
 
-        if (!isDrawing) {
-            // Clear canvas when not drawing
+        if (!isDrawing || !displayCoords.length) {
+            // Clear canvas when not drawing or no coords
             const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawingStateRef.current = { coords: [], isActive: false };
             return;
         }
 
-        const handleMouseMove = e => {
-            if (!drawingStateRef.current.isActive) return;
+        // Redraw with current coordinates and cursor preview
+        redrawCanvas(canvas, displayCoords, selectionMode, viewState, lastCursorRef.current.x, lastCursorRef.current.y);
+    }, [isDrawing, displayCoords, selectionMode, viewState]);
 
+    // Handle interactions
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas || !isDrawing) {
+            console.log(`[DrawingOverlay] useEffect skipped: canvas=${canvas?'yes':'no'}, isDrawing=${isDrawing}`);
+            return;
+        }
+
+        console.log(`[DrawingOverlay] Setting up event handlers, is3D=${is3D}, isDrawing=${isDrawing}`);
+
+        const handleMouseMove = (e) => {
+            // Prevent DeckGL from processing mouse move during drawing
+            e.stopPropagation();
+            
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-
-            const state = drawingStateRef.current;
-            redrawCanvas(canvas, state.coords, selectionMode, viewState, x, y);
-        };
-
-        const handleClick = e => {
-            if (!drawingStateRef.current.isActive) return;
-
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-
-            const coord = screenToGeo(viewState, x, y, canvas.width, canvas.height);
-            const state = drawingStateRef.current;
-
-            if (selectionMode === 'circle') {
-                // Circle: first click = center, second click = edge
-                if (state.coords.length < 2) {
-                    state.coords.push(coord);
-                    if (state.coords.length === 2) {
-                        // Complete circle
-                        onGeometryComplete('circle', state.coords);
-                        state.coords = [];
-                        state.isActive = false;
-                    }
-                }
-            } else if (selectionMode === 'polygon') {
-                // Polygon: accumulate clicks, double-click to close
-                state.coords.push(coord);
-                redrawCanvas(canvas, state.coords, selectionMode, viewState);
-            } else if (selectionMode === 'line') {
-                // Line: accumulate clicks, double-click to complete
-                state.coords.push(coord);
-                redrawCanvas(canvas, state.coords, selectionMode, viewState);
+            
+            lastCursorRef.current = { x, y };
+            
+            // Trigger redraw with cursor preview
+            if (displayCoords.length > 0) {
+                redrawCanvas(canvas, displayCoords, selectionMode, viewState, x, y);
             }
         };
 
-        const handleDoubleClick = e => {
-            if (!drawingStateRef.current.isActive || drawingStateRef.current.coords.length < 2) return;
+        const handleClick = (e) => {
+            // Stop DeckGL from processing this click
+            e.stopPropagation();
+            
+            console.log(`[DrawingOverlay] Click detected, is3D=${is3D}`);
+            
+            // Both 2D and 3D use canvas click handling
+            // The difference: screenToGeo intelligently uses terrain picking in 3D
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
 
-            const state = drawingStateRef.current;
-            onGeometryComplete(selectionMode, state.coords, bufferDistance);
-            state.coords = [];
-            state.isActive = false;
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            console.log(`[DrawingOverlay] Screen coords: (${x.toFixed(1)}, ${y.toFixed(1)}), canvas size: ${canvas.width}x${canvas.height}`);
+
+            const coord = screenToGeo(viewState, x, y, canvas.width, canvas.height);
+            console.log(`[DrawingOverlay] screenToGeo returned:`, coord);
+
+            if (is3D) {
+                // 3D mode: accumulate {geo, screenPos, elevation} objects
+                setLocalCoords(prev => {
+                    const newCoords = [...prev, coord];
+                    console.log(`[DrawingOverlay] 3D: Added point, total=${newCoords.length}, coord=`, coord);
+
+                    if (selectionMode === 'circle' && newCoords.length === 2) {
+                        // Circle complete after 2 clicks
+                        // Extract just geo for normalizeGeometry
+                        const geoCoords = newCoords.map(c => c.geo);
+                        console.log(`[DrawingOverlay] Circle complete, calling onGeometryComplete with:`, geoCoords);
+                        onGeometryComplete?.('circle', geoCoords, bufferDistance);
+                        return [];
+                    }
+                    
+                    return newCoords;
+                });
+            } else {
+                // 2D mode: accumulate plain [lon, lat] arrays
+                setLocalCoords(prev => {
+                    const newCoords = [...prev, coord.geo];
+                    console.log(`[DrawingOverlay] 2D: Added point, total=${newCoords.length}, coord=`, coord.geo);
+
+                    if (selectionMode === 'circle' && newCoords.length === 2) {
+                        // Circle complete after 2 clicks
+                        console.log(`[DrawingOverlay] Circle complete, calling onGeometryComplete with:`, newCoords);
+                        onGeometryComplete?.('circle', newCoords, bufferDistance);
+                        return [];
+                    }
+                    
+                    return newCoords;
+                });
+            }
         };
 
-        // Only activate drawing on first interaction
-        if (!drawingStateRef.current.isActive) {
-            drawingStateRef.current.isActive = true;
-        }
+        const handleDoubleClick = (e) => {
+            // Prevent DeckGL zoom
+            e.stopPropagation();
+            
+            // Both 2D and 3D: double-click to finish drawing
+            if (displayCoords.length >= 2) {
+                console.log(`[DrawingOverlay] Double-click - completing drawing with ${displayCoords.length} points`);
+                onGeometryComplete?.(selectionMode, displayCoords, bufferDistance);
+                setLocalCoords([]);
+            }
+        };
 
         canvas.addEventListener('mousemove', handleMouseMove);
-        canvas.addEventListener('click', handleClick);
-        canvas.addEventListener('dblclick', handleDoubleClick);
+        
+        // In 2D mode: use canvas clicks
+        // In 3D mode: use DeckGL onClick (which has correct 3D coordinates)
+        if (!is3D) {
+            canvas.addEventListener('click', handleClick);
+            canvas.addEventListener('dblclick', handleDoubleClick);
+        }
 
         return () => {
             canvas.removeEventListener('mousemove', handleMouseMove);
-            canvas.removeEventListener('click', handleClick);
-            canvas.removeEventListener('dblclick', handleDoubleClick);
+            if (!is3D) {
+                canvas.removeEventListener('click', handleClick);
+                canvas.removeEventListener('dblclick', handleDoubleClick);
+            }
         };
-    }, [isDrawing, selectionMode, viewState, bufferDistance, onGeometryComplete]);
+    }, [isDrawing, displayCoords, selectionMode, viewState, onGeometryComplete, bufferDistance, is3D]);
+
+    // Clear local coords when drawing stops
+    useEffect(() => {
+        if (!isDrawing) {
+            setLocalCoords([]);
+        }
+    }, [isDrawing]);
+
+    // Listen for finalize event (from finish button)
+    useEffect(() => {
+        if (!isDrawing) return;
+
+        const handleFinalize = () => {
+            console.log(`[DrawingOverlay] Received finalizeDrawing event`);
+            finalizeDraw(localCoords);
+        };
+
+        window.addEventListener('finalizeDrawing', handleFinalize);
+        return () => window.removeEventListener('finalizeDrawing', handleFinalize);
+    }, [isDrawing, localCoords]);
+
+    // In 3D mode: listen for DeckGL onClick coordinates from Map3D
+    useEffect(() => {
+        if (!is3D || !isDrawing) {
+            console.log(`[DrawingOverlay] 3D listener setup skipped: is3D=${is3D}, isDrawing=${isDrawing}`);
+            return;
+        }
+
+        console.log(`[DrawingOverlay] Setting up 3D click listener...`);
+
+        const handleMap3DClick = (event) => {
+            const { geo, screenPos, elevation } = event.detail;
+            console.log(`[DrawingOverlay] Received map3dDrawingClick: geo=[${geo[0].toFixed(6)}, ${geo[1].toFixed(6)}], elev=${elevation?.toFixed(2)}`);
+            
+            setLocalCoords(prev => {
+                const coord = { geo, screenPos, elevation };
+                const newCoords = [...prev, coord];
+                console.log(`[DrawingOverlay] 3D click processed: total=${newCoords.length}`);
+
+                if (selectionMode === 'circle' && newCoords.length === 2) {
+                    // Circle complete after 2 clicks
+                    const geoCoords = newCoords.map(c => c.geo);
+                    console.log(`[DrawingOverlay] Circle complete, calling onGeometryComplete`);
+                    onGeometryComplete?.(selectionMode, geoCoords, bufferDistance);
+                    return [];
+                }
+                
+                return newCoords;
+            });
+        };
+
+        window.addEventListener('map3dDrawingClick', handleMap3DClick);
+        console.log(`[DrawingOverlay] 3D click listener attached`);
+        
+        return () => {
+            window.removeEventListener('map3dDrawingClick', handleMap3DClick);
+            console.log(`[DrawingOverlay] 3D click listener removed`);
+        };
+    }, [is3D, isDrawing, selectionMode, bufferDistance, onGeometryComplete]);
 
     return (
         <canvas
@@ -119,7 +239,9 @@ export function DrawingOverlay({
                 width: '100%',
                 height: '100%',
                 cursor: isDrawing ? 'crosshair' : 'default',
-                pointerEvents: isDrawing ? 'auto' : 'none'
+                // In 2D: canvas needs to capture clicks
+                // In 3D: canvas must have pointerEvents:none so clicks reach DeckGL onClick handler
+                pointerEvents: (isDrawing && !is3D) ? 'auto' : 'none'
             }}
         />
     );
