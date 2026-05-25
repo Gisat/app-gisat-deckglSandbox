@@ -61,7 +61,7 @@ function Map3D() {
     const deckGLRef = useRef(null);
 
     // Selection state
-    const [selectionMode, setSelectionMode] = useState('polygon');
+    const [selectionMode, setSelectionMode] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [bufferDistance, setBufferDistance] = useState(100);
     const [selectedPointIds, setSelectedPointIds] = useState(new Set());
@@ -69,7 +69,6 @@ function Map3D() {
     const [selectedFeatures, setSelectedFeatures] = useState(null);
     const [isSelectingBackend, setIsSelectingBackend] = useState(false);
     const [hoveredPointId, setHoveredPointId] = useState(null);
-    const [drawingCoords, setDrawingCoords] = useState([]); // Keep for SelectionControls UI reference
 
     const lastProcessedGeometryRef = useRef(null);
 
@@ -91,15 +90,6 @@ function Map3D() {
 
         setDrawnGeometry(geometry);
         setIsDrawing(false);
-    };
-
-     // Selection: Complete polygon/line drawing via Finish button
-    // DrawingOverlay handles double-click completion, this handles UI button
-    const completeDrawing = () => {
-        // Dispatch event to DrawingOverlay to finalize current drawing
-        window.dispatchEvent(new CustomEvent('finalizeDrawing', {
-            detail: {}
-        }));
     };
 
     // Selection: Query backend for time-series data
@@ -509,17 +499,16 @@ function Map3D() {
 
             <SelectionControls
                 selectionMode={selectionMode}
-                onModeChange={setSelectionMode}
-                onDraw={() => setIsDrawing(true)}
-                onFinish={completeDrawing}
+                onModeChange={(mode) => {
+                    setSelectionMode(mode);
+                    setIsDrawing(true);
+                }}
                 onClear={() => {
                     setSelectedPointIds(new Set());
                     setDrawnGeometry(null);
                     setSelectedFeatures(null);
-                    setDrawingCoords([]);
                     setIsDrawing(false);
                 }}
-                isDrawing={isDrawing}
                 selectedCount={selectedPointIds.size}
                 backendFeatureCount={selectedFeatures?.features?.length || 0}
                 isLoadingBackend={isSelectingBackend}

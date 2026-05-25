@@ -1,14 +1,11 @@
-import React from 'react';
 
 /**
  * SelectionControls - Reusable UI controls for point selection
- * Handles mode selection, buffer distance, and action buttons
+ * Handles mode selection, buffer distance, and clear button
  * 
  * @param {Object} props
  * @param {string} props.selectionMode - Current mode: 'polygon', 'circle', 'line'
- * @param {Function} props.onModeChange - Called with new mode
- * @param {Function} props.onDraw - Called to start drawing
- * @param {Function} props.onFinish - Called to finish drawing
+ * @param {Function} props.onModeChange - Called with new mode (automatically starts drawing)
  * @param {Function} props.onClear - Called to clear selection
  * @param {boolean} props.isDrawing - Whether drawing is active
  * @param {number} props.selectedCount - Number of selected points
@@ -20,10 +17,7 @@ import React from 'react';
 export function SelectionControls({
     selectionMode,
     onModeChange,
-    onDraw,
-    onFinish,
     onClear,
-    isDrawing,
     selectedCount,
     backendFeatureCount = 0,
     isLoadingBackend = false,
@@ -48,12 +42,10 @@ export function SelectionControls({
                 minWidth: '220px'
             }}
         >
-            <div style={{ marginBottom: '12px', fontWeight: 'bold' }}>Point Selection</div>
-
             {/* Mode Selector */}
             <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '11px', fontWeight: '500' }}>
-                    Drawing Mode:
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', fontWeight: 'bold' }}>
+                    Point Selection - Drawing Mode:
                 </label>
                 <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                     {modes.map(mode => (
@@ -96,77 +88,43 @@ export function SelectionControls({
                 </div>
             )}
 
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                {isDrawing ? (
-                    <button
-                        onClick={onFinish}
-                        style={{
-                            flex: 1,
-                            padding: '8px 12px',
-                            background: '#28a745',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '11px',
-                            fontWeight: '600'
-                        }}
-                    >
-                        Finish
-                    </button>
-                ) : (
-                    <button
-                        onClick={onDraw}
-                        style={{
-                            flex: 1,
-                            padding: '8px 12px',
-                            background: '#f0f0f0',
-                            color: '#000',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '11px',
-                            fontWeight: '600'
-                        }}
-                    >
-                        Draw
-                    </button>
-                )}
-                <button
-                    onClick={onClear}
-                    style={{
-                        flex: 1,
-                        padding: '8px 12px',
-                        background: '#f0f0f0',
-                        border: '1px solid #ddd',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '11px',
-                        fontWeight: '600'
-                    }}
-                >
-                    Clear
-                </button>
-            </div>
-
-            {/* Selected Count - Frontend */}
+            {/* Selected Count with Clear Button */}
             {selectedCount > 0 && (
                 <div
                     style={{
                         padding: '8px',
                         background: '#e6f0ff',
                         borderRadius: '4px',
-                        textAlign: 'center',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
                         fontSize: '11px',
                         color: '#0066cc',
                         fontWeight: '600',
                         marginBottom: '8px'
                     }}
                 >
-                    {selectedCount} tile point{selectedCount !== 1 ? 's' : ''} selected
-                    {isLoadingBackend && ' • ⚡ Fetching...'}
-                    {backendFeatureCount > 0 && !isLoadingBackend && ` • ✅ ${backendFeatureCount}`}
+                    <div>
+                        {selectedCount} tile point{selectedCount !== 1 ? 's' : ''} selected
+                        {isLoadingBackend && ' • ⚡ Fetching...'}
+                        {backendFeatureCount > 0 && !isLoadingBackend && ` • ✅ ${backendFeatureCount}`}
+                    </div>
+                    <button
+                        onClick={onClear}
+                        style={{
+                            padding: '4px 8px',
+                            background: '#f0f0f0',
+                            border: '1px solid #ddd',
+                            borderRadius: '3px',
+                            cursor: 'pointer',
+                            fontSize: '10px',
+                            fontWeight: '600',
+                            whiteSpace: 'nowrap',
+                            marginLeft: '8px'
+                        }}
+                    >
+                        Clear
+                    </button>
                 </div>
             )}
         </div>

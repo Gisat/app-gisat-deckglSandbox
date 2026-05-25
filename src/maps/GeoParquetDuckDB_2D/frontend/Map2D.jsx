@@ -56,7 +56,7 @@ function Map2D() {
     const [isPlaying, setIsPlaying] = useState(false);
 
     // Selection state
-    const [selectionMode, setSelectionMode] = useState('polygon');
+    const [selectionMode, setSelectionMode] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [bufferDistance, setBufferDistance] = useState(100);
     const [selectedPointIds, setSelectedPointIds] = useState(new Set());  // Point IDs (pid column)
@@ -324,15 +324,16 @@ function Map2D() {
 
             <SelectionControls
                 selectionMode={selectionMode}
-                onModeChange={setSelectionMode}
-                onDraw={() => setIsDrawing(true)}
+                onModeChange={(mode) => {
+                    setSelectionMode(mode);
+                    setIsDrawing(true);
+                }}
                 onClear={() => {
                     setSelectedPointIds(new Set());
                     setDrawnGeometry(null);
                     setSelectedFeatures(null);
                     setIsDrawing(false);
                 }}
-                isDrawing={isDrawing}
                 selectedCount={selectedPointIds.size}
                 backendFeatureCount={selectedFeatures?.features?.length || 0}
                 isLoadingBackend={isSelectingBackend}
