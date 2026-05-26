@@ -1,0 +1,277 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { DeckGL } from '@deck.gl/react';
+import { TileLayer } from '@deck.gl/geo-layers';
+import { BitmapLayer } from '@deck.gl/layers';
+import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
+import { SphereGeometry } from '@luma.gl/engine';
+import { COORDINATE_SYSTEM } from '@deck.gl/core';
+import { SelectionControls, DrawingOverlay, normalizeGeometry, pointInPolygon } from '../../components/PointSelection';
+import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
+import { CogTerrainLayer, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
+import chroma from 'chroma-js';
+import { scaleLinear } from 'd3-scale';
+
+const INITIAL_VIEW_STATE = {
+  longitude: 14.015511800867504,
+  latitude: 50.571906640192161,
+  zoom: 14.5,
+  pitch: 50,
+  bearing: 0,
+};
+
+const colorScale = chroma
+  .scale([[65, 182, 196], [254, 254, 191], [215, 25, 28]])
+  .domain([-5, 5]);
+
+const sphereGeometry = new SphereGeometry();
+const sizeScale = scaleLinear([0, 5], [2, 7]).clamp(true);
+
+// Data URL
+const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3.json';
+
+export default function SelectionDrawing3D() {
+  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
+  const [selectionMode, setSelectionMode] = useState(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [bufferDistance, setBufferDistance] = useState(100);
+  const [drawnGeometry, setDrawnGeometry] = useState(null);
+  const [selectedPoints, setSelectedPoints] = useState([]);
+  const [allFeatures, setAllFeatures] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const mapContainerRef = useRef(null);
+  const deckGLRef = useRef(null);
+
+  // Handle double-click to finish drawing
+  useEffect(() => {
+    const handleDblClick = () => {
+      if (isDrawing && drawnGeometry) {
+        setIsDrawing(false);
+      }
+    };
+    
+    if (mapContainerRef.current) {
+      mapContainerRef.current.addEventListener('dblclick', handleDblClick);
+      return () => mapContainerRef.current?.removeEventListener('dblclick', handleDblClick);
+    }
+  }, [isDrawing, drawnGeometry]);
+
+  // Auto-start drawing when selection mode is activated
+  useEffect(() => {
+    if (selectionMode) {
+      setIsDrawing(true);
+    }
+  }, [selectionMode]);
+
+  // Load GeoJSON data on mount
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const res = await fetch(DATA_URL);
+        const data = await res.json();
+        // Handle both FeatureCollection and direct array formats
+        let features = Array.isArray(data) ? data : (data.features || []);
+        setAllFeatures(features);
+        setIsLoading(false);
+      } catch (err) {
+        console.error('❌ Failed to load data:', err);
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, []);
+
+  const selectedIdsSet = new Set(selectedPoints.map(p => p.id));
+
+  const baseMapLayer = new TileLayer({
+    id: 'tile-layer-selection-drawing',
+    data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+    minZoom: 0,
+    maxZoom: 19,
+    tileSize: 256,
+    renderSubLayers: (props) => {
+      const { west, south, east, north } = props.tile.bbox;
+      return new BitmapLayer(props, {
+        data: null,
+        image: props.data,
+        bounds: [west, south, east, north],
+      });
+    },
+  });
+
+  const terrainLayer = new CogTerrainLayer({
+    id: 'terrain-layer',
+    elevationData: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/LITC52_53_4g_5m_4326_cog_nodata.tif',
+    minZoom: 12,
+    maxZoom: 14,
+    isTiled: true,
+    useChannel: null,
+    tileSize: 256,
+    operation: 'terrain+draw',
+    pickable: '3d',
+    visible: true,
+    terrainOptions: {
+      useSwissRelief: true,
+      useHeatMap: true,
+      colorScale: [[200, 200, 200], [180, 180, 180]],
+      type: 'terrain',
+    },
+  });
+
+  const isPointSelected = (feature) => {
+    const idGlobal = feature.properties?.id_global;
+    const idOrig = feature.properties?.id_orig;
+    
+    if (idGlobal && selectedIdsSet.has(String(idGlobal))) return true;
+    if (idOrig && selectedIdsSet.has(String(idOrig))) return true;
+    
+    return false;
+  };
+
+  const meshLayer = new SimpleMeshLayer({
+    id: 'mesh-3d-selection-drawing',
+    data: allFeatures,
+    mesh: sphereGeometry,
+    coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
+    pickable: true,
+    getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm || 0],
+    getColor: (d) => {
+      if (isPointSelected(d)) {
+        return [66, 212, 244, 255]; // cyan - selected
+      }
+      
+      if (selectedIdsSet.size > 0) {
+        return [200, 200, 200, 100]; // grey - dimmed
+      }
+      
+      return [...colorScale(d.properties?.vel_rel || 0).rgb(), 255];
+    },
+    getScale: (d) => {
+      const size = sizeScale(Math.abs(d.properties?.vel_rel || 0));
+      const isSelected = isPointSelected(d);
+      return [isSelected ? size * 1.3 : size, isSelected ? size * 1.3 : size, isSelected ? size * 1.3 : size];
+    },
+    updateTriggers: {
+      getColor: [selectedPoints],
+      getScale: [selectedPoints]
+    }
+  });
+
+  const handleGeometryComplete = (mode, coords, bufferDist = 100) => {
+    const geoCoords = coords.map(c => c.geo || c);
+    const geometry = normalizeGeometry(mode, geoCoords, bufferDist);
+    if (!geometry) return;
+
+    setDrawnGeometry(geometry);
+    setIsDrawing(false);
+
+    // Query all features directly against geometry
+    const selected = allFeatures.filter(feature => {
+      const [lon, lat] = feature.geometry?.coordinates || [0, 0];
+      return pointInPolygon([lon, lat], geometry);
+    });
+
+    const result = selected.map(f => ({
+      id: f.properties?.id_global ?? f.properties?.id_orig ?? `${f.geometry?.coordinates?.[0]}_${f.geometry?.coordinates?.[1]}`,
+      properties: f.properties
+    }));
+
+    // Log selected points (single retained debug log)
+    console.log('Selected points:', result);
+    setSelectedPoints(result);
+  };
+
+  const layers = [baseMapLayer, terrainLayer, meshLayer];
+
+  return (
+    <div ref={mapContainerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <DeckGL
+        ref={deckGLRef}
+        initialViewState={INITIAL_VIEW_STATE}
+        onViewStateChange={({ viewState }) => setViewState(viewState)}
+        getCursor={() => isDrawing ? 'crosshair' : 'grab'}
+        onClick={(info) => {
+          if (isDrawing && selectionMode) {
+            // Check if we're clicking on terrain layer
+            if (info.layer?.id === 'terrain-layer' && info.coordinate) {
+              const coord = extractTerrainCoordinate(info);
+              if (coord) {
+                window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
+                  detail: {
+                    geo: [coord.longitude, coord.latitude],
+                    screenPos: [info.x, info.y],
+                    elevation: coord.elevation
+                  }
+                }));
+              } else {
+                window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
+                  detail: {
+                    geo: [info.coordinate?.[0], info.coordinate?.[1]],
+                    screenPos: [info.x, info.y],
+                    elevation: info.coordinate?.[2]
+                  }
+                }));
+              }
+            } else {
+              // For non-terrain clicks, use basic coordinate
+              window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
+                detail: {
+                  geo: [info.coordinate?.[0], info.coordinate?.[1]],
+                  screenPos: [info.x, info.y],
+                  elevation: info.coordinate?.[2]
+                }
+              }));
+            }
+          }
+        }}
+        onDoubleClick={(info) => {
+          if (isDrawing) {
+            // Prevent zoom on double-click during drawing
+            info.isPrimary = false;
+            info.rightButton = false;
+            info.leftButton = false;
+            info.middleButton = false;
+          }
+        }}
+        controller={{
+          dragPan: !isDrawing,
+          scrollZoom: !isDrawing,
+          dragRotate: !isDrawing,
+          doubleClickZoom: !isDrawing,
+        }}
+        layers={layers}
+        className="deckgl-map"
+      />
+
+      {isLoading && (
+        <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(0,0,0,0.7)', color: 'white', padding: '10px', borderRadius: '4px' }}>
+          Loading data...
+        </div>
+      )}
+
+      <SelectionControls
+        mode={selectionMode}
+        onModeChange={(newMode) => {
+          setSelectionMode(newMode);
+        }}
+        bufferDistance={bufferDistance}
+        onBufferChange={setBufferDistance}
+        selectedCount={selectedPoints.length}
+        onClear={() => setSelectedPoints([])}
+      />
+
+      <DrawingOverlay
+        isActive={selectionMode !== null}
+        isDrawing={isDrawing}
+        viewState={viewState}
+        selectionMode={selectionMode}
+        onDrawStart={() => {
+          setIsDrawing(true);
+        }}
+        onGeometryComplete={handleGeometryComplete}
+        bufferDistance={bufferDistance}
+        is3D={true}
+      />
+    </div>
+  );
+}
