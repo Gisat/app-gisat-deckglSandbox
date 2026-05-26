@@ -42,6 +42,11 @@ export default function SelectionDrawing3D() {
   const mapContainerRef = useRef(null);
   const deckGLRef = useRef(null);
 
+  // Set DeckGL instance for terrain picking utilities
+  useEffect(() => {
+    if (deckGLRef.current) setDeckGLInstance(deckGLRef.current);
+  }, []);
+
   // Handle double-click to finish drawing
   useEffect(() => {
     const handleDblClick = () => {
@@ -192,36 +197,41 @@ export default function SelectionDrawing3D() {
         getCursor={() => isDrawing ? 'crosshair' : 'grab'}
         onClick={(info) => {
           if (isDrawing && selectionMode) {
-            // Check if we're clicking on terrain layer
-            if (info.layer?.id === 'terrain-layer' && info.coordinate) {
-              const coord = extractTerrainCoordinate(info);
-              if (coord) {
-                window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
-                  detail: {
-                    geo: [coord.longitude, coord.latitude],
-                    screenPos: [info.x, info.y],
-                    elevation: coord.elevation
-                  }
-                }));
-              } else {
-                window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
-                  detail: {
-                    geo: [info.coordinate?.[0], info.coordinate?.[1]],
-                    screenPos: [info.x, info.y],
-                    elevation: info.coordinate?.[2]
-                  }
-                }));
-              }
-            } else {
-              // For non-terrain clicks, use basic coordinate
-              window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
-                detail: {
-                  geo: [info.coordinate?.[0], info.coordinate?.[1]],
-                  screenPos: [info.x, info.y],
-                  elevation: info.coordinate?.[2]
+            // Try to resolve terrain coordinate even when clicking on other layers (click-through)
+            const tryUseTerrainPick = async () => {
+              // If clicked directly on terrain layer, use extractTerrainCoordinate
+              if (info.layer?.id === 'terrain-layer' && info.coordinate) {
+                const coord = extractTerrainCoordinate(info);
+                if (coord) {
+                  window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
+                    detail: { geo: [coord.longitude, coord.latitude], screenPos: [info.x, info.y], elevation: coord.elevation }
+                  }));
+                  return;
                 }
+              }
+
+              // Otherwise, try explicit pick on the terrain layer via DeckGL instance
+              const deck = deckGLRef.current;
+              if (deck && typeof deck.pickObject === 'function') {
+                const pick = deck.pickObject({ x: info.x, y: info.y, layerIds: ['terrain-layer'], radius: 1 });
+                if (pick?.coordinate) {
+                  const coord = extractTerrainCoordinate(pick);
+                  if (coord) {
+                    window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
+                      detail: { geo: [coord.longitude, coord.latitude], screenPos: [info.x, info.y], elevation: coord.elevation }
+                    }));
+                    return;
+                  }
+                }
+              }
+
+              // Fallback to basic coordinate
+              window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
+                detail: { geo: [info.coordinate?.[0], info.coordinate?.[1]], screenPos: [info.x, info.y], elevation: info.coordinate?.[2] }
               }));
-            }
+            };
+
+            tryUseTerrainPick();
           }
         }}
         onDoubleClick={(info) => {
@@ -250,7 +260,7 @@ export default function SelectionDrawing3D() {
       )}
 
       <SelectionControls
-        mode={selectionMode}
+        selectionMode={selectionMode}
         onModeChange={(newMode) => {
           setSelectionMode(newMode);
         }}
