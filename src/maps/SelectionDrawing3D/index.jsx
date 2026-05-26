@@ -267,17 +267,17 @@ export default function SelectionDrawing3D() {
         bufferDistance={bufferDistance}
         onBufferChange={setBufferDistance}
         selectedCount={selectedPoints.length}
-        onClear={() => setSelectedPoints([])}
+        onClear={() => {
+          setSelectedPoints([]);
+          setDrawnGeometry(null);
+          if (selectionMode) setIsDrawing(true);
+        }}
       />
 
       <DrawingOverlay
-        isActive={selectionMode !== null}
-        isDrawing={isDrawing}
         viewState={viewState}
         selectionMode={selectionMode}
-        onDrawStart={() => {
-          setIsDrawing(true);
-        }}
+        isDrawing={isDrawing}
         onGeometryComplete={handleGeometryComplete}
         bufferDistance={bufferDistance}
         is3D={true}
