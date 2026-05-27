@@ -25,6 +25,8 @@ import CogTerrainKernel from './CogTerrainKernel';
 import MisicuniDam from './Misicuni_dam/index.jsx';
 import GisatDataService from './GisatDataService/index.jsx';
 import SelectionDrawing3D from './SelectionDrawing3D/index.jsx';
+import ArrowLODStream3D from './ArrowLODStream_3D/Map3D.jsx';
+import ArrowLODStream2D from './ArrowLODStream_2D/Map2D.jsx';
 
 const mapApps = [
     { category: '3DFLUS', name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
@@ -50,6 +52,8 @@ const mapApps = [
     // { name: 'Test Gisat Geotiff', path: '/test-gisat-geotiff', component: GisatGeotiffMap, description: 'Testing Gisat Geotiff rendering' },
     { category: '3DFLUS CCN', name: 'COG Kernel', path: '/cog-kernel', component: CogTerrainKernel, description: 'Showcase kernel calculation and hover features with deck.gl-geotiff' },
     { category: '3DFLUS CCN', name: 'Gisat Data Service', path: '/gisat-data-service', component: GisatDataService },
+    { category: '3DFLUS CCN', name: 'Arrow LOD Stream 2D', path: '/arrow-lod-stream-2d', component: ArrowLODStream2D },
+    { category: '3DFLUS CCN', name: 'Arrow LOD Stream 3D', path: '/arrow-lod-stream-3d', component: ArrowLODStream3D },
     { category: '3DFLUS CCN', name: 'Selection Drawing 3D', path: '/selection-drawing-3d', component: SelectionDrawing3D },
     { category: 'GDA Water', name: 'Misicuni Dam', path: '/misicuni-dam', component: MisicuniDam, description: 'Simple dam presentation map connected to GDA Water group' },
 ];
