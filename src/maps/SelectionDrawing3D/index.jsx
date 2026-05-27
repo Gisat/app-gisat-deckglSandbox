@@ -5,7 +5,7 @@ import { BitmapLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { SphereGeometry } from '@luma.gl/engine';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
-import { SelectionControls, DrawingOverlay, normalizeGeometry, pointInPolygon } from '../../components/PointSelection';
+import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, pointInPolygon } from '../../components/PointSelection';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 import { CogTerrainLayer, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
 import chroma from 'chroma-js';
@@ -36,6 +36,8 @@ export default function SelectionDrawing3D() {
   const [bufferDistance, setBufferDistance] = useState(100);
   const [drawnGeometry, setDrawnGeometry] = useState(null);
   const [selectedPoints, setSelectedPoints] = useState([]);
+  const [selectedFeatures, setSelectedFeatures] = useState(null);
+  const [hoveredPointId, setHoveredPointId] = useState(null);
   const [allFeatures, setAllFeatures] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -184,6 +186,23 @@ export default function SelectionDrawing3D() {
     // Log selected points (single retained debug log)
     console.log('Selected points:', result);
     setSelectedPoints(result);
+
+    // Build a simple FeatureCollection for the TimeSeriesChart demo
+    const fc = {
+      type: 'FeatureCollection',
+      features: selected.map(f => ({
+        type: 'Feature',
+        id: f.id,
+        properties: {
+          ...f.properties,
+          // map available velocity field to mean_velocity expected by chart
+          mean_velocity: f.properties?.vel_rel ?? f.properties?.mean_velocity ?? null,
+          point_id: f.id,
+        }
+      }))
+    };
+
+    setSelectedFeatures(fc);
   };
 
   const layers = [baseMapLayer, terrainLayer, meshLayer];
@@ -282,6 +301,23 @@ export default function SelectionDrawing3D() {
         bufferDistance={bufferDistance}
         is3D={true}
       />
+
+      {selectedFeatures && (
+        <div style={{
+          position: 'absolute',
+          bottom: '10px',
+          left: '10px',
+          right: '10px',
+          maxWidth: '600px',
+          zIndex: 999,
+        }}>
+          <TimeSeriesChart
+            selectedFeatures={selectedFeatures}
+            isLoading={false}
+            onPointHover={setHoveredPointId}
+          />
+        </div>
+      )}
     </div>
   );
 }
