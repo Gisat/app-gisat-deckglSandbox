@@ -54,6 +54,7 @@ const mapApps = [
     { category: '3DFLUS CCN', name: 'Gisat Data Service', path: '/gisat-data-service', component: GisatDataService },
     { category: '3DFLUS CCN', name: 'Arrow LOD Stream 2D', path: '/arrow-lod-stream-2d', component: ArrowLODStream2D },
     { category: '3DFLUS CCN', name: 'Arrow LOD Stream 3D', path: '/arrow-lod-stream-3d', component: ArrowLODStream3D },
+    { category: '3DFLUS CCN', name: 'Terrain Interactive Slider', path: '/terrain-interactive-slider', component: MisicuniDam },
     { category: '3DFLUS CCN', name: 'Selection Drawing 3D', path: '/selection-drawing-3d', component: SelectionDrawing3D },
     { category: 'GDA Water', name: 'Misicuni Dam', path: '/misicuni-dam', component: MisicuniDam, description: 'Simple dam presentation map connected to GDA Water group' },
 ];
