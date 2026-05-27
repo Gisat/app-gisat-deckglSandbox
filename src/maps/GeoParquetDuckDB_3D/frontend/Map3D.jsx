@@ -466,14 +466,20 @@ function Map3D() {
             <SelectionControls
                 selectionMode={selectionMode}
                 onModeChange={(mode) => {
-                    setSelectionMode(mode);
-                    setIsDrawing(true);
+                    if (selectionMode === mode) {
+                        setSelectionMode(null);
+                        setIsDrawing(false);
+                    } else {
+                        setSelectionMode(mode);
+                        setIsDrawing(true);
+                    }
                 }}
                 onClear={() => {
                     setSelectedPointIds(new Set());
                     setDrawnGeometry(null);
                     setSelectedFeatures(null);
-                    setIsDrawing(false);
+                    // keep drawing active if selection mode is still selected
+                    setIsDrawing(selectionMode ? true : false);
                 }}
                 selectedCount={selectedPointIds.size}
                 backendFeatureCount={selectedFeatures?.features?.length || 0}

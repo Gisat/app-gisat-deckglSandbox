@@ -281,7 +281,14 @@ export default function SelectionDrawing3D() {
       <SelectionControls
         selectionMode={selectionMode}
         onModeChange={(newMode) => {
-          setSelectionMode(newMode);
+          if (selectionMode === newMode) {
+            // toggle off
+            setSelectionMode(null);
+            setIsDrawing(false);
+          } else {
+            setSelectionMode(newMode);
+            setIsDrawing(true);
+          }
         }}
         bufferDistance={bufferDistance}
         onBufferChange={setBufferDistance}
@@ -291,8 +298,8 @@ export default function SelectionDrawing3D() {
           setDrawnGeometry(null);
           // hide chart when cleared
           setSelectedFeatures(null);
-          // stop drawing when cleared
-          setIsDrawing(false);
+          // keep drawing active if selection mode is still selected
+          setIsDrawing(selectionMode ? true : false);
         }}
       />
 
