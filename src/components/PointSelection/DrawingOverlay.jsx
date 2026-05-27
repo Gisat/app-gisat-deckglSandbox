@@ -4,14 +4,6 @@ import { screenToGeo, redrawCanvas } from './drawingUtils';
 /**
  * DrawingOverlay - Canvas overlay for drawing selection geometries
  * Works identically for both 2D and 3D modes
- * 
- * @param {Object} props
- * @param {Object} props.viewState - Deck.GL view state
- * @param {string} props.selectionMode - 'polygon', 'circle', or 'line'
- * @param {boolean} props.isDrawing - Whether drawing is active
- * @param {Function} props.onGeometryComplete - Called with (mode, coords, bufferDist) when drawing completes
- * @param {number} props.bufferDistance - Buffer distance for line mode
- * @param {boolean} props.is3D - Whether we're in 3D mode (uses terrain picking instead of flat projection)
  */
 export function DrawingOverlay({
     viewState,
@@ -23,130 +15,117 @@ export function DrawingOverlay({
 }) {
     const canvasRef = useRef(null);
     const lastCursorRef = useRef({ x: null, y: null });
-    const [localCoords, setLocalCoords] = useState([]); // For 2D mode: local coordinate state
-    const lastClickTimeRef = useRef(0);  // For tracking double-click in 3D
+    const [localCoords, setLocalCoords] = useState([]);
 
-    // In both 2D and 3D, use localCoords for drawing
-    // The difference is only in what data format we store (coordinates only vs with elevation)
-    const displayCoords = localCoords;
+    // Refs to hold latest values so event handlers don't need to be reattached on every render
+    const localCoordsRef = useRef([]);
+    const onGeometryCompleteRef = useRef(onGeometryComplete);
+    const selectionModeRef = useRef(selectionMode);
+    const bufferDistanceRef = useRef(bufferDistance);
+    const is3DRef = useRef(is3D);
 
-    // Helper function to finalize drawing
-    const finalizeDraw = (coords) => {
-        if (coords.length >= 2) {
-            onGeometryComplete?.(selectionMode, coords, bufferDistance);
-            setLocalCoords([]);
-        }
+    // Keep refs in sync with props/state
+    useEffect(() => { onGeometryCompleteRef.current = onGeometryComplete; }, [onGeometryComplete]);
+    useEffect(() => { selectionModeRef.current = selectionMode; }, [selectionMode]);
+    useEffect(() => { bufferDistanceRef.current = bufferDistance; }, [bufferDistance]);
+    useEffect(() => { is3DRef.current = is3D; }, [is3D]);
+
+    // Keep localCoordsRef in sync whenever state changes
+    useEffect(() => { localCoordsRef.current = localCoords; }, [localCoords]);
+
+    // Helper: add a coordinate and handle circle auto-complete
+    const addCoord = (coord) => {
+        setLocalCoords(prev => {
+            const newCoords = [...prev, coord];
+            localCoordsRef.current = newCoords;
+
+            if (selectionModeRef.current === 'circle' && newCoords.length === 2) {
+                const geoCoords = newCoords.map(c => c.geo || c);
+                // Defer parent updates to avoid render-phase setState warnings
+                Promise.resolve().then(() => onGeometryCompleteRef.current?.('circle', geoCoords, bufferDistanceRef.current));
+                localCoordsRef.current = [];
+                return [];
+            }
+
+            return newCoords;
+        });
     };
 
-    // Redraw whenever drawing state changes
+    // Helper function to finalize drawing (deferred)
+    const finalizeDraw = (coords) => {
+        if (!coords || coords.length < 2) return;
+        // Defer to avoid updating parent during render
+        Promise.resolve().then(() => onGeometryCompleteRef.current?.(selectionModeRef.current, coords, bufferDistanceRef.current));
+        setLocalCoords([]);
+        localCoordsRef.current = [];
+    };
+
+    // Redraw whenever drawing state or coordinates change
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        // Set canvas size to match container
         const rect = canvas.parentElement.getBoundingClientRect();
         canvas.width = rect.width;
         canvas.height = rect.height;
 
-        if (!isDrawing || !displayCoords.length) {
-            // Clear canvas when not drawing or no coords
+        if (!isDrawing || !localCoords.length) {
             const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             return;
         }
 
-        // Redraw with current coordinates and cursor preview
-        redrawCanvas(canvas, displayCoords, selectionMode, viewState, lastCursorRef.current.x, lastCursorRef.current.y);
-    }, [isDrawing, displayCoords, selectionMode, viewState]);
+        redrawCanvas(canvas, localCoords, selectionMode, viewState, lastCursorRef.current.x, lastCursorRef.current.y);
+    }, [isDrawing, localCoords, selectionMode, viewState]);
 
-    // Handle interactions
+    // Interaction handlers: attach only when drawing starts/stops to avoid frequent reattachment
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas || !isDrawing) {
-            return;
-        }
+        if (!canvas || !isDrawing) return;
 
         const handleMouseMove = (e) => {
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            
             lastCursorRef.current = { x, y };
-            
-            // Trigger redraw with cursor preview
-            if (displayCoords.length > 0) {
-                redrawCanvas(canvas, displayCoords, selectionMode, viewState, x, y);
+            if (localCoordsRef.current.length > 0) {
+                redrawCanvas(canvas, localCoordsRef.current, selectionModeRef.current, viewState, x, y);
             }
         };
 
         const handleClick = (e) => {
-            // Stop DeckGL from processing this click
             e.stopPropagation();
-            
-            // Both 2D and 3D use canvas click handling
-            // The difference: screenToGeo intelligently uses terrain picking in 3D
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-
             const coord = screenToGeo(viewState, x, y, canvas.width, canvas.height);
 
-            if (is3D) {
-                // 3D mode: accumulate {geo, screenPos, elevation} objects
-                setLocalCoords(prev => {
-                    const newCoords = [...prev, coord];
-
-                    if (selectionMode === 'circle' && newCoords.length === 2) {
-                        // Circle complete after 2 clicks
-                        // Extract just geo for normalizeGeometry
-                        const geoCoords = newCoords.map(c => c.geo);
-                        onGeometryComplete?.('circle', geoCoords, bufferDistance);
-                        return [];
-                    }
-                    
-                    return newCoords;
-                });
+            if (is3DRef.current) {
+                addCoord(coord);
             } else {
-                // 2D mode: accumulate plain [lon, lat] arrays
-                setLocalCoords(prev => {
-                    const newCoords = [...prev, coord.geo];
-
-                    if (selectionMode === 'circle' && newCoords.length === 2) {
-                        // Circle complete after 2 clicks
-                        onGeometryComplete?.('circle', newCoords, bufferDistance);
-                        return [];
-                    }
-                    
-                    return newCoords;
-                });
+                // 2D: coord.geo is [lon, lat]
+                addCoord(coord.geo);
             }
         };
 
         const handleDoubleClick = (e) => {
-            // Prevent DeckGL zoom
             e.stopPropagation();
-            
-            // Both 2D and 3D: double-click to finish drawing
-            if (displayCoords.length >= 2) {
-                onGeometryComplete?.(selectionMode, displayCoords, bufferDistance);
-                setLocalCoords([]);
+            if (localCoordsRef.current.length >= 2) {
+                finalizeDraw(localCoordsRef.current);
             }
         };
 
-        // In 2D: attach to canvas
-        // In 3D: attach to document since canvas has pointerEvents:none
-        if (!is3D) {
+        if (!is3DRef.current) {
             canvas.addEventListener('mousemove', handleMouseMove);
             canvas.addEventListener('click', handleClick);
             canvas.addEventListener('dblclick', handleDoubleClick);
         } else {
-            // In 3D: listen to document for mousemove and double-click
             document.addEventListener('mousemove', handleMouseMove);
             document.addEventListener('dblclick', handleDoubleClick);
         }
 
         return () => {
-            if (!is3D) {
+            if (!is3DRef.current) {
                 canvas.removeEventListener('mousemove', handleMouseMove);
                 canvas.removeEventListener('click', handleClick);
                 canvas.removeEventListener('dblclick', handleDoubleClick);
@@ -155,57 +134,36 @@ export function DrawingOverlay({
                 document.removeEventListener('dblclick', handleDoubleClick);
             }
         };
-    }, [isDrawing, displayCoords, selectionMode, viewState, onGeometryComplete, bufferDistance, is3D]);
+    }, [isDrawing, viewState]);
 
     // Clear local coords when drawing stops
     useEffect(() => {
         if (!isDrawing) {
             setLocalCoords([]);
+            localCoordsRef.current = [];
         }
     }, [isDrawing]);
 
     // Listen for finalize event (from finish button)
     useEffect(() => {
         if (!isDrawing) return;
-
-        const handleFinalize = () => {
-            finalizeDraw(localCoords);
-        };
-
+        const handleFinalize = () => finalizeDraw(localCoordsRef.current);
         window.addEventListener('finalizeDrawing', handleFinalize);
         return () => window.removeEventListener('finalizeDrawing', handleFinalize);
-    }, [isDrawing, localCoords]);
+    }, [isDrawing]);
 
     // In 3D mode: listen for DeckGL onClick coordinates from Map3D
     useEffect(() => {
-        if (!is3D || !isDrawing) {
-            return;
-        }
+        if (!is3D || !isDrawing) return;
 
         const handleMap3DClick = (event) => {
-            const { geo, screenPos, elevation } = event.detail;
-            
-            setLocalCoords(prev => {
-                const coord = { geo, screenPos, elevation };
-                const newCoords = [...prev, coord];
-
-                if (selectionMode === 'circle' && newCoords.length === 2) {
-                    // Circle complete after 2 clicks
-                    const geoCoords = newCoords.map(c => c.geo);
-                    onGeometryComplete?.(selectionMode, geoCoords, bufferDistance);
-                    return [];
-                }
-                
-                return newCoords;
-            });
+            const { geo, screenPos, elevation } = event.detail || {};
+            addCoord({ geo, screenPos, elevation });
         };
 
         window.addEventListener('map3dDrawingClick', handleMap3DClick);
-        
-        return () => {
-            window.removeEventListener('map3dDrawingClick', handleMap3DClick);
-        };
-    }, [is3D, isDrawing, selectionMode, bufferDistance, onGeometryComplete]);
+        return () => window.removeEventListener('map3dDrawingClick', handleMap3DClick);
+    }, [is3D, isDrawing]);
 
     return (
         <canvas
@@ -216,11 +174,7 @@ export function DrawingOverlay({
                 left: 0,
                 width: '100%',
                 height: '100%',
-                // In 2D: canvas captures clicks, show cursor
-                // In 3D: canvas has pointerEvents:none, inherit cursor from parent
                 cursor: (isDrawing && !is3D) ? 'crosshair' : 'inherit',
-                // In 2D: canvas needs to capture clicks
-                // In 3D: canvas must have pointerEvents:none so clicks reach DeckGL onClick handler
                 pointerEvents: (isDrawing && !is3D) ? 'auto' : 'none'
             }}
         />
