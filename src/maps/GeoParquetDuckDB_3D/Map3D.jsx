@@ -11,7 +11,7 @@ import {_TerrainExtension as TerrainExtension } from "@deck.gl/extensions";
 import { HUD } from './components/HUD';
 import { PlaybackControls } from './components/PlaybackControls';
 import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../components/PointSelection';
-import DuckDBGeoParquetLayer from '../../layers/DuckDBGeoParquetLayer';
+import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 
 // --- Configuration ---
@@ -161,7 +161,7 @@ function Map3D() {
         return () => clearInterval(interval);
     }, [isPlaying, dates, mode]);
 
-    // 3. Tile Fetching Logic moved to DuckDBHybridLayer
+    // Tile fetching handled inside ArrowLODTileLayer (see src/layers/ArrowLODTileLayer.js)
 
     const layers = useMemo(() => [
         new TileLayer({
@@ -190,8 +190,8 @@ function Map3D() {
                 type: 'terrain',
             }
         }),
-        new DuckDBGeoParquetLayer({
-            id: 'duckdb-geoparquet-layer',
+        new ArrowLODTileLayer({
+            id: 'arrow-lod-tile-layer',
             dataUrl: DATA_API_URL,
             dateIndex: debouncedTimeIndex,
             mode: mode,

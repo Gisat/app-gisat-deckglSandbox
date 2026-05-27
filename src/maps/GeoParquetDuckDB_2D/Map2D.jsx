@@ -7,7 +7,7 @@ import { scaleLinear } from 'd3-scale';
 import { HUD } from './components/HUD';
 import { PlaybackControls } from './components/PlaybackControls';
 import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../components/PointSelection';
-import DuckDBGeoParquetLayer from '../../layers/DuckDBGeoParquetLayer';
+import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 12, pitch: 0, bearing: 0 };
@@ -156,7 +156,7 @@ function Map2D() {
         }
     }, [timeIndex, mode]);
 
-    // 3. Tile Fetching Logic moved to DuckDBHybridLayer
+    // Tile fetching handled inside ArrowLODTileLayer (see src/layers/ArrowLODTileLayer.js)
 
     const layers = [
         new TileLayer({
@@ -168,8 +168,8 @@ function Map2D() {
                 return new BitmapLayer(props, { data: null, image: props.data, bounds: [west, south, east, north] });
             }
         }),
-        new DuckDBGeoParquetLayer({
-            id: 'duckdb-geoparquet-layer',
+        new ArrowLODTileLayer({
+            id: 'arrow-lod-tile-layer',
             dataUrl: DATA_API_URL,
             dateIndex: debouncedTimeIndex,
             mode: mode,
