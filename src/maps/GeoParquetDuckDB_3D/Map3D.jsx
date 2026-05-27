@@ -10,9 +10,9 @@ import {_TerrainExtension as TerrainExtension } from "@deck.gl/extensions";
 
 import { HUD } from './components/HUD';
 import { PlaybackControls } from './components/PlaybackControls';
-import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../../components/PointSelection';
-import DuckDBGeoParquetLayer from '../../../layers/DuckDBGeoParquetLayer';
-import { setDeckGLInstance } from '../../../components/PointSelection/drawingUtils';
+import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../components/PointSelection';
+import DuckDBGeoParquetLayer from '../../layers/DuckDBGeoParquetLayer';
+import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch: 45, bearing: 0 };

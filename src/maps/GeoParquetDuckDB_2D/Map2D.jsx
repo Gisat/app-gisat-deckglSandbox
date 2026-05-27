@@ -6,8 +6,8 @@ import { scaleLinear } from 'd3-scale';
 
 import { HUD } from './components/HUD';
 import { PlaybackControls } from './components/PlaybackControls';
-import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../../components/PointSelection';
-import DuckDBGeoParquetLayer from '../../../layers/DuckDBGeoParquetLayer';
+import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../components/PointSelection';
+import DuckDBGeoParquetLayer from '../../layers/DuckDBGeoParquetLayer';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 12, pitch: 0, bearing: 0 };
