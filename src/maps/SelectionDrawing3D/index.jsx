@@ -289,7 +289,10 @@ export default function SelectionDrawing3D() {
         onClear={() => {
           setSelectedPoints([]);
           setDrawnGeometry(null);
-          if (selectionMode) setIsDrawing(true);
+          // hide chart when cleared
+          setSelectedFeatures(null);
+          // stop drawing when cleared
+          setIsDrawing(false);
         }}
       />
 
