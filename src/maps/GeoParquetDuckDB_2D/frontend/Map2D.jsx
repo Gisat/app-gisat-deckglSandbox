@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef } from 'react';
-import { DeckGL } from 'deck.gl';
+import { DeckGL, WebMercatorViewport } from 'deck.gl';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { ScatterplotLayer, BitmapLayer } from '@deck.gl/layers';
 import { scaleLinear } from 'd3-scale';
 
 import { HUD } from './components/HUD';
 import { PlaybackControls } from './components/PlaybackControls';
+import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../../components/PointSelection';
 import DuckDBGeoParquetLayer from '../../../layers/DuckDBGeoParquetLayer';
 
 // --- Configuration ---
@@ -54,7 +55,66 @@ function Map2D() {
     const [mode, setMode] = useState('static');
     const [isPlaying, setIsPlaying] = useState(false);
 
+    // Selection state
+    const [selectionMode, setSelectionMode] = useState(null);
+    const [isDrawing, setIsDrawing] = useState(false);
+    const [bufferDistance, setBufferDistance] = useState(100);
+    const [selectedPointIds, setSelectedPointIds] = useState(new Set());  // Point IDs (pid column)
+    const [drawnGeometry, setDrawnGeometry] = useState(null);
+    const [selectedFeatures, setSelectedFeatures] = useState(null); // Backend response with time-series data
+    const [isSelectingBackend, setIsSelectingBackend] = useState(false);
+    const [hoveredPointId, setHoveredPointId] = useState(null);
+
     const mapContainerRef = useRef(null);
+
+    // Handle geometry completion from drawing overlay
+    const handleGeometryComplete = (mode, coords, bufferDist = 100) => {
+        const geometry = normalizeGeometry(mode, coords, bufferDist);
+        if (!geometry) return;
+
+        setDrawnGeometry(geometry);
+        setIsDrawing(false);
+    };
+
+    // Send selected point IDs to backend for time-series data
+    const queryBackendForSelection = (pointIds) => {
+        if (!pointIds || pointIds.length === 0) return;
+
+        setIsSelectingBackend(true);
+        
+        const payload = {
+            point_ids: Array.from(pointIds)  // Convert Set to array
+        };
+
+        fetch(`${DATA_API_URL.replace('/api/data', '')}/api/select`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        })
+            .then(res => res.json())
+            .then(data => {
+                setSelectedFeatures(data);
+            })
+            .catch(err => {
+                console.error('❌ Backend selection error:', err);
+                setSelectedFeatures(null);
+            })
+            .finally(() => setIsSelectingBackend(false));
+    };
+
+    // When selected point IDs change, query backend
+    useEffect(() => {
+        if (selectedPointIds.size > 0) {
+            queryBackendForSelection(selectedPointIds);
+        } else {
+            setSelectedFeatures(null);
+        }
+    }, [selectedPointIds]);
+
+    // Track when geometry was last processed to avoid re-filtering every frame
+    const lastProcessedGeometryRef = useRef(null);
 
     // 🆕 HUD Update Logic
     useEffect(() => {
@@ -136,6 +196,49 @@ function Map2D() {
 
                 if (!data || data.length === 0) return null;
 
+                // Only compute expensive data key if there's actually a geometry to filter
+                if (drawnGeometry && !isDrawing) {
+                    // Track both geometry AND total row count to detect new data
+                    const geometryKey = JSON.stringify(drawnGeometry);
+                    const totalRows = data.reduce((sum, td) => sum + td.numRows, 0);
+                    const dataKey = `${geometryKey}-${totalRows}-${data.length}`;
+                    
+                    if (lastProcessedGeometryRef.current !== dataKey) {
+                        lastProcessedGeometryRef.current = dataKey;
+                        
+                        const newSelected = new Set();
+                        
+                        // Get current viewport bounds
+                        const { longitude, latitude, zoom } = viewState;
+                        const containerWidth = mapContainerRef.current?.clientWidth || 800;
+                        const containerHeight = mapContainerRef.current?.clientHeight || 600;
+                        
+                        const viewport = new WebMercatorViewport({
+                            width: containerWidth,
+                            height: containerHeight,
+                            longitude,
+                            latitude,
+                            zoom
+                        });
+                        
+                        const bounds = viewport.getBounds();
+                        
+                        // Filter all visible table data for selected points
+                        data.forEach(tableData => {
+                            const pointIds = filterPointsByGeometryInBounds(
+                                tableData, 
+                                drawnGeometry,
+                                bounds
+                            );
+                            pointIds.forEach(id => newSelected.add(id));
+                        });
+
+                        if (newSelected.size > 0) {
+                            setSelectedPointIds(newSelected);
+                        }
+                    }
+                }
+
                 return data.map((tableData) => {
                     return new ScatterplotLayer({
                         id: `arrow-table-${tableData.tableIndex}`,
@@ -150,13 +253,31 @@ function Map2D() {
                         radiusUnits: 'pixels',
 
                         getFillColor: (rowIndex) => {
+                            const pointId = tableData.getPointId(rowIndex);
+                            
+                            // If point is hovered, show bright red
+                            if (hoveredPointId === pointId) {
+                                return [255, 0, 0, 255]; // Bright red
+                            }
+                            
+                            // If point is selected, highlight it
+                            if (selectedPointIds.has(pointId)) {
+                                return [66, 212, 244, 255]; // Bright cyan
+                            }
+                            
+                            // If there are selected points, dim unselected
+                            if (selectedPointIds.size > 0) {
+                                return [200, 200, 200, 100]; // Dim gray
+                            }
+                            
+                            // Normal displacement color
                             const val = tableData.getDisplacementValue(rowIndex, mode, debouncedTimeIndex);
                             const rgb = colorScale(val);
                             return [rgb[0], rgb[1], rgb[2], 200];
                         },
 
                         updateTriggers: {
-                            getFillColor: [debouncedTimeIndex, mode],
+                            getFillColor: [debouncedTimeIndex, mode, selectedPointIds, hoveredPointId],
                             getPosition: [mode],
                         },
 
@@ -202,6 +323,51 @@ function Map2D() {
                 setIsPlaying={setIsPlaying}
                 setTimeIndex={setTimeIndex}
             />
+
+            <SelectionControls
+                selectionMode={selectionMode}
+                onModeChange={(mode) => {
+                    setSelectionMode(mode);
+                    setIsDrawing(true);
+                }}
+                onClear={() => {
+                    setSelectedPointIds(new Set());
+                    setDrawnGeometry(null);
+                    setSelectedFeatures(null);
+                    setIsDrawing(false);
+                }}
+                selectedCount={selectedPointIds.size}
+                backendFeatureCount={selectedFeatures?.features?.length || 0}
+                isLoadingBackend={isSelectingBackend}
+                bufferDistance={bufferDistance}
+                onBufferChange={setBufferDistance}
+            />
+
+            <DrawingOverlay
+                viewState={viewState}
+                selectionMode={selectionMode}
+                isDrawing={isDrawing}
+                onGeometryComplete={handleGeometryComplete}
+                bufferDistance={bufferDistance}
+                is3D={false}
+            />
+
+            {selectedFeatures && (
+                <div style={{
+                    position: 'absolute',
+                    bottom: '10px',
+                    left: '10px',
+                    right: '10px',
+                    maxWidth: '600px',
+                    zIndex: 999,
+                }}>
+                    <TimeSeriesChart 
+                        selectedFeatures={selectedFeatures}
+                        isLoading={isSelectingBackend}
+                        onPointHover={setHoveredPointId}
+                    />
+                </div>
+            )}
         </div>
     );
 }

@@ -87,6 +87,13 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
             const lonColumn = table.getChild('longitude');
             const latColumn = table.getChild('latitude');
             const heightColumn = table.getChild('height');
+            let pidColumn = table.getChild('pid');
+            
+            // Try alternative column names if primary fails
+            if (!pidColumn) {
+                pidColumn = table.getChild('point_id');
+            }
+            
             const meanVelocityColumn = table.getChild('mean_velocity');
             const displacementsColumn = table.getChild('displacements'); // animation mode
             const displacementColumn = table.getChild('displacement');   // static mode
@@ -105,6 +112,7 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
                     longitude: lonColumn,
                     latitude: latColumn,
                     height: heightColumn,
+                    pid: pidColumn,
                     meanVelocity: meanVelocityColumn,
                     displacements: displacementsColumn,
                     displacement: displacementColumn,
@@ -120,6 +128,11 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
                     const lat = latColumn ? latColumn.get(rowIndex) : altLatColumn?.get(rowIndex);
                     const height = heightColumn ? heightColumn.get(rowIndex) : 0;
                     return { lon, lat, height };
+                },
+
+                // Get point ID for backend queries
+                getPointId: (rowIndex) => {
+                    return pidColumn ? pidColumn.get(rowIndex) : null;
                 },
 
                 getDisplacementValue: (rowIndex, mode, timeIndex) => {

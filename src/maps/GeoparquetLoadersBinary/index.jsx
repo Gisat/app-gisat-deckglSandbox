@@ -8,8 +8,8 @@ import { GeoArrowScatterplotLayer } from '@geoarrow/deck.gl-layers'; // Layer fo
 
 // loaders.gl imports for Parquet loading
 import { load } from '@loaders.gl/core';
-import { ParquetWasmLoader } from '@loaders.gl/parquet';
-// Note: 'apache-arrow' Table type is internally returned by ParquetWasmLoader,
+import { ParquetArrowLoader } from '@loaders.gl/parquet';
+// Note: 'apache-arrow' Table type is internally returned by ParquetArrowLoader,
 // so explicit import 'Table' is not strictly needed here for basic use.
 
 
@@ -46,10 +46,10 @@ function GeoparquetLoadersBinary() {
             console.time('Load_GeoParquet_Time'); // Start timer for data loading
             console.log(`GeoparquetLoadersBinary: Starting to load GeoParquet from: ${GEO_PARQUET_FILE_URL}`);
 
-            // Use loaders.gl's load function with ParquetWasmLoader.
-            // ParquetWasmLoader internally leverages WASM and is designed to return
+            // Use loaders.gl's load function with ParquetArrowLoader.
+            // ParquetArrowLoader internally leverages WASM and is designed to return
             // an object where 'data' property is an Apache Arrow Table instance.
-            load(GEO_PARQUET_FILE_URL, ParquetWasmLoader)
+            load(GEO_PARQUET_FILE_URL, ParquetArrowLoader)
                 .then(result => {
                     // 'result.data' contains the actual Apache Arrow Table instance
                     const loadedArrowTable = result.data;
