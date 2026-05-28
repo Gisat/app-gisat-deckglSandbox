@@ -330,8 +330,7 @@ function Map3D() {
                         id: `mesh-layer-${tableData.tableIndex}`,
                         data: Array.from({ length: tableData.numRows }, (_, i) => i),
                         mesh: sphere,
-                        // Don't apply TerrainExtension here - CogTerrainLayer already handles terrain
-                        // extensions: [new TerrainExtension()],
+                        extensions: [new TerrainExtension()],
                         getPosition: (rowIndex) => {
                             const { lon, lat } = tableData.getPosition(rowIndex);
                             // Clamp to the terrain surface; displacement is visualized in color only.
@@ -379,7 +378,6 @@ function Map3D() {
                         },
 
                         pickable: true,
-                        extensions: [new TerrainExtension()],
                     });
                 });
             }

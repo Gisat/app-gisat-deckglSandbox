@@ -328,13 +328,11 @@ function ArrowLODStream3D() {
                         id: `mesh-layer-${tableData.tableIndex}`,
                         data: Array.from({ length: tableData.numRows }, (_, i) => i),
                         mesh: sphere,
-                        // Don't apply TerrainExtension here - CogTerrainLayer already handles terrain
-                        // extensions: [new TerrainExtension()],
+                        extensions: [new TerrainExtension()],
                         getPosition: (rowIndex) => {
-                            const { lon, lat, height } = tableData.getPosition(rowIndex);
-                            const displacement = tableData.getDisplacementValue(rowIndex, mode, debouncedTimeIndex);
-                            // 🌍 Clamp to terrain surface (height = 0) - displacement shows as color only
-                            return [lon, lat, 267];
+                            const { lon, lat } = tableData.getPosition(rowIndex);
+                            // Clamp to the terrain surface.
+                            return [lon, lat, 0];
                         },
 
                         getColor: (rowIndex) => {
