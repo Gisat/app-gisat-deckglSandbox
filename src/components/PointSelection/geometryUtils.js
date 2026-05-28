@@ -29,8 +29,7 @@ export function normalizeGeometry(mode, coords, bufferMeters = 100) {
         const edge = coords[1];
         
         // Calculate radius in kilometers
-        const radiusMeters = haversine(center, edge) * 1000;
-        const radiusKm = radiusMeters / 1000;
+        const radiusKm = haversine(center, edge);
         
         // Use turf.circle to generate polygon
         const circlePolygon = circle(center, radiusKm, { units: 'kilometers' });
@@ -136,5 +135,4 @@ export function filterPointsByGeometryInBounds(tableData, geometry, bounds) {
     
     return selectedIds;
 }
-
 

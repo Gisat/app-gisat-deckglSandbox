@@ -123,6 +123,8 @@ function Map3D() {
     useEffect(() => {
         if (selectedPointIds.size > 0) {
             queryBackendForSelection(selectedPointIds);
+        } else {
+            setSelectedFeatures(null);
         }
     }, [selectedPointIds]);
 
@@ -331,10 +333,9 @@ function Map3D() {
                         // Don't apply TerrainExtension here - CogTerrainLayer already handles terrain
                         // extensions: [new TerrainExtension()],
                         getPosition: (rowIndex) => {
-                            const { lon, lat, height } = tableData.getPosition(rowIndex);
-                            const displacement = tableData.getDisplacementValue(rowIndex, mode, debouncedTimeIndex);
-                            // 🌍 Clamp to terrain surface (height = 0) - displacement shows as color only
-                            return [lon, lat, 267];
+                            const { lon, lat } = tableData.getPosition(rowIndex);
+                            // Clamp to the terrain surface; displacement is visualized in color only.
+                            return [lon, lat, 0];
                         },
 
                         getColor: (rowIndex) => {
@@ -377,7 +378,8 @@ function Map3D() {
                             getPosition: 0
                         },
 
-                        pickable: true
+                        pickable: true,
+                        extensions: [new TerrainExtension()],
                     });
                 });
             }
@@ -400,9 +402,6 @@ function Map3D() {
                 }}
                 getCursor={() => isDrawing ? 'crosshair' : 'grab'}
                 layers={layers}
-                onHover={(info) => {
-                    // Hover is not used for drawing
-                }}
                 onClick={(info) => {
                     // In 3D mode with drawing active: use the correct 3D terrain coordinates
                     if (isDrawing) {

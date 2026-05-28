@@ -23,12 +23,14 @@ export function DrawingOverlay({
     const selectionModeRef = useRef(selectionMode);
     const bufferDistanceRef = useRef(bufferDistance);
     const is3DRef = useRef(is3D);
+    const viewStateRef = useRef(viewState);
 
     // Keep refs in sync with props/state
     useEffect(() => { onGeometryCompleteRef.current = onGeometryComplete; }, [onGeometryComplete]);
     useEffect(() => { selectionModeRef.current = selectionMode; }, [selectionMode]);
     useEffect(() => { bufferDistanceRef.current = bufferDistance; }, [bufferDistance]);
     useEffect(() => { is3DRef.current = is3D; }, [is3D]);
+    useEffect(() => { viewStateRef.current = viewState; }, [viewState]);
 
     // Keep localCoordsRef in sync whenever state changes
     useEffect(() => { localCoordsRef.current = localCoords; }, [localCoords]);
@@ -75,8 +77,8 @@ export function DrawingOverlay({
             return;
         }
 
-        redrawCanvas(canvas, localCoords, selectionMode, viewState, lastCursorRef.current.x, lastCursorRef.current.y);
-    }, [isDrawing, localCoords, selectionMode, viewState]);
+        redrawCanvas(canvas, localCoords, selectionMode, viewStateRef.current, lastCursorRef.current.x, lastCursorRef.current.y);
+    }, [isDrawing, localCoords, selectionMode]);
 
     // Interaction handlers: attach only when drawing starts/stops to avoid frequent reattachment
     useEffect(() => {
@@ -89,7 +91,7 @@ export function DrawingOverlay({
             const y = e.clientY - rect.top;
             lastCursorRef.current = { x, y };
             if (localCoordsRef.current.length > 0) {
-                redrawCanvas(canvas, localCoordsRef.current, selectionModeRef.current, viewState, x, y);
+                redrawCanvas(canvas, localCoordsRef.current, selectionModeRef.current, viewStateRef.current, x, y);
             }
         };
 
@@ -98,7 +100,7 @@ export function DrawingOverlay({
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            const coord = screenToGeo(viewState, x, y, canvas.width, canvas.height);
+            const coord = screenToGeo(viewStateRef.current, x, y, canvas.width, canvas.height);
 
             if (is3DRef.current) {
                 addCoord(coord);

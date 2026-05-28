@@ -221,8 +221,8 @@ def select_by_geometry():
                     'point_id': point_id,
                     'displacements': list(displacements) if displacements else [],
                     'dates': [d.strftime('%Y-%m-%d') for d in dates] if dates else [],
-                    'mean_velocity': float(mean_velocity) if mean_velocity else 0,
-                    'height': float(height) if height else 0,
+                    'mean_velocity': float(mean_velocity) if mean_velocity is not None else 0,
+                    'height': float(height) if height is not None else 0,
                 }
             })
 

@@ -108,6 +108,8 @@ function Map2D() {
     useEffect(() => {
         if (selectedPointIds.size > 0) {
             queryBackendForSelection(selectedPointIds);
+        } else {
+            setSelectedFeatures(null);
         }
     }, [selectedPointIds]);
 
