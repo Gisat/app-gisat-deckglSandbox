@@ -1,13 +1,14 @@
-// Adapted from deck.gl-geotiff CogTerrainKernelExample
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { DeckGL } from 'deck.gl';
-import { MapView } from '@deck.gl/core';
-import { BitmapLayer, GeoJsonLayer } from '@deck.gl/layers';
 import { TileLayer } from '@deck.gl/geo-layers';
-import { CogTerrainLayer, CogTiles } from '@gisatcz/deckgl-geolib';
-import { MaskExtension } from '@deck.gl/extensions';
+import { BitmapLayer } from '@deck.gl/layers';
+import { CogTerrainLayer, CogTiles, CogBitmapLayer } from '@gisatcz/deckgl-geolib';
+import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
+const SATELLITE_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const OSM_TILE_URL = 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
 const INITIAL_VIEW_STATE = {
   longitude: -66.33,
   latitude: -17.09,
@@ -18,29 +19,50 @@ const INITIAL_VIEW_STATE = {
   maxZoom: 13.5,
   maxPitch: 60
 };
+
 const MODES = [
   { key: 'elevation', label: 'Elevation' },
   { key: 'slope', label: 'Slope' },
   { key: 'hillshade', label: 'Hillshade' },
+  { key: 'elevation-swiss', label: 'Shaded Elevation' },
+  { key: 'satellite-clamped', label: 'Satellite' },
+  { key: 'satellite-glaze', label: 'Shaded Satellite' },
+  { key: 'osm-clamped', label: 'OSM' },
+  { key: 'osm-glaze', label: 'Shaded OSM' },
 ];
 
 const MODE_OPTIONS = {
   elevation: {
+    useSwissRelief: false,
+    useHeatMap: true,
+    colorScale: [
+      [0, 60, 48],
+      [1, 102, 94],
+      [90, 180, 172],
+      [128, 205, 193],
+      [245, 245, 245],
+      [223, 194, 125],
+      [166, 97, 26],
+      [140, 81, 10],
+      [84, 48, 5],
+    ],
+    colorScaleValueRange: [2500, 5000],
+  },
+  'elevation-swiss': {
     useSwissRelief: true,
     useHeatMap: true,
     colorScale: [
-      [0, 60, 48],    // #003c30 (2500)
-      [1, 102, 94],   // #01665e (3100)
-      [90, 180, 172], // #5ab4ac (3730)
-      [128, 205, 193],// #80cdc1 (3755)
-      [245, 245, 245],// #f5f5f5 (3780)
-      [223, 194, 125],// #dfc27d (3805)
-      [166, 97, 26],  // #a6611a (3830)
-      [140, 81, 10],  // #8c510a (4410)
-      [84, 48, 5],    // #543005 (5000)
+      [0, 60, 48],
+      [1, 102, 94],
+      [90, 180, 172],
+      [128, 205, 193],
+      [245, 245, 245],
+      [223, 194, 125],
+      [166, 97, 26],
+      [140, 81, 10],
+      [84, 48, 5],
     ],
     colorScaleValueRange: [2500, 5000],
-    // colorScaleValueRange: [2500, 3100, 3730, 3755, 3780, 3805, 3830, 4410, 5000],
   },
   slope: {
     useSlope: true,
@@ -60,6 +82,24 @@ const MODE_OPTIONS = {
     hillshadeAzimuth: 315,
     hillshadeAltitude: 45,
   },
+  'satellite-clamped': {
+    useSingleColor: true,
+    color: [200, 200, 200, 255],
+  },
+  'satellite-glaze': {
+    disableLighting: true,
+    useSingleColor: true,
+    color: [200, 200, 200, 255],
+  },
+  'osm-clamped': {
+    useSingleColor: true,
+    color: [200, 200, 200, 255],
+  },
+  'osm-glaze': {
+    disableLighting: true,
+    useSingleColor: true,
+    color: [200, 200, 200, 255],
+  },
 };
 
 function buildTerrainOptions(mode) {
@@ -71,11 +111,10 @@ function buildTerrainOptions(mode) {
   };
 }
 
-function getElevationAtInfo(info){
+function getElevationAtInfo(info) {
   const tileResult = info.tile?.content?.[0];
   if (!tileResult?.raw) return null;
   const { raw, width, height } = tileResult;
-
   let u, v;
   if (info.uv) {
     [u, v] = info.uv;
@@ -85,19 +124,17 @@ function getElevationAtInfo(info){
     v = (north - info.coordinate[1]) / (north - south);
   }
   if (u === undefined || v === undefined) return null;
-
   const x = Math.min(width - 1, Math.max(0, Math.floor(u * (width - 1))));
   const y = Math.min(height - 1, Math.max(0, Math.floor(v * (height - 1))));
   return raw[y * width + x];
 }
 
-function getDerivedAtInfo(info){
+function getDerivedAtInfo(info) {
   const tileResult = info.tile?.content?.[0];
   if (!tileResult?.rawDerived) return null;
   const { rawDerived } = tileResult;
   const width = 256;
   const height = 256;
-
   let u, v;
   if (info.uv) {
     [u, v] = info.uv;
@@ -107,7 +144,6 @@ function getDerivedAtInfo(info){
     v = (north - info.coordinate[1]) / (north - south);
   }
   if (u === undefined || v === undefined) return null;
-
   const x = Math.min(width - 1, Math.max(0, Math.floor(u * (width - 1))));
   const y = Math.min(height - 1, Math.max(0, Math.floor(v * (height - 1))));
   return rawDerived[y * width + x];
@@ -115,126 +151,450 @@ function getDerivedAtInfo(info){
 
 function CogTerrainKernel() {
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
-  const [mode, setMode] = useState('elevation');
-  const [cogState, setCogState] = useState({ cog: null, mode: 'elevation' });
+  const [baseMode, setBaseMode] = useState('elevation');
+  const [compareMode, setCompareMode] = useState('elevation-swiss');
+  const [baseCogState, setBaseCogState] = useState({ cog: null, mode: 'elevation' });
+  const [compareCogState, setCompareCogState] = useState({ cog: null, mode: 'elevation-swiss' });
+  const [sliderPosition, setSliderPosition] = useState(0.5);
+  const [isDragging, setIsDragging] = useState(false);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const containerRef = useRef(null);
 
-  // Initialize CogTiles ONCE on mount
+  // Initialize base CogTiles
   useEffect(() => {
     const cogInstance = new CogTiles(buildTerrainOptions('elevation'));
     cogInstance.initializeCog(DEM_COG_URL).then(() => {
-      setCogState({ cog: cogInstance, mode: 'elevation' });
-    });
+      setBaseCogState({ cog: cogInstance, mode: 'elevation' });
+    }).catch(err => console.error('Base CogTiles init error:', err));
   }, []);
 
-  // Reinitialize CogTiles when mode changes (needed for kernel computation)
+  // Initialize compare CogTiles
   useEffect(() => {
-    if (!cogState.cog || mode === cogState.mode) return;
-    
-    const newCog = new CogTiles(buildTerrainOptions(mode));
+    const cogInstance = new CogTiles(buildTerrainOptions('elevation-swiss'));
+    cogInstance.initializeCog(DEM_COG_URL).then(() => {
+      setCompareCogState({ cog: cogInstance, mode: 'elevation-swiss' });
+    }).catch(err => console.error('Compare CogTiles init error:', err));
+  }, []);
+
+  // Track container size for proper pixel-based positioning
+  useEffect(() => {
+    const updateSize = () => {
+      if (containerRef.current) {
+        setContainerSize({
+          width: containerRef.current.offsetWidth,
+          height: containerRef.current.offsetHeight,
+        });
+      }
+    };
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  // Update base CogTiles when mode changes
+  useEffect(() => {
+    if (!baseCogState.cog || baseMode === baseCogState.mode) return;
+    const newCog = new CogTiles(buildTerrainOptions(baseMode));
     newCog.initializeCog(DEM_COG_URL).then(() => {
-      setCogState({ cog: newCog, mode });
-    });
-  }, [mode, cogState.cog, cogState.mode]);
+      setBaseCogState({ cog: newCog, mode: baseMode });
+    }).catch(err => console.error('Base mode update error:', err));
+  }, [baseMode, baseCogState.cog, baseCogState.mode]);
 
-  const layers = useMemo(() => {
-    if (!cogState.cog) return [];
+  // Update compare CogTiles when mode changes
+  useEffect(() => {
+    if (!compareCogState.cog || compareMode === compareCogState.mode) return;
+    const newCog = new CogTiles(buildTerrainOptions(compareMode));
+    newCog.initializeCog(DEM_COG_URL).then(() => {
+      setCompareCogState({ cog: newCog, mode: compareMode });
+    }).catch(err => console.error('Compare mode update error:', err));
+  }, [compareMode, compareCogState.cog, compareCogState.mode]);
 
-    // The "Stencil" - defines the high-res shape of the water
-    const maskLayer = new GeoJsonLayer({
-      id: 'water-mask',
-      data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/misicuni_max_mask.geojson', // Your QGIS export (EPSG:4326)
-      operation: 'mask',
-      maskInverted: true,
-    });
+  // Create layers
+  const baseLayers = useMemo(() => {
+    if (!baseCogState.cog) return [];
+    const terrainLayers = [new CogTerrainLayer({
+      id: 'cog-terrain-base',
+      elevationData: DEM_COG_URL,
+      cogTiles: baseCogState.cog,
+      isTiled: true,
+      tileSize: 256,
+      operation: (baseCogState.mode === 'satellite-glaze' || baseCogState.mode === 'osm-glaze') ? 'terrain' : 'terrain+draw',
+      terrainOptions: buildTerrainOptions(baseCogState.mode),
+      pickable: !(baseCogState.mode.includes('clamped') || baseCogState.mode.includes('glaze')),
+    })];
 
-    return [
-      maskLayer, 
-      // new TileLayer({
-      //   id: 'osm',
-      //   data: 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      //   minZoom: 0,
-      //   maxZoom: 19,
-      //   tileSize: 256,
-      //   pickable: false,
-      //   /* eslint-disable react/prop-types */
-      //   renderSubLayers: (props) => {
-      //     const { bbox, data } = props.tile;
-      //     const { west, south, east, north } = bbox;
-      //     return new BitmapLayer(props, {
-      //       data: undefined,
-      //       image: data,
-      //       bounds: [west, south, east, north],
-      //     });
-      //   },
-      //   /* eslint-enable react/prop-types */
-      // }),
-      new CogTerrainLayer({
-        id: 'cog-terrain-kernel',
-        elevationData: DEM_COG_URL,
-        cogTiles: cogState.cog,
-        isTiled: true,
-        tileSize: 256,
-        operation: 'terrain+draw',
-        terrainOptions: buildTerrainOptions(cogState.mode),
-        pickable: true,
-      }),
-      new CogTerrainLayer({
-        id: 'cog-terrain-kernel-dam-surface',
-        // elevationData: "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_3000_10x10_intermediate_cog.tif",
-        // elevationData: "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_Max_10x10_cog.tif",
-        elevationData: "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_30_10x10_intermediate_cog.tif",
-        isTiled: true,
-        tileSize: 256,
-        extensions: [new MaskExtension()],
-        maskId: 'water-mask',
-        operation: 'terrain+draw',
-        terrainOptions: {
-          type: 'terrain',
-          terrainSkirtHeight: 0,
-          useChannel: 20  ,
-          useSingleColor: true,
-          color: [0, 105, 148, 180], // Deep Ocean Blue, 70% opacity
-        },
-        pickable: true,
-      }),
-    ];
-  }, [cogState]);
+    // Add satellite base layer for satellite modes
+    if (baseCogState.mode === 'satellite-clamped' || baseCogState.mode === 'satellite-glaze') {
+      terrainLayers.push(
+        new TileLayer({
+          data: SATELLITE_TILE_URL,
+          id: 'satellite-base',
+          minZoom: 0,
+          maxZoom: 19,
+          tileSize: 256,
+          extensions: [new TerrainExtension()],
+          /* eslint-disable react/prop-types */
+          renderSubLayers: (props) => {
+            const { bbox } = props.tile;
+            const { west, south, east, north } = bbox;
+            return new BitmapLayer(props, {
+              data: undefined,
+              image: props.data,
+              bounds: [west, south, east, north],
+            });
+          },
+          /* eslint-enable react/prop-types */
+        })
+      );
+    }
 
-  const isTransitioning = cogState.mode !== mode;
+    // Add OSM base layer for OSM modes
+    if (baseCogState.mode === 'osm-clamped' || baseCogState.mode === 'osm-glaze') {
+      terrainLayers.push(
+        new TileLayer({
+          data: OSM_TILE_URL,
+          id: 'osm-base',
+          minZoom: 0,
+          maxZoom: 19,
+          tileSize: 256,
+          extensions: [new TerrainExtension()],
+          /* eslint-disable react/prop-types */
+          renderSubLayers: (props) => {
+            const { bbox } = props.tile;
+            const { west, south, east, north } = bbox;
+            return new BitmapLayer(props, {
+              data: undefined,
+              image: props.data,
+              bounds: [west, south, east, north],
+            });
+          },
+          /* eslint-enable react/prop-types */
+        })
+      );
+    }
+
+    // Add relief glaze overlay for glaze modes
+    if (baseCogState.mode === 'satellite-glaze' || baseCogState.mode === 'osm-glaze') {
+      terrainLayers.push(
+        new CogBitmapLayer({
+          id: 'relief-glaze-overlay',
+          rasterData: DEM_COG_URL,
+          isTiled: true,
+          tileSize: 256,
+          clampToTerrain: true,
+          extensions: [new TerrainExtension()],
+          cogBitmapOptions: {
+            type: 'image',
+            useReliefGlaze: true,
+            noDataValue: 0,
+            useChannel: 1,
+            swissSlopeWeight: 0.3,
+            zFactor: 10,
+            maxGlazeAlpha: 80,
+          },
+        })
+      );
+    }
+
+    return terrainLayers;
+  }, [baseCogState]);
+
+  const compareLayers = useMemo(() => {
+    if (!compareCogState.cog) return [];
+    const terrainLayers = [new CogTerrainLayer({
+      id: 'cog-terrain-compare',
+      elevationData: DEM_COG_URL,
+      cogTiles: compareCogState.cog,
+      isTiled: true,
+      tileSize: 256,
+      operation: (compareCogState.mode === 'satellite-glaze' || compareCogState.mode === 'osm-glaze') ? 'terrain' : 'terrain+draw',
+      terrainOptions: buildTerrainOptions(compareCogState.mode),
+      pickable: !(compareCogState.mode.includes('clamped') || compareCogState.mode.includes('glaze')),
+    })];
+
+    // Add satellite base layer for satellite modes
+    if (compareCogState.mode === 'satellite-clamped' || compareCogState.mode === 'satellite-glaze') {
+      terrainLayers.push(
+        new TileLayer({
+          data: SATELLITE_TILE_URL,
+          id: 'satellite-base',
+          minZoom: 0,
+          maxZoom: 19,
+          tileSize: 256,
+          extensions: [new TerrainExtension()],
+          /* eslint-disable react/prop-types */
+          renderSubLayers: (props) => {
+            const { bbox } = props.tile;
+            const { west, south, east, north } = bbox;
+            return new BitmapLayer(props, {
+              data: undefined,
+              image: props.data,
+              bounds: [west, south, east, north],
+            });
+          },
+          /* eslint-enable react/prop-types */
+        })
+      );
+    }
+
+    // Add OSM base layer for OSM modes
+    if (compareCogState.mode === 'osm-clamped' || compareCogState.mode === 'osm-glaze') {
+      terrainLayers.push(
+        new TileLayer({
+          data: OSM_TILE_URL,
+          id: 'osm-base',
+          minZoom: 0,
+          maxZoom: 19,
+          tileSize: 256,
+          extensions: [new TerrainExtension()],
+          /* eslint-disable react/prop-types */
+          renderSubLayers: (props) => {
+            const { bbox } = props.tile;
+            const { west, south, east, north } = bbox;
+            return new BitmapLayer(props, {
+              data: undefined,
+              image: props.data,
+              bounds: [west, south, east, north],
+            });
+          },
+          /* eslint-enable react/prop-types */
+        })
+      );
+    }
+
+    // Add relief glaze overlay for glaze modes
+    if (compareCogState.mode === 'satellite-glaze' || compareCogState.mode === 'osm-glaze') {
+      terrainLayers.push(
+        new CogBitmapLayer({
+          id: 'relief-glaze-overlay',
+          rasterData: DEM_COG_URL,
+          isTiled: true,
+          tileSize: 256,
+          clampToTerrain: true,
+          extensions: [new TerrainExtension()],
+          cogBitmapOptions: {
+            type: 'image',
+            useReliefGlaze: true,
+            noDataValue: 0,
+            useChannel: 1,
+            swissSlopeWeight: 0.3,
+            zFactor: 10,
+            maxGlazeAlpha: 80,
+          },
+        })
+      );
+    }
+
+    return terrainLayers;
+  }, [compareCogState]);
+
+  const handleViewStateChange = useCallback(({ viewState: newViewState }) => {
+    setViewState(newViewState);
+  }, []);
+
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const handleMouseMove = (e) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const newPosition = (e.clientX - rect.left) / rect.width;
+      setSliderPosition(Math.max(0, Math.min(1, newPosition)));
+    };
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
+
+  const getTooltip = useCallback((info) => {
+    const elevation = getElevationAtInfo(info);
+    const derived = getDerivedAtInfo(info);
+    if (elevation === null) return null;
+    const lines = [`Elevation: ${elevation.toFixed(1)} m`];
+    if (derived !== null) {
+      const mode = info.layer?.id?.includes('compare') ? compareCogState.mode : baseCogState.mode;
+      if (mode === 'slope') lines.push(`Slope: ${derived.toFixed(1)}\xB0`);
+      if (mode === 'hillshade') lines.push(`Hillshade: ${derived.toFixed(0)}`);
+    }
+    return { text: lines.join('\n') };
+  }, [baseCogState.mode, compareCogState.mode]);
+
+  const baseIsTransitioning = baseCogState.mode !== baseMode;
+  const compareIsTransitioning = compareCogState.mode !== compareMode;
+
+  // Use pixel-based positioning for proper alignment
+  const sliderPixels = sliderPosition * containerSize.width;
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
-      <div style={{ position: 'absolute', zIndex: 1, left: 10, top: 10 }}>
-        {MODES.map(m => (
-          <button key={m.key} onClick={() => setMode(m.key)} disabled={mode === m.key || isTransitioning}>
-            {m.label}
-          </button>
-        ))}
-      </div>
-      <DeckGL
-          getCursor={() => 'crosshair'}
+    <div
+      ref={containerRef}
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
+        userSelect: isDragging ? 'none' : 'auto',
+      }}
+    >
+      {/* Base layer - always fully visible */}
+      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
+        <DeckGL
           viewState={viewState}
-          onViewStateChange={({ viewState }) => setViewState(viewState)}
+          onViewStateChange={handleViewStateChange}
           controller={true}
-          layers={layers}
-          views={new MapView({ 
-            repeat: true,
-            minZoom: 2,
-            maxZoom: 2,
-            maxPitch: 60
-          })}
-          getTooltip={useCallback((info) => {
-            const elevation = getElevationAtInfo(info);
-            const derived = getDerivedAtInfo(info);
-            if (elevation === null) return null;
-            const lines = [`Elevation: ${elevation.toFixed(1)} m`];
-            if (derived !== null) {
-              if (cogState.mode === 'slope') lines.push(`Slope: ${derived.toFixed(1)}\xB0`);
-              if (cogState.mode === 'hillshade') lines.push(`Hillshade: ${derived.toFixed(0)}`);
-            }
-            return { text: lines.join('\n') };
-          }, [cogState.mode])}
-      />
+          layers={baseLayers}
+          getTooltip={getTooltip}
+          getCursor={() => 'crosshair'}
+          deviceProps={{ waitForPageLoad: false }}
+        />
+      </div>
+
+      {/* Compare layer - clipped on the right side using pixel-based positioning */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: `${sliderPixels}px`,
+          width: `${containerSize.width - sliderPixels}px`,
+          height: '100%',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: `${-sliderPixels}px`,
+            width: `${containerSize.width}px`,
+            height: '100%',
+          }}
+        >
+          <DeckGL
+            viewState={viewState}
+            onViewStateChange={handleViewStateChange}
+            controller={true}
+            layers={compareLayers}
+            getTooltip={getTooltip}
+            getCursor={() => 'crosshair'}
+            deviceProps={{ waitForPageLoad: false }}
+          />
+        </div>
+      </div>
+
+      {/* Base layer controls */}
+      <div style={{ position: 'absolute', zIndex: 10, top: 10, left: 10, pointerEvents: 'auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {MODES.map(m => (
+            <button
+              key={m.key}
+              onClick={() => setBaseMode(m.key)}
+              disabled={baseMode === m.key || baseIsTransitioning}
+              style={{
+                padding: '6px 10px',
+                fontSize: 11,
+                backgroundColor: baseMode === m.key ? '#2196F3' : '#666',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: baseMode === m.key || baseIsTransitioning ? 'default' : 'pointer',
+                opacity: baseIsTransitioning ? 0.6 : 1,
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Compare layer controls */}
+      <div style={{ position: 'absolute', zIndex: 10, top: 10, right: 10, pointerEvents: 'auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {MODES.map(m => (
+            <button
+              key={m.key}
+              onClick={() => setCompareMode(m.key)}
+              disabled={compareMode === m.key || compareIsTransitioning}
+              style={{
+                padding: '6px 10px',
+                fontSize: 11,
+                backgroundColor: compareMode === m.key ? '#2196F3' : '#666',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: compareMode === m.key || compareIsTransitioning ? 'default' : 'pointer',
+                opacity: compareIsTransitioning ? 0.6 : 1,
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Slider divider with indicator */}
+      <div
+        onMouseDown={handleMouseDown}
+        style={{
+          position: 'absolute',
+          left: `${sliderPixels}px`,
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: 60,
+          height: 60,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'col-resize',
+          userSelect: 'none',
+          zIndex: 30,
+          pointerEvents: 'auto',
+        }}
+      >
+        {/* White vertical line */}
+        <div
+          style={{
+            position: 'absolute',
+            width: 4,
+            height: '150vh',
+            backgroundColor: '#fff',
+            opacity: isDragging ? 1 : 0.8,
+            boxShadow: '0 0 10px rgba(0, 0, 0, 0.6)',
+            transition: isDragging ? 'none' : 'opacity 0.2s',
+            pointerEvents: 'none',
+          }}
+        />
+        {/* Circular indicator with arrows */}
+        <div
+          style={{
+            position: 'absolute',
+            width: 50,
+            height: 50,
+            borderRadius: '50%',
+            backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            border: '2px solid rgba(255, 255, 255, 0.8)',
+            boxShadow: '0 0 8px rgba(0, 0, 0, 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 16,
+            fontWeight: 'bold',
+            color: 'rgba(255, 255, 255, 0.8)',
+            pointerEvents: 'none',
+          }}
+        >
+          ◀ ▶
+        </div>
+      </div>
     </div>
   );
 }
