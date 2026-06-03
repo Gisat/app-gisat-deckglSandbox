@@ -5,6 +5,7 @@ import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
 const SATELLITE_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const OSM_TILE_URL = 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
 const INITIAL_VIEW_STATE = {
   longitude: -66.33,
@@ -24,6 +25,8 @@ const MODES = [
   { key: 'elevation-swiss', label: 'Shaded Elevation' },
   { key: 'satellite-clamped', label: 'Satellite' },
   { key: 'satellite-glaze', label: 'Shaded Satellite' },
+  { key: 'osm-clamped', label: 'OSM' },
+  { key: 'osm-glaze', label: 'Shaded OSM' },
 ];
 
 const MODE_OPTIONS = {
@@ -82,6 +85,15 @@ const MODE_OPTIONS = {
     color: [200, 200, 200, 255],
   },
   'satellite-glaze': {
+    disableLighting: true,
+    useSingleColor: true,
+    color: [200, 200, 200, 255],
+  },
+  'osm-clamped': {
+    useSingleColor: true,
+    color: [200, 200, 200, 255],
+  },
+  'osm-glaze': {
     disableLighting: true,
     useSingleColor: true,
     color: [200, 200, 200, 255],
@@ -204,9 +216,9 @@ function CogTerrainKernel() {
       cogTiles: baseCogState.cog,
       isTiled: true,
       tileSize: 256,
-      operation: baseCogState.mode === 'satellite-glaze' ? 'terrain' : 'terrain+draw',
+      operation: (baseCogState.mode === 'satellite-glaze' || baseCogState.mode === 'osm-glaze') ? 'terrain' : 'terrain+draw',
       terrainOptions: buildTerrainOptions(baseCogState.mode),
-      pickable: baseCogState.mode !== 'satellite-clamped' && baseCogState.mode !== 'satellite-glaze',
+      pickable: !(baseCogState.mode.includes('clamped') || baseCogState.mode.includes('glaze')),
     })];
 
     // Add satellite base layer for satellite modes
@@ -234,8 +246,33 @@ function CogTerrainKernel() {
       );
     }
 
-    // Add relief glaze overlay for glaze mode
-    if (baseCogState.mode === 'satellite-glaze') {
+    // Add OSM base layer for OSM modes
+    if (baseCogState.mode === 'osm-clamped' || baseCogState.mode === 'osm-glaze') {
+      terrainLayers.push(
+        new TileLayer({
+          data: OSM_TILE_URL,
+          id: 'osm-base',
+          minZoom: 0,
+          maxZoom: 19,
+          tileSize: 256,
+          extensions: [new TerrainExtension()],
+          /* eslint-disable react/prop-types */
+          renderSubLayers: (props) => {
+            const { bbox } = props.tile;
+            const { west, south, east, north } = bbox;
+            return new BitmapLayer(props, {
+              data: undefined,
+              image: props.data,
+              bounds: [west, south, east, north],
+            });
+          },
+          /* eslint-enable react/prop-types */
+        })
+      );
+    }
+
+    // Add relief glaze overlay for glaze modes
+    if (baseCogState.mode === 'satellite-glaze' || baseCogState.mode === 'osm-glaze') {
       terrainLayers.push(
         new CogBitmapLayer({
           id: 'relief-glaze-overlay',
@@ -250,8 +287,8 @@ function CogTerrainKernel() {
             noDataValue: 0,
             useChannel: 1,
             swissSlopeWeight: 0.3,
-            zFactor: 20,
-            maxGlazeAlpha: 130,
+            zFactor: 10,
+            maxGlazeAlpha: 80,
           },
         })
       );
@@ -268,9 +305,9 @@ function CogTerrainKernel() {
       cogTiles: compareCogState.cog,
       isTiled: true,
       tileSize: 256,
-      operation: compareCogState.mode === 'satellite-glaze' ? 'terrain' : 'terrain+draw',
+      operation: (compareCogState.mode === 'satellite-glaze' || compareCogState.mode === 'osm-glaze') ? 'terrain' : 'terrain+draw',
       terrainOptions: buildTerrainOptions(compareCogState.mode),
-      pickable: compareCogState.mode !== 'satellite-clamped' && compareCogState.mode !== 'satellite-glaze',
+      pickable: !(compareCogState.mode.includes('clamped') || compareCogState.mode.includes('glaze')),
     })];
 
     // Add satellite base layer for satellite modes
@@ -298,8 +335,33 @@ function CogTerrainKernel() {
       );
     }
 
-    // Add relief glaze overlay for glaze mode
-    if (compareCogState.mode === 'satellite-glaze') {
+    // Add OSM base layer for OSM modes
+    if (compareCogState.mode === 'osm-clamped' || compareCogState.mode === 'osm-glaze') {
+      terrainLayers.push(
+        new TileLayer({
+          data: OSM_TILE_URL,
+          id: 'osm-base',
+          minZoom: 0,
+          maxZoom: 19,
+          tileSize: 256,
+          extensions: [new TerrainExtension()],
+          /* eslint-disable react/prop-types */
+          renderSubLayers: (props) => {
+            const { bbox } = props.tile;
+            const { west, south, east, north } = bbox;
+            return new BitmapLayer(props, {
+              data: undefined,
+              image: props.data,
+              bounds: [west, south, east, north],
+            });
+          },
+          /* eslint-enable react/prop-types */
+        })
+      );
+    }
+
+    // Add relief glaze overlay for glaze modes
+    if (compareCogState.mode === 'satellite-glaze' || compareCogState.mode === 'osm-glaze') {
       terrainLayers.push(
         new CogBitmapLayer({
           id: 'relief-glaze-overlay',
@@ -314,8 +376,8 @@ function CogTerrainKernel() {
             noDataValue: 0,
             useChannel: 1,
             swissSlopeWeight: 0.3,
-            zFactor: 20,
-            maxGlazeAlpha: 130,
+            zFactor: 10,
+            maxGlazeAlpha: 80,
           },
         })
       );
