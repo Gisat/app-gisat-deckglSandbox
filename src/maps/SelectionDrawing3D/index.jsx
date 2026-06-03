@@ -319,8 +319,8 @@ export default function SelectionDrawing3D() {
           position: 'absolute',
           bottom: '10px',
           left: '10px',
-          right: '10px',
-          maxWidth: '600px',
+          width: 'calc(50% - 430px)',
+          minWidth: '300px',
           zIndex: 999,
         }}>
           <TimeSeriesChart

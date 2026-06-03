@@ -349,7 +349,8 @@ function Map2D() {
                     position: 'absolute',
                     bottom: '10px',
                     left: '10px',
-                    right: 'calc(50% + 420px)',
+                    width: 'calc(50% - 430px)',
+                    minWidth: '300px',
                     zIndex: 999,
                 }}>
                     <TimeSeriesChart 
