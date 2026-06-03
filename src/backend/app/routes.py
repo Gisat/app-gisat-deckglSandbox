@@ -11,8 +11,7 @@ bp = Blueprint('api', __name__, url_prefix='/api')
 @bp.route('/dates', methods=['GET'])
 def get_dates():
     try:
-        geoparquet_path = request.args.get('geoparquet_path')
-        db = Database(geoparquet_path)
+        db = Database()  # Uses GEOPARQUET_PATH from environment only
         query = "SELECT dates FROM egms_data LIMIT 1"
         dates_list_objects = db.get_conn().execute(query).fetchone()[0]
         dates_list_strings = [d.strftime('%Y-%m-%d') for d in dates_list_objects]
@@ -23,8 +22,7 @@ def get_dates():
 @bp.route('/data', methods=['GET'])
 def get_data():
     try:
-        geoparquet_path = request.args.get('geoparquet_path')
-        db = Database(geoparquet_path)
+        db = Database()  # Uses GEOPARQUET_PATH from environment only
         tile_x = request.args.get('tile_x', type=int)
         tile_y = request.args.get('tile_y', type=int)
         date_index = request.args.get('date_index', type=int, default=0)
@@ -128,11 +126,10 @@ def select_by_geometry():
         point_ids = body.get('point_ids')
         geometry = body.get('geometry')
         zoom = body.get('zoom', 12)
-        geoparquet_path = body.get('geoparquet_path')
         latitude_col = body.get('latitude_col', 'y')
         longitude_col = body.get('longitude_col', 'x')
 
-        db = Database(geoparquet_path)
+        db = Database()  # Uses GEOPARQUET_PATH from environment only
 
         # **NEW APPROACH**: Query by point IDs (fast local filtering from frontend)
         if point_ids and len(point_ids) > 0:
