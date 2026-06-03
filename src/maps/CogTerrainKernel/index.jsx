@@ -480,7 +480,7 @@ function CogTerrainKernel() {
           <DeckGL
             viewState={viewState}
             onViewStateChange={handleViewStateChange}
-            controller={false}
+            controller={true}
             layers={compareLayers}
             getTooltip={getTooltip}
             getCursor={() => 'crosshair'}
