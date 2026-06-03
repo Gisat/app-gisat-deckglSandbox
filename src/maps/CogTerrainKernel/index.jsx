@@ -1,12 +1,10 @@
-// Adapted from deck.gl-geotiff CogTerrainKernelExample
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { DeckGL, TileLayer, BitmapLayer } from 'deck.gl';
-import { MapView } from '@deck.gl/core';
-import { CogTerrainLayer, CogTiles, CogBitmapLayer } from '@gisatcz/deckgl-geolib';
-import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
+import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
+import PropTypes from 'prop-types';
+import { DeckGL } from 'deck.gl';
+import { CogTerrainLayer, CogTiles } from '@gisatcz/deckgl-geolib';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
-const SATELLITE_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
 const INITIAL_VIEW_STATE = {
   longitude: -66.33,
   latitude: -17.09,
@@ -17,13 +15,12 @@ const INITIAL_VIEW_STATE = {
   maxZoom: 13.5,
   maxPitch: 60
 };
+
 const MODES = [
   { key: 'elevation', label: 'Elevation' },
   { key: 'slope', label: 'Slope' },
   { key: 'hillshade', label: 'Hillshade' },
-  { key: 'elevation-swiss', label: 'Shaded Elevation (Swiss Relief)' },
-  { key: 'satellite-clamped', label: 'Satellite (Clamped to Terrain)' },
-  { key: 'satellite-glaze', label: 'Satellite with Relief Glaze' },
+  { key: 'elevation-swiss', label: 'Shaded Elevation' },
 ];
 
 const MODE_OPTIONS = {
@@ -31,32 +28,31 @@ const MODE_OPTIONS = {
     useSwissRelief: false,
     useHeatMap: true,
     colorScale: [
-      [0, 60, 48],    // #003c30 (2500)
-      [1, 102, 94],   // #01665e (3100)
-      [90, 180, 172], // #5ab4ac (3730)
-      [128, 205, 193],// #80cdc1 (3755)
-      [245, 245, 245],// #f5f5f5 (3780)
-      [223, 194, 125],// #dfc27d (3805)
-      [166, 97, 26],  // #a6611a (3830)
-      [140, 81, 10],  // #8c510a (4410)
-      [84, 48, 5],    // #543005 (5000)
+      [0, 60, 48],
+      [1, 102, 94],
+      [90, 180, 172],
+      [128, 205, 193],
+      [245, 245, 245],
+      [223, 194, 125],
+      [166, 97, 26],
+      [140, 81, 10],
+      [84, 48, 5],
     ],
     colorScaleValueRange: [2500, 5000],
-    // colorScaleValueRange: [2500, 3100, 3730, 3755, 3780, 3805, 3830, 4410, 5000],
   },
   'elevation-swiss': {
     useSwissRelief: true,
     useHeatMap: true,
     colorScale: [
-      [0, 60, 48],    // #003c30 (2500)
-      [1, 102, 94],   // #01665e (3100)
-      [90, 180, 172], // #5ab4ac (3730)
-      [128, 205, 193],// #80cdc1 (3755)
-      [245, 245, 245],// #f5f5f5 (3780)
-      [223, 194, 125],// #dfc27d (3805)
-      [166, 97, 26],  // #a6611a (3830)
-      [140, 81, 10],  // #8c510a (4410)
-      [84, 48, 5],    // #543005 (5000)
+      [0, 60, 48],
+      [1, 102, 94],
+      [90, 180, 172],
+      [128, 205, 193],
+      [245, 245, 245],
+      [223, 194, 125],
+      [166, 97, 26],
+      [140, 81, 10],
+      [84, 48, 5],
     ],
     colorScaleValueRange: [2500, 5000],
   },
@@ -78,17 +74,6 @@ const MODE_OPTIONS = {
     hillshadeAzimuth: 315,
     hillshadeAltitude: 45,
   },
-  'satellite-clamped': {
-    // No terrain texture - satellite will be draped via separate layer
-    useSingleColor: true,
-    color: [200, 200, 200, 255],
-  },
-  'satellite-glaze': {
-    // For glaze mode: render terrain mesh only (no texture)
-    disableLighting: true,
-    useSingleColor: true,
-    color: [200, 200, 200, 255],
-  },
 };
 
 function buildTerrainOptions(mode) {
@@ -100,7 +85,7 @@ function buildTerrainOptions(mode) {
   };
 }
 
-function getElevationAtInfo(info){
+function getElevationAtInfo(info) {
   const tileResult = info.tile?.content?.[0];
   if (!tileResult?.raw) return null;
   const { raw, width, height } = tileResult;
@@ -120,7 +105,7 @@ function getElevationAtInfo(info){
   return raw[y * width + x];
 }
 
-function getDerivedAtInfo(info){
+function getDerivedAtInfo(info) {
   const tileResult = info.tile?.content?.[0];
   if (!tileResult?.rawDerived) return null;
   const { rawDerived } = tileResult;
@@ -142,130 +127,307 @@ function getDerivedAtInfo(info){
   return rawDerived[y * width + x];
 }
 
-function CogTerrainKernel() {
-  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
-  const [mode, setMode] = useState('elevation');
-  const [cogState, setCogState] = useState({ cog: null, mode: 'elevation' });
-
-  // Initialize CogTiles ONCE on mount
-  useEffect(() => {
-    const cogInstance = new CogTiles(buildTerrainOptions('elevation'));
-    cogInstance.initializeCog(DEM_COG_URL).then(() => {
-      setCogState({ cog: cogInstance, mode: 'elevation' });
-    });
-  }, []);
-
-  // Reinitialize CogTiles when mode changes (needed for kernel computation)
-  useEffect(() => {
-    if (!cogState.cog || mode === cogState.mode) return;
-    
-    const newCog = new CogTiles(buildTerrainOptions(mode));
-    newCog.initializeCog(DEM_COG_URL).then(() => {
-      setCogState({ cog: newCog, mode });
-    });
-  }, [mode, cogState.cog, cogState.mode]);
-
+/**
+ * MapPane — Independent DeckGL canvas, positioned absolutely
+ * Each pane manages its own viewport and layer independently
+ */
+const MapPane = memo(function MapPane({ 
+  mode, 
+  cogState, 
+  setMode, 
+  viewState, 
+  onViewStateChange, 
+  isTransitioning, 
+  side,
+  splitRatio,
+  containerWidth,
+  containerHeight
+}) {
   const layers = useMemo(() => {
     if (!cogState.cog) return [];
-
-    const terrainLayers = [
+    
+    return [
       new CogTerrainLayer({
-        id: 'cog-terrain-kernel',
+        id: `cog-terrain-${side}`,
         elevationData: DEM_COG_URL,
         cogTiles: cogState.cog,
         isTiled: true,
         tileSize: 256,
-        operation: cogState.mode === 'satellite-glaze' ? 'terrain' : 'terrain+draw',
+        operation: 'terrain+draw',
         terrainOptions: buildTerrainOptions(cogState.mode),
-        pickable: cogState.mode !== 'satellite-clamped' && cogState.mode !== 'satellite-glaze',
+        pickable: true,
       }),
     ];
+  }, [cogState, side]);
 
-    // Add satellite base layer for satellite modes
-    if (cogState.mode === 'satellite-clamped' || cogState.mode === 'satellite-glaze') {
-      terrainLayers.push(
-        new TileLayer({
-          data: SATELLITE_TILE_URL,
-          id: 'satellite-base',
-          minZoom: 0,
-          maxZoom: 19,
-          tileSize: 256,
-          extensions: [new TerrainExtension()],
-          /* eslint-disable react/prop-types */
-          renderSubLayers: (props) => {
-            const { bbox } = props.tile;
-            const { west, south, east, north } = bbox;
-            return new BitmapLayer(props, {
-              data: undefined,
-              image: props.data,
-              bounds: [west, south, east, north],
-            });
-          },
-          /* eslint-enable react/prop-types */
-        })
-      );
+  const getTooltip = useCallback((info) => {
+    const elevation = getElevationAtInfo(info);
+    const derived = getDerivedAtInfo(info);
+    if (elevation === null) return null;
+    const lines = [`Elevation: ${elevation.toFixed(1)} m`];
+    if (derived !== null) {
+      if (cogState.mode === 'slope') lines.push(`Slope: ${derived.toFixed(1)}\xB0`);
+      if (cogState.mode === 'hillshade') lines.push(`Hillshade: ${derived.toFixed(0)}`);
     }
+    return { text: lines.join('\n') };
+  }, [cogState.mode]);
 
-    // Add relief glaze overlay for glaze mode
-    if (cogState.mode === 'satellite-glaze') {
-      terrainLayers.push(
-        new CogBitmapLayer({
-          id: 'relief-glaze-overlay',
-          rasterData: DEM_COG_URL,
-          isTiled: true,
-          tileSize: 256,
-          clampToTerrain: true,
-          extensions: [new TerrainExtension()],
-          cogBitmapOptions: {
-            type: 'image',
-            useReliefGlaze: true,
-            noDataValue: 0,
-            useChannel: 1,
-            swissSlopeWeight: 0.3,
-            zFactor: 20,
-            maxGlazeAlpha: 130,
-          },
-        })
-      );
-    }
-
-    return terrainLayers;
-  }, [cogState]);
-
-  const isTransitioning = cogState.mode !== mode;
+  const isLeft = side === 'left';
+  const paneWidth = isLeft ? splitRatio * containerWidth : (1 - splitRatio) * containerWidth;
+  const paneLeft = isLeft ? 0 : splitRatio * containerWidth + 4;
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
-      <div style={{ position: 'absolute', zIndex: 1, left: 10, top: 10 }}>
-        {MODES.map(m => (
-          <button key={m.key} onClick={() => setMode(m.key)} disabled={mode === m.key || isTransitioning}>
-            {m.label}
-          </button>
-        ))}
-      </div>
+    <div 
+      style={{ 
+        position: 'absolute',
+        top: 0,
+        left: paneLeft,
+        width: paneWidth,
+        height: containerHeight,
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+      }}
+    >
       <DeckGL
-          getCursor={() => 'crosshair'}
-          viewState={viewState}
-          onViewStateChange={({ viewState }) => setViewState(viewState)}
-          controller={true}
-          layers={layers}
-          views={new MapView({ 
-            repeat: true,
-            minZoom: 2,
-            maxZoom: 2,
-            maxPitch: 60
-          })}
-          getTooltip={useCallback((info) => {
-            const elevation = getElevationAtInfo(info);
-            const derived = getDerivedAtInfo(info);
-            if (elevation === null) return null;
-            const lines = [`Elevation: ${elevation.toFixed(1)} m`];
-            if (derived !== null) {
-              if (cogState.mode === 'slope') lines.push(`Slope: ${derived.toFixed(1)}\xB0`);
-              if (cogState.mode === 'hillshade') lines.push(`Hillshade: ${derived.toFixed(0)}`);
-            }
-            return { text: lines.join('\n') };
-          }, [cogState.mode])}
+        viewState={viewState}
+        onViewStateChange={onViewStateChange}
+        controller={true}
+        layers={layers}
+        getTooltip={getTooltip}
+        getCursor={() => 'crosshair'}
+        deviceProps={{ waitForPageLoad: false }}
+      />
+
+      {/* Mode selection buttons for this pane only */}
+      <div style={{ position: 'absolute', zIndex: 10, top: 10, left: 10, pointerEvents: 'auto' }}>
+        <div style={{ fontSize: 12, fontWeight: 'bold', marginBottom: 8, color: '#fff', textShadow: '0 0 4px rgba(0,0,0,0.7)' }}>
+          {isLeft ? 'Left Mode' : 'Right Mode'}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {MODES.map(m => (
+            <button
+              key={m.key}
+              onClick={() => setMode(m.key)}
+              disabled={mode === m.key || isTransitioning}
+              style={{
+                padding: '6px 10px',
+                fontSize: 11,
+                backgroundColor: mode === m.key ? '#2196F3' : '#666',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: mode === m.key || isTransitioning ? 'default' : 'pointer',
+                opacity: isTransitioning ? 0.6 : 1,
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.mode === nextProps.mode &&
+    prevProps.cogState === nextProps.cogState &&
+    prevProps.viewState === nextProps.viewState &&
+    prevProps.isTransitioning === nextProps.isTransitioning &&
+    prevProps.splitRatio === nextProps.splitRatio
+  );
+});
+
+MapPane.propTypes = {
+  mode: PropTypes.string.isRequired,
+  cogState: PropTypes.shape({
+    cog: PropTypes.object,
+    mode: PropTypes.string,
+  }).isRequired,
+  setMode: PropTypes.func.isRequired,
+  viewState: PropTypes.object.isRequired,
+  onViewStateChange: PropTypes.func.isRequired,
+  isTransitioning: PropTypes.bool.isRequired,
+  side: PropTypes.string.isRequired,
+  splitRatio: PropTypes.number.isRequired,
+  containerWidth: PropTypes.number.isRequired,
+  containerHeight: PropTypes.number.isRequired,
+};
+
+function CogTerrainKernel() {
+  // Shared view state — both panes sync pan/zoom
+  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
+
+  // Independent mode states per side
+  const [leftMode, setLeftMode] = useState('elevation');
+  const [rightMode, setRightMode] = useState('elevation-swiss');
+
+  // CogTiles state per side
+  const [leftCogState, setLeftCogState] = useState({ cog: null, mode: 'elevation' });
+  const [rightCogState, setRightCogState] = useState({ cog: null, mode: 'elevation-swiss' });
+
+  // Split ratio and dragging state
+  const [splitRatio, setSplitRatio] = useState(0.5);
+  const [isDragging, setIsDragging] = useState(false);
+  const containerRef = useRef(null);
+  const [containerDims, setContainerDims] = useState({ width: 1000, height: 800 });
+
+  // Track container dimensions
+  useEffect(() => {
+    const updateDims = () => {
+      if (containerRef.current) {
+        setContainerDims({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
+        });
+      }
+    };
+
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  // Initialize left CogTiles
+  useEffect(() => {
+    console.log('Initializing left CogTiles');
+    const cogInstance = new CogTiles(buildTerrainOptions('elevation'));
+    cogInstance.initializeCog(DEM_COG_URL).then(() => {
+      console.log('Left CogTiles initialized');
+      setLeftCogState({ cog: cogInstance, mode: 'elevation' });
+    }).catch(err => console.error('Left CogTiles init error:', err));
+  }, []);
+
+  // Initialize right CogTiles
+  useEffect(() => {
+    console.log('Initializing right CogTiles');
+    const cogInstance = new CogTiles(buildTerrainOptions('elevation-swiss'));
+    cogInstance.initializeCog(DEM_COG_URL).then(() => {
+      console.log('Right CogTiles initialized');
+      setRightCogState({ cog: cogInstance, mode: 'elevation-swiss' });
+    }).catch(err => console.error('Right CogTiles init error:', err));
+  }, []);
+
+  // Update left CogTiles when mode changes
+  useEffect(() => {
+    if (!leftCogState.cog || leftMode === leftCogState.mode) return;
+    
+    console.log(`Updating left mode to ${leftMode}`);
+    const newCog = new CogTiles(buildTerrainOptions(leftMode));
+    newCog.initializeCog(DEM_COG_URL).then(() => {
+      setLeftCogState({ cog: newCog, mode: leftMode });
+    }).catch(err => console.error('Left mode update error:', err));
+  }, [leftMode, leftCogState.cog, leftCogState.mode]);
+
+  // Update right CogTiles when mode changes
+  useEffect(() => {
+    if (!rightCogState.cog || rightMode === rightCogState.mode) return;
+    
+    console.log(`Updating right mode to ${rightMode}`);
+    const newCog = new CogTiles(buildTerrainOptions(rightMode));
+    newCog.initializeCog(DEM_COG_URL).then(() => {
+      setRightCogState({ cog: newCog, mode: rightMode });
+    }).catch(err => console.error('Right mode update error:', err));
+  }, [rightMode, rightCogState.cog, rightCogState.mode]);
+
+  // Handle view state changes from either pane
+  const handleViewStateChange = useCallback(({ viewState: newViewState }) => {
+    setViewState(newViewState);
+  }, []);
+
+  // Handle divider drag
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e) => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const rect = container.getBoundingClientRect();
+      const newRatio = (e.clientX - rect.left) / rect.width;
+      setSplitRatio(Math.max(0.15, Math.min(0.85, newRatio)));
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
+
+  const leftIsTransitioning = leftCogState.mode !== leftMode;
+  const rightIsTransitioning = rightCogState.mode !== rightMode;
+
+  const dividerPx = splitRatio * 100;
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
+        userSelect: isDragging ? 'none' : 'auto',
+      }}
+    >
+      {/* Left pane - independent DeckGL */}
+      <MapPane
+        mode={leftMode}
+        cogState={leftCogState}
+        setMode={setLeftMode}
+        viewState={viewState}
+        onViewStateChange={handleViewStateChange}
+        isTransitioning={leftIsTransitioning}
+        side="left"
+        splitRatio={splitRatio}
+        containerWidth={containerDims.width}
+        containerHeight={containerDims.height}
+      />
+
+      {/* Right pane - independent DeckGL */}
+      <MapPane
+        mode={rightMode}
+        cogState={rightCogState}
+        setMode={setRightMode}
+        viewState={viewState}
+        onViewStateChange={handleViewStateChange}
+        isTransitioning={rightIsTransitioning}
+        side="right"
+        splitRatio={splitRatio}
+        containerWidth={containerDims.width}
+        containerHeight={containerDims.height}
+      />
+
+      {/* Draggable divider slider */}
+      <div
+        onMouseDown={handleMouseDown}
+        style={{
+          position: 'absolute',
+          left: `${dividerPx}%`,
+          top: 0,
+          width: 8,
+          height: '100%',
+          backgroundColor: '#fff',
+          cursor: 'col-resize',
+          userSelect: 'none',
+          zIndex: 30,
+          opacity: isDragging ? 1 : 0.8,
+          boxShadow: '0 0 10px rgba(0, 0, 0, 0.6)',
+          transform: 'translateX(-50%)',
+          transition: isDragging ? 'none' : 'opacity 0.2s',
+          pointerEvents: 'auto',
+        }}
       />
     </div>
   );
