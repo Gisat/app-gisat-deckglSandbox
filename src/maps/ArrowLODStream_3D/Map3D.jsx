@@ -8,8 +8,8 @@ import { SphereGeometry } from '@luma.gl/engine';
 import { CogTerrainLayer, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
 import {_TerrainExtension as TerrainExtension } from "@deck.gl/extensions";
 
-import { HUD } from './components/HUD';
-import { PlaybackControls } from './components/PlaybackControls';
+import { HUD } from '../../components/HUD';
+import { PlaybackControls } from '../../components/PlaybackControls';
 import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../components/PointSelection';
 import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
@@ -123,6 +123,8 @@ function ArrowLODStream3D() {
     useEffect(() => {
         if (selectedPointIds.size > 0) {
             queryBackendForSelection(selectedPointIds);
+        } else {
+            setSelectedFeatures(null);
         }
     }, [selectedPointIds]);
 

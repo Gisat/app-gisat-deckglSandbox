@@ -4,8 +4,8 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { ScatterplotLayer, BitmapLayer } from '@deck.gl/layers';
 import { scaleLinear } from 'd3-scale';
 
-import { HUD } from './components/HUD';
-import { PlaybackControls } from './components/PlaybackControls';
+import { HUD } from '../../components/HUD';
+import { PlaybackControls } from '../../components/PlaybackControls';
 import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../components/PointSelection';
 import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 
