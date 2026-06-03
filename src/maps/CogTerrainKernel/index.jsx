@@ -1,10 +1,12 @@
 // Adapted from deck.gl-geotiff CogTerrainKernelExample
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { DeckGL } from 'deck.gl';
+import { DeckGL, TileLayer, BitmapLayer } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
-import { CogTerrainLayer, CogTiles } from '@gisatcz/deckgl-geolib';
+import { CogTerrainLayer, CogTiles, CogBitmapLayer } from '@gisatcz/deckgl-geolib';
+import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
+const SATELLITE_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const INITIAL_VIEW_STATE = {
   longitude: -66.33,
   latitude: -17.09,
@@ -20,6 +22,8 @@ const MODES = [
   { key: 'slope', label: 'Slope' },
   { key: 'hillshade', label: 'Hillshade' },
   { key: 'elevation-swiss', label: 'Shaded Elevation (Swiss Relief)' },
+  { key: 'satellite-clamped', label: 'Satellite (Clamped to Terrain)' },
+  { key: 'satellite-glaze', label: 'Satellite with Relief Glaze' },
 ];
 
 const MODE_OPTIONS = {
@@ -73,6 +77,17 @@ const MODE_OPTIONS = {
     colorScaleValueRange: [0, 255],
     hillshadeAzimuth: 315,
     hillshadeAltitude: 45,
+  },
+  'satellite-clamped': {
+    // No terrain texture - satellite will be draped via separate layer
+    useSingleColor: true,
+    color: [200, 200, 200, 255],
+  },
+  'satellite-glaze': {
+    // For glaze mode: render terrain mesh only (no texture)
+    disableLighting: true,
+    useSingleColor: true,
+    color: [200, 200, 200, 255],
   },
 };
 
@@ -153,37 +168,68 @@ function CogTerrainKernel() {
   const layers = useMemo(() => {
     if (!cogState.cog) return [];
 
-    return [
-      // new TileLayer({
-      //   id: 'osm',
-      //   data: 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      //   minZoom: 0,
-      //   maxZoom: 19,
-      //   tileSize: 256,
-      //   pickable: false,
-      //   /* eslint-disable react/prop-types */
-      //   renderSubLayers: (props) => {
-      //     const { bbox, data } = props.tile;
-      //     const { west, south, east, north } = bbox;
-      //     return new BitmapLayer(props, {
-      //       data: undefined,
-      //       image: data,
-      //       bounds: [west, south, east, north],
-      //     });
-      //   },
-      //   /* eslint-enable react/prop-types */
-      // }),
+    const terrainLayers = [
       new CogTerrainLayer({
         id: 'cog-terrain-kernel',
         elevationData: DEM_COG_URL,
         cogTiles: cogState.cog,
         isTiled: true,
         tileSize: 256,
-        operation: 'terrain+draw',
+        operation: cogState.mode === 'satellite-glaze' ? 'terrain' : 'terrain+draw',
         terrainOptions: buildTerrainOptions(cogState.mode),
-        pickable: true,
+        pickable: cogState.mode !== 'satellite-clamped' && cogState.mode !== 'satellite-glaze',
       }),
     ];
+
+    // Add satellite base layer for satellite modes
+    if (cogState.mode === 'satellite-clamped' || cogState.mode === 'satellite-glaze') {
+      terrainLayers.push(
+        new TileLayer({
+          data: SATELLITE_TILE_URL,
+          id: 'satellite-base',
+          minZoom: 0,
+          maxZoom: 19,
+          tileSize: 256,
+          extensions: [new TerrainExtension()],
+          /* eslint-disable react/prop-types */
+          renderSubLayers: (props) => {
+            const { bbox } = props.tile;
+            const { west, south, east, north } = bbox;
+            return new BitmapLayer(props, {
+              data: undefined,
+              image: props.data,
+              bounds: [west, south, east, north],
+            });
+          },
+          /* eslint-enable react/prop-types */
+        })
+      );
+    }
+
+    // Add relief glaze overlay for glaze mode
+    if (cogState.mode === 'satellite-glaze') {
+      terrainLayers.push(
+        new CogBitmapLayer({
+          id: 'relief-glaze-overlay',
+          rasterData: DEM_COG_URL,
+          isTiled: true,
+          tileSize: 256,
+          clampToTerrain: true,
+          extensions: [new TerrainExtension()],
+          cogBitmapOptions: {
+            type: 'image',
+            useReliefGlaze: true,
+            noDataValue: 0,
+            useChannel: 1,
+            swissSlopeWeight: 0.3,
+            zFactor: 20,
+            maxGlazeAlpha: 130,
+          },
+        })
+      );
+    }
+
+    return terrainLayers;
   }, [cogState]);
 
   const isTransitioning = cogState.mode !== mode;
