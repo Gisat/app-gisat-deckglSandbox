@@ -301,6 +301,8 @@ export default function SelectionDrawing3D() {
           // keep drawing active if selection mode is still selected
           setIsDrawing(selectionMode ? true : false);
         }}
+        top="10px"
+        left="10px"
       />
 
       <DrawingOverlay

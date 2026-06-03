@@ -13,6 +13,8 @@
  * @param {boolean} props.isLoadingBackend - Whether backend query is in progress
  * @param {number} props.bufferDistance - Current buffer distance (for line mode)
  * @param {Function} props.onBufferChange - Called with new buffer distance
+ * @param {string} props.top - Top position (default: '130px')
+ * @param {string} props.left - Left position (default: '10px')
  */
 export function SelectionControls({
     selectionMode,
@@ -22,7 +24,9 @@ export function SelectionControls({
     backendFeatureCount = 0,
     isLoadingBackend = false,
     bufferDistance = 100,
-    onBufferChange
+    onBufferChange,
+    top = '130px',
+    left = '10px'
 }) {
     const modes = ['polygon', 'circle', 'line'];
 
@@ -30,8 +34,8 @@ export function SelectionControls({
         <div
             style={{
                 position: 'absolute',
-                top: '130px',
-                left: '10px',
+                top,
+                left,
                 background: 'rgba(255, 255, 255, 0.95)',
                 borderRadius: '8px',
                 padding: '12px',
