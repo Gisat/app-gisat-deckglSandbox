@@ -13,6 +13,8 @@
  * @param {boolean} props.isLoadingBackend - Whether backend query is in progress
  * @param {number} props.bufferDistance - Current buffer distance (for line mode)
  * @param {Function} props.onBufferChange - Called with new buffer distance
+ * @param {string} props.top - Top position (default: '130px')
+ * @param {string} props.left - Left position (default: '10px')
  */
 export function SelectionControls({
     selectionMode,
@@ -22,7 +24,9 @@ export function SelectionControls({
     backendFeatureCount = 0,
     isLoadingBackend = false,
     bufferDistance = 100,
-    onBufferChange
+    onBufferChange,
+    top = '130px',
+    left = '10px'
 }) {
     const modes = ['polygon', 'circle', 'line'];
 
@@ -30,21 +34,21 @@ export function SelectionControls({
         <div
             style={{
                 position: 'absolute',
-                top: '130px',
-                left: '10px',
+                top,
+                left,
                 background: 'rgba(255, 255, 255, 0.95)',
                 borderRadius: '8px',
                 padding: '12px',
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
                 zIndex: 1000,
                 fontFamily: 'system-ui, sans-serif',
-                fontSize: '12px',
+                fontSize: '13px',
                 minWidth: '220px'
             }}
         >
             {/* Mode Selector */}
             <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', fontWeight: 'bold' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: 'bold' }}>
                     Point Selection - Drawing Mode:
                 </label>
                 <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
@@ -73,7 +77,7 @@ export function SelectionControls({
             {/* Line Buffer Distance (only for line mode) */}
             {selectionMode === 'line' && (
                 <div style={{ marginBottom: '12px' }}>
-                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '500' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: '500' }}>
                         Buffer Distance: {bufferDistance}m
                     </label>
                     <input
@@ -83,7 +87,7 @@ export function SelectionControls({
                         step="10"
                         value={bufferDistance}
                         onChange={e => onBufferChange(Number(e.target.value))}
-                        style={{ width: '100%', fontSize: '12px' }}
+                        style={{ width: '100%', fontSize: '11px' }}
                     />
                 </div>
             )}
@@ -117,7 +121,7 @@ export function SelectionControls({
                             border: '1px solid #ddd',
                             borderRadius: '3px',
                             cursor: 'pointer',
-                            fontSize: '10px',
+                            fontSize: '11px',
                             fontWeight: '600',
                             whiteSpace: 'nowrap',
                             marginLeft: '8px'

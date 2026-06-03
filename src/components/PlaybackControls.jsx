@@ -13,9 +13,9 @@ export const PlaybackControls = ({
 }) => {
     return (
         <div style={{
-            position: 'absolute', bottom: 30, left: '50%', transform: 'translateX(-50%)',
-            width: '80%', maxWidth: '600px', backgroundColor: 'white', padding: '15px',
-            borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', fontFamily: 'sans-serif', zIndex: 10
+            position: 'absolute', bottom: 10, left: 'max(10px, calc(50% - 400px))', transform: 'translateX(0)',
+            width: '60%', maxWidth: '400px', background: 'rgba(255, 255, 255, 0.95)', padding: '11px',
+            borderRadius: '8px', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)', fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#333', zIndex: 1000
         }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                 <div style={{ fontWeight: 'bold' }}>
