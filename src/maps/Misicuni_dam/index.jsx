@@ -377,18 +377,18 @@ function MisicuniDam() {
           bottom: 20,
           left: 20,
           background: 'rgba(255, 255, 255, 0.95)',
-          padding: '12px',
+          padding: '11px',
           borderRadius: '8px',
           boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
           fontFamily: 'system-ui, sans-serif',
-          fontSize: '14px',
+          fontSize: '13px',
           color: '#333',
           width: '220px',
           zIndex: 1000,
         }}
       >
         {/* Layer Visibility - Checkboxes FIRST */}
-        <div style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #ddd' }}>
+        <div style={{ marginBottom: '16px', paddingBottom: '11px', borderBottom: '1px solid #ddd' }}>
           {VECTOR_POINT_DATA.map((layer) => (
             <div key={layer.id} style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <input
@@ -398,7 +398,7 @@ function MisicuniDam() {
                 onChange={(e) => setLayerVisibility(prev => ({ ...prev, [layer.id]: e.target.checked }))}
                 style={{ cursor: 'pointer', width: '16px', height: '16px' }}
               />
-              <label htmlFor={layer.id} style={{ cursor: 'pointer', fontSize: '12px', flex: 1, userSelect: 'none' }}>
+              <label htmlFor={layer.id} style={{ cursor: 'pointer', fontSize: '11px', flex: 1, userSelect: 'none' }}>
                 {layer.name}
               </label>
             </div>
@@ -422,14 +422,14 @@ function MisicuniDam() {
                 border: 'none',
                 borderRadius: '3px',
                 fontWeight: 'normal',
-                fontSize: '10px',
+                fontSize: '11px',
               }}
             >
               {isFetched ? '✅ Ready' : '⬇️ Load data'}
             </button>
           </div>
           {currentDescription && (
-            <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: '500', color: '#555' }}>
+            <div style={{ marginBottom: '8px', fontSize: '11px', fontWeight: '500', color: '#555' }}>
               Date: {currentDescription} ({currentBandIndex + 1}/{totalBands})
             </div>
           )}
@@ -469,7 +469,7 @@ function MisicuniDam() {
           {showLegend && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' }}>
               {VELOCITY_COLOR_SCALE.map((entry, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '9px' }}>
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '11px' }}>
                   <span 
                     style={{ 
                       display: 'inline-block', 
@@ -511,7 +511,7 @@ function MisicuniDam() {
           {showLegend2 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' }}>
               {VEL_RE_EW_COLOR_SCALE.map((entry, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '9px' }}>
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '11px' }}>
                   <span 
                     style={{ 
                       display: 'inline-block', 
