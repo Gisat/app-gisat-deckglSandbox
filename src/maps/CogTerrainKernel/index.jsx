@@ -316,9 +316,6 @@ function CogTerrainKernel() {
 
       {/* Base layer controls */}
       <div style={{ position: 'absolute', zIndex: 10, top: 10, left: 10, pointerEvents: 'auto' }}>
-        <div style={{ fontSize: 12, fontWeight: 'bold', marginBottom: 8, color: '#fff', textShadow: '0 0 4px rgba(0,0,0,0.7)' }}>
-          Base Layer
-        </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {MODES.map(m => (
             <button
@@ -344,9 +341,6 @@ function CogTerrainKernel() {
 
       {/* Compare layer controls */}
       <div style={{ position: 'absolute', zIndex: 10, top: 10, right: 10, pointerEvents: 'auto' }}>
-        <div style={{ fontSize: 12, fontWeight: 'bold', marginBottom: 8, color: '#fff', textShadow: '0 0 4px rgba(0,0,0,0.7)', textAlign: 'right' }}>
-          Compare Layer
-        </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
           {MODES.map(m => (
             <button
@@ -370,26 +364,60 @@ function CogTerrainKernel() {
         </div>
       </div>
 
-      {/* Slider divider */}
+      {/* Slider divider with indicator */}
       <div
         onMouseDown={handleMouseDown}
         style={{
           position: 'absolute',
           left: `${sliderPixels}px`,
-          top: 0,
-          width: 8,
-          height: '100%',
-          backgroundColor: '#fff',
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: 60,
+          height: 60,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           cursor: 'col-resize',
           userSelect: 'none',
           zIndex: 30,
-          opacity: isDragging ? 1 : 0.8,
-          boxShadow: '0 0 10px rgba(0, 0, 0, 0.6)',
-          transform: 'translateX(-50%)',
-          transition: isDragging ? 'none' : 'opacity 0.2s',
           pointerEvents: 'auto',
         }}
-      />
+      >
+        {/* White vertical line */}
+        <div
+          style={{
+            position: 'absolute',
+            width: 4,
+            height: '150vh',
+            backgroundColor: '#fff',
+            opacity: isDragging ? 1 : 0.8,
+            boxShadow: '0 0 10px rgba(0, 0, 0, 0.6)',
+            transition: isDragging ? 'none' : 'opacity 0.2s',
+            pointerEvents: 'none',
+          }}
+        />
+        {/* Circular indicator with arrows */}
+        <div
+          style={{
+            position: 'absolute',
+            width: 50,
+            height: 50,
+            borderRadius: '50%',
+            backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            border: '2px solid rgba(255, 255, 255, 0.8)',
+            boxShadow: '0 0 8px rgba(0, 0, 0, 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 16,
+            fontWeight: 'bold',
+            color: 'rgba(255, 255, 255, 0.8)',
+            pointerEvents: 'none',
+          }}
+        >
+          ◀ ▶
+        </div>
+      </div>
     </div>
   );
 }
