@@ -47,11 +47,12 @@ function Map3D() {
     const [isLoading, setIsLoading] = useState(false);
     const [fetchStatus, setFetchStatus] = useState("Idle");
 
-    const [currentTierDisplay, setCurrentTierDisplay] = useState(() => {
-        const t = getTargetTier(INITIAL_VIEW_STATE.zoom);
+    // Derive currentTierDisplay from viewState.zoom (not from state)
+    const currentTierDisplay = (() => {
+        const t = getTargetTier(viewState.zoom);
         const percentages = ['5%', '35%', '100%'];
         return `${t} (${percentages[t]})`;
-    });
+    })();
 
     const [mode, setMode] = useState('static');
     const [isPlaying, setIsPlaying] = useState(false);

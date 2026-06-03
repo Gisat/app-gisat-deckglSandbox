@@ -45,12 +45,12 @@ function ArrowLODStream2D() {
     const [isLoading, setIsLoading] = useState(false);
     const [fetchStatus, setFetchStatus] = useState("Idle");
 
-    // Debug state to show current tier in HUD
-    const [currentTierDisplay, setCurrentTierDisplay] = useState(() => {
-        const t = getTargetTier(INITIAL_VIEW_STATE.zoom);
+    // Derive currentTierDisplay from viewState.zoom (not from state)
+    const currentTierDisplay = (() => {
+        const t = getTargetTier(viewState.zoom);
         const percentages = ['5%', '35%', '100%'];
         return `${t} (${percentages[t]})`;
-    });
+    })();
 
     const [mode, setMode] = useState('static');
     const [isPlaying, setIsPlaying] = useState(false);
@@ -115,13 +115,6 @@ function ArrowLODStream2D() {
 
     // Track when geometry was last processed to avoid re-filtering every frame
     const lastProcessedGeometryRef = useRef(null);
-
-    // 🆕 HUD Update Logic
-    useEffect(() => {
-        const targetTier = getTargetTier(viewState.zoom);
-        const percentages = ['5%', '35%', '100%'];
-        setCurrentTierDisplay(`${targetTier} (${percentages[targetTier]})`);
-    }, [viewState.zoom]);
 
     // 1. Fetch Dates
     useEffect(() => {
