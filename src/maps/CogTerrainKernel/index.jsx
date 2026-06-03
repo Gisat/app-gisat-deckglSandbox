@@ -491,7 +491,7 @@ function CogTerrainKernel() {
 
       {/* Base layer controls */}
       <div style={{ position: 'absolute', zIndex: 10, top: 10, left: 10, pointerEvents: 'auto' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {MODES.map(m => (
             <button
               key={m.key}
@@ -516,7 +516,7 @@ function CogTerrainKernel() {
 
       {/* Compare layer controls */}
       <div style={{ position: 'absolute', zIndex: 10, top: 10, right: 10, pointerEvents: 'auto' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {MODES.map(m => (
             <button
               key={m.key}
