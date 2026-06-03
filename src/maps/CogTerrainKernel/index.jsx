@@ -1,5 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
-import PropTypes from 'prop-types';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { DeckGL } from 'deck.gl';
 import { CogTerrainLayer, CogTiles } from '@gisatcz/deckgl-geolib';
 
@@ -89,7 +88,6 @@ function getElevationAtInfo(info) {
   const tileResult = info.tile?.content?.[0];
   if (!tileResult?.raw) return null;
   const { raw, width, height } = tileResult;
-
   let u, v;
   if (info.uv) {
     [u, v] = info.uv;
@@ -99,7 +97,6 @@ function getElevationAtInfo(info) {
     v = (north - info.coordinate[1]) / (north - south);
   }
   if (u === undefined || v === undefined) return null;
-
   const x = Math.min(width - 1, Math.max(0, Math.floor(u * (width - 1))));
   const y = Math.min(height - 1, Math.max(0, Math.floor(v * (height - 1))));
   return raw[y * width + x];
@@ -111,7 +108,6 @@ function getDerivedAtInfo(info) {
   const { rawDerived } = tileResult;
   const width = 256;
   const height = 256;
-
   let u, v;
   if (info.uv) {
     [u, v] = info.uv;
@@ -121,220 +117,104 @@ function getDerivedAtInfo(info) {
     v = (north - info.coordinate[1]) / (north - south);
   }
   if (u === undefined || v === undefined) return null;
-
   const x = Math.min(width - 1, Math.max(0, Math.floor(u * (width - 1))));
   const y = Math.min(height - 1, Math.max(0, Math.floor(v * (height - 1))));
   return rawDerived[y * width + x];
 }
 
-/**
- * MapPane — Independent DeckGL canvas, positioned absolutely
- * Each pane manages its own viewport and layer independently
- */
-const MapPane = memo(function MapPane({ 
-  mode, 
-  cogState, 
-  setMode, 
-  viewState, 
-  onViewStateChange, 
-  isTransitioning, 
-  side,
-  splitRatio,
-  containerWidth,
-  containerHeight
-}) {
-  const layers = useMemo(() => {
-    if (!cogState.cog) return [];
-    
-    return [
-      new CogTerrainLayer({
-        id: `cog-terrain-${side}`,
-        elevationData: DEM_COG_URL,
-        cogTiles: cogState.cog,
-        isTiled: true,
-        tileSize: 256,
-        operation: 'terrain+draw',
-        terrainOptions: buildTerrainOptions(cogState.mode),
-        pickable: true,
-      }),
-    ];
-  }, [cogState, side]);
-
-  const getTooltip = useCallback((info) => {
-    const elevation = getElevationAtInfo(info);
-    const derived = getDerivedAtInfo(info);
-    if (elevation === null) return null;
-    const lines = [`Elevation: ${elevation.toFixed(1)} m`];
-    if (derived !== null) {
-      if (cogState.mode === 'slope') lines.push(`Slope: ${derived.toFixed(1)}\xB0`);
-      if (cogState.mode === 'hillshade') lines.push(`Hillshade: ${derived.toFixed(0)}`);
-    }
-    return { text: lines.join('\n') };
-  }, [cogState.mode]);
-
-  const isLeft = side === 'left';
-  const paneWidth = isLeft ? splitRatio * containerWidth : (1 - splitRatio) * containerWidth;
-  const paneLeft = isLeft ? 0 : splitRatio * containerWidth + 4;
-
-  return (
-    <div 
-      style={{ 
-        position: 'absolute',
-        top: 0,
-        left: paneLeft,
-        width: paneWidth,
-        height: containerHeight,
-        boxSizing: 'border-box',
-        overflow: 'hidden',
-      }}
-    >
-      <DeckGL
-        viewState={viewState}
-        onViewStateChange={onViewStateChange}
-        controller={true}
-        layers={layers}
-        getTooltip={getTooltip}
-        getCursor={() => 'crosshair'}
-        deviceProps={{ waitForPageLoad: false }}
-      />
-
-      {/* Mode selection buttons for this pane only */}
-      <div style={{ position: 'absolute', zIndex: 10, top: 10, left: 10, pointerEvents: 'auto' }}>
-        <div style={{ fontSize: 12, fontWeight: 'bold', marginBottom: 8, color: '#fff', textShadow: '0 0 4px rgba(0,0,0,0.7)' }}>
-          {isLeft ? 'Left Mode' : 'Right Mode'}
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-          {MODES.map(m => (
-            <button
-              key={m.key}
-              onClick={() => setMode(m.key)}
-              disabled={mode === m.key || isTransitioning}
-              style={{
-                padding: '6px 10px',
-                fontSize: 11,
-                backgroundColor: mode === m.key ? '#2196F3' : '#666',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 4,
-                cursor: mode === m.key || isTransitioning ? 'default' : 'pointer',
-                opacity: isTransitioning ? 0.6 : 1,
-              }}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}, (prevProps, nextProps) => {
-  return (
-    prevProps.mode === nextProps.mode &&
-    prevProps.cogState === nextProps.cogState &&
-    prevProps.viewState === nextProps.viewState &&
-    prevProps.isTransitioning === nextProps.isTransitioning &&
-    prevProps.splitRatio === nextProps.splitRatio
-  );
-});
-
-MapPane.propTypes = {
-  mode: PropTypes.string.isRequired,
-  cogState: PropTypes.shape({
-    cog: PropTypes.object,
-    mode: PropTypes.string,
-  }).isRequired,
-  setMode: PropTypes.func.isRequired,
-  viewState: PropTypes.object.isRequired,
-  onViewStateChange: PropTypes.func.isRequired,
-  isTransitioning: PropTypes.bool.isRequired,
-  side: PropTypes.string.isRequired,
-  splitRatio: PropTypes.number.isRequired,
-  containerWidth: PropTypes.number.isRequired,
-  containerHeight: PropTypes.number.isRequired,
-};
-
 function CogTerrainKernel() {
-  // Shared view state — both panes sync pan/zoom
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
-
-  // Independent mode states per side
-  const [leftMode, setLeftMode] = useState('elevation');
-  const [rightMode, setRightMode] = useState('elevation-swiss');
-
-  // CogTiles state per side
-  const [leftCogState, setLeftCogState] = useState({ cog: null, mode: 'elevation' });
-  const [rightCogState, setRightCogState] = useState({ cog: null, mode: 'elevation-swiss' });
-
-  // Split ratio and dragging state
-  const [splitRatio, setSplitRatio] = useState(0.5);
+  const [baseMode, setBaseMode] = useState('elevation');
+  const [compareMode, setCompareMode] = useState('elevation-swiss');
+  const [baseCogState, setBaseCogState] = useState({ cog: null, mode: 'elevation' });
+  const [compareCogState, setCompareCogState] = useState({ cog: null, mode: 'elevation-swiss' });
+  const [sliderPosition, setSliderPosition] = useState(0.5);
   const [isDragging, setIsDragging] = useState(false);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef(null);
-  const [containerDims, setContainerDims] = useState({ width: 1000, height: 800 });
 
-  // Track container dimensions
+  // Initialize base CogTiles
   useEffect(() => {
-    const updateDims = () => {
+    const cogInstance = new CogTiles(buildTerrainOptions('elevation'));
+    cogInstance.initializeCog(DEM_COG_URL).then(() => {
+      setBaseCogState({ cog: cogInstance, mode: 'elevation' });
+    }).catch(err => console.error('Base CogTiles init error:', err));
+  }, []);
+
+  // Initialize compare CogTiles
+  useEffect(() => {
+    const cogInstance = new CogTiles(buildTerrainOptions('elevation-swiss'));
+    cogInstance.initializeCog(DEM_COG_URL).then(() => {
+      setCompareCogState({ cog: cogInstance, mode: 'elevation-swiss' });
+    }).catch(err => console.error('Compare CogTiles init error:', err));
+  }, []);
+
+  // Track container size for proper pixel-based positioning
+  useEffect(() => {
+    const updateSize = () => {
       if (containerRef.current) {
-        setContainerDims({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
+        setContainerSize({
+          width: containerRef.current.offsetWidth,
+          height: containerRef.current.offsetHeight,
         });
       }
     };
-
-    updateDims();
-    window.addEventListener('resize', updateDims);
-    return () => window.removeEventListener('resize', updateDims);
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
   }, []);
 
-  // Initialize left CogTiles
+  // Update base CogTiles when mode changes
   useEffect(() => {
-    console.log('Initializing left CogTiles');
-    const cogInstance = new CogTiles(buildTerrainOptions('elevation'));
-    cogInstance.initializeCog(DEM_COG_URL).then(() => {
-      console.log('Left CogTiles initialized');
-      setLeftCogState({ cog: cogInstance, mode: 'elevation' });
-    }).catch(err => console.error('Left CogTiles init error:', err));
-  }, []);
-
-  // Initialize right CogTiles
-  useEffect(() => {
-    console.log('Initializing right CogTiles');
-    const cogInstance = new CogTiles(buildTerrainOptions('elevation-swiss'));
-    cogInstance.initializeCog(DEM_COG_URL).then(() => {
-      console.log('Right CogTiles initialized');
-      setRightCogState({ cog: cogInstance, mode: 'elevation-swiss' });
-    }).catch(err => console.error('Right CogTiles init error:', err));
-  }, []);
-
-  // Update left CogTiles when mode changes
-  useEffect(() => {
-    if (!leftCogState.cog || leftMode === leftCogState.mode) return;
-    
-    console.log(`Updating left mode to ${leftMode}`);
-    const newCog = new CogTiles(buildTerrainOptions(leftMode));
+    if (!baseCogState.cog || baseMode === baseCogState.mode) return;
+    const newCog = new CogTiles(buildTerrainOptions(baseMode));
     newCog.initializeCog(DEM_COG_URL).then(() => {
-      setLeftCogState({ cog: newCog, mode: leftMode });
-    }).catch(err => console.error('Left mode update error:', err));
-  }, [leftMode, leftCogState.cog, leftCogState.mode]);
+      setBaseCogState({ cog: newCog, mode: baseMode });
+    }).catch(err => console.error('Base mode update error:', err));
+  }, [baseMode, baseCogState.cog, baseCogState.mode]);
 
-  // Update right CogTiles when mode changes
+  // Update compare CogTiles when mode changes
   useEffect(() => {
-    if (!rightCogState.cog || rightMode === rightCogState.mode) return;
-    
-    console.log(`Updating right mode to ${rightMode}`);
-    const newCog = new CogTiles(buildTerrainOptions(rightMode));
+    if (!compareCogState.cog || compareMode === compareCogState.mode) return;
+    const newCog = new CogTiles(buildTerrainOptions(compareMode));
     newCog.initializeCog(DEM_COG_URL).then(() => {
-      setRightCogState({ cog: newCog, mode: rightMode });
-    }).catch(err => console.error('Right mode update error:', err));
-  }, [rightMode, rightCogState.cog, rightCogState.mode]);
+      setCompareCogState({ cog: newCog, mode: compareMode });
+    }).catch(err => console.error('Compare mode update error:', err));
+  }, [compareMode, compareCogState.cog, compareCogState.mode]);
 
-  // Handle view state changes from either pane
+  // Create layers
+  const baseLayers = useMemo(() => {
+    if (!baseCogState.cog) return [];
+    return [new CogTerrainLayer({
+      id: 'cog-terrain-base',
+      elevationData: DEM_COG_URL,
+      cogTiles: baseCogState.cog,
+      isTiled: true,
+      tileSize: 256,
+      operation: 'terrain+draw',
+      terrainOptions: buildTerrainOptions(baseCogState.mode),
+      pickable: true,
+    })];
+  }, [baseCogState]);
+
+  const compareLayers = useMemo(() => {
+    if (!compareCogState.cog) return [];
+    return [new CogTerrainLayer({
+      id: 'cog-terrain-compare',
+      elevationData: DEM_COG_URL,
+      cogTiles: compareCogState.cog,
+      isTiled: true,
+      tileSize: 256,
+      operation: 'terrain+draw',
+      terrainOptions: buildTerrainOptions(compareCogState.mode),
+      pickable: true,
+    })];
+  }, [compareCogState]);
+
   const handleViewStateChange = useCallback(({ viewState: newViewState }) => {
     setViewState(newViewState);
   }, []);
 
-  // Handle divider drag
   const handleMouseDown = useCallback((e) => {
     e.preventDefault();
     setIsDragging(true);
@@ -342,33 +222,41 @@ function CogTerrainKernel() {
 
   useEffect(() => {
     if (!isDragging) return;
-
     const handleMouseMove = (e) => {
-      const container = containerRef.current;
-      if (!container) return;
-
-      const rect = container.getBoundingClientRect();
-      const newRatio = (e.clientX - rect.left) / rect.width;
-      setSplitRatio(Math.max(0.15, Math.min(0.85, newRatio)));
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const newPosition = (e.clientX - rect.left) / rect.width;
+      setSliderPosition(Math.max(0, Math.min(1, newPosition)));
     };
-
     const handleMouseUp = () => {
       setIsDragging(false);
     };
-
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isDragging]);
 
-  const leftIsTransitioning = leftCogState.mode !== leftMode;
-  const rightIsTransitioning = rightCogState.mode !== rightMode;
+  const getTooltip = useCallback((info) => {
+    const elevation = getElevationAtInfo(info);
+    const derived = getDerivedAtInfo(info);
+    if (elevation === null) return null;
+    const lines = [`Elevation: ${elevation.toFixed(1)} m`];
+    if (derived !== null) {
+      const mode = info.object?.id?.includes('compare') ? compareCogState.mode : baseCogState.mode;
+      if (mode === 'slope') lines.push(`Slope: ${derived.toFixed(1)}\xB0`);
+      if (mode === 'hillshade') lines.push(`Hillshade: ${derived.toFixed(0)}`);
+    }
+    return { text: lines.join('\n') };
+  }, [baseCogState.mode, compareCogState.mode]);
 
-  const dividerPx = splitRatio * 100;
+  const baseIsTransitioning = baseCogState.mode !== baseMode;
+  const compareIsTransitioning = compareCogState.mode !== compareMode;
+
+  // Use pixel-based positioning for proper alignment
+  const sliderPixels = sliderPosition * containerSize.width;
 
   return (
     <div
@@ -381,40 +269,113 @@ function CogTerrainKernel() {
         userSelect: isDragging ? 'none' : 'auto',
       }}
     >
-      {/* Left pane - independent DeckGL */}
-      <MapPane
-        mode={leftMode}
-        cogState={leftCogState}
-        setMode={setLeftMode}
-        viewState={viewState}
-        onViewStateChange={handleViewStateChange}
-        isTransitioning={leftIsTransitioning}
-        side="left"
-        splitRatio={splitRatio}
-        containerWidth={containerDims.width}
-        containerHeight={containerDims.height}
-      />
+      {/* Base layer - always fully visible */}
+      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
+        <DeckGL
+          viewState={viewState}
+          onViewStateChange={handleViewStateChange}
+          controller={true}
+          layers={baseLayers}
+          getTooltip={getTooltip}
+          getCursor={() => 'crosshair'}
+          deviceProps={{ waitForPageLoad: false }}
+        />
+      </div>
 
-      {/* Right pane - independent DeckGL */}
-      <MapPane
-        mode={rightMode}
-        cogState={rightCogState}
-        setMode={setRightMode}
-        viewState={viewState}
-        onViewStateChange={handleViewStateChange}
-        isTransitioning={rightIsTransitioning}
-        side="right"
-        splitRatio={splitRatio}
-        containerWidth={containerDims.width}
-        containerHeight={containerDims.height}
-      />
+      {/* Compare layer - clipped on the right side using pixel-based positioning */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: `${sliderPixels}px`,
+          width: `${containerSize.width - sliderPixels}px`,
+          height: '100%',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: `${-sliderPixels}px`,
+            width: `${containerSize.width}px`,
+            height: '100%',
+          }}
+        >
+          <DeckGL
+            viewState={viewState}
+            onViewStateChange={handleViewStateChange}
+            controller={false}
+            layers={compareLayers}
+            getTooltip={getTooltip}
+            getCursor={() => 'crosshair'}
+            deviceProps={{ waitForPageLoad: false }}
+          />
+        </div>
+      </div>
 
-      {/* Draggable divider slider */}
+      {/* Base layer controls */}
+      <div style={{ position: 'absolute', zIndex: 10, top: 10, left: 10, pointerEvents: 'auto' }}>
+        <div style={{ fontSize: 12, fontWeight: 'bold', marginBottom: 8, color: '#fff', textShadow: '0 0 4px rgba(0,0,0,0.7)' }}>
+          Base Layer
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {MODES.map(m => (
+            <button
+              key={m.key}
+              onClick={() => setBaseMode(m.key)}
+              disabled={baseMode === m.key || baseIsTransitioning}
+              style={{
+                padding: '6px 10px',
+                fontSize: 11,
+                backgroundColor: baseMode === m.key ? '#2196F3' : '#666',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: baseMode === m.key || baseIsTransitioning ? 'default' : 'pointer',
+                opacity: baseIsTransitioning ? 0.6 : 1,
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Compare layer controls */}
+      <div style={{ position: 'absolute', zIndex: 10, top: 10, right: 10, pointerEvents: 'auto' }}>
+        <div style={{ fontSize: 12, fontWeight: 'bold', marginBottom: 8, color: '#fff', textShadow: '0 0 4px rgba(0,0,0,0.7)', textAlign: 'right' }}>
+          Compare Layer
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
+          {MODES.map(m => (
+            <button
+              key={m.key}
+              onClick={() => setCompareMode(m.key)}
+              disabled={compareMode === m.key || compareIsTransitioning}
+              style={{
+                padding: '6px 10px',
+                fontSize: 11,
+                backgroundColor: compareMode === m.key ? '#2196F3' : '#666',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: compareMode === m.key || compareIsTransitioning ? 'default' : 'pointer',
+                opacity: compareIsTransitioning ? 0.6 : 1,
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Slider divider */}
       <div
         onMouseDown={handleMouseDown}
         style={{
           position: 'absolute',
-          left: `${dividerPx}%`,
+          left: `${sliderPixels}px`,
           top: 0,
           width: 8,
           height: '100%',
