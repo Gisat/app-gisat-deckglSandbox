@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { DeckGL, TileLayer, BitmapLayer } from 'deck.gl';
+import { DeckGL } from 'deck.gl';
+import { TileLayer } from '@deck.gl/geo-layers';
+import { BitmapLayer } from '@deck.gl/layers';
 import { CogTerrainLayer, CogTiles, CogBitmapLayer } from '@gisatcz/deckgl-geolib';
 import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
 
@@ -420,7 +422,7 @@ function CogTerrainKernel() {
     if (elevation === null) return null;
     const lines = [`Elevation: ${elevation.toFixed(1)} m`];
     if (derived !== null) {
-      const mode = info.object?.id?.includes('compare') ? compareCogState.mode : baseCogState.mode;
+      const mode = info.layer?.id?.includes('compare') ? compareCogState.mode : baseCogState.mode;
       if (mode === 'slope') lines.push(`Slope: ${derived.toFixed(1)}\xB0`);
       if (mode === 'hillshade') lines.push(`Hillshade: ${derived.toFixed(0)}`);
     }
