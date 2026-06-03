@@ -1,0 +1,110 @@
+# ArrowLODTileLayer
+
+A high-performance, backend-agnostic [Deck.gl](https://deck.gl/) layer designed to render massive spatial datasets (like EGMS InSAR point clouds) at 60fps. 
+
+To achieve zero-copy GPU rendering, this layer bypasses traditional JSON/GeoJSON parsing. Instead, it relies on spatial bounding-box tiling, custom Level of Detail (LOD) tiers, and direct memory-mapped streaming using the **Apache Arrow IPC format**.
+
+> ### ⚠️ Status: Under Development
+> Please note that this layer and its data pipeline are in active development. Currently, the LOD tier thresholds (e.g., distributing exactly 5% of points to Tier 0, 35% to Tier 1) and grid sizes are manually adjusted for our specific EGMS testing dataset. In future iterations, these density distributions will become dynamically configurable application parameters.
+
+---
+
+## 🛠️ Data Pipeline: How to Prepare Your Data
+
+This layer requires data to be pre-processed into a specific tiled and tiered structure before being served. Do not load raw CSVs or raw PostGIS geometries directly into this layer.
+
+We provide a Python pre-processing script to handle this automatically:
+**Path:** `src/data_pipeline/generate_tiled_geoparquet.py`
+
+This script takes a raw CSV file and performs critical optimizations:
+1. **Grid Tiling (`tile_x`, `tile_y`):** Assigns points to a spatial grid (default 0.06°) to enable bounding-box culling.
+2. **LOD Tiers (`tier_id`):** Distributes points into LOD groups for smooth rendering at global and local scales without overwhelming the browser.
+3. **Spatial Sorting:** Sorts the data physically on disk (via a Hilbert curve) to ensure backend database queries are lightning-fast.
+4. **Coordinate Flattening:** Extracts coordinates into flat `Float32` arrays (`longitude`, `latitude`) to bypass expensive WKB/GeoJSON parsing in the frontend.
+
+**How to generate your data:**
+1. Open `src/data_pipeline/generate_tiled_geoparquet.py`.
+2. Modify the `INPUT_CSV_PATH` to point to your raw CSV file.
+3. Modify the `OUTPUT_PARQUET_PATH` to your desired destination.
+4. Run the script: `python src/data_pipeline/generate_tiled_geoparquet.py`.
+5. Load the resulting `.geoparquet` file into your database (e.g., PostGIS, DuckDB).
+
+---
+
+## 🔌 The Backend Data Contract
+
+This layer is backend-agnostic. You can serve the data using any database or API server, as long as your `/api/data` endpoint fulfills the following strict contract.
+
+### 1. The HTTP Request
+The layer will automatically request tiles based on the Deck.gl viewport. Your API must accept `GET` requests with the following query parameters:
+* `tile_x` (Integer) & `tile_y` (Integer): The grid coordinates calculated during pre-processing.
+* `tier` (Integer): The LOD level requested (0 = global overview, 1 = mid, 2 = deep).
+* `mode` (String): e.g., `static` or `animation`.
+* `date_index` (Integer): Index for filtering time-series arrays.
+
+*Example Request:* `GET /api/data?tile_x=10&tile_y=5&tier=1&mode=static`
+
+### 2. The HTTP Response
+* **Format:** The endpoint MUST return a binary Apache Arrow IPC Stream.
+* **Content-Type Header:** `application/vnd.apache.arrow.stream`
+
+### 3. The Required Schema (No WKB Geometries!)
+To maintain zero-copy performance to the GPU, **your backend must not return standard spatial geometries (like WKB or GeoJSON).** The Arrow table must contain flat numeric columns.
+
+**Required Columns:**
+* `longitude` (Float32 Array)
+* `latitude` (Float32 Array)
+
+**Optional Data Columns:**
+* Multi-dimensional arrays for time series (e.g., `displacements: Float32[]`)
+* Any numerical metric you want to visualize (e.g., `height: Float32`, `mean_velocity: Float32`)
+* Point Identifiers (e.g., `point_id`)
+
+*(Note for PostGIS backends: Use `ST_X(geom)::real AS longitude` and `ST_Y(geom)::real AS latitude` in your SQL queries rather than selecting the raw `geom` column).*
+
+---
+
+## 🦆 Reference Implementation: DuckDB Backend
+
+If you want to see exactly how to fulfill the Data Contract described above, this repository includes a fully functional, containerized DuckDB API.
+
+**Path:** `src/backend/`
+
+### Running the Backend Locally
+
+The backend is configured via the `GEOPARQUET_PATH` environment variable:
+
+```bash
+# Option 1: Use pre-processed test data from S3 (easiest for testing)
+export GEOPARQUET_PATH='https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet'
+
+# Option 2: Use your own local data file
+export GEOPARQUET_PATH=/path/to/your/egms_optimized_be.geoparquet
+
+# Run the backend
+gunicorn --bind 0.0.0.0:5000 wsgi:application
+```
+
+The frontend will automatically discover data from your backend at `http://localhost:5000/api/data` and `http://localhost:5000/api/dates`.
+
+**For Production Deployment:**
+Use the included `docker-compose.yml`:
+```bash
+cd src/backend
+docker-compose up
+```
+
+This reference backend reads the optimized `.geoparquet` file generated by the Python script and streams it natively as Apache Arrow. You can use its source code as a blueprint for building your own custom backend integrations in environments like PostGIS or Snowflake.
+
+---
+
+## 💻 Validated Usage Examples (2D and 3D)
+
+Because the layer is generic, you map the binary columns from your Arrow stream directly to the Deck.gl visual properties using standard accessors. 
+
+You can find fully validated, production-ready examples of how to implement this layer in both 2D and 3D contexts within the project repository:
+
+* **2D Implementation (Scatterplot):** [View Map2D.jsx Source Code](../../maps/GeoParquetDuckDB_2D/Map2D.jsx)
+* **3D Implementation (Point Cloud & Elevation):** [View Map3D.jsx Source Code](../../maps/GeoParquetDuckDB_3D/Map3D.jsx)
+
+These components demonstrate how to pass dynamic bounds, handle state changes, and configure Deck.gl viewports to maximize rendering performance.

@@ -8,16 +8,17 @@ import { SphereGeometry } from '@luma.gl/engine';
 import { CogTerrainLayer, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
 import {_TerrainExtension as TerrainExtension } from "@deck.gl/extensions";
 
-import { HUD } from './components/HUD';
-import { PlaybackControls } from './components/PlaybackControls';
-import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../../components/PointSelection';
-import DuckDBGeoParquetLayer from '../../../layers/DuckDBGeoParquetLayer';
-import { setDeckGLInstance } from '../../../components/PointSelection/drawingUtils';
+import { HUD } from '../../components/HUD';
+import { PlaybackControls } from '../../components/PlaybackControls';
+import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../components/PointSelection';
+import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
+import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch: 45, bearing: 0 };
-const DATES_API_URL = 'http://localhost:5000/api/dates';
-const DATA_API_URL = 'http://localhost:5000/api/data';
+const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:5000';
+const DATES_API_URL = `${BACKEND_BASE_URL}/api/dates`;
+const DATA_API_URL = `${BACKEND_BASE_URL}/api/data`;
 
 const TILE_CACHE_LIMIT = 200;
 
@@ -38,7 +39,7 @@ function getTargetTier(zoom) {
 }
 
 // Map3D Component
-function Map3D() {
+function ArrowLODStream3D() {
     const [totalPoints, setTotalPoints] = useState(0);
     const [cacheSize, setCacheSize] = useState(0);
     const [dates, setDates] = useState([]);
@@ -47,11 +48,12 @@ function Map3D() {
     const [isLoading, setIsLoading] = useState(false);
     const [fetchStatus, setFetchStatus] = useState("Idle");
 
-    const [currentTierDisplay, setCurrentTierDisplay] = useState(() => {
-        const t = getTargetTier(INITIAL_VIEW_STATE.zoom);
+    // Derive currentTierDisplay from viewState.zoom (not from state)
+    const currentTierDisplay = (() => {
+        const t = getTargetTier(viewState.zoom);
         const percentages = ['5%', '35%', '100%'];
         return `${t} (${percentages[t]})`;
-    });
+    })();
 
     const [mode, setMode] = useState('static');
     const [isPlaying, setIsPlaying] = useState(false);
@@ -161,7 +163,7 @@ function Map3D() {
         return () => clearInterval(interval);
     }, [isPlaying, dates, mode]);
 
-    // 3. Tile Fetching Logic moved to DuckDBHybridLayer
+    // Tile fetching handled inside ArrowLODTileLayer (see src/layers/ArrowLODTileLayer.js)
 
     const layers = useMemo(() => [
         new TileLayer({
@@ -190,15 +192,12 @@ function Map3D() {
                 type: 'terrain',
             }
         }),
-        new DuckDBGeoParquetLayer({
-            id: 'duckdb-geoparquet-layer',
+        new ArrowLODTileLayer({
+            id: 'arrow-lod-tile-layer',
             dataUrl: DATA_API_URL,
             dateIndex: debouncedTimeIndex,
             mode: mode,
             is3D: true,
-            
-            geoparquetPath: '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet',
-            // input saved on s3 https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet
             columnMap: {
                 latitude: 'y',
                 longitude: 'x',
@@ -330,11 +329,10 @@ function Map3D() {
                         id: `mesh-layer-${tableData.tableIndex}`,
                         data: Array.from({ length: tableData.numRows }, (_, i) => i),
                         mesh: sphere,
-                        // Don't apply TerrainExtension here - CogTerrainLayer already handles terrain
-                        // extensions: [new TerrainExtension()],
+                        extensions: [new TerrainExtension()],
                         getPosition: (rowIndex) => {
                             const { lon, lat } = tableData.getPosition(rowIndex);
-                            // Clamp to the terrain surface; displacement is visualized in color only.
+                            // Clamp to the terrain surface.
                             return [lon, lat, 0];
                         },
 
@@ -378,8 +376,7 @@ function Map3D() {
                             getPosition: 0
                         },
 
-                        pickable: true,
-                        extensions: [new TerrainExtension()],
+                        pickable: true
                     });
                 });
             }
@@ -402,6 +399,9 @@ function Map3D() {
                 }}
                 getCursor={() => isDrawing ? 'crosshair' : 'grab'}
                 layers={layers}
+                onHover={(info) => {
+                    // Hover is not used for drawing
+                }}
                 onClick={(info) => {
                     // In 3D mode with drawing active: use the correct 3D terrain coordinates
                     if (isDrawing) {
@@ -507,4 +507,4 @@ function Map3D() {
     );
 }
 
-export default Map3D;
+export default ArrowLODStream3D;

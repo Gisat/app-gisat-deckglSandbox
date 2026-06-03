@@ -4,15 +4,16 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { ScatterplotLayer, BitmapLayer } from '@deck.gl/layers';
 import { scaleLinear } from 'd3-scale';
 
-import { HUD } from './components/HUD';
-import { PlaybackControls } from './components/PlaybackControls';
-import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../../components/PointSelection';
-import DuckDBGeoParquetLayer from '../../../layers/DuckDBGeoParquetLayer';
+import { HUD } from '../../components/HUD';
+import { PlaybackControls } from '../../components/PlaybackControls';
+import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../components/PointSelection';
+import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 12, pitch: 0, bearing: 0 };
-const DATES_API_URL = 'http://localhost:5000/api/dates';
-const DATA_API_URL = 'http://localhost:5000/api/data';
+const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:5000';
+const DATES_API_URL = `${BACKEND_BASE_URL}/api/dates`;
+const DATA_API_URL = `${BACKEND_BASE_URL}/api/data`;
 
 // 🛑 MUST MATCH 'generate_virtual_tiles.py'
 const TILE_CACHE_LIMIT = 200;
@@ -36,7 +37,7 @@ function getPointSize(zoom) {
     return 5;                 // Tier 2 (Detail)
 }
 
-function Map2D() {
+function ArrowLODStream2D() {
     const [totalPoints, setTotalPoints] = useState(0);
     const [cacheSize, setCacheSize] = useState(0);
     const [dates, setDates] = useState([]);
@@ -45,12 +46,12 @@ function Map2D() {
     const [isLoading, setIsLoading] = useState(false);
     const [fetchStatus, setFetchStatus] = useState("Idle");
 
-    // Debug state to show current tier in HUD
-    const [currentTierDisplay, setCurrentTierDisplay] = useState(() => {
-        const t = getTargetTier(INITIAL_VIEW_STATE.zoom);
+    // Derive currentTierDisplay from viewState.zoom (not from state)
+    const currentTierDisplay = (() => {
+        const t = getTargetTier(viewState.zoom);
         const percentages = ['5%', '35%', '100%'];
         return `${t} (${percentages[t]})`;
-    });
+    })();
 
     const [mode, setMode] = useState('static');
     const [isPlaying, setIsPlaying] = useState(false);
@@ -116,13 +117,6 @@ function Map2D() {
     // Track when geometry was last processed to avoid re-filtering every frame
     const lastProcessedGeometryRef = useRef(null);
 
-    // 🆕 HUD Update Logic
-    useEffect(() => {
-        const targetTier = getTargetTier(viewState.zoom);
-        const percentages = ['5%', '35%', '100%'];
-        setCurrentTierDisplay(`${targetTier} (${percentages[targetTier]})`);
-    }, [viewState.zoom]);
-
     // 1. Fetch Dates
     useEffect(() => {
         fetch(DATES_API_URL)
@@ -156,7 +150,7 @@ function Map2D() {
         }
     }, [timeIndex, mode]);
 
-    // 3. Tile Fetching Logic moved to DuckDBHybridLayer
+    // Tile fetching handled inside ArrowLODTileLayer (see src/layers/ArrowLODTileLayer.js)
 
     const layers = [
         new TileLayer({
@@ -168,13 +162,11 @@ function Map2D() {
                 return new BitmapLayer(props, { data: null, image: props.data, bounds: [west, south, east, north] });
             }
         }),
-        new DuckDBGeoParquetLayer({
-            id: 'duckdb-geoparquet-layer',
+        new ArrowLODTileLayer({
+            id: 'arrow-lod-tile-layer',
             dataUrl: DATA_API_URL,
             dateIndex: debouncedTimeIndex,
             mode: mode,
-            geoparquetPath: '/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet',
-            // input saved on s3 https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet
             columnMap: {
                 latitude: 'y',
                 longitude: 'x',
@@ -372,4 +364,4 @@ function Map2D() {
     );
 }
 
-export default Map2D;
+export default ArrowLODStream2D;

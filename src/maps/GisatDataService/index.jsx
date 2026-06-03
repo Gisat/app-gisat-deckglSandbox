@@ -264,7 +264,7 @@ const createLayer = (config, visible) => {
   return null;
 };
 
-export default function LargeVectorData() {
+export default function GisatDataService() {
   const [layerVisibility, setLayerVisibility] = useState(() => {
     const initial = {};
     LAYER_CONFIGS.forEach((config) => {

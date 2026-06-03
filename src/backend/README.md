@@ -50,12 +50,19 @@ you **must** set the `GEOPARQUET_PATH` environment variable to point to your geo
 export GEOPARQUET_PATH='/path/to/your/egms_optimized_be.geoparquet'
 ```
 
-**example:**
+**example options:**
+
+**Option 1: Local file (for development)**
 ```bash
 export GEOPARQUET_PATH='/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet'
 ```
 
-default fallback: `/app/data/egms_optimized_be.geoparquet` (if not set)
+**Option 2: S3 file (for testing without preprocessing)**
+```bash
+export GEOPARQUET_PATH='https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet'
+```
+
+default fallback: `/app/data/egms_optimized_be.geoparquet` (if not set, used in Docker)
 
 ## running the backend
 
@@ -78,12 +85,25 @@ gunicorn --bind 0.0.0.0:5000 --workers 4 wsgi:application
 
 ### complete example
 
+**Using local file:**
 ```bash
 # 1. activate virtual environment
 source venv/bin/activate
 
 # 2. set the geoparquet path
 export GEOPARQUET_PATH='/Users/marianakecova/GST/3DFLUS_CCN/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet'
+
+# 3. run the server
+gunicorn --bind 0.0.0.0:5000 wsgi:application
+```
+
+**Using S3 file (easiest for quick testing):**
+```bash
+# 1. activate virtual environment
+source venv/bin/activate
+
+# 2. use the S3 test dataset
+export GEOPARQUET_PATH='https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_optimized_be.geoparquet'
 
 # 3. run the server
 gunicorn --bind 0.0.0.0:5000 wsgi:application
@@ -102,8 +122,7 @@ you should see:
 
 retrieve all available dates in the dataset.
 
-**query parameters:**
-- `geoparquet_path` (optional) - override the default geoparquet path
+**note:** The data source is configured via the `GEOPARQUET_PATH` environment variable set on the backend. The frontend does not specify which file to use.
 
 **example:**
 ```bash
@@ -119,10 +138,11 @@ curl http://localhost:5000/api/dates
 
 query geospatial data with filtering and spatial tiling.
 
+**note:** The data source is configured via the `GEOPARQUET_PATH` environment variable set on the backend. The frontend does not specify which file to use.
+
 **query parameters:**
 | parameter | type | required | description |
 |-----------|------|----------|-------------|
-| `geoparquet_path` | string | no | path to geoparquet file |
 | `tile_x` | int | no* | tile x-coordinate |
 | `tile_y` | int | no* | tile y-coordinate |
 | `tier` | int | no | LOD tier (0=overview, 1=mid, 2=detail) |

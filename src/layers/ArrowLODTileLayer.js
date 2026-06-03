@@ -5,7 +5,6 @@ import { ArrowLoader } from '@loaders.gl/arrow';
 
 const DEFAULT_PROPS = {
     dataUrl: null,
-    geoparquetPath: null,
     dateIndex: 0,
     mode: 'static',
     columnMap: {
@@ -30,7 +29,7 @@ const DEFAULT_PROPS = {
     cacheLimit: 200,
 };
 
-export default class DuckDBGeoParquetLayer extends CompositeLayer {
+export default class ArrowLODTileLayer extends CompositeLayer {
     initializeState() {
         this.state = {
             tileCache: new Map(), // Map<Key, DataArray>
@@ -325,7 +324,7 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
 
         // Perform Fetches
         Promise.all(neededTiles.map(task => {
-            const { columnMap, timeSeries, geoparquetPath } = this.props;
+            const { columnMap, timeSeries } = this.props;
             const params = new URLSearchParams({
                 date_index: dateIndex,
                 mode: mode,
@@ -337,10 +336,6 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
                 color_col: columnMap.color,
                 displacements_col: timeSeries.displacements
             });
-
-            if (geoparquetPath) {
-                params.append('geoparquet_path', geoparquetPath);
-            }
 
             if (this.props.is3D) {
                 params.append('is3D', 'true');
@@ -510,5 +505,5 @@ export default class DuckDBGeoParquetLayer extends CompositeLayer {
     }
 }
 
-DuckDBGeoParquetLayer.layerName = 'DuckDBGeoParquetLayer';
-DuckDBGeoParquetLayer.defaultProps = DEFAULT_PROPS;
+ArrowLODTileLayer.layerName = 'ArrowLODTileLayer';
+ArrowLODTileLayer.defaultProps = DEFAULT_PROPS;
