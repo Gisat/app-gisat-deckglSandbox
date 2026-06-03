@@ -303,9 +303,9 @@ export default function GisatDataService() {
 
   return (
     <>
-      <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 10, backgroundColor: '#f0f0f0', padding: '10px', borderRadius: '4px', boxShadow: '0 0 0 2px rgba(0,0,0,0.1)' }}>
+      <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 10, background: 'rgba(255, 255, 255, 0.95)', padding: '11px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)', fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#333', width: '260px' }}>
         {LAYER_CONFIGS.map((config) => (
-          <label key={config.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: config === LAYER_CONFIGS[0] ? '0 0 8px 0' : '8px 0 0 0', fontSize: '14px' }}>
+          <label key={config.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: config === LAYER_CONFIGS[0] ? '0 0 8px 0' : '8px 0 0 0', fontSize: '13px' }}>
             <input
               type="checkbox"
               checked={layerVisibility[config.id]}

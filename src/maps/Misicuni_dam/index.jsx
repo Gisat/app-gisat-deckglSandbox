@@ -374,8 +374,8 @@ function MisicuniDam() {
       <div
         style={{
           position: 'absolute',
-          bottom: 20,
-          left: 20,
+          top: 10,
+          left: 10,
           background: 'rgba(255, 255, 255, 0.95)',
           padding: '11px',
           borderRadius: '8px',
@@ -383,7 +383,7 @@ function MisicuniDam() {
           fontFamily: 'system-ui, sans-serif',
           fontSize: '13px',
           color: '#333',
-          width: '220px',
+          width: '240px',
           zIndex: 1000,
         }}
       >
@@ -398,7 +398,7 @@ function MisicuniDam() {
                 onChange={(e) => setLayerVisibility(prev => ({ ...prev, [layer.id]: e.target.checked }))}
                 style={{ cursor: 'pointer', width: '16px', height: '16px' }}
               />
-              <label htmlFor={layer.id} style={{ cursor: 'pointer', fontSize: '11px', flex: 1, userSelect: 'none' }}>
+              <label htmlFor={layer.id} style={{ cursor: 'pointer', fontSize: '13px', flex: 1, userSelect: 'none' }}>
                 {layer.name}
               </label>
             </div>
@@ -422,7 +422,7 @@ function MisicuniDam() {
                 border: 'none',
                 borderRadius: '3px',
                 fontWeight: 'normal',
-                fontSize: '11px',
+                fontSize: '13px',
               }}
             >
               {isFetched ? '✅ Ready' : '⬇️ Load data'}
