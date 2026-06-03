@@ -13,7 +13,7 @@ export const PlaybackControls = ({
 }) => {
     return (
         <div style={{
-            position: 'absolute', bottom: 30, left: 'calc(50% - 400px)', transform: 'translateX(0)',
+            position: 'absolute', bottom: 10, left: 'calc(50% - 400px)', transform: 'translateX(0)',
             width: '60%', maxWidth: '400px', background: 'rgba(255, 255, 255, 0.95)', padding: '11px',
             borderRadius: '8px', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)', fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#333', zIndex: 1000
         }}>

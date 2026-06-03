@@ -492,8 +492,7 @@ function ArrowLODStream3D() {
                     position: 'absolute',
                     bottom: '10px',
                     left: '10px',
-                    right: '10px',
-                    maxWidth: '600px',
+                    right: 'calc(50% + 420px)',
                     zIndex: 999,
                 }}>
                     <TimeSeriesChart 
