@@ -2,10 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
-import { BitmapLayer, GeoJsonLayer } from '@deck.gl/layers';
-import { TileLayer } from '@deck.gl/geo-layers';
 import { CogTerrainLayer, CogTiles } from '@gisatcz/deckgl-geolib';
-import { MaskExtension } from '@deck.gl/extensions';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
 const INITIAL_VIEW_STATE = {
@@ -22,11 +19,12 @@ const MODES = [
   { key: 'elevation', label: 'Elevation' },
   { key: 'slope', label: 'Slope' },
   { key: 'hillshade', label: 'Hillshade' },
+  { key: 'elevation-swiss', label: 'Shaded Elevation (Swiss Relief)' },
 ];
 
 const MODE_OPTIONS = {
   elevation: {
-    useSwissRelief: true,
+    useSwissRelief: false,
     useHeatMap: true,
     colorScale: [
       [0, 60, 48],    // #003c30 (2500)
@@ -41,6 +39,22 @@ const MODE_OPTIONS = {
     ],
     colorScaleValueRange: [2500, 5000],
     // colorScaleValueRange: [2500, 3100, 3730, 3755, 3780, 3805, 3830, 4410, 5000],
+  },
+  'elevation-swiss': {
+    useSwissRelief: true,
+    useHeatMap: true,
+    colorScale: [
+      [0, 60, 48],    // #003c30 (2500)
+      [1, 102, 94],   // #01665e (3100)
+      [90, 180, 172], // #5ab4ac (3730)
+      [128, 205, 193],// #80cdc1 (3755)
+      [245, 245, 245],// #f5f5f5 (3780)
+      [223, 194, 125],// #dfc27d (3805)
+      [166, 97, 26],  // #a6611a (3830)
+      [140, 81, 10],  // #8c510a (4410)
+      [84, 48, 5],    // #543005 (5000)
+    ],
+    colorScaleValueRange: [2500, 5000],
   },
   slope: {
     useSlope: true,
@@ -139,16 +153,7 @@ function CogTerrainKernel() {
   const layers = useMemo(() => {
     if (!cogState.cog) return [];
 
-    // The "Stencil" - defines the high-res shape of the water
-    const maskLayer = new GeoJsonLayer({
-      id: 'water-mask',
-      data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/misicuni_max_mask.geojson', // Your QGIS export (EPSG:4326)
-      operation: 'mask',
-      maskInverted: true,
-    });
-
     return [
-      maskLayer, 
       // new TileLayer({
       //   id: 'osm',
       //   data: 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -176,25 +181,6 @@ function CogTerrainKernel() {
         tileSize: 256,
         operation: 'terrain+draw',
         terrainOptions: buildTerrainOptions(cogState.mode),
-        pickable: true,
-      }),
-      new CogTerrainLayer({
-        id: 'cog-terrain-kernel-dam-surface',
-        // elevationData: "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_3000_10x10_intermediate_cog.tif",
-        // elevationData: "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_Max_10x10_cog.tif",
-        elevationData: "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_30_10x10_intermediate_cog.tif",
-        isTiled: true,
-        tileSize: 256,
-        extensions: [new MaskExtension()],
-        maskId: 'water-mask',
-        operation: 'terrain+draw',
-        terrainOptions: {
-          type: 'terrain',
-          terrainSkirtHeight: 0,
-          useChannel: 20  ,
-          useSingleColor: true,
-          color: [0, 105, 148, 180], // Deep Ocean Blue, 70% opacity
-        },
         pickable: true,
       }),
     ];
