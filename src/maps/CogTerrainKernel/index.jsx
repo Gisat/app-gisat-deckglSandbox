@@ -501,11 +501,13 @@ function CogTerrainKernel() {
               disabled={baseMode === m.key || baseIsTransitioning}
               style={{
                 padding: '6px 10px',
-                fontSize: 11,
-                backgroundColor: baseMode === m.key ? '#2196F3' : '#666',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 4,
+                fontSize: '13px',
+                fontFamily: 'system-ui, sans-serif',
+                border: baseMode === m.key ? '2px solid #0066cc' : '1px solid #ccc',
+                borderRadius: '4px',
+                background: baseMode === m.key ? '#e6f0ff' : '#fff',
+                color: '#333',
+                fontWeight: baseMode === m.key ? 600 : 400,
                 cursor: baseMode === m.key || baseIsTransitioning ? 'default' : 'pointer',
                 opacity: baseIsTransitioning ? 0.6 : 1,
               }}
@@ -526,11 +528,13 @@ function CogTerrainKernel() {
               disabled={compareMode === m.key || compareIsTransitioning}
               style={{
                 padding: '6px 10px',
-                fontSize: 11,
-                backgroundColor: compareMode === m.key ? '#2196F3' : '#666',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 4,
+                fontSize: '13px',
+                fontFamily: 'system-ui, sans-serif',
+                border: compareMode === m.key ? '2px solid #0066cc' : '1px solid #ccc',
+                borderRadius: '4px',
+                background: compareMode === m.key ? '#e6f0ff' : '#fff',
+                color: '#333',
+                fontWeight: compareMode === m.key ? 600 : 400,
                 cursor: compareMode === m.key || compareIsTransitioning ? 'default' : 'pointer',
                 opacity: compareIsTransitioning ? 0.6 : 1,
               }}
