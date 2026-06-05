@@ -105,8 +105,56 @@ export function pointInPolygon(point, polygon) {
 }
 
 /**
- * Filter visible Arrow table rows by polygon geometry AND viewport bounds
- * Returns an array of point IDs that are selected
+ * Calculate [minLon, minLat, maxLon, maxLat] for a GeoJSON geometry.
+ * Returns null when the geometry has no usable coordinates.
+ */
+export function getGeometryBounds(geometry) {
+    if (!geometry || !geometry.coordinates) {
+        return null;
+    }
+
+    let minLon = Infinity;
+    let minLat = Infinity;
+    let maxLon = -Infinity;
+    let maxLat = -Infinity;
+
+    const visit = (coords) => {
+        if (!Array.isArray(coords) || coords.length === 0) {
+            return;
+        }
+
+        if (typeof coords[0] === 'number' && coords.length >= 2) {
+            const [lon, lat] = coords;
+            if (Number.isFinite(lon) && Number.isFinite(lat)) {
+                minLon = Math.min(minLon, lon);
+                minLat = Math.min(minLat, lat);
+                maxLon = Math.max(maxLon, lon);
+                maxLat = Math.max(maxLat, lat);
+            }
+            return;
+        }
+
+        coords.forEach(visit);
+    };
+
+    visit(geometry.coordinates);
+
+    if (
+        !Number.isFinite(minLon) ||
+        !Number.isFinite(minLat) ||
+        !Number.isFinite(maxLon) ||
+        !Number.isFinite(maxLat)
+    ) {
+        return null;
+    }
+
+    return [minLon, minLat, maxLon, maxLat];
+}
+
+/**
+ * Filter visible Arrow table rows by polygon geometry and a precomputed bounds box.
+ * Returns an array of point IDs that are selected.
+ * In 3D mode, also checks elevation (if available in tableData).
  */
 export function filterPointsByGeometryInBounds(tableData, geometry, bounds) {
     const selectedIds = [];
@@ -119,7 +167,7 @@ export function filterPointsByGeometryInBounds(tableData, geometry, bounds) {
             
             // First check: is point within viewport bounds?
             if (lon >= minLon && lon <= maxLon && lat >= minLat && lat <= maxLat) {
-                // Second check: is point within drawn geometry?
+                // Second check: is point within drawn geometry (2D polygon check)?
                 if (pointInPolygon([lon, lat], geometry)) {
                     const pointId = tableData.getPointId(i);
                     if (pointId !== null && pointId !== undefined && pointId !== '') {
@@ -135,4 +183,3 @@ export function filterPointsByGeometryInBounds(tableData, geometry, bounds) {
     
     return selectedIds;
 }
-

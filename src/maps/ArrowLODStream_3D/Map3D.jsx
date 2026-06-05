@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
-import { DeckGL, WebMercatorViewport } from 'deck.gl';
+import { DeckGL } from 'deck.gl';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { BitmapLayer } from '@deck.gl/layers';
@@ -10,7 +10,7 @@ import {_TerrainExtension as TerrainExtension } from "@deck.gl/extensions";
 
 import { HUD } from '../../components/HUD';
 import { PlaybackControls } from '../../components/PlaybackControls';
-import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../components/PointSelection';
+import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds, getGeometryBounds } from '../../components/PointSelection';
 import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 
@@ -232,81 +232,11 @@ function ArrowLODStream3D() {
                         
                         const newSelected = new Set();
                         
-                        // Get current viewport bounds
-                        const { longitude, latitude, zoom, pitch, bearing } = viewState;
-                        const containerWidth = mapContainerRef.current?.clientWidth || 800;
-                        const containerHeight = mapContainerRef.current?.clientHeight || 600;
-                        
-                        const viewport = new WebMercatorViewport({
-                            width: containerWidth,
-                            height: containerHeight,
-                            longitude,
-                            latitude,
-                            zoom,
-                            pitch,
-                            bearing
-                        });
-                        
-                        // Calculate bounds using terrain-aware picking when pitch > 0
-                        let topLeft, topRight, bottomLeft, bottomRight;
-                        
-                        if (pitch > 0 && deckGLRef.current) {
-                            // Use terrain picking for bounds calculation
-                            // Try to pick multiple points to get better coverage
-                            try {
-                                // Pick from a grid of screen points instead of just corners
-                                const gridPoints = [];
-                                const gridSize = 5; // 5x5 grid
-                                for (let i = 0; i <= gridSize; i++) {
-                                    for (let j = 0; j <= gridSize; j++) {
-                                        const x = (i / gridSize) * containerWidth;
-                                        const y = (j / gridSize) * containerHeight;
-                                        const pick = deckGLRef.current.pickObject({ x, y, layerIds: ['terrain-layer'] });
-                                        if (pick?.coordinate) {
-                                            gridPoints.push(pick.coordinate);
-                                        }
-                                    }
-                                }
-                                
-                                if (gridPoints.length > 0) {
-                                    // Calculate bounds from all grid hits
-                                    const lons = gridPoints.map(p => p[0]);
-                                    const lats = gridPoints.map(p => p[1]);
-                                    const minLon = Math.min(...lons);
-                                    const maxLon = Math.max(...lons);
-                                    const minLat = Math.min(...lats);
-                                    const maxLat = Math.max(...lats);
-                                    
-                                    topLeft = [minLon, maxLat];
-                                    topRight = [maxLon, maxLat];
-                                    bottomLeft = [minLon, minLat];
-                                    bottomRight = [maxLon, minLat];
-                                } else {
-                                    topLeft = viewport.unproject([0, 0], { targetZ: 0 });
-                                    topRight = viewport.unproject([containerWidth, 0], { targetZ: 0 });
-                                    bottomLeft = viewport.unproject([0, containerHeight], { targetZ: 0 });
-                                    bottomRight = viewport.unproject([containerWidth, containerHeight], { targetZ: 0 });
-                                }
-                            } catch (err) {
-                                topLeft = viewport.unproject([0, 0], { targetZ: 0 });
-                                topRight = viewport.unproject([containerWidth, 0], { targetZ: 0 });
-                                bottomLeft = viewport.unproject([0, containerHeight], { targetZ: 0 });
-                                bottomRight = viewport.unproject([containerWidth, containerHeight], { targetZ: 0 });
-                            }
-                        } else {
-                            // Flat view: simple unproject
-                            topLeft = viewport.unproject([0, 0], { targetZ: 0 });
-                            topRight = viewport.unproject([containerWidth, 0], { targetZ: 0 });
-                            bottomLeft = viewport.unproject([0, containerHeight], { targetZ: 0 });
-                            bottomRight = viewport.unproject([containerWidth, containerHeight], { targetZ: 0 });
+                        // Prefilter by the drawn geometry bbox, then do the exact point-in-polygon test.
+                        const bounds = getGeometryBounds(drawnGeometry);
+                        if (!bounds) {
+                            return null;
                         }
-                        
-                        const minLon = Math.min(topLeft[0], topRight[0], bottomLeft[0], bottomRight[0]);
-                        const maxLon = Math.max(topLeft[0], topRight[0], bottomLeft[0], bottomRight[0]);
-                        const minLat = Math.min(topLeft[1], topRight[1], bottomLeft[1], bottomRight[1]);
-                        const maxLat = Math.max(topLeft[1], topRight[1], bottomLeft[1], bottomRight[1]);
-                        
-                        const bounds = [minLon, minLat, maxLon, maxLat];
                         
                         // Filter all visible table data for selected points
                         data.forEach(tableData => {
@@ -318,9 +248,7 @@ function ArrowLODStream3D() {
                             pointIds.forEach(id => newSelected.add(id));
                         });
 
-                        if (newSelected.size > 0) {
-                            setSelectedPointIds(newSelected);
-                        }
+                        setSelectedPointIds(newSelected);
                     }
                 }
 
