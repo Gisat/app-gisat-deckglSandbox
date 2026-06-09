@@ -23,5 +23,5 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
   },
-  base: process.env.NODE_ENV === 'production' ? '/app-gisat-deckglSandbox/' : '/', // Use '/app/' for production, '/' for development
+  base: '/',
 })

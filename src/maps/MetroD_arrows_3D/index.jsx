@@ -1,5 +1,5 @@
 // src/maps/MapApp1.jsx
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import {MVTLayer, TileLayer} from '@deck.gl/geo-layers';
@@ -9,7 +9,6 @@ import {_TerrainExtension as TerrainExtension } from "@deck.gl/extensions";
 import {SimpleMeshLayer} from "@deck.gl/mesh-layers";
 import chroma from "chroma-js";
 import {OBJLoader} from "@loaders.gl/obj";
-import {SphereGeometry} from "@luma.gl/engine";
 import { CogTerrainLayer } from "@gisatcz/deckgl-geolib";
 
 const INITIAL_VIEW_STATE = {
@@ -192,7 +191,7 @@ const layerConfigs = [
                             data: props.data,
                             iconAtlas: baseCircleSvg,
                             iconMapping: { marker: { x: 0, y: 0, width: 128, height: 128, mask: true } },
-                            getIcon: d => 'marker',
+                            getIcon: () => 'marker',
                             getSize: 10, // Slightly larger to feel more "present" like screen 2
                             getColor: (d) => [...colorScale(d.properties.VEL_L_EW_e5).rgb(), 255],
                             getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.H_DSM + 4],
@@ -205,7 +204,7 @@ const layerConfigs = [
                             data: props.data,
                             iconAtlas: shadingOverlaySvg,
                             iconMapping: { marker: { x: 0, y: 0, width: 128, height: 128, mask: false } },
-                            getIcon: d => 'marker',
+                            getIcon: () => 'marker',
                             getSize: 10, 
                             getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.H_DSM + 4.01],
                             billboard: true
@@ -353,6 +352,7 @@ function MapApp1() {
         return () => {
             gui.destroy();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     return (

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView, WebMercatorViewport } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
@@ -195,7 +195,7 @@ function MinimalWasmMap() {
         ],
         getRadius: 10,
         radiusUnits: 'pixels',
-        getFillColor: (object, { index, data }) => {
+        getFillColor: (object, { index }) => {
             const displ = attributeTable.getChild('displacement')?.get(index);
             const rgb = colorScale(displ ?? 0);
             return [rgb[0], rgb[1], rgb[2], 180];

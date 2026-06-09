@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { DeckGL } from 'deck.gl';
 import { WebMercatorViewport } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
@@ -57,7 +57,7 @@ export default function VirtualTilesMap() {
 
     const [positionArray, setPositionArray] = useState(null);
     const [displacementVectors, setDisplacementVectors] = useState(null);
-    const [tileIds, setTileIds] = useState(null);
+    const [, setTileIds] = useState(null);
     const [visiblePointCount, setVisiblePointCount] = useState(0);
 
     // Detailed Loading State for HUD
@@ -65,7 +65,6 @@ export default function VirtualTilesMap() {
     const [loadedTier, setLoadedTier] = useState(-1);
     const [dataStatus, setDataStatus] = useState('Idle');
 
-    const lastQueryParams = useRef({ key: "" });
     const tileCache = useRef(new Map());
 
     const mapContainerRef = useRef(null);
@@ -336,7 +335,8 @@ export default function VirtualTilesMap() {
 
         loadData();
         return () => { isActive = false; };
-    }, [db, queryParams, needsFullVector, debouncedTimeIndex]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [db, queryParams, needsFullVector, debouncedTimeIndex, currentDbIndex]);
 
     const updateDisplayState = (chunks, tierReached) => {
         let totalCount = 0;

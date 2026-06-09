@@ -16,7 +16,7 @@ import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils'
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch: 45, bearing: 0 };
-const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:5000';
+const BACKEND_BASE_URL = window.BACKEND_API_URL || 'http://localhost:5000';
 const DATES_API_URL = `${BACKEND_BASE_URL}/api/dates`;
 const DATA_API_URL = `${BACKEND_BASE_URL}/api/data`;
 
@@ -309,7 +309,7 @@ function ArrowLODStream3D() {
                 });
             }
         })
-    ], [debouncedTimeIndex, mode, drawnGeometry, selectedPointIds, hoveredPointId, viewState]);
+    ], [debouncedTimeIndex, mode, drawnGeometry, selectedPointIds, hoveredPointId, isDrawing]);
 
     return (
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
@@ -327,7 +327,7 @@ function ArrowLODStream3D() {
                 }}
                 getCursor={() => isDrawing ? 'crosshair' : 'grab'}
                 layers={layers}
-                onHover={(info) => {
+                onHover={() => {
                     // Hover is not used for drawing
                 }}
                 onClick={(info) => {

@@ -1,11 +1,9 @@
-/* eslint-disable react/prop-types */
 import { useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
-import { CogBitmapLayer, CogTerrainLayer } from '@gisatcz/deckgl-geolib';
-import chroma from 'chroma-js';
+import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
 
 function getRawValuesAtUv(info) {
     const uv = info.uv || (info.bitmap && info.bitmap.uv);

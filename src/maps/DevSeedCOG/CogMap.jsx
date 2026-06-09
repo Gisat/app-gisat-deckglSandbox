@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView, WebMercatorViewport } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
@@ -30,7 +30,7 @@ async function geoKeysParser(geoKeys) {
 
 function CogMap() {
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
-    const [textureFilter, setTextureFilter] = useState('nearest'); // 'nearest' or 'linear'
+    const [textureFilter] = useState('nearest'); // 'nearest' or 'linear'
 
     const onCogLoad = useCallback((tiff, options) => {
         const { west, south, east, north } = options.geographicBounds;

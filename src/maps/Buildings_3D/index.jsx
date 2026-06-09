@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
-import { MapView, AmbientLight, LightingEffect } from '@deck.gl/core';
-import {_SunLight as SunLight} from '@deck.gl/core';
+import { MapView } from '@deck.gl/core';
 import {MVTLayer, TileLayer} from '@deck.gl/geo-layers';
 import {BitmapLayer, GeoJsonLayer, PolygonLayer} from '@deck.gl/layers';
 import * as dat from 'dat.gui';
@@ -15,20 +14,6 @@ const INITIAL_VIEW_STATE = {
     pitch: 40,
     bearing: 0,
 };
-
-// create an ambient light
-const ambientLight = new AmbientLight({
-    color: [255, 255, 255],
-    intensity: 1.0
-});
-// create directional light from the sun
-const directionalLight = new SunLight({
-    timestamp: 1554927200000,
-    color: [255, 0, 0],
-    intensity: 1
-});
-// create lighting effect with light sources
-const lightingEffect = new LightingEffect({ambientLight, directionalLight});
 
 const riskColors = {
     0: [255, 255, 255],
@@ -293,6 +278,7 @@ function MapApp1() {
         return () => {
             gui.destroy();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     return (

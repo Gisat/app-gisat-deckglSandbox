@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
-import {MVTLayer, TileLayer} from '@deck.gl/geo-layers';
+import {TileLayer} from '@deck.gl/geo-layers';
 import {Tile3DLayer} from '@deck.gl/geo-layers';
 import {I3SLoader} from '@loaders.gl/i3s';
 import {} from '@loaders.gl/3d-tiles';
@@ -39,9 +39,8 @@ const layerConfigs = [
             loadOptions: {
                 'cesium-ion': {accessToken: cesiumToken}
             },
-            onTilesetLoad: (tileset) => {
+            onTilesetLoad: () => {
                 // Recenter to cover the tileset
-                const {cartographicCenter, zoom} = tileset;
                 // console.log({cartographicCenter, zoom})
                 // setInitialViewState({
                 //     longitude: cartographicCenter[0],
@@ -69,9 +68,8 @@ const layerConfigs = [
                 '3d-tiles': { decodeQuantizedPositions: true }
             },
             // loader: Tiles3DLoader,
-            onTilesetLoad: (tileset) => {
+            onTilesetLoad: () => {
                 // Recenter to cover the tileset
-                const {cartographicCenter, zoom} = tileset;
                 // console.log({cartographicCenter, zoom})
                 // setInitialViewState({
                 //     longitude: cartographicCenter[0],
@@ -90,9 +88,8 @@ const layerConfigs = [
             visible: false,
             data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/3dtiles/3d-tiles-samples/1.1/MetadataGranularities/tileset.json',
             loader: Tiles3DLoader,
-            onTilesetLoad: (tileset) => {
+            onTilesetLoad: () => {
                 // Recenter to cover the tileset
-                // const {cartographicCenter, zoom} = tileset;
                 // console.log({cartographicCenter, zoom})
                 // setInitialViewState({
                 //     longitude: cartographicCenter[0],
@@ -236,6 +233,7 @@ function MapApp1() {
         return () => {
             gui.destroy();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     return (

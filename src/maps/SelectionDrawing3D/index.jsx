@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
@@ -37,7 +37,7 @@ export default function SelectionDrawing3D() {
   const [drawnGeometry, setDrawnGeometry] = useState(null);
   const [selectedPoints, setSelectedPoints] = useState([]);
   const [selectedFeatures, setSelectedFeatures] = useState(null);
-  const [hoveredPointId, setHoveredPointId] = useState(null);
+  const [, setHoveredPointId] = useState(null);
   const [allFeatures, setAllFeatures] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -57,9 +57,10 @@ export default function SelectionDrawing3D() {
       }
     };
     
-    if (mapContainerRef.current) {
-      mapContainerRef.current.addEventListener('dblclick', handleDblClick);
-      return () => mapContainerRef.current?.removeEventListener('dblclick', handleDblClick);
+    const container = mapContainerRef.current;
+    if (container) {
+      container.addEventListener('dblclick', handleDblClick);
+      return () => container.removeEventListener('dblclick', handleDblClick);
     }
   }, [isDrawing, drawnGeometry]);
 

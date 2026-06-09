@@ -1,10 +1,9 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView, WebMercatorViewport } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { ScatterplotLayer, BitmapLayer } from '@deck.gl/layers';
 import { useDuckDb } from 'duckdb-wasm-kit';
-import * as duckdb from "@duckdb/duckdb-wasm";
 import { setupDB } from './db';
 import { getTileUrls } from './utils/getTileUrls';
 import { scaleLinear } from 'd3-scale';
@@ -268,7 +267,6 @@ const FAKE_DATES = [
     '2023-12-15',
     '2023-12-27'
 ];
-const ACTUAL_HASHED_FILE_NAME = 'd5da031a332c4dbb977017ffb9035858-0.parquet';
 const BASE_URL_ROOT = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/geoparquet/UC5_PRAHA_EGMS/t146/SRC_DATA/egms_tiled_detail_v2';
 
 // MAIN QUERY TEMPLATE - FIXED: Uses geom_wkb and BBOX filter
@@ -381,7 +379,7 @@ function GeoParquetTile() {
             const newTilesToRegister = [];
             const filenamesToQuery = [];
 
-            for (const { url, filename } of requiredTiles) {
+            for (const { url } of requiredTiles) {
                 const internalFilename = url; // Use URL as internal name
 
                 filenamesToQuery.push(internalFilename);
@@ -418,11 +416,12 @@ function GeoParquetTile() {
         };
         fetchTilesForView();
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dbInitialized, debouncedViewState, db]);
 
 
     // 3. Query Generator (useMemo)
-    const querySQL = useMemo(() => {
+    useMemo(() => {
         if (!dbInitialized || tileNamesToQuery.length === 0 || dates.length === 0) {
             return null;
         }
@@ -467,6 +466,7 @@ function GeoParquetTile() {
         };
         fetchData();
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sqlQuery, dbInitialized]);
 
 
@@ -517,7 +517,7 @@ function GeoParquetTile() {
         ],
         getRadius: 2,
         radiusUnits: 'pixels',
-        getFillColor: (object, { index, data }) => {
+        getFillColor: (object, { index }) => {
             const displ = attributeTable.getChild('displacement')?.get(index);
             const rgb = colorScale(displ ?? 0);
             return [rgb[0], rgb[1], rgb[2], 180];

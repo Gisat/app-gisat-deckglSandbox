@@ -1,5 +1,5 @@
 // src/maps/MapApp1.jsx
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import {MVTLayer, TileLayer} from '@deck.gl/geo-layers';
@@ -47,7 +47,6 @@ const colorScale = chroma
 
 const sphereSizeScale = scaleLinear([0, 1], [0.5, 2.5]).clamp(true); //for rel len
 // const sphereSizeScale = scaleLinear([0.45, 1], [0.5, 2.5]).clamp(true); //for coh
-const pointSizeScale = scaleLinear([0.45,1],[0.1, 2.5]).clamp(true);
 
 // Layer configurations
 const layerConfigs = [
@@ -140,7 +139,7 @@ const layerConfigs = [
             getOrientation: (d) => {
                 if (d.properties.vel_rel > 0) {
                     return [0, d.properties.az_ang, 180 + d.properties.inc_ang];
-                } else {return [0, d.properties.az_ang, d.properties.inc_ang]};
+                } else {return [0, d.properties.az_ang, d.properties.inc_ang]}
             },
             visible: false,
             getTranslation: (d) => {
@@ -309,6 +308,7 @@ function MapApp1() {
         return () => {
             gui.destroy();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     return (

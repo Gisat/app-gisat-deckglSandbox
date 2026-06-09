@@ -1,5 +1,3 @@
-import React from 'react';
-
 export const HUD = ({ viewState, currentTierDisplay, totalPoints, fetchStatus, isLoading, cacheSize, cacheLimit }) => {
     return (
         <div style={{

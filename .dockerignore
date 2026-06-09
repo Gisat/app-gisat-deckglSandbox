@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.gitignore
+.eslintrc.cjs
+plans
+.plan
+.vscode
+*.md
+.env
+.env.example
+404.html
+.release-version
+.releaserc.json
+.github/
