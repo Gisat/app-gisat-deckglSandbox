@@ -8,6 +8,7 @@ class Database:
     def _init_db(self, geoparquet_path):
         self.conn = duckdb.connect(database=':memory:', read_only=False)
         self.conn.execute("INSTALL spatial; LOAD spatial;")
+        self.conn.execute("INSTALL httpfs; LOAD httpfs;")
         path = geoparquet_path if geoparquet_path else Config.GEOPARQUET_PATH
         self.conn.execute(f"CREATE OR REPLACE VIEW egms_data AS SELECT * FROM read_parquet('{path}')")
 

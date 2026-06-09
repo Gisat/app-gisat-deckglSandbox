@@ -81,7 +81,7 @@ function AppContent() {
 }
 
 function App() {
-    const basename = import.meta.env.MODE === 'production' ? '/app-gisat-deckglSandbox/' : '/';
+    const basename = window.VITE_BASE && window.VITE_BASE !== '/' ? window.VITE_BASE : '/';
     
     return (
         <BrowserRouter basename={basename} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>

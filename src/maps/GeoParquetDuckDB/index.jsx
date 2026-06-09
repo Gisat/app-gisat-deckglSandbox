@@ -20,7 +20,7 @@ function useDebounce(value, delay) {
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 13, pitch: 0, bearing: 0 };
-const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:5000';
+const BACKEND_BASE_URL = window.BACKEND_API_URL || 'http://localhost:5000';
 const BACKEND_API_URL = `${BACKEND_BASE_URL}/api/data`;
 
 // --- 2. UPDATE THE COLOR SCALE DEFINITION ---
