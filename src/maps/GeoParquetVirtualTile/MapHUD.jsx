@@ -1,4 +1,3 @@
-import React from 'react';
 import './VirtualTilesMap.css';
 
 export default function MapHUD({

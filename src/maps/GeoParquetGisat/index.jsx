@@ -1,5 +1,5 @@
 // src/maps/GPG.jsx
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import {TileLayer} from '@deck.gl/geo-layers';
@@ -62,7 +62,6 @@ function GeoParquet() {
     const [layerVisibility, setLayerVisibility] = useState({});
     const [layerProperties, setLayerProperties] = useState({});
 
-    const renderedLayerIds = useRef(new Set());
 
 
     // --- Define Initial Layer Configurations ---
@@ -194,8 +193,9 @@ function GeoParquet() {
             if (config.id === 'tile-layer') return true;
             return config.options.data !== null;
         }).map(config => createLayer(config, layerVisibility[config.id], layerProperties[config.id]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
-        jsTableClientColor, jsTablePrecomputedColor, jsTableGeomOnly, // NEW: Added jsTableGeomOnly
+        jsTableClientColor, jsTablePrecomputedColor, jsTableGeomOnly,
         geoJsonClientColorData, geoJsonPrecomputedColorData,
         layerVisibility, layerProperties
     ]);
@@ -217,9 +217,11 @@ function GeoParquet() {
 
 
     // --- Lazy Data Loading Effects ---
+    const gpClientColorVisible = layerVisibility['geoparquet-points-client-color'];
+
     // GeoParquet (Client-side Color)
     useEffect(() => {
-        if (layerVisibility['geoparquet-points-client-color'] && !jsTableClientColor && isWasmReady) {
+        if (gpClientColorVisible && !jsTableClientColor && isWasmReady) {
             console.time('Load_GP_ClientColor_Lazy');
             fetch(GEO_PARQUET_PATH_CLIENT_COLOR)
                 .then(response => response.arrayBuffer())
@@ -231,11 +233,13 @@ function GeoParquet() {
                 })
                 .catch(error => console.error("Lazy Load Error (GP Client Color):", error));
         }
-    }, [layerVisibility['geoparquet-points-client-color'], jsTableClientColor, isWasmReady]);
+    }, [gpClientColorVisible, jsTableClientColor, isWasmReady]);
+
+    const gpPrecomputedColorVisible = layerVisibility['geoparquet-points-precomputed-color'];
 
     // GeoParquet (Precomputed Color)
     useEffect(() => {
-        if (layerVisibility['geoparquet-points-precomputed-color'] && !jsTablePrecomputedColor && isWasmReady) {
+        if (gpPrecomputedColorVisible && !jsTablePrecomputedColor && isWasmReady) {
             console.time('Load_GP_PrecomputedColor_Lazy');
             fetch(GEO_PARQUET_PATH_PRECOMPUTED_COLOR)
                 .then(response => response.arrayBuffer())
@@ -247,11 +251,13 @@ function GeoParquet() {
                 })
                 .catch(error => console.error("Lazy Load Error (GP Precomputed Color):", error));
         }
-    }, [layerVisibility['geoparquet-points-precomputed-color'], jsTablePrecomputedColor, isWasmReady]);
+    }, [gpPrecomputedColorVisible, jsTablePrecomputedColor, isWasmReady]);
+
+    const gpGeomOnlyVisible = layerVisibility['geoparquet-points-geom-only'];
 
     // --- NEW: Lazy Load Effect for Geometry-Only GeoParquet ---
     useEffect(() => {
-        if (layerVisibility['geoparquet-points-geom-only'] && !jsTableGeomOnly && isWasmReady) {
+        if (gpGeomOnlyVisible && !jsTableGeomOnly && isWasmReady) {
             console.time('Load_GP_GeomOnly_Lazy');
             fetch(GEO_PARQUET_PATH_EGMS_GEOM_ONLY)
                 .then(response => response.arrayBuffer())
@@ -263,11 +269,13 @@ function GeoParquet() {
                 })
                 .catch(error => console.error("Lazy Load Error (GP Geometry Only):", error));
         }
-    }, [layerVisibility['geoparquet-points-geom-only'], jsTableGeomOnly, isWasmReady]);
+    }, [gpGeomOnlyVisible, jsTableGeomOnly, isWasmReady]);
+
+    const geoJsonClientColorVisible = layerVisibility['geojson-points-client-color'];
 
     // GeoJSON (Client-side Color)
     useEffect(() => {
-        if (layerVisibility['geojson-points-client-color'] && !geoJsonClientColorData) {
+        if (geoJsonClientColorVisible && !geoJsonClientColorData) {
             console.time('Load_GeoJSON_ClientColor_Lazy');
             fetch(GEO_JSON_PATH_CLIENT_COLOR)
                 .then(response => response.json())
@@ -277,11 +285,13 @@ function GeoParquet() {
                 })
                 .catch(error => console.error("Lazy Load Error (GeoJSON Client Color):", error));
         }
-    }, [layerVisibility['geojson-points-client-color'], geoJsonClientColorData]);
+    }, [geoJsonClientColorVisible, geoJsonClientColorData]);
+
+    const geoJsonPrecomputedColorVisible = layerVisibility['geojson-points-precomputed-color'];
 
     // GeoJSON (Precomputed Color)
     useEffect(() => {
-        if (layerVisibility['geojson-points-precomputed-color'] && !geoJsonPrecomputedColorData) {
+        if (geoJsonPrecomputedColorVisible && !geoJsonPrecomputedColorData) {
             console.time('Load_GeoJSON_PrecomputedColor_Lazy');
             fetch(GEO_JSON_PATH_PRECOMPUTED_COLOR)
                 .then(response => response.json())
@@ -291,7 +301,7 @@ function GeoParquet() {
                 })
                 .catch(error => console.error("Lazy Load Error (GeoJSON Precomputed Color):", error));
         }
-    }, [layerVisibility['geojson-points-precomputed-color'], geoJsonPrecomputedColorData]);
+    }, [geoJsonPrecomputedColorVisible, geoJsonPrecomputedColorData]);
 
 
     // --- GUI Setup Effect (Runs once on mount) ---
@@ -360,6 +370,7 @@ function GeoParquet() {
         return () => {
             gui.destroy();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Empty dependency array ensures this effect runs once on mount
 
 

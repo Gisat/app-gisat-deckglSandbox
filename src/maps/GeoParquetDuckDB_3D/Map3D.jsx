@@ -381,7 +381,7 @@ function Map3D() {
                 });
             }
         })
-    ], [debouncedTimeIndex, mode, drawnGeometry, selectedPointIds, hoveredPointId, viewState]);
+    ], [debouncedTimeIndex, mode, drawnGeometry, selectedPointIds, hoveredPointId, viewState, isDrawing]);
 
     return (
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>

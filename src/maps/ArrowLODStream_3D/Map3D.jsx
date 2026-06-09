@@ -309,7 +309,7 @@ function ArrowLODStream3D() {
                 });
             }
         })
-    ], [debouncedTimeIndex, mode, drawnGeometry, selectedPointIds, hoveredPointId, viewState]);
+    ], [debouncedTimeIndex, mode, drawnGeometry, selectedPointIds, hoveredPointId, isDrawing]);
 
     return (
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
@@ -327,7 +327,7 @@ function ArrowLODStream3D() {
                 }}
                 getCursor={() => isDrawing ? 'crosshair' : 'grab'}
                 layers={layers}
-                onHover={(info) => {
+                onHover={() => {
                     // Hover is not used for drawing
                 }}
                 onClick={(info) => {

@@ -1,5 +1,5 @@
 // src/maps/GPDemo.jsx
-import React, { useEffect, useState, useCallback, useRef } from 'react'; // Added useCallback, useRef
+import { useEffect, useState, useCallback } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import {TileLayer} from '@deck.gl/geo-layers';
@@ -47,7 +47,6 @@ function GeoParquet() { // Component name based on your file
     const [layerProperties, setLayerProperties] = useState({});
 
     // Ref to track which layers have completed their initial render (for console.timeEnd measurement)
-    const renderedLayerIds = useRef(new Set());
 
 
     // --- Define Initial Layer Configurations ---
@@ -102,6 +101,7 @@ function GeoParquet() { // Component name based on your file
             // This prevents Deck.gl from trying to initialize layers with null data, avoiding errors.
             return config.options.data !== null;
         }).map(config => createLayer(config, layerVisibility[config.id], layerProperties[config.id]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         // Dependencies for this useCallback:
         // The array of layers needs to be regenerated if:
@@ -128,6 +128,8 @@ function GeoParquet() { // Component name based on your file
     }, [isWasmReady]); // Dependency: re-run only if isWasmReady is false (on initial mount)
 
 
+    const geoparquetBuildingsVisible = layerVisibility['geoparquet-buildings'];
+
     // --- Lazy Data Loading Effect for Polygon GeoParquet ---
     // This effect triggers data loading for the polygon layer.
     // It runs when:
@@ -135,7 +137,7 @@ function GeoParquet() { // Component name based on your file
     // 2. Polygon data (jsTablePolygonData) is null (not yet loaded).
     // 3. WASM module (isWasmReady) is initialized.
     useEffect(() => {
-        if (layerVisibility['geoparquet-buildings'] && !jsTablePolygonData && isWasmReady) {
+        if (geoparquetBuildingsVisible && !jsTablePolygonData && isWasmReady) {
             console.time('Load_GP_Buildings_Lazy'); // Start timer for lazy data load
             console.log(`GPDemo: Starting to load GeoParquet Polygon data from: ${POLYGON_GEO_PARQUET_PATH}`);
             fetch(POLYGON_GEO_PARQUET_PATH)
@@ -157,7 +159,7 @@ function GeoParquet() { // Component name based on your file
                     setJsTablePolygonData(null); // Reset state to null if loading fails
                 });
         }
-    }, [layerVisibility['geoparquet-buildings'], jsTablePolygonData, isWasmReady]); // Dependencies: trigger on visibility, data state, WASM readiness
+    }, [geoparquetBuildingsVisible, jsTablePolygonData, isWasmReady]);
 
 
     // --- GUI Setup Effect (Runs once on mount) ---
@@ -228,6 +230,7 @@ function GeoParquet() { // Component name based on your file
         return () => {
             gui.destroy();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Empty dependency array ensures this effect runs only once on component mount
 
 

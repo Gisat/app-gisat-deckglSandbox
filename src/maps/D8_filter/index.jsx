@@ -1,5 +1,5 @@
 // src/maps/MapApp1.jsx
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import {TileLayer} from '@deck.gl/geo-layers';
@@ -205,7 +205,7 @@ function MapApp1() {
     }, {});
 
     const [layerVisibility, setLayerVisibility] = useState(initialVisibility);
-    const [layerProperties, setLayerProperties] = useState(initialProperties);
+    const [layerProperties] = useState(initialProperties);
 
     // Update the layers array based on visibility and properties state
     const layers = layerConfigs.map(config => createLayer(config, layerVisibility[config.id], layerProperties[config.id]));
@@ -228,6 +228,7 @@ function MapApp1() {
         return () => {
             gui.destroy();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     return (

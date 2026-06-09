@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { ResponsiveScatterPlot } from '@nivo/scatterplot';
 import './TimeSeriesChart.css';
 

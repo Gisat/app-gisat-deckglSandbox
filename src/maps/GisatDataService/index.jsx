@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { TileLayer, MVTLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer, IconLayer } from '@deck.gl/layers';
@@ -109,7 +109,7 @@ const createIconSublayers = (props, getPosition) => {
 // Helper: create latlon sphere sublayer with LNGLAT coordinate system
 const createLatlonSphereSublayer = (props) => {
   if (!props.data) return null;
-  const { modelMatrix, coordinateOrigin, _offset, ...safeProps } = props;
+  const safeProps = { ...props };
   return new SimpleMeshLayer({
     ...safeProps,
     id: `${props.id}-spheres`,

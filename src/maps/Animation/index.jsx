@@ -1,11 +1,10 @@
-import React, { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { DeckGL } from "deck.gl";
 import { MapView } from "@deck.gl/core";
 import { MVTLayer, TileLayer } from "@deck.gl/geo-layers";
 import { BitmapLayer, PointCloudLayer } from "@deck.gl/layers";
 import * as dat from "dat.gui";
 import chroma from "chroma-js";
-import { CogTerrainLayer } from "@gisatcz/deckgl-geolib";
 const FRAME_MIN_TIME = 1000 / 30; // 30 FPS
 const frameCount = 40;
 
@@ -166,6 +165,7 @@ function Animation() {
             gui.destroy();
             cancelAnimationFrame(animationRef.current);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     return (

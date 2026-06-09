@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Route, Link, Routes, useLocation } from 'react-router-dom';
 import mapApps from './maps/config';
 import './App.css'; // Import the CSS file for styling
@@ -42,6 +42,7 @@ function AppContent() {
                 [currentMap.category]: true
             }));
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [location.pathname]);
 
     return (

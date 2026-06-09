@@ -1,6 +1,5 @@
 // db.js
 
-import * as duckdb from "@duckdb/duckdb-wasm";
 import { initializeDuckDb } from "duckdb-wasm-kit";
 
 export async function setupDB() {

@@ -233,7 +233,7 @@ function CogTerrainKernel() {
           maxZoom: 19,
           tileSize: 256,
           extensions: [new TerrainExtension()],
-          /* eslint-disable react/prop-types */
+
           renderSubLayers: (props) => {
             const { bbox } = props.tile;
             const { west, south, east, north } = bbox;
@@ -243,7 +243,7 @@ function CogTerrainKernel() {
               bounds: [west, south, east, north],
             });
           },
-          /* eslint-enable react/prop-types */
+
         })
       );
     }
@@ -258,7 +258,7 @@ function CogTerrainKernel() {
           maxZoom: 19,
           tileSize: 256,
           extensions: [new TerrainExtension()],
-          /* eslint-disable react/prop-types */
+
           renderSubLayers: (props) => {
             const { bbox } = props.tile;
             const { west, south, east, north } = bbox;
@@ -268,7 +268,7 @@ function CogTerrainKernel() {
               bounds: [west, south, east, north],
             });
           },
-          /* eslint-enable react/prop-types */
+
         })
       );
     }
@@ -322,7 +322,7 @@ function CogTerrainKernel() {
           maxZoom: 19,
           tileSize: 256,
           extensions: [new TerrainExtension()],
-          /* eslint-disable react/prop-types */
+
           renderSubLayers: (props) => {
             const { bbox } = props.tile;
             const { west, south, east, north } = bbox;
@@ -332,7 +332,7 @@ function CogTerrainKernel() {
               bounds: [west, south, east, north],
             });
           },
-          /* eslint-enable react/prop-types */
+
         })
       );
     }
@@ -347,7 +347,7 @@ function CogTerrainKernel() {
           maxZoom: 19,
           tileSize: 256,
           extensions: [new TerrainExtension()],
-          /* eslint-disable react/prop-types */
+
           renderSubLayers: (props) => {
             const { bbox } = props.tile;
             const { west, south, east, north } = bbox;
@@ -357,7 +357,7 @@ function CogTerrainKernel() {
               bounds: [west, south, east, north],
             });
           },
-          /* eslint-enable react/prop-types */
+
         })
       );
     }

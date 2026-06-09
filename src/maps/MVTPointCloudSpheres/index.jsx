@@ -3,8 +3,6 @@ import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
-import { MVTLayer } from "@deck.gl/geo-layers";
-import { PointCloudLayer } from '@deck.gl/layers';
 import chroma from "chroma-js";
 import { scaleLinear } from 'd3-scale';
 import {SimpleMeshLayer} from '@deck.gl/mesh-layers';

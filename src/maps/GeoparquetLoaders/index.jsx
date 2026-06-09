@@ -1,5 +1,5 @@
 // src/maps/GeoparquetLoadersJSObjects.jsx
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers'; // TileLayer from geo-layers
@@ -101,6 +101,7 @@ function GeoparquetLoadersJSObjects() { // Renamed component
             }
         }
 
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Empty dependency array ensures this effect runs only once on mount.
 
 
