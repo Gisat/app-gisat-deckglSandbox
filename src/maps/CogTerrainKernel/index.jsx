@@ -263,7 +263,6 @@ function CogTerrainKernel() {
           tileSize: 256,
           extensions: [new TerrainExtension()],
           zRange: zRange,
-          /* eslint-disable react/prop-types */
           renderSubLayers: (props) => {
             const { bbox } = props.tile;
             const { west, south, east, north } = bbox;
@@ -329,7 +328,6 @@ function CogTerrainKernel() {
           tileSize: 256,
           extensions: [new TerrainExtension()],
           zRange: zRange,
-          /* eslint-disable react/prop-types */
           renderSubLayers: (props) => {
             const { bbox } = props.tile;
             const { west, south, east, north } = bbox;
@@ -355,7 +353,6 @@ function CogTerrainKernel() {
           tileSize: 256,
           extensions: [new TerrainExtension()],
           zRange: zRange,
-          /* eslint-disable react/prop-types */
           renderSubLayers: (props) => {
             const { bbox } = props.tile;
             const { west, south, east, north } = bbox;
