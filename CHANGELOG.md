@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.0.0...v1.0.1) (2026-06-10)
+
+### Bug Fixes
+
+* **lint:** remove unused eslint-disable comments in CogTerrainKernel ([a152530](https://github.com/Gisat/app-gisat-deckglSandbox/commit/a1525302d0ac322e7cc1a71554e0e416a9f6c3ec))
+* **tile-clipping:** apply zRange tile clipping to ArrowLODStream3D ([4768562](https://github.com/Gisat/app-gisat-deckglSandbox/commit/47685629b371521b65ba17a510b81a9c1e574208))
+
 ## 1.0.0 (2026-06-09)
 
 ### Features
