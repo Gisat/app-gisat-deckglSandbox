@@ -3,6 +3,7 @@ import { DeckGL } from 'deck.gl';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { CogTerrainLayer, CogTiles, CogBitmapLayer } from '@gisatcz/deckgl-geolib';
+import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
 import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
@@ -158,6 +159,7 @@ function CogTerrainKernel() {
   const [sliderPosition, setSliderPosition] = useState(0.5);
   const [isDragging, setIsDragging] = useState(false);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const { zRange, onZRangeUpdate } = useTerrainZRange();
   const containerRef = useRef(null);
 
   // Initialize base CogTiles
@@ -218,6 +220,7 @@ function CogTerrainKernel() {
       cogTiles: baseCogState.cog,
       isTiled: true,
       tileSize: 256,
+      onZRangeUpdate: onZRangeUpdate,
       operation: (baseCogState.mode === 'satellite-glaze' || baseCogState.mode === 'osm-glaze') ? 'terrain' : 'terrain+draw',
       terrainOptions: buildTerrainOptions(baseCogState.mode),
       pickable: !(baseCogState.mode.includes('clamped') || baseCogState.mode.includes('glaze')),
@@ -232,6 +235,7 @@ function CogTerrainKernel() {
           minZoom: 0,
           maxZoom: 19,
           tileSize: 256,
+          zRange: zRange,
           extensions: [new TerrainExtension()],
 
           renderSubLayers: (props) => {
@@ -258,7 +262,7 @@ function CogTerrainKernel() {
           maxZoom: 19,
           tileSize: 256,
           extensions: [new TerrainExtension()],
-
+          zRange: zRange,
           renderSubLayers: (props) => {
             const { bbox } = props.tile;
             const { west, south, east, north } = bbox;
@@ -297,7 +301,7 @@ function CogTerrainKernel() {
     }
 
     return terrainLayers;
-  }, [baseCogState]);
+  }, [baseCogState, zRange, onZRangeUpdate]);
 
   const compareLayers = useMemo(() => {
     if (!compareCogState.cog) return [];
@@ -310,6 +314,7 @@ function CogTerrainKernel() {
       operation: (compareCogState.mode === 'satellite-glaze' || compareCogState.mode === 'osm-glaze') ? 'terrain' : 'terrain+draw',
       terrainOptions: buildTerrainOptions(compareCogState.mode),
       pickable: !(compareCogState.mode.includes('clamped') || compareCogState.mode.includes('glaze')),
+      onZRangeUpdate: onZRangeUpdate,
     })];
 
     // Add satellite base layer for satellite modes
@@ -322,7 +327,7 @@ function CogTerrainKernel() {
           maxZoom: 19,
           tileSize: 256,
           extensions: [new TerrainExtension()],
-
+          zRange: zRange,
           renderSubLayers: (props) => {
             const { bbox } = props.tile;
             const { west, south, east, north } = bbox;
@@ -347,7 +352,7 @@ function CogTerrainKernel() {
           maxZoom: 19,
           tileSize: 256,
           extensions: [new TerrainExtension()],
-
+          zRange: zRange,
           renderSubLayers: (props) => {
             const { bbox } = props.tile;
             const { west, south, east, north } = bbox;
@@ -386,7 +391,7 @@ function CogTerrainKernel() {
     }
 
     return terrainLayers;
-  }, [compareCogState]);
+  }, [compareCogState, zRange, onZRangeUpdate]);
 
   const handleViewStateChange = useCallback(({ viewState: newViewState }) => {
     setViewState(newViewState);

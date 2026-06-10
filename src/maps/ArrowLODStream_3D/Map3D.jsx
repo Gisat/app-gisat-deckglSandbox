@@ -13,6 +13,7 @@ import { PlaybackControls } from '../../components/PlaybackControls';
 import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds, getGeometryBounds } from '../../components/PointSelection';
 import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
+import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch: 45, bearing: 0 };
@@ -70,6 +71,7 @@ function ArrowLODStream3D() {
     const [selectedFeatures, setSelectedFeatures] = useState(null);
     const [isSelectingBackend, setIsSelectingBackend] = useState(false);
     const [hoveredPointId, setHoveredPointId] = useState(null);
+    const { zRange, onZRangeUpdate } = useTerrainZRange();
 
     const lastProcessedGeometryRef = useRef(null);
 
@@ -175,6 +177,7 @@ function ArrowLODStream3D() {
                 return new BitmapLayer(props, { data: null, image: props.data, bounds: [west, south, east, north] });
             },
             extensions: [new TerrainExtension()],
+            zRange: zRange,
         }),
         // 🌍 Temporary terrain layer for testing
         new CogTerrainLayer({
@@ -187,6 +190,7 @@ function ArrowLODStream3D() {
             visible: true,
             pickable: '3d',
             tileSize: 256,
+            onZRangeUpdate: onZRangeUpdate,
             operation: 'terrain+draw',
             terrainOptions: {
                 type: 'terrain',
@@ -309,7 +313,7 @@ function ArrowLODStream3D() {
                 });
             }
         })
-    ], [debouncedTimeIndex, mode, drawnGeometry, selectedPointIds, hoveredPointId, isDrawing]);
+    ], [debouncedTimeIndex, mode, drawnGeometry, selectedPointIds, hoveredPointId, isDrawing, zRange, onZRangeUpdate]);
 
     return (
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
