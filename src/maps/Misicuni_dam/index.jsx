@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
+
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { GeoJsonLayer } from '@deck.gl/layers';
@@ -186,6 +187,33 @@ function MisicuniDam() {
   );
   const [showLegend, setShowLegend] = useState(false);
   const [showLegend2, setShowLegend2] = useState(false);
+
+  // Smooth slider updates: batch continuous input into RAF and commit to state once per frame
+  const rafIdRef = useRef(null);
+  const pendingIndexRef = useRef(null);
+
+  const scheduleBandIndexUpdate = (index) => {
+    pendingIndexRef.current = index;
+    if (rafIdRef.current == null) {
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        const v = pendingIndexRef.current;
+        if (v !== null && v !== undefined) {
+          setCurrentBandIndex(v);
+        }
+      });
+    }
+  };
+
+  // Cancel any pending RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+  }, []);
   
   const totalBands = cogInstance?.getNumChannels?.() || 30;
   const bandDescriptions = cogInstance?.getBandDescriptions?.() ?? [];
@@ -235,18 +263,25 @@ function MisicuniDam() {
 
     const multibandDem = new CogTerrainLayer({
       id: 'cog-multiband-layer',
+      // Keep progressive loading off for interactive responsiveness
+      enableProgressiveLoading: false,
       elevationData: MULTIBAND_COG_URL,
       isTiled: true,
       tileSize: 256,
       cogTiles: cogInstance || undefined,
+      // Reduce mesh complexity during rapid slider updates for smoother feel
       terrainOptions: {
         type: 'terrain',
         terrainSkirtHeight: 0,
         useChannel: currentBandIndex + 1,
+        meshMaxError: 'auto',
+        disableWorkerPool: true,
         useSingleColor: true,
         color: [0, 105, 148, 180],
         cacheAllBands: isFetched,
       },
+      // disable picking to reduce CPU during dragging
+      pickable: false,
       extensions: [new MaskExtension()],
       maskId: 'water-mask',
       updateTriggers: {
@@ -439,9 +474,23 @@ function MisicuniDam() {
             max={totalBands - 1}
             value={currentBandIndex}
             disabled={!isFetched}
-            onMouseUp={(e) => setCurrentBandIndex(parseInt(e.currentTarget.value, 10))}
-            onTouchEnd={(e) => setCurrentBandIndex(parseInt(e.currentTarget.value, 10))}
-            onChange={(e) => setCurrentBandIndex(parseInt(e.currentTarget.value, 10))}
+            onMouseUp={(e) => {
+              // commit immediately on release
+              if (rafIdRef.current) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+              }
+              setCurrentBandIndex(parseInt(e.currentTarget.value, 10));
+            }}
+            onTouchEnd={(e) => {
+              if (rafIdRef.current) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+              }
+              setCurrentBandIndex(parseInt(e.currentTarget.value, 10));
+            }}
+            onInput={(e) => scheduleBandIndexUpdate(parseInt(e.currentTarget.value, 10))}
+            onChange={(e) => scheduleBandIndexUpdate(parseInt(e.currentTarget.value, 10))}
             style={{ width: '100%', cursor: isFetched ? 'pointer' : 'not-allowed', opacity: isFetched ? 1 : 0.5 }}
           />
         </div>
