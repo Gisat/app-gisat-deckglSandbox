@@ -1,3 +1,9 @@
+## [1.1.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.0.1...v1.1.0) (2026-06-16)
+
+### Features
+
+* add RAF throttling for smooth slider animation ([2e95328](https://github.com/Gisat/app-gisat-deckglSandbox/commit/2e953284c8b35802f219a8f4d05b69b7de02aa5c))
+
 ## [1.0.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.0.0...v1.0.1) (2026-06-10)
 
 ### Bug Fixes
