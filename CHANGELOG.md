@@ -1,3 +1,9 @@
+## [1.2.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.1.0...v1.2.0) (2026-06-17)
+
+### Features
+
+* Update @gisatcz/deckgl-geolib package ([6d921d9](https://github.com/Gisat/app-gisat-deckglSandbox/commit/6d921d977b6e623530c00c3c3d5e1bdb3bbb9721))
+
 ## [1.1.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.0.1...v1.1.0) (2026-06-16)
 
 ### Features
