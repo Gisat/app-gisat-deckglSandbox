@@ -4,10 +4,13 @@ import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { GeoJsonLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
-import { CogTerrainLayer, CogTiles } from '@gisatcz/deckgl-geolib';
+import { CogTerrainLayer, CogTiles, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
 import { MaskExtension } from '@deck.gl/extensions';
 import { SphereGeometry, CubeGeometry } from '@luma.gl/engine';
 import { OBJLoader } from '@loaders.gl/obj';
+import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, pointInPolygon } from '../../components/PointSelection';
+import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
+import { LineProfileChart, calculateProfileData } from '../../components/2DLineProfile';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
 const MULTIBAND_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_100_10x10_intermediate_cog.tif';
@@ -188,9 +191,45 @@ function MisicuniDam() {
   const [showLegend, setShowLegend] = useState(false);
   const [showLegend2, setShowLegend2] = useState(false);
 
+  // Selection state
+  const [selectionMode, setSelectionMode] = useState(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [bufferDistance, setBufferDistance] = useState(100);
+  // eslint-disable-next-line no-unused-vars
+  const [drawnGeometry, setDrawnGeometry] = useState(null);
+  const [selectedPoints, setSelectedPoints] = useState([]);
+  const [selectedFeatures, setSelectedFeatures] = useState(null);
+  const [drawnLineCoords, setDrawnLineCoords] = useState(null);
+  const [allVectorData, setAllVectorData] = useState([]);
+
   // Smooth slider updates: batch continuous input into RAF and commit to state once per frame
   const rafIdRef = useRef(null);
   const pendingIndexRef = useRef(null);
+  const mapContainerRef = useRef(null);
+  const deckGLRef = useRef(null);
+
+  // Set DeckGL instance for drawing utilities
+  useEffect(() => {
+    if (deckGLRef.current) setDeckGLInstance(deckGLRef.current);
+  }, []);
+
+  // Load all vector data for selection - only first layer for now
+  useEffect(() => {
+    const loadAllData = async () => {
+      try {
+        const firstLayer = VECTOR_POINT_DATA[0];
+        const res = await fetch(firstLayer.url);
+        const data = await res.json();
+        
+        // Data could be a FeatureCollection or direct array
+        const features = data.features ? data.features : (Array.isArray(data) ? data : []);
+        setAllVectorData(features);
+      } catch (err) {
+        console.error('❌ Failed to load vector data:', err);
+      }
+    };
+    loadAllData();
+  }, []);
 
   const scheduleBandIndexUpdate = (index) => {
     pendingIndexRef.current = index;
@@ -238,6 +277,67 @@ function MisicuniDam() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Handle geometry completion from drawing overlay
+  const handleGeometryComplete = (mode, coords, bufferDist = 100) => {
+    const geoCoords = coords.map(c => c.geo || c);
+    
+    const geometry = normalizeGeometry(mode, geoCoords, bufferDist);
+    if (!geometry) return;
+
+    setDrawnGeometry(geometry);
+    setIsDrawing(false);
+
+    if (mode === 'line') {
+      setDrawnLineCoords(geoCoords);
+    } else {
+      setDrawnLineCoords(null);
+    }
+
+    // Query all features directly against geometry
+    const selected = allVectorData.filter(feature => {
+      const [lon, lat] = feature.geometry?.coordinates || [0, 0];
+      return pointInPolygon([lon, lat], geometry);
+    });
+
+    const result = selected.map(f => ({
+      id: f.properties?.fid ?? f.properties?.ID_CELL ?? f.properties?.ID ?? f.properties?.id_global ?? `${f.geometry?.coordinates?.[0]}_${f.geometry?.coordinates?.[1]}`,
+      properties: f.properties
+    }));
+
+    setSelectedPoints(result);
+
+    // Build a FeatureCollection for the TimeSeriesChart
+    const fc = {
+      type: 'FeatureCollection',
+      features: selected.map((f, i) => ({
+        type: 'Feature',
+        id: f.properties?.fid ?? f.properties?.ID_CELL ?? f.properties?.ID ?? f.properties?.id_global ?? i,
+        geometry: f.geometry,
+        properties: {
+          ...f.properties,
+          // map available velocity field to mean_velocity expected by chart
+          mean_velocity: f.properties?.VEL_REL ?? f.properties?.VEL_RE_UP ?? f.properties?.VEL_RE_EW ?? 0,
+          point_id: f.properties?.fid ?? f.properties?.ID_CELL ?? f.properties?.ID ?? f.properties?.id_global ?? i,
+        }
+      }))
+    };
+
+    setSelectedFeatures(fc);
+  };
+
+  // Calculate profile data for line selection
+  const profileData = useMemo(() => {
+    if (selectionMode === 'line' && selectedFeatures && drawnLineCoords) {
+      return calculateProfileData(selectedFeatures, drawnLineCoords);
+    }
+    return null;
+  }, [selectedFeatures, drawnLineCoords, selectionMode]);
+
+  // Create selected IDs set once for use in all mesh layers
+  const selectedIdsSet = useMemo(() => {
+    return new Set(selectedPoints.map(p => p.id));
+  }, [selectedPoints]);
+
   const layers = useMemo(() => {
     const maskLayer = new GeoJsonLayer({
       id: 'water-mask',
@@ -251,6 +351,9 @@ function MisicuniDam() {
       elevationData: DEM_COG_URL,
       isTiled: true,
       tileSize: 256,
+      operation: 'terrain+draw',
+      pickable: '3d',
+      visible: true,
       terrainOptions: {
         type: 'terrain',
         useSwissRelief: true,
@@ -305,6 +408,13 @@ function MisicuniDam() {
             ...baseOptions,
             mesh: config.mesh,
             getColor: (d) => {
+              const pointId = d.properties?.fid ?? d.properties?.ID_CELL ?? d.properties?.ID ?? d.properties?.id_global ?? d.properties?.id;
+              if (selectedIdsSet.has(pointId)) {
+                return [66, 212, 244, 255]; // Bright cyan for selected
+              }
+              if (selectedIdsSet.size > 0) {
+                return [200, 200, 200, 100]; // Dim unselected
+              }
               if (d.properties.VEL_RE_EW !== undefined) {
                 const color = getColorForVelReEw(d.properties.VEL_RE_EW);
                 return [...color, 255];
@@ -348,7 +458,7 @@ function MisicuniDam() {
               return [0, 0, 0];
             },
             updateTriggers: {
-              getColor: [config.useVelReEwColor],
+              getColor: [config.useVelReEwColor, selectedIdsSet],
               getScale: [config.useVelReEwColor],
               getOrientation: [config.useVelReEwColor],
               getTranslation: [config.useVelReEwColor]
@@ -361,6 +471,13 @@ function MisicuniDam() {
           ...baseOptions,
           mesh: config.geometryType === 'cube' ? new CubeGeometry() : new SphereGeometry(),
           getColor: (d) => {
+            const pointId = d.properties?.fid ?? d.properties?.ID_CELL ?? d.properties?.ID ?? d.properties?.id_global ?? d.properties?.id;
+            if (selectedIdsSet.has(pointId)) {
+              return [66, 212, 244, 255]; // Bright cyan for selected
+            }
+            if (selectedIdsSet.size > 0) {
+              return [200, 200, 200, 100]; // Dim unselected
+            }
             if (config.useVelReEwColor && d.properties.VEL_RE_EW !== undefined) {
               const color = getColorForVelReEw(d.properties.VEL_RE_EW);
               return [...color, 255];
@@ -386,21 +503,66 @@ function MisicuniDam() {
             return [baseScale, baseScale, baseScale];
           },
           updateTriggers: {
-            getColor: [config.useVelRelColor, config.useVelReUpColor, config.useVelReEwColor],
+            getColor: [config.useVelRelColor, config.useVelReUpColor, config.useVelReEwColor, selectedIdsSet],
             getScale: [config.useVelRelColor, config.useVelReUpColor]
           }
         });
       });
 
     return [maskLayer, backgroundDem, ...meshLayers, multibandDem];
-  }, [currentBandIndex, cogInstance, isFetched, layerVisibility]);
+  }, [currentBandIndex, cogInstance, isFetched, layerVisibility, selectedIdsSet]);
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+    <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh' }}>
       <DeckGL
+        ref={deckGLRef}
         viewState={viewState}
         onViewStateChange={({ viewState }) => setViewState(viewState)}
-        controller={true}
+        controller={{
+          dragPan: !isDrawing,
+          scrollZoom: !isDrawing,
+          dragRotate: !isDrawing,
+          doubleClickZoom: !isDrawing,
+        }}
+        getCursor={() => isDrawing ? 'crosshair' : 'grab'}
+        onClick={(info) => {
+          if (isDrawing && selectionMode) {
+            const tryUseTerrainPick = async () => {
+              // If clicked directly on terrain layer, use extractTerrainCoordinate
+              if ((info.layer?.id === 'terrain-layer' || info.layer?.id === 'dem-cog-layer') && info.coordinate) {
+                const coord = extractTerrainCoordinate(info);
+                if (coord) {
+                  window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
+                    detail: { geo: [coord.longitude, coord.latitude], screenPos: [info.x, info.y], elevation: coord.elevation }
+                  }));
+                  return;
+                }
+              }
+
+              // Otherwise, try explicit pick on the terrain layer via DeckGL instance
+              const deck = deckGLRef.current;
+              if (deck && typeof deck.pickObject === 'function') {
+                const pick = deck.pickObject({ x: info.x, y: info.y, layerIds: ['dem-cog-layer', 'terrain-layer'], radius: 1 });
+                if (pick?.coordinate) {
+                  const coord = extractTerrainCoordinate(pick);
+                  if (coord) {
+                    window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
+                      detail: { geo: [coord.longitude, coord.latitude], screenPos: [info.x, info.y], elevation: coord.elevation }
+                    }));
+                    return;
+                  }
+                }
+              }
+
+              // Fallback to basic coordinate
+              window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
+                detail: { geo: [info.coordinate?.[0], info.coordinate?.[1]], screenPos: [info.x, info.y], elevation: info.coordinate?.[2] }
+              }));
+            };
+
+            tryUseTerrainPick();
+          }
+        }}
         layers={layers}
         views={[new MapView({ id: 'main', controller: true, nearZMultiplier: viewState.zoom > 14 ? 0.0001 : 0.1 })]}
       />
@@ -579,6 +741,58 @@ function MisicuniDam() {
           )}
         </div>
       </div>
+
+     <SelectionControls
+       selectionMode={selectionMode}
+       onModeChange={(newMode) => {
+         if (selectionMode === newMode) {
+           setSelectionMode(null);
+           setIsDrawing(false);
+         } else {
+           setSelectionMode(newMode);
+           setIsDrawing(true);
+         }
+       }}
+       bufferDistance={bufferDistance}
+       onBufferChange={setBufferDistance}
+       selectedCount={selectedPoints.length}
+       onClear={() => {
+         setSelectedPoints([]);
+         setDrawnGeometry(null);
+         setSelectedFeatures(null);
+         setDrawnLineCoords(null);
+         setIsDrawing(selectionMode ? true : false);
+       }}
+       top="400px"
+       left="10px"
+     />
+
+     <DrawingOverlay
+       viewState={viewState}
+       selectionMode={selectionMode}
+       isDrawing={isDrawing}
+       onGeometryComplete={handleGeometryComplete}
+       bufferDistance={bufferDistance}
+       is3D={true}
+     />
+
+     <div style={{
+       position: 'absolute',
+       bottom: '10px',
+       left: '10px',
+       width: 'calc(50% - 280px)',
+       minWidth: '300px',
+       zIndex: 999,
+     }}>
+       {profileData ? (
+         <LineProfileChart data={profileData} />
+       ) : selectedFeatures ? (
+         <TimeSeriesChart
+           selectedFeatures={selectedFeatures}
+           isLoading={false}
+         />
+       ) : null}
+     </div>
     </div>
   );
 }

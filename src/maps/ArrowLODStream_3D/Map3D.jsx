@@ -14,6 +14,7 @@ import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, 
 import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
+import { LineProfileChart, calculateProfileData } from '../../components/2DLineProfile';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch: 45, bearing: 0 };
@@ -71,6 +72,7 @@ function ArrowLODStream3D() {
     const [selectedFeatures, setSelectedFeatures] = useState(null);
     const [isSelectingBackend, setIsSelectingBackend] = useState(false);
     const [hoveredPointId, setHoveredPointId] = useState(null);
+    const [drawnLineCoords, setDrawnLineCoords] = useState(null);
     const { zRange, onZRangeUpdate } = useTerrainZRange();
 
     const lastProcessedGeometryRef = useRef(null);
@@ -93,6 +95,12 @@ function ArrowLODStream3D() {
 
         setDrawnGeometry(geometry);
         setIsDrawing(false);
+
+        if (mode === 'line') {
+            setDrawnLineCoords(geoCoords);
+        } else {
+            setDrawnLineCoords(null);
+        }
     };
 
     // Selection: Query backend for time-series data
@@ -131,6 +139,13 @@ function ArrowLODStream3D() {
             setSelectedFeatures(null);
         }
     }, [selectedPointIds]);
+
+    const profileData = useMemo(() => {
+        if (selectionMode === 'line' && selectedFeatures && drawnLineCoords) {
+            return calculateProfileData(selectedFeatures, drawnLineCoords);
+        }
+        return null;
+    }, [selectedFeatures, drawnLineCoords, selectionMode]);
 
     // 🚀 Performance: Debounce fetching in static mode to avoid requests while sliding
     const [debouncedTimeIndex, setDebouncedTimeIndex] = useState(0);
@@ -419,22 +434,24 @@ function ArrowLODStream3D() {
                 onBufferChange={setBufferDistance}
             />
 
-            {selectedFeatures && (
-                <div style={{
-                    position: 'absolute',
-                    bottom: '10px',
-                    left: '10px',
-                    width: 'calc(50% - 430px)',
-                    minWidth: '300px',
-                    zIndex: 999,
-                }}>
+            <div style={{
+                position: 'absolute',
+                bottom: '10px',
+                left: '10px',
+                width: 'calc(50% - 430px)',
+                minWidth: '300px',
+                zIndex: 999,
+            }}>
+                {profileData ? (
+                    <LineProfileChart data={profileData} />
+                ) : selectedFeatures ? (
                     <TimeSeriesChart 
                         selectedFeatures={selectedFeatures}
                         isLoading={isSelectingBackend}
                         onPointHover={setHoveredPointId}
                     />
-                </div>
-            )}
+                ) : null}
+            </div>
         </div>
     );
 }
