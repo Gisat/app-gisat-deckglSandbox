@@ -73,6 +73,7 @@ function ArrowLODStream3D() {
     const [isSelectingBackend, setIsSelectingBackend] = useState(false);
     const [hoveredPointId, setHoveredPointId] = useState(null);
     const [drawnLineCoords, setDrawnLineCoords] = useState(null);
+    const [showLineProfileChart, setShowLineProfileChart] = useState(false);
     const { zRange, onZRangeUpdate } = useTerrainZRange();
 
     const lastProcessedGeometryRef = useRef(null);
@@ -432,6 +433,8 @@ function ArrowLODStream3D() {
                 isLoadingBackend={isSelectingBackend}
                 bufferDistance={bufferDistance}
                 onBufferChange={setBufferDistance}
+                showLineProfileChart={showLineProfileChart}
+                onShowLineProfileChartChange={setShowLineProfileChart}
             />
 
             <div style={{
@@ -442,7 +445,7 @@ function ArrowLODStream3D() {
                 minWidth: '300px',
                 zIndex: 999,
             }}>
-                {profileData ? (
+                {selectionMode === 'line' && showLineProfileChart && profileData ? (
                     <LineProfileChart data={profileData} />
                 ) : selectedFeatures ? (
                     <TimeSeriesChart 

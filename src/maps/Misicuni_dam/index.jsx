@@ -203,6 +203,7 @@ function MisicuniDam() {
   const [allVectorData, setAllVectorData] = useState([]);
   // eslint-disable-next-line no-unused-vars
   const [lineProfileMetrics, setLineProfileMetrics] = useState(['VEL_RE_UP', 'VEL_LA_UP', 'LT_365_UP']);
+  const [showLineProfileChart, setShowLineProfileChart] = useState(false);
 
   // Smooth slider updates: batch continuous input into RAF and commit to state once per frame
   const rafIdRef = useRef(null);
@@ -765,6 +766,8 @@ function MisicuniDam() {
          setDrawnLineCoords(null);
          setIsDrawing(selectionMode ? true : false);
        }}
+       showLineProfileChart={showLineProfileChart}
+       onShowLineProfileChartChange={setShowLineProfileChart}
        top="400px"
        left="10px"
      />
@@ -786,7 +789,7 @@ function MisicuniDam() {
        minWidth: '300px',
        zIndex: 999,
      }}>
-       {profileData ? (
+       {selectionMode === 'line' && showLineProfileChart && profileData ? (
          <LineProfileChart
            data={profileData}
            title="Line Profile - Vertical Displacement Rate"

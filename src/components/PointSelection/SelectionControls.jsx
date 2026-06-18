@@ -13,6 +13,8 @@
  * @param {boolean} props.isLoadingBackend - Whether backend query is in progress
  * @param {number} props.bufferDistance - Current buffer distance (for line mode)
  * @param {Function} props.onBufferChange - Called with new buffer distance
+ * @param {boolean} props.showLineProfileChart - Whether the 2D line profile chart is shown
+ * @param {Function} props.onShowLineProfileChartChange - Called with new checkbox value
  * @param {string} props.top - Top position (default: '130px')
  * @param {string} props.left - Left position (default: '10px')
  */
@@ -25,6 +27,8 @@ export function SelectionControls({
     isLoadingBackend = false,
     bufferDistance = 100,
     onBufferChange,
+    showLineProfileChart,
+    onShowLineProfileChartChange,
     top = '130px',
     left = '10px'
 }) {
@@ -76,19 +80,33 @@ export function SelectionControls({
 
             {/* Line Buffer Distance (only for line mode) */}
             {selectionMode === 'line' && (
-                <div style={{ marginBottom: '12px' }}>
-                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: '500' }}>
-                        Buffer Distance: {bufferDistance}m
-                    </label>
-                    <input
-                        type="range"
-                        min="10"
-                        max="500"
-                        step="10"
-                        value={bufferDistance}
-                        onChange={e => onBufferChange(Number(e.target.value))}
-                        style={{ width: '100%', fontSize: '11px' }}
-                    />
+                <div>
+                    <div style={{ marginBottom: '12px' }}>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: '500' }}>
+                            Buffer Distance: {bufferDistance}m
+                        </label>
+                        <input
+                            type="range"
+                            min="10"
+                            max="500"
+                            step="10"
+                            value={bufferDistance}
+                            onChange={e => onBufferChange(Number(e.target.value))}
+                            style={{ width: '100%', fontSize: '11px' }}
+                        />
+                    </div>
+                    <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                            type="checkbox"
+                            id="showLineProfileCheckbox"
+                            checked={showLineProfileChart}
+                            onChange={(e) => onShowLineProfileChartChange(e.target.checked)}
+                            style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                        />
+                        <label htmlFor="showLineProfileCheckbox" style={{ cursor: 'pointer', fontSize: '11px', userSelect: 'none' }}>
+                            2D Line Profile
+                        </label>
+                    </div>
                 </div>
             )}
 
