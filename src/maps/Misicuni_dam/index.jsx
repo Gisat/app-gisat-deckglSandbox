@@ -203,6 +203,7 @@ function MisicuniDam() {
   const [allVectorData, setAllVectorData] = useState([]);
   // eslint-disable-next-line no-unused-vars
   const [lineProfileMetrics, setLineProfileMetrics] = useState(['VEL_RE_UP', 'VEL_LA_UP', 'LT_365_UP']);
+  const [hoveredPointId, setHoveredPointId] = useState(null);
 
 
   // Smooth slider updates: batch continuous input into RAF and commit to state once per frame
@@ -410,6 +411,9 @@ function MisicuniDam() {
             mesh: config.mesh,
             getColor: (d) => {
               const pointId = getPointId(d);
+              if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
+                return [255, 0, 0, 255]; // Bright red for hovered
+              }
               if (selectedIdsSet.has(pointId)) {
                 return [66, 212, 244, 255]; // Bright cyan for selected
               }
@@ -459,7 +463,7 @@ function MisicuniDam() {
               return [0, 0, 0];
             },
             updateTriggers: {
-              getColor: [config.useVelReEwColor, selectedIdsSet],
+              getColor: [config.useVelReEwColor, selectedIdsSet, hoveredPointId],
               getScale: [config.useVelReEwColor],
               getOrientation: [config.useVelReEwColor],
               getTranslation: [config.useVelReEwColor]
@@ -472,7 +476,10 @@ function MisicuniDam() {
           ...baseOptions,
           mesh: config.geometryType === 'cube' ? new CubeGeometry() : new SphereGeometry(),
           getColor: (d) => {
-            const pointId = d.properties?.fid ?? d.properties?.ID_CELL ?? d.properties?.ID ?? d.properties?.id_global ?? d.properties?.id;
+            const pointId = getPointId(d);
+            if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
+                return [255, 0, 0, 255]; // Bright red for hovered
+            }
             if (selectedIdsSet.has(pointId)) {
               return [66, 212, 244, 255]; // Bright cyan for selected
             }
@@ -504,14 +511,14 @@ function MisicuniDam() {
             return [baseScale, baseScale, baseScale];
           },
           updateTriggers: {
-            getColor: [config.useVelRelColor, config.useVelReUpColor, config.useVelReEwColor, selectedIdsSet],
+            getColor: [config.useVelRelColor, config.useVelReUpColor, config.useVelReEwColor, selectedIdsSet, hoveredPointId],
             getScale: [config.useVelRelColor, config.useVelReUpColor]
           }
         });
       });
 
     return [maskLayer, backgroundDem, ...meshLayers, multibandDem];
-  }, [currentBandIndex, cogInstance, isFetched, layerVisibility, selectedIdsSet]);
+  }, [currentBandIndex, cogInstance, isFetched, layerVisibility, selectedIdsSet, hoveredPointId]);
 
   return (
     <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh' }}>
@@ -767,6 +774,7 @@ function MisicuniDam() {
         lineProfileMetrics={lineProfileMetrics}
         is3D={true}
         viewState={viewState}
+        onPointHover={setHoveredPointId}
       />
     </div>
   );

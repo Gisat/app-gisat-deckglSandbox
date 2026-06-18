@@ -30,6 +30,12 @@ const sizeScale = scaleLinear([0, 5], [2, 7]).clamp(true);
 // Data URL
 const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3.json';
 
+// Helper to consistently get a point's ID
+const getPointId = (feature) => {
+    if (!feature || !feature.properties) return null;
+    return feature.properties.id_global ?? feature.properties.id_orig;
+};
+
 export default function SelectionDrawing3D() {
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
   const [selectionMode, setSelectionMode] = useState(null);
@@ -38,7 +44,7 @@ export default function SelectionDrawing3D() {
   const [drawnGeometry, setDrawnGeometry] = useState(null);
   const [selectedPoints, setSelectedPoints] = useState([]);
   const [selectedFeatures, setSelectedFeatures] = useState(null);
-  const [, setHoveredPointId] = useState(null);
+  const [hoveredPointId, setHoveredPointId] = useState(null);
   const [allFeatures, setAllFeatures] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [drawnLineCoords, setDrawnLineCoords] = useState(null);
@@ -129,13 +135,8 @@ export default function SelectionDrawing3D() {
   });
 
   const isPointSelected = (feature) => {
-    const idGlobal = feature.properties?.id_global;
-    const idOrig = feature.properties?.id_orig;
-    
-    if (idGlobal && selectedIdsSet.has(String(idGlobal))) return true;
-    if (idOrig && selectedIdsSet.has(String(idOrig))) return true;
-    
-    return false;
+    const pointId = getPointId(feature);
+    return pointId ? selectedIdsSet.has(String(pointId)) : false;
   };
 
   const meshLayer = new SimpleMeshLayer({
@@ -146,12 +147,18 @@ export default function SelectionDrawing3D() {
     pickable: true,
     getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm || 0],
     getColor: (d) => {
+      const pointId = getPointId(d);
+      
+      if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
+        return [255, 0, 0, 255]; // Bright red for hovered
+      }
+      
       if (isPointSelected(d)) {
-        return [66, 212, 244, 255]; // cyan - selected
+        return [66, 212, 244, 255]; // cyan for selected
       }
       
       if (selectedIdsSet.size > 0) {
-        return [200, 200, 200, 100]; // grey - dimmed
+        return [200, 200, 200, 100]; // grey for dimmed
       }
       
       return [...colorScale(d.properties?.vel_rel || 0).rgb(), 255];
@@ -162,7 +169,7 @@ export default function SelectionDrawing3D() {
       return [isSelected ? size * 1.3 : size, isSelected ? size * 1.3 : size, isSelected ? size * 1.3 : size];
     },
     updateTriggers: {
-      getColor: [selectedPoints],
+      getColor: [selectedPoints, hoveredPointId],
       getScale: [selectedPoints]
     }
   });
@@ -194,7 +201,7 @@ export default function SelectionDrawing3D() {
     });
 
     const result = selected.map(f => ({
-      id: f.properties?.id_global ?? f.properties?.id_orig ?? `${f.geometry?.coordinates?.[0]}_${f.geometry?.coordinates?.[1]}`,
+      id: getPointId(f) ?? `${f.geometry?.coordinates?.[0]}_${f.geometry?.coordinates?.[1]}`,
       properties: f.properties
     }));
 
@@ -206,7 +213,7 @@ export default function SelectionDrawing3D() {
     const fc = {
       type: 'FeatureCollection',
       features: selected.map(f => {
-        const pointId = f.properties?.id_global ?? f.properties?.id_orig;
+        const pointId = getPointId(f);
         return {
           type: 'Feature',
           id: pointId,

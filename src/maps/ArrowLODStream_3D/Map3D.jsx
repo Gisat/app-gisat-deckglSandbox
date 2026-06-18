@@ -286,7 +286,7 @@ function ArrowLODStream3D() {
                             const pointId = tableData.getPointId(rowIndex);
                             
                             // If point is hovered, show bright red
-                            if (hoveredPointId === pointId) {
+                            if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
                                 return [255, 0, 0, 255];
                             }
                             
