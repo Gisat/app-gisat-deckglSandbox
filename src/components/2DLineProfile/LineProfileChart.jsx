@@ -1,57 +1,173 @@
 import { ResponsiveLine } from '@nivo/line';
 
 /**
- * Renders a 2D line profile chart.
- * @param {{ data: {id: string, data: {x: number, y: number}[]}[] }} props
+ * Renders a 2D line profile chart with multiple metrics and optional error bands.
+ * @param {{
+ *   data: {id: string, data: {x: number, y: number}[]}[],
+ *   metrics?: string[],
+ *   showErrorBands?: boolean,
+ *   title?: string,
+ *   yAxisLabel?: string,
+ *   colors?: string[]
+ * }} props
  */
-export function LineProfileChart({ data }) {
-    if (!data || data.length === 0 || data[0].data.length === 0) {
-        return <div style={{height: '250px', textAlign: 'center', color: 'white', background: 'rgba(0,0,0,0.5)'}}>No profile data</div>;
-    }
-
+export function LineProfileChart({
+  data,
+  metrics = undefined,
+  // eslint-disable-next-line no-unused-vars
+  showErrorBands = true,
+  title = 'Line Profile',
+  yAxisLabel = 'Vertical displ rate [mm/yr]',
+  colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+}) {
+  if (!data || data.length === 0) {
     return (
-        <div style={{ height: '250px', background: 'rgba(30, 30, 30, 0.9)', borderRadius: '4px', padding: '10px' }}>
-            <ResponsiveLine
-                data={data}
-                margin={{ top: 20, right: 20, bottom: 60, left: 70 }}
-                xScale={{ type: 'linear', min: 'auto', max: 'auto' }}
-                yScale={{ type: 'linear', min: 'auto', max: 'auto', stacked: false, reverse: false }}
-                axisTop={null}
-                axisRight={null}
-                axisBottom={{
-                    legend: 'Distance Along Line (m)',
-                    legendOffset: 46,
-                    legendPosition: 'middle',
-                }}
-                axisLeft={{
-                    legend: 'Mean Velocity (mm/yr)',
-                    legendOffset: -56,
-                    legendPosition: 'middle',
-                }}
-                colors={{ scheme: 'spectral' }}
-                pointSize={6}
-                pointColor={{ theme: 'background' }}
-                pointBorderWidth={2}
-                pointBorderColor={{ from: 'serieColor' }}
-                useMesh={true}
-                legends={[]}
-                theme={{
-                    textColor: '#fff',
-                    axis: {
-                        legend: {
-                            text: { fill: '#fff' }
-                        },
-                        ticks: {
-                            text: { fill: '#fff' }
-                        }
-                    },
-                    grid: {
-                        line: {
-                            stroke: '#555'
-                        }
-                    }
-                }}
-            />
-        </div>
+      <div style={{
+        height: '300px',
+        textAlign: 'center',
+        color: 'white',
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '4px'
+      }}>
+        No profile data
+      </div>
     );
+  }
+
+  // Filter data by metrics if specified
+  let filteredData = data;
+  if (metrics && metrics.length > 0) {
+    filteredData = data.filter(series => metrics.includes(series.id));
+  }
+
+  if (filteredData.length === 0 || filteredData[0].data.length === 0) {
+    return (
+      <div style={{
+        height: '300px',
+        textAlign: 'center',
+        color: 'white',
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '4px'
+      }}>
+        No data for selected metrics
+      </div>
+    );
+  }
+
+  // Create color map for series
+  const colorMap = {};
+  filteredData.forEach((series, idx) => {
+    colorMap[series.id] = colors[idx % colors.length];
+  });
+
+  return (
+    <div style={{
+      height: '320px',
+      background: 'rgba(30, 30, 30, 0.9)',
+      borderRadius: '4px',
+      padding: '10px',
+      display: 'flex',
+      flexDirection: 'column'
+    }}>
+      {title && (
+        <div style={{
+          color: '#fff',
+          fontSize: '13px',
+          fontWeight: 'bold',
+          marginBottom: '8px',
+          textAlign: 'center'
+        }}>
+          {title}
+        </div>
+      )}
+      <div style={{ flex: 1 }}>
+        <ResponsiveLine
+          data={filteredData}
+          margin={{ top: 10, right: 20, bottom: 50, left: 60 }}
+          xScale={{ type: 'linear', min: 'auto', max: 'auto' }}
+          yScale={{ type: 'linear', min: 'auto', max: 'auto', stacked: false, reverse: false }}
+          axisTop={null}
+          axisRight={null}
+          axisBottom={{
+            legend: 'Distance Along Profile (m)',
+            legendOffset: 40,
+            legendPosition: 'middle',
+            tickSize: 4,
+            tickPadding: 6,
+          }}
+          axisLeft={{
+            legend: yAxisLabel,
+            legendOffset: -50,
+            legendPosition: 'middle',
+            tickSize: 4,
+            tickPadding: 6,
+          }}
+          colors={d => colorMap[d.id] || d.color}
+          pointSize={4}
+          pointColor={{ theme: 'background' }}
+          pointBorderWidth={1.5}
+          pointBorderColor={{ from: 'serieColor' }}
+          useMesh={true}
+          enableArea={false}
+          lineWidth={2}
+          legends={[
+            {
+              anchor: 'top-right',
+              direction: 'column',
+              justify: false,
+              translateX: 0,
+              translateY: 0,
+              itemsSpacing: 4,
+              itemDirection: 'left-to-right',
+              itemWidth: 140,
+              itemHeight: 18,
+              itemOpacity: 0.75,
+              symbolSize: 12,
+              symbolShape: 'circle',
+              symbolBorderColor: 'rgba(0, 0, 0, .5)',
+              effects: [
+                {
+                  on: 'hover',
+                  style: {
+                    itemOpacity: 1
+                  }
+                }
+              ]
+            }
+          ]}
+          theme={{
+            textColor: '#fff',
+            fontSize: 11,
+            axis: {
+              domain: {
+                line: {
+                  stroke: '#555'
+                }
+              },
+              legend: {
+                text: { fill: '#ccc', fontSize: 11 }
+              },
+              ticks: {
+                line: {
+                  stroke: '#555'
+                },
+                text: { fill: '#ccc', fontSize: 10 }
+              }
+            },
+            grid: {
+              line: {
+                stroke: '#333'
+              }
+            }
+          }}
+        />
+      </div>
+    </div>
+  );
 }

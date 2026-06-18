@@ -201,6 +201,8 @@ function MisicuniDam() {
   const [selectedFeatures, setSelectedFeatures] = useState(null);
   const [drawnLineCoords, setDrawnLineCoords] = useState(null);
   const [allVectorData, setAllVectorData] = useState([]);
+  // eslint-disable-next-line no-unused-vars
+  const [lineProfileMetrics, setLineProfileMetrics] = useState(['VEL_RE_UP', 'VEL_LA_UP']);
 
   // Smooth slider updates: batch continuous input into RAF and commit to state once per frame
   const rafIdRef = useRef(null);
@@ -328,10 +330,10 @@ function MisicuniDam() {
   // Calculate profile data for line selection
   const profileData = useMemo(() => {
     if (selectionMode === 'line' && selectedFeatures && drawnLineCoords) {
-      return calculateProfileData(selectedFeatures, drawnLineCoords);
+      return calculateProfileData(selectedFeatures, drawnLineCoords, lineProfileMetrics);
     }
     return null;
-  }, [selectedFeatures, drawnLineCoords, selectionMode]);
+  }, [selectedFeatures, drawnLineCoords, selectionMode, lineProfileMetrics]);
 
   // Create selected IDs set once for use in all mesh layers
   const selectedIdsSet = useMemo(() => {
@@ -785,7 +787,12 @@ function MisicuniDam() {
        zIndex: 999,
      }}>
        {profileData ? (
-         <LineProfileChart data={profileData} />
+         <LineProfileChart
+           data={profileData}
+           title="Line Profile - Vertical Displacement Rate"
+           yAxisLabel="Vertical displ rate [mm/yr]"
+           colors={['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']}
+         />
        ) : selectedFeatures ? (
          <TimeSeriesChart
            selectedFeatures={selectedFeatures}

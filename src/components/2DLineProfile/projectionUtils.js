@@ -64,25 +64,41 @@ function projectPointOntoLine(pointCoords, lineCoords) {
 
 
 /**
- * Transforms selected features into data points for the line profile chart.
+ * Transforms selected features into multi-metric line profile data.
  * @param {object} selectedFeatures - GeoJSON FeatureCollection of selected points.
  * @param {number[][]} lineCoords - Array of [lon, lat] points defining the line.
- * @returns {object[]} An array of objects formatted for Nivo: `{ id: 'profile', data: [{x, y}] }`.
+ * @param {string[]} metricFields - Array of property field names to extract (e.g., ['VEL_RE_UP', 'VEL_LA_UP']).
+ * @returns {object[]} Array of metric series formatted for Nivo: `{ id: 'metricName', data: [{x, y}] }[]`.
  */
-export function calculateProfileData(selectedFeatures, lineCoords) {
+export function calculateProfileData(selectedFeatures, lineCoords, metricFields = ['mean_velocity']) {
     if (!selectedFeatures || !selectedFeatures.features || !lineCoords || lineCoords.length < 2) {
         return null;
     }
 
-    const chartData = selectedFeatures.features.map(feature => {
+    // Build chart data for each metric
+    const metricsData = {};
+
+    selectedFeatures.features.forEach(feature => {
         const pointCoords = feature.geometry.coordinates;
         const { distance } = projectPointOntoLine(pointCoords, lineCoords);
         
-        return {
-            x: distance, // Distance along the line in meters
-            y: feature.properties.mean_velocity || 0, // Y-axis value
-        };
-    }).sort((a, b) => a.x - b.x); // Sort by distance
+        // Extract all requested metrics
+        metricFields.forEach(field => {
+            if (!metricsData[field]) {
+                metricsData[field] = [];
+            }
+            
+            const value = feature.properties[field] || 0;
+            metricsData[field].push({
+                x: distance,
+                y: value,
+            });
+        });
+    });
 
-    return [{ id: 'profile', data: chartData }];
+    // Sort each metric's data by distance and convert to Nivo format
+    return Object.entries(metricsData).map(([fieldName, data]) => ({
+        id: fieldName,
+        data: data.sort((a, b) => a.x - b.x)
+    }));
 }
