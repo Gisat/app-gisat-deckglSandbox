@@ -22,18 +22,21 @@ export function LineProfileChart({
 }) {
   if (!data || data.length === 0) {
     return (
-      <div style={{
-        height: '300px',
-        textAlign: 'center',
-        color: 'white',
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: '4px'
-      }}>
-        No profile data
-      </div>
+        <div style={{
+            height: '300px',
+            textAlign: 'center',
+            color: '#999',
+            background: 'rgba(255, 255, 255, 0.95)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '8px',
+            fontFamily: 'system-ui, sans-serif',
+            fontSize: '11px',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+        }}>
+            No profile data
+        </div>
     );
   }
 
@@ -45,18 +48,21 @@ export function LineProfileChart({
 
   if (filteredData.length === 0 || filteredData[0].data.length === 0) {
     return (
-      <div style={{
-        height: '300px',
-        textAlign: 'center',
-        color: 'white',
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: '4px'
-      }}>
-        No data for selected metrics
-      </div>
+        <div style={{
+            height: '300px',
+            textAlign: 'center',
+            color: '#999',
+            background: 'rgba(255, 255, 255, 0.95)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '8px',
+            fontFamily: 'system-ui, sans-serif',
+            fontSize: '11px',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+        }}>
+            No data for selected metrics
+        </div>
     );
   }
 
@@ -69,15 +75,17 @@ export function LineProfileChart({
   return (
     <div style={{
       height: '320px',
-      background: 'rgba(30, 30, 30, 0.9)',
-      borderRadius: '4px',
-      padding: '10px',
+      background: 'rgba(255, 255, 255, 0.95)',
+      borderRadius: '8px',
+      padding: '12px',
+      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+      fontFamily: 'system-ui, sans-serif',
       display: 'flex',
       flexDirection: 'column'
     }}>
       {title && (
         <div style={{
-          color: '#fff',
+          color: '#333',
           fontSize: '13px',
           fontWeight: 'bold',
           marginBottom: '8px',
@@ -142,28 +150,34 @@ export function LineProfileChart({
             }
           ]}
           theme={{
-            textColor: '#fff',
+            textColor: '#333',
             fontSize: 11,
+            fontFamily: 'system-ui, sans-serif',
             axis: {
-              domain: {
-                line: {
-                  stroke: '#555'
-                }
-              },
-              legend: {
-                text: { fill: '#ccc', fontSize: 11 }
-              },
-              ticks: {
-                line: {
-                  stroke: '#555'
+                domain: {
+                    line: {
+                        stroke: '#ccc'
+                    }
                 },
-                text: { fill: '#ccc', fontSize: 10 }
-              }
+                legend: {
+                    text: { fill: '#333', fontSize: 11 }
+                },
+                ticks: {
+                    line: {
+                        stroke: '#ccc'
+                    },
+                    text: { fill: '#555', fontSize: 10 }
+                }
             },
             grid: {
-              line: {
-                stroke: '#333'
-              }
+                line: {
+                    stroke: '#eee'
+                }
+            },
+            legends: {
+                text: {
+                    fill: '#333'
+                }
             }
           }}
         />

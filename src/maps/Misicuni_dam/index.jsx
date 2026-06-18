@@ -202,7 +202,7 @@ function MisicuniDam() {
   const [drawnLineCoords, setDrawnLineCoords] = useState(null);
   const [allVectorData, setAllVectorData] = useState([]);
   // eslint-disable-next-line no-unused-vars
-  const [lineProfileMetrics, setLineProfileMetrics] = useState(['VEL_RE_UP', 'VEL_LA_UP']);
+  const [lineProfileMetrics, setLineProfileMetrics] = useState(['VEL_RE_UP', 'VEL_LA_UP', 'LT_365_UP']);
 
   // Smooth slider updates: batch continuous input into RAF and commit to state once per frame
   const rafIdRef = useRef(null);
