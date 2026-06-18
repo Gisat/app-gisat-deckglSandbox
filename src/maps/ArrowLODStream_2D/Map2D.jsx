@@ -85,13 +85,14 @@ function ArrowLODStream2D() {
     };
 
     // Send selected point IDs to backend for time-series data
-    const queryBackendForSelection = (pointIds) => {
+    const queryBackendForSelection = (pointIds, metrics = []) => {
         if (!pointIds || pointIds.length === 0) return;
 
         setIsSelectingBackend(true);
         
         const payload = {
-            point_ids: Array.from(pointIds)  // Convert Set to array
+            point_ids: Array.from(pointIds),
+            metrics: metrics,
         };
 
         fetch(`${DATA_API_URL.replace('/api/data', '')}/api/select`, {
@@ -115,7 +116,8 @@ function ArrowLODStream2D() {
     // When selected point IDs change, query backend
     useEffect(() => {
         if (selectedPointIds.size > 0) {
-            queryBackendForSelection(selectedPointIds);
+            const metricsToFetch = ['mean_velocity', 'mean_velocity_std', 'height'];
+            queryBackendForSelection(selectedPointIds, metricsToFetch);
         } else {
             setSelectedFeatures(null);
         }
@@ -123,7 +125,7 @@ function ArrowLODStream2D() {
 
     const profileData = useMemo(() => {
         if (selectionMode === 'line' && selectedFeatures && drawnLineCoords) {
-            return calculateProfileData(selectedFeatures, drawnLineCoords, ['mean_velocity']);
+            return calculateProfileData(selectedFeatures, drawnLineCoords, ['mean_velocity', 'mean_velocity_std']);
         }
         return null;
     }, [selectedFeatures, drawnLineCoords, selectionMode]);
@@ -354,7 +356,7 @@ function ArrowLODStream2D() {
                 isLoading={isSelectingBackend}
                 backendFeatureCount={selectedFeatures?.features?.length || 0}
 
-                lineProfileMetrics={['mean_velocity']}
+                lineProfileMetrics={['mean_velocity', 'mean_velocity_std']}
                 is3D={false}
                 viewState={viewState}
                 onPointHover={setHoveredPointId}
