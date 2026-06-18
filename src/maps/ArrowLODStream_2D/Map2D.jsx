@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { DeckGL, WebMercatorViewport } from 'deck.gl';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { ScatterplotLayer, BitmapLayer } from '@deck.gl/layers';
@@ -6,7 +6,8 @@ import { scaleLinear } from 'd3-scale';
 
 import { HUD } from '../../components/HUD';
 import { PlaybackControls } from '../../components/PlaybackControls';
-import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../components/PointSelection';
+import { SelectionAnalysisPanel, filterPointsByGeometryInBounds } from '../../components/PointSelection';
+import { calculateProfileData } from '../../components/2DLineProfile';
 import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 
 // --- Configuration ---
@@ -65,16 +66,22 @@ function ArrowLODStream2D() {
     const [selectedFeatures, setSelectedFeatures] = useState(null); // Backend response with time-series data
     const [isSelectingBackend, setIsSelectingBackend] = useState(false);
     const [hoveredPointId, setHoveredPointId] = useState(null);
+    const [drawnLineCoords, setDrawnLineCoords] = useState(null);
 
     const mapContainerRef = useRef(null);
 
     // Handle geometry completion from drawing overlay
-    const handleGeometryComplete = (mode, coords, bufferDist = 100) => {
-        const geometry = normalizeGeometry(mode, coords, bufferDist);
+    const handleGeometryComplete = (geometry, mode, coords) => {
         if (!geometry) return;
 
         setDrawnGeometry(geometry);
         setIsDrawing(false);
+
+        if (mode === 'line') {
+            setDrawnLineCoords(coords);
+        } else {
+            setDrawnLineCoords(null);
+        }
     };
 
     // Send selected point IDs to backend for time-series data
@@ -113,6 +120,13 @@ function ArrowLODStream2D() {
             setSelectedFeatures(null);
         }
     }, [selectedPointIds]);
+
+    const profileData = useMemo(() => {
+        if (selectionMode === 'line' && selectedFeatures && drawnLineCoords) {
+            return calculateProfileData(selectedFeatures, drawnLineCoords, ['mean_velocity']);
+        }
+        return null;
+    }, [selectedFeatures, drawnLineCoords, selectionMode]);
 
     // Track when geometry was last processed to avoid re-filtering every frame
     const lastProcessedGeometryRef = useRef(null);
@@ -316,50 +330,35 @@ function ArrowLODStream2D() {
                 setTimeIndex={setTimeIndex}
             />
 
-            <SelectionControls
+            <SelectionAnalysisPanel
                 selectionMode={selectionMode}
-                onModeChange={(mode) => {
-                    setSelectionMode(mode);
-                    setIsDrawing(true);
-                }}
+                onSelectionModeChange={setSelectionMode}
+                isDrawing={isDrawing}
+                onIsDrawingChange={setIsDrawing}
+                bufferDistance={bufferDistance}
+                onBufferDistanceChange={setBufferDistance}
                 onClear={() => {
                     setSelectedPointIds(new Set());
                     setDrawnGeometry(null);
                     setSelectedFeatures(null);
+                    setDrawnLineCoords(null);
+                    setSelectionMode(null);
                     setIsDrawing(false);
                 }}
-                selectedCount={selectedPointIds.size}
-                backendFeatureCount={selectedFeatures?.features?.length || 0}
-                isLoadingBackend={isSelectingBackend}
-                bufferDistance={bufferDistance}
-                onBufferChange={setBufferDistance}
-            />
-
-            <DrawingOverlay
-                viewState={viewState}
-                selectionMode={selectionMode}
-                isDrawing={isDrawing}
                 onGeometryComplete={handleGeometryComplete}
-                bufferDistance={bufferDistance}
-                is3D={false}
-            />
 
-            {selectedFeatures && (
-                <div style={{
-                    position: 'absolute',
-                    bottom: '10px',
-                    left: '10px',
-                    width: 'calc(50% - 430px)',
-                    minWidth: '300px',
-                    zIndex: 999,
-                }}>
-                    <TimeSeriesChart 
-                        selectedFeatures={selectedFeatures}
-                        isLoading={isSelectingBackend}
-                        onPointHover={setHoveredPointId}
-                    />
-                </div>
-            )}
+                selectedCount={selectedPointIds.size}
+                selectedFeatures={selectedFeatures}
+                drawnLineCoords={drawnLineCoords}
+                profileData={profileData}
+                isLoading={isSelectingBackend}
+                backendFeatureCount={selectedFeatures?.features?.length || 0}
+
+                lineProfileMetrics={['mean_velocity']}
+                is3D={false}
+                viewState={viewState}
+                onPointHover={setHoveredPointId}
+            />
         </div>
     );
 }

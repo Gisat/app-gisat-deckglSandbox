@@ -1,15 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { SphereGeometry } from '@luma.gl/engine';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
-import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, pointInPolygon } from '../../components/PointSelection';
+import { SelectionAnalysisPanel, pointInPolygon } from '../../components/PointSelection';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 import { CogTerrainLayer, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
 import chroma from 'chroma-js';
 import { scaleLinear } from 'd3-scale';
+import { calculateProfileData } from '../../components/2DLineProfile';
 
 const INITIAL_VIEW_STATE = {
   longitude: 14.015511800867504,
@@ -40,6 +41,7 @@ export default function SelectionDrawing3D() {
   const [, setHoveredPointId] = useState(null);
   const [allFeatures, setAllFeatures] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [drawnLineCoords, setDrawnLineCoords] = useState(null);
 
   const mapContainerRef = useRef(null);
   const deckGLRef = useRef(null);
@@ -165,13 +167,25 @@ export default function SelectionDrawing3D() {
     }
   });
 
-  const handleGeometryComplete = (mode, coords, bufferDist = 100) => {
-    const geoCoords = coords.map(c => c.geo || c);
-    const geometry = normalizeGeometry(mode, geoCoords, bufferDist);
+  const profileData = useMemo(() => {
+    if (selectedFeatures && drawnLineCoords) {
+        return calculateProfileData(selectedFeatures, drawnLineCoords, ['vel_rel', 'vel_last']);
+    }
+    return null;
+  }, [selectedFeatures, drawnLineCoords]);
+
+  const handleGeometryComplete = (geometry, mode, coords) => {
     if (!geometry) return;
 
     setDrawnGeometry(geometry);
     setIsDrawing(false);
+
+    if (mode === 'line') {
+      const geoCoords = coords.map(c => c.geo || c);
+      setDrawnLineCoords(geoCoords);
+    } else {
+      setDrawnLineCoords(null);
+    }
 
     // Query all features directly against geometry
     const selected = allFeatures.filter(feature => {
@@ -191,16 +205,20 @@ export default function SelectionDrawing3D() {
     // Build a simple FeatureCollection for the TimeSeriesChart demo
     const fc = {
       type: 'FeatureCollection',
-      features: selected.map(f => ({
-        type: 'Feature',
-        id: f.id,
-        properties: {
-          ...f.properties,
-          // map available velocity field to mean_velocity expected by chart
-          mean_velocity: f.properties?.vel_rel ?? f.properties?.mean_velocity ?? null,
-          point_id: f.id,
-        }
-      }))
+      features: selected.map(f => {
+        const pointId = f.properties?.id_global ?? f.properties?.id_orig;
+        return {
+          type: 'Feature',
+          id: pointId,
+          geometry: f.geometry,
+          properties: {
+            ...f.properties,
+            // map available velocity field to mean_velocity expected by chart
+            mean_velocity: f.properties?.vel_rel ?? f.properties?.mean_velocity ?? null,
+            point_id: pointId,
+          }
+        };
+      })
     };
 
     setSelectedFeatures(fc);
@@ -279,58 +297,32 @@ export default function SelectionDrawing3D() {
         </div>
       )}
 
-      <SelectionControls
+      <SelectionAnalysisPanel
         selectionMode={selectionMode}
-        onModeChange={(newMode) => {
-          if (selectionMode === newMode) {
-            // toggle off
-            setSelectionMode(null);
-            setIsDrawing(false);
-          } else {
-            setSelectionMode(newMode);
-            setIsDrawing(true);
-          }
-        }}
+        onSelectionModeChange={setSelectionMode}
+        isDrawing={isDrawing}
+        onIsDrawingChange={setIsDrawing}
         bufferDistance={bufferDistance}
-        onBufferChange={setBufferDistance}
-        selectedCount={selectedPoints.length}
+        onBufferDistanceChange={setBufferDistance}
         onClear={() => {
           setSelectedPoints([]);
           setDrawnGeometry(null);
-          // hide chart when cleared
           setSelectedFeatures(null);
-          // keep drawing active if selection mode is still selected
-          setIsDrawing(selectionMode ? true : false);
+          setDrawnLineCoords(null);
+          setSelectionMode(null);
+          setIsDrawing(false);
         }}
-        top="10px"
-        left="10px"
-      />
-
-      <DrawingOverlay
-        viewState={viewState}
-        selectionMode={selectionMode}
-        isDrawing={isDrawing}
         onGeometryComplete={handleGeometryComplete}
-        bufferDistance={bufferDistance}
+        selectedCount={selectedPoints.length}
+        selectedFeatures={selectedFeatures}
+        drawnLineCoords={drawnLineCoords}
+        profileData={profileData}
+        isLoading={isLoading}
+        lineProfileMetrics={['vel_rel', 'vel_last']}
         is3D={true}
+        viewState={viewState}
+        onPointHover={setHoveredPointId}
       />
-
-      {selectedFeatures && (
-        <div style={{
-          position: 'absolute',
-          bottom: '10px',
-          left: '10px',
-          width: 'calc(50% - 430px)',
-          minWidth: '300px',
-          zIndex: 999,
-        }}>
-          <TimeSeriesChart
-            selectedFeatures={selectedFeatures}
-            isLoading={false}
-            onPointHover={setHoveredPointId}
-          />
-        </div>
-      )}
     </div>
   );
 }

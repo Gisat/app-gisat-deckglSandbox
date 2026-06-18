@@ -167,3 +167,33 @@ export function filterPointsByGeometryInBounds(tableData, geometry, bounds) {
     
     return selectedIds;
 }
+
+/**
+ * Get a unique identifier for a feature.
+ * Falls back through common ID properties (fid, ID_CELL, etc.).
+ * As a last resort, generates an ID from coordinates if available.
+ * @param {object} feature - A GeoJSON-like feature object.
+ * @returns {string|number|null} The best available ID, or null.
+ */
+export function getPointId(feature) {
+  if (!feature) return null;
+  
+  if (feature.properties) {
+    const p = feature.properties;
+    const id = p.fid ?? p.ID_CELL ?? p.ID ?? p.id_global ?? p.id;
+    if (id !== undefined && id !== null) {
+      return id;
+    }
+  }
+
+  // Fallback for features without standard ID properties
+  if (feature.id !== undefined && feature.id !== null) {
+      return feature.id;
+  }
+
+  if (feature.geometry?.coordinates?.length >= 2) {
+    return `${feature.geometry.coordinates[0]}_${feature.geometry.coordinates[1]}`;
+  }
+  
+  return null;
+}

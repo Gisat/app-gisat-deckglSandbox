@@ -10,11 +10,11 @@ import {_TerrainExtension as TerrainExtension } from "@deck.gl/extensions";
 
 import { HUD } from '../../components/HUD';
 import { PlaybackControls } from '../../components/PlaybackControls';
-import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds, getGeometryBounds } from '../../components/PointSelection';
+import { SelectionAnalysisPanel, filterPointsByGeometryInBounds, getGeometryBounds } from '../../components/PointSelection';
 import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
-import { LineProfileChart, calculateProfileData } from '../../components/2DLineProfile';
+import { calculateProfileData } from '../../components/2DLineProfile';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch: 45, bearing: 0 };
@@ -73,7 +73,6 @@ function ArrowLODStream3D() {
     const [isSelectingBackend, setIsSelectingBackend] = useState(false);
     const [hoveredPointId, setHoveredPointId] = useState(null);
     const [drawnLineCoords, setDrawnLineCoords] = useState(null);
-    const [showLineProfileChart, setShowLineProfileChart] = useState(false);
     const { zRange, onZRangeUpdate } = useTerrainZRange();
 
     const lastProcessedGeometryRef = useRef(null);
@@ -86,18 +85,14 @@ function ArrowLODStream3D() {
     }, []);
 
     // Selection: Handle geometry completion from drawing overlay
-    const handleGeometryComplete = (mode, coords, bufferDist = 100) => {
-        // In 3D mode, coords may contain { geo, screenPos, elevation } objects
-        // Extract just the geo coordinates for normalizeGeometry
-        const geoCoords = coords.map(c => c.geo || c);
-        
-        const geometry = normalizeGeometry(mode, geoCoords, bufferDist);
+    const handleGeometryComplete = (geometry, mode, coords) => {
         if (!geometry) return;
 
         setDrawnGeometry(geometry);
         setIsDrawing(false);
 
         if (mode === 'line') {
+            const geoCoords = coords.map(c => c.geo || c);
             setDrawnLineCoords(geoCoords);
         } else {
             setDrawnLineCoords(null);
@@ -401,60 +396,35 @@ function ArrowLODStream3D() {
                 setTimeIndex={setTimeIndex}
             />
 
-            <DrawingOverlay
-                viewState={viewState}
+            <SelectionAnalysisPanel
                 selectionMode={selectionMode}
+                onSelectionModeChange={setSelectionMode}
                 isDrawing={isDrawing}
-                onGeometryComplete={handleGeometryComplete}
+                onIsDrawingChange={setIsDrawing}
                 bufferDistance={bufferDistance}
-                is3D={true}
-            />
-
-            <SelectionControls
-                selectionMode={selectionMode}
-                onModeChange={(mode) => {
-                    if (selectionMode === mode) {
-                        setSelectionMode(null);
-                        setIsDrawing(false);
-                    } else {
-                        setSelectionMode(mode);
-                        setIsDrawing(true);
-                    }
-                }}
+                onBufferDistanceChange={setBufferDistance}
                 onClear={() => {
                     setSelectedPointIds(new Set());
                     setDrawnGeometry(null);
                     setSelectedFeatures(null);
-                    // keep drawing active if selection mode is still selected
-                    setIsDrawing(selectionMode ? true : false);
+                    setDrawnLineCoords(null);
+                    setSelectionMode(null);
+                    setIsDrawing(false);
                 }}
-                selectedCount={selectedPointIds.size}
-                backendFeatureCount={selectedFeatures?.features?.length || 0}
-                isLoadingBackend={isSelectingBackend}
-                bufferDistance={bufferDistance}
-                onBufferChange={setBufferDistance}
-                showLineProfileChart={showLineProfileChart}
-                onShowLineProfileChartChange={setShowLineProfileChart}
-            />
+                onGeometryComplete={handleGeometryComplete}
 
-            <div style={{
-                position: 'absolute',
-                bottom: '10px',
-                left: '10px',
-                width: 'calc(50% - 430px)',
-                minWidth: '300px',
-                zIndex: 999,
-            }}>
-                {selectionMode === 'line' && showLineProfileChart && profileData ? (
-                    <LineProfileChart data={profileData} />
-                ) : selectedFeatures ? (
-                    <TimeSeriesChart 
-                        selectedFeatures={selectedFeatures}
-                        isLoading={isSelectingBackend}
-                        onPointHover={setHoveredPointId}
-                    />
-                ) : null}
-            </div>
+                selectedCount={selectedPointIds.size}
+                selectedFeatures={selectedFeatures}
+                drawnLineCoords={drawnLineCoords}
+                profileData={profileData}
+                isLoading={isSelectingBackend}
+                backendFeatureCount={selectedFeatures?.features?.length || 0}
+
+                lineProfileMetrics={['mean_velocity']}
+                is3D={true}
+                viewState={viewState}
+                onPointHover={setHoveredPointId}
+            />
         </div>
     );
 }

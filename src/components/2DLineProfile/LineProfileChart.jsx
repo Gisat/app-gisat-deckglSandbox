@@ -17,7 +17,7 @@ export function LineProfileChart({
   // eslint-disable-next-line no-unused-vars
   showErrorBands = true,
   title = 'Line Profile',
-  yAxisLabel = 'Vertical displ rate [mm/yr]',
+  yAxisLabel = 'Display rate (mm/y)',
   colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
 }) {
   if (!data || data.length === 0) {

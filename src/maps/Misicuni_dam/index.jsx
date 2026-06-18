@@ -8,9 +8,9 @@ import { CogTerrainLayer, CogTiles, extractTerrainCoordinate } from '@gisatcz/de
 import { MaskExtension } from '@deck.gl/extensions';
 import { SphereGeometry, CubeGeometry } from '@luma.gl/engine';
 import { OBJLoader } from '@loaders.gl/obj';
-import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, pointInPolygon } from '../../components/PointSelection';
+import { SelectionAnalysisPanel, pointInPolygon, getPointId } from '../../components/PointSelection';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
-import { LineProfileChart, calculateProfileData } from '../../components/2DLineProfile';
+import { calculateProfileData } from '../../components/2DLineProfile';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
 const MULTIBAND_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_100_10x10_intermediate_cog.tif';
@@ -78,9 +78,9 @@ const ARROW_SIZE = 67; // eyeball measured, only for this object: https://eu-cen
 
 
 const INITIAL_VIEW_STATE = {
-  longitude: -66.3,
-  latitude: -17.12,
-  zoom: 12,
+  longitude: -66.3013500,
+  latitude: -17.0969928,
+  zoom: 13.4,
   pitch: 40,
   bearing: 90,
   minZoom: 11,
@@ -203,7 +203,7 @@ function MisicuniDam() {
   const [allVectorData, setAllVectorData] = useState([]);
   // eslint-disable-next-line no-unused-vars
   const [lineProfileMetrics, setLineProfileMetrics] = useState(['VEL_RE_UP', 'VEL_LA_UP', 'LT_365_UP']);
-  const [showLineProfileChart, setShowLineProfileChart] = useState(false);
+
 
   // Smooth slider updates: batch continuous input into RAF and commit to state once per frame
   const rafIdRef = useRef(null);
@@ -281,16 +281,14 @@ function MisicuniDam() {
   }, []);
 
   // Handle geometry completion from drawing overlay
-  const handleGeometryComplete = (mode, coords, bufferDist = 100) => {
-    const geoCoords = coords.map(c => c.geo || c);
-    
-    const geometry = normalizeGeometry(mode, geoCoords, bufferDist);
+  const handleGeometryComplete = (geometry, mode, coords) => {
     if (!geometry) return;
 
     setDrawnGeometry(geometry);
     setIsDrawing(false);
 
     if (mode === 'line') {
+      const geoCoords = coords.map(c => c.geo || c);
       setDrawnLineCoords(geoCoords);
     } else {
       setDrawnLineCoords(null);
@@ -303,7 +301,7 @@ function MisicuniDam() {
     });
 
     const result = selected.map(f => ({
-      id: f.properties?.fid ?? f.properties?.ID_CELL ?? f.properties?.ID ?? f.properties?.id_global ?? `${f.geometry?.coordinates?.[0]}_${f.geometry?.coordinates?.[1]}`,
+      id: getPointId(f),
       properties: f.properties
     }));
 
@@ -314,13 +312,13 @@ function MisicuniDam() {
       type: 'FeatureCollection',
       features: selected.map((f, i) => ({
         type: 'Feature',
-        id: f.properties?.fid ?? f.properties?.ID_CELL ?? f.properties?.ID ?? f.properties?.id_global ?? i,
+        id: getPointId(f) ?? i,
         geometry: f.geometry,
         properties: {
           ...f.properties,
           // map available velocity field to mean_velocity expected by chart
           mean_velocity: f.properties?.VEL_REL ?? f.properties?.VEL_RE_UP ?? f.properties?.VEL_RE_EW ?? 0,
-          point_id: f.properties?.fid ?? f.properties?.ID_CELL ?? f.properties?.ID ?? f.properties?.id_global ?? i,
+          point_id: getPointId(f),
         }
       }))
     };
@@ -411,7 +409,7 @@ function MisicuniDam() {
             ...baseOptions,
             mesh: config.mesh,
             getColor: (d) => {
-              const pointId = d.properties?.fid ?? d.properties?.ID_CELL ?? d.properties?.ID ?? d.properties?.id_global ?? d.properties?.id;
+              const pointId = getPointId(d);
               if (selectedIdsSet.has(pointId)) {
                 return [66, 212, 244, 255]; // Bright cyan for selected
               }
@@ -745,64 +743,31 @@ function MisicuniDam() {
         </div>
       </div>
 
-     <SelectionControls
-       selectionMode={selectionMode}
-       onModeChange={(newMode) => {
-         if (selectionMode === newMode) {
-           setSelectionMode(null);
-           setIsDrawing(false);
-         } else {
-           setSelectionMode(newMode);
-           setIsDrawing(true);
-         }
-       }}
-       bufferDistance={bufferDistance}
-       onBufferChange={setBufferDistance}
-       selectedCount={selectedPoints.length}
-       onClear={() => {
-         setSelectedPoints([]);
-         setDrawnGeometry(null);
-         setSelectedFeatures(null);
-         setDrawnLineCoords(null);
-         setIsDrawing(selectionMode ? true : false);
-       }}
-       showLineProfileChart={showLineProfileChart}
-       onShowLineProfileChartChange={setShowLineProfileChart}
-       top="400px"
-       left="10px"
-     />
-
-     <DrawingOverlay
-       viewState={viewState}
-       selectionMode={selectionMode}
-       isDrawing={isDrawing}
-       onGeometryComplete={handleGeometryComplete}
-       bufferDistance={bufferDistance}
-       is3D={true}
-     />
-
-     <div style={{
-       position: 'absolute',
-       bottom: '10px',
-       left: '10px',
-       width: 'calc(50% - 280px)',
-       minWidth: '300px',
-       zIndex: 999,
-     }}>
-       {selectionMode === 'line' && showLineProfileChart && profileData ? (
-         <LineProfileChart
-           data={profileData}
-           title="Line Profile - Vertical Displacement Rate"
-           yAxisLabel="Vertical displ rate [mm/yr]"
-           colors={['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']}
-         />
-       ) : selectedFeatures ? (
-         <TimeSeriesChart
-           selectedFeatures={selectedFeatures}
-           isLoading={false}
-         />
-       ) : null}
-     </div>
+      <SelectionAnalysisPanel
+        selectionMode={selectionMode}
+        onSelectionModeChange={setSelectionMode}
+        isDrawing={isDrawing}
+        onIsDrawingChange={setIsDrawing}
+        bufferDistance={bufferDistance}
+        onBufferDistanceChange={setBufferDistance}
+        onClear={() => {
+          setSelectedPoints([]);
+          setDrawnGeometry(null);
+          setSelectedFeatures(null);
+          setDrawnLineCoords(null);
+          setSelectionMode(null);
+          setIsDrawing(false);
+        }}
+        onGeometryComplete={handleGeometryComplete}
+        selectedCount={selectedPoints.length}
+        selectedFeatures={selectedFeatures}
+        drawnLineCoords={drawnLineCoords}
+        profileData={profileData}
+        isLoading={false}
+        lineProfileMetrics={lineProfileMetrics}
+        is3D={true}
+        viewState={viewState}
+      />
     </div>
   );
 }
