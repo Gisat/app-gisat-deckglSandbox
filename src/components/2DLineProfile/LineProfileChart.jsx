@@ -122,6 +122,8 @@ export function LineProfileChart({
           pointBorderWidth={1.5}
           pointBorderColor={{ from: 'serieColor' }}
           useMesh={true}
+          enableCrosshair={true}
+          tooltip={() => null}
           enableArea={false}
           lineWidth={2}
           legends={[
