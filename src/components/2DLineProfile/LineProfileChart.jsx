@@ -1,4 +1,5 @@
 import { ResponsiveLine } from '@nivo/line';
+import { useRef } from 'react';
 
 /**
  * Renders a 2D line profile chart with multiple metrics and optional error bands.
@@ -8,7 +9,8 @@ import { ResponsiveLine } from '@nivo/line';
  *   showErrorBands?: boolean,
  *   title?: string,
  *   yAxisLabel?: string,
- *   colors?: string[]
+ *   colors?: string[],
+ *   onPointHover?: (pointId: string | null) => void,
  * }} props
  */
 export function LineProfileChart({
@@ -18,8 +20,28 @@ export function LineProfileChart({
   showErrorBands = true,
   title = 'Line Profile',
   yAxisLabel = 'Display rate (mm/y)',
-  colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+  colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd'],
+  onPointHover,
 }) {
+  const lastHoveredId = useRef(null);
+
+  const handleMouseMove = (point) => {
+    if (!onPointHover) return;
+    const pointId = point.data?.point_id;
+    if (pointId && pointId !== lastHoveredId.current) {
+      lastHoveredId.current = pointId;
+      onPointHover(pointId);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (!onPointHover) return;
+    if (lastHoveredId.current) {
+      lastHoveredId.current = null;
+      onPointHover(null);
+    }
+  };
+
   if (!data || data.length === 0) {
     return (
         <div style={{
@@ -124,6 +146,8 @@ export function LineProfileChart({
           useMesh={true}
           enableCrosshair={true}
           tooltip={() => null}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
           enableArea={false}
           lineWidth={2}
           legends={[

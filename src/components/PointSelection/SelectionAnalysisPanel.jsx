@@ -100,6 +100,7 @@ export function SelectionAnalysisPanel({
                     <LineProfileChart
                         data={profileData}
                         title="Line Profile"
+                        onPointHover={onPointHover}
                     />
                 ) : selectedFeatures ? (
                     <TimeSeriesChart

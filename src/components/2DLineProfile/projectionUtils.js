@@ -92,6 +92,7 @@ export function calculateProfileData(selectedFeatures, lineCoords, metricFields 
             metricsData[field].push({
                 x: distance,
                 y: value,
+                point_id: feature.properties.point_id ?? feature.id,
             });
         });
     });
