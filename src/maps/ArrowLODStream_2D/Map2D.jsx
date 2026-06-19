@@ -302,7 +302,7 @@ function ArrowLODStream2D() {
     ];
 
     return (
-        <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <div ref={mapContainerRef} style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
             <DeckGL
                 initialViewState={INITIAL_VIEW_STATE}
                 onViewStateChange={({ viewState }) => setViewState(viewState)}
@@ -333,6 +333,8 @@ function ArrowLODStream2D() {
             />
 
             <SelectionAnalysisPanel
+                top="130px"
+                left="10px"
                 selectionMode={selectionMode}
                 onSelectionModeChange={setSelectionMode}
                 isDrawing={isDrawing}

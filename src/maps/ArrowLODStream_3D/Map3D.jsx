@@ -330,7 +330,7 @@ function ArrowLODStream3D() {
     ], [debouncedTimeIndex, mode, drawnGeometry, selectedPointIds, hoveredPointId, isDrawing, zRange, onZRangeUpdate]);
 
     return (
-        <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <div ref={mapContainerRef} style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
             <DeckGL
                 ref={deckGLRef}
                 initialViewState={INITIAL_VIEW_STATE}
@@ -400,6 +400,8 @@ function ArrowLODStream3D() {
             />
 
             <SelectionAnalysisPanel
+                top="130px"
+                left="10px"
                 selectionMode={selectionMode}
                 onSelectionModeChange={setSelectionMode}
                 isDrawing={isDrawing}

@@ -29,6 +29,10 @@ export function SelectionAnalysisPanel({
     is3D,
     viewState,
     onPointHover, // Optional callback for hover events
+
+    // Positioning
+    top,
+    left,
 }) {
     const [showLineProfileChart, setShowLineProfileChart] = useState(false);
 
@@ -77,6 +81,8 @@ export function SelectionAnalysisPanel({
                 onShowLineProfileChartChange={setShowLineProfileChart}
                 isLoadingBackend={isLoading}
                 backendFeatureCount={backendFeatureCount}
+                top={top}
+                left={left}
             />
 
             <DrawingOverlay

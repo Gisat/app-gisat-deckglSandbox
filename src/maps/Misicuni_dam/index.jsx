@@ -521,7 +521,7 @@ function MisicuniDam() {
   }, [currentBandIndex, cogInstance, isFetched, layerVisibility, selectedIdsSet, hoveredPointId]);
 
   return (
-    <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+    <div ref={mapContainerRef} style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
       <DeckGL
         ref={deckGLRef}
         viewState={viewState}
@@ -664,8 +664,25 @@ function MisicuniDam() {
             style={{ width: '100%', cursor: isFetched ? 'pointer' : 'not-allowed', opacity: isFetched ? 1 : 0.5 }}
           />
         </div>
+      </div>
 
-        {/* VEL_RE_UP Color Legend */}
+      {/* Legend Panel */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 20,
+          right: 20,
+          background: 'rgba(255, 255, 255, 0.95)',
+          padding: '11px',
+          borderRadius: '8px',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '13px',
+          color: '#333',
+          width: '240px',
+          zIndex: 1000,
+        }}
+      >
         <div style={{ marginBottom: '8px', paddingTop: '4px' }}>
           <button
             onClick={() => setShowLegend(!showLegend)}
@@ -707,7 +724,6 @@ function MisicuniDam() {
           )}
         </div>
 
-        {/* VEL_RE_EW Color Legend */}
         <div style={{ marginBottom: '0px', paddingTop: '4px' }}>
           <button
             onClick={() => setShowLegend2(!showLegend2)}
@@ -751,6 +767,8 @@ function MisicuniDam() {
       </div>
 
       <SelectionAnalysisPanel
+        top="10px"
+        left="calc(10px + 240px + 30px)"
         selectionMode={selectionMode}
         onSelectionModeChange={setSelectionMode}
         isDrawing={isDrawing}

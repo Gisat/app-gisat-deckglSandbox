@@ -305,6 +305,8 @@ export default function SelectionDrawing3D() {
       )}
 
       <SelectionAnalysisPanel
+        top="10px"
+        left="10px"
         selectionMode={selectionMode}
         onSelectionModeChange={setSelectionMode}
         isDrawing={isDrawing}
