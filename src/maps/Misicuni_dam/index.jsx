@@ -80,7 +80,7 @@ const ARROW_SIZE = 67; // eyeball measured, only for this object: https://eu-cen
 const INITIAL_VIEW_STATE = {
   longitude: -66.3013500,
   latitude: -17.0969928,
-  zoom: 13.4,
+  zoom: 12,
   pitch: 40,
   bearing: 90,
   minZoom: 11,
