@@ -6,7 +6,7 @@ import { scaleLinear } from 'd3-scale';
 
 import { HUD } from '../../components/HUD';
 import { PlaybackControls } from '../../components/PlaybackControls';
-import { SelectionAnalysisPanel, filterPointsByGeometryInBounds } from '../../components/PointSelection';
+import { SelectionAnalysisPanel, filterPointsByGeometryInBounds, normalizeGeometry } from '../../components/PointSelection';
 import { calculateProfileData } from '../../components/2DLineProfile';
 import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 
@@ -61,6 +61,7 @@ function ArrowLODStream2D() {
     const [selectionMode, setSelectionMode] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [bufferDistance, setBufferDistance] = useState(100);
+    const [debouncedBufferDistance, setDebouncedBufferDistance] = useState(100);
     const [selectedPointIds, setSelectedPointIds] = useState(new Set());  // Point IDs (pid column)
     const [drawnGeometry, setDrawnGeometry] = useState(null);
     const [selectedFeatures, setSelectedFeatures] = useState(null); // Backend response with time-series data
@@ -165,6 +166,23 @@ function ArrowLODStream2D() {
             return () => clearTimeout(handler);
         }
     }, [timeIndex, mode]);
+
+    useEffect(() => {
+        const handler = setTimeout(() => setDebouncedBufferDistance(bufferDistance), 400);
+        return () => clearTimeout(handler);
+    }, [bufferDistance]);
+
+    // Recompute the line corridor and re-select when buffer changes after a line is drawn
+    useEffect(() => {
+        if (selectionMode !== 'line' || !drawnLineCoords || drawnLineCoords.length < 2) return;
+        const newGeometry = normalizeGeometry('line', drawnLineCoords, debouncedBufferDistance);
+        if (newGeometry) {
+            lastProcessedGeometryRef.current = null; // force renderSubLayers to re-select
+            setDrawnGeometry(newGeometry);
+        }
+    // Only re-run when the debounced buffer changes; mode/coords are handled by handleGeometryComplete
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [debouncedBufferDistance]);
 
     // Tile fetching handled inside ArrowLODTileLayer (see src/layers/ArrowLODTileLayer.js)
 
@@ -353,7 +371,6 @@ function ArrowLODStream2D() {
 
                 selectedCount={selectedPointIds.size}
                 selectedFeatures={selectedFeatures}
-                drawnLineCoords={drawnLineCoords}
                 profileData={profileData}
                 isLoading={isSelectingBackend}
                 backendFeatureCount={selectedFeatures?.features?.length || 0}

@@ -1,5 +1,5 @@
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { GeoJsonLayer } from '@deck.gl/layers';
@@ -8,7 +8,7 @@ import { CogTerrainLayer, CogTiles, extractTerrainCoordinate } from '@gisatcz/de
 import { MaskExtension } from '@deck.gl/extensions';
 import { SphereGeometry, CubeGeometry } from '@luma.gl/engine';
 import { OBJLoader } from '@loaders.gl/obj';
-import { SelectionAnalysisPanel, pointInPolygon, getPointId } from '../../components/PointSelection';
+import { SelectionAnalysisPanel, pointInPolygon, getPointId, normalizeGeometry } from '../../components/PointSelection';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 import { calculateProfileData } from '../../components/2DLineProfile';
 
@@ -75,6 +75,8 @@ const VECTOR_POINT_DATA = [
 ];
 
 const ARROW_SIZE = 67; // eyeball measured, only for this object: https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_v3.obj
+
+const LINE_PROFILE_METRICS = ['VEL_RE_UP', 'VEL_LA_UP', 'LT_365_UP'];
 
 
 const INITIAL_VIEW_STATE = {
@@ -195,14 +197,11 @@ function MisicuniDam() {
   const [selectionMode, setSelectionMode] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [bufferDistance, setBufferDistance] = useState(100);
-  // eslint-disable-next-line no-unused-vars
-  const [drawnGeometry, setDrawnGeometry] = useState(null);
   const [selectedPoints, setSelectedPoints] = useState([]);
   const [selectedFeatures, setSelectedFeatures] = useState(null);
   const [drawnLineCoords, setDrawnLineCoords] = useState(null);
   const [allVectorData, setAllVectorData] = useState([]);
-  // eslint-disable-next-line no-unused-vars
-  const [lineProfileMetrics, setLineProfileMetrics] = useState(['VEL_RE_UP', 'VEL_LA_UP', 'LT_365_UP']);
+  const lineProfileMetrics = LINE_PROFILE_METRICS;
   const [hoveredPointId, setHoveredPointId] = useState(null);
 
 
@@ -281,35 +280,16 @@ function MisicuniDam() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Handle geometry completion from drawing overlay
-  const handleGeometryComplete = (geometry, mode, coords) => {
-    if (!geometry) return;
-
-    setDrawnGeometry(geometry);
-    setIsDrawing(false);
-
-    if (mode === 'line') {
-      const geoCoords = coords.map(c => c.geo || c);
-      setDrawnLineCoords(geoCoords);
-    } else {
-      setDrawnLineCoords(null);
-    }
-
-    // Query all features directly against geometry
+  // Shared selection logic: filter allVectorData against a geometry and update state
+  const applySelection = useCallback((geometry) => {
     const selected = allVectorData.filter(feature => {
       const [lon, lat] = feature.geometry?.coordinates || [0, 0];
       return pointInPolygon([lon, lat], geometry);
     });
 
-    const result = selected.map(f => ({
-      id: getPointId(f),
-      properties: f.properties
-    }));
+    setSelectedPoints(selected.map(f => ({ id: getPointId(f), properties: f.properties })));
 
-    setSelectedPoints(result);
-
-    // Build a FeatureCollection for the TimeSeriesChart
-    const fc = {
+    setSelectedFeatures({
       type: 'FeatureCollection',
       features: selected.map((f, i) => ({
         type: 'Feature',
@@ -317,15 +297,38 @@ function MisicuniDam() {
         geometry: f.geometry,
         properties: {
           ...f.properties,
-          // map available velocity field to mean_velocity expected by chart
           mean_velocity: f.properties?.VEL_REL ?? f.properties?.VEL_RE_UP ?? f.properties?.VEL_RE_EW ?? 0,
           point_id: getPointId(f),
         }
       }))
-    };
+    });
+  }, [allVectorData]);
 
-    setSelectedFeatures(fc);
+  // Handle geometry completion from drawing overlay
+  const handleGeometryComplete = (geometry, mode, coords) => {
+    if (!geometry) return;
+
+    setIsDrawing(false);
+
+    if (mode === 'line') {
+      setDrawnLineCoords(coords.map(c => c.geo || c));
+    } else {
+      setDrawnLineCoords(null);
+    }
+
+    applySelection(geometry);
   };
+
+  // Recompute the line corridor and re-select when buffer distance changes after a line is drawn
+  useEffect(() => {
+    if (selectionMode !== 'line' || !drawnLineCoords || drawnLineCoords.length < 2) return;
+    const newGeometry = normalizeGeometry('line', drawnLineCoords, bufferDistance);
+    if (newGeometry) {
+      applySelection(newGeometry);
+    }
+  // Only re-run when buffer changes; mode/coords are handled by handleGeometryComplete
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bufferDistance]);
 
   // Calculate profile data for line selection
   const profileData = useMemo(() => {
@@ -339,6 +342,24 @@ function MisicuniDam() {
   const selectedIdsSet = useMemo(() => {
     return new Set(selectedPoints.map(p => p.id));
   }, [selectedPoints]);
+
+  // Selection is only supported for the first two layers (same URL, GDA-AID-WR dam data).
+  // Disable it when any other layer is toggled on (temporary demo limitation).
+  const selectionAvailable = useMemo(
+    () => !VECTOR_POINT_DATA.slice(2).some(l => layerVisibility[l.id]),
+    [layerVisibility]
+  );
+
+  // Clear any active selection when selection becomes unavailable
+  useEffect(() => {
+    if (!selectionAvailable) {
+      setSelectedPoints([]);
+      setSelectedFeatures(null);
+      setDrawnLineCoords(null);
+      setSelectionMode(null);
+      setIsDrawing(false);
+    }
+  }, [selectionAvailable]);
 
   const layers = useMemo(() => {
     const maskLayer = new GeoJsonLayer({
@@ -766,34 +787,51 @@ function MisicuniDam() {
         </div>
       </div>
 
-      <SelectionAnalysisPanel
-        top="10px"
-        left="calc(10px + 240px + 30px)"
-        selectionMode={selectionMode}
-        onSelectionModeChange={setSelectionMode}
-        isDrawing={isDrawing}
-        onIsDrawingChange={setIsDrawing}
-        bufferDistance={bufferDistance}
-        onBufferDistanceChange={setBufferDistance}
-        onClear={() => {
-          setSelectedPoints([]);
-          setDrawnGeometry(null);
-          setSelectedFeatures(null);
-          setDrawnLineCoords(null);
-          setSelectionMode(null);
-          setIsDrawing(false);
-        }}
-        onGeometryComplete={handleGeometryComplete}
-        selectedCount={selectedPoints.length}
-        selectedFeatures={selectedFeatures}
-        drawnLineCoords={drawnLineCoords}
-        profileData={profileData}
-        isLoading={false}
-        lineProfileMetrics={lineProfileMetrics}
-        is3D={true}
-        viewState={viewState}
-        onPointHover={setHoveredPointId}
-      />
+      {selectionAvailable ? (
+        <SelectionAnalysisPanel
+          top="10px"
+          left="calc(10px + 240px + 30px)"
+          selectionMode={selectionMode}
+          onSelectionModeChange={setSelectionMode}
+          isDrawing={isDrawing}
+          onIsDrawingChange={setIsDrawing}
+          bufferDistance={bufferDistance}
+          onBufferDistanceChange={setBufferDistance}
+          onClear={() => {
+            setSelectedPoints([]);
+            setSelectedFeatures(null);
+            setDrawnLineCoords(null);
+            setSelectionMode(null);
+            setIsDrawing(false);
+          }}
+          onGeometryComplete={handleGeometryComplete}
+          selectedCount={selectedPoints.length}
+          selectedFeatures={selectedFeatures}
+          profileData={profileData}
+          isLoading={false}
+          lineProfileMetrics={lineProfileMetrics}
+          is3D={true}
+          viewState={viewState}
+          onPointHover={setHoveredPointId}
+        />
+      ) : (
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          left: 'calc(10px + 240px + 30px)',
+          background: 'rgba(255, 255, 255, 0.9)',
+          borderRadius: '8px',
+          padding: '10px 14px',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '12px',
+          color: '#888',
+          maxWidth: '220px',
+          zIndex: 1000,
+        }}>
+          ⚠️ Selection available only when GDA-AID-WR layers are the only visible layers.
+        </div>
+      )}
     </div>
   );
 }

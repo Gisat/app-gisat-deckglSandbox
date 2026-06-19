@@ -26,12 +26,11 @@ const vec = {
  *
  * @param {number[]} pointCoords - The [lon, lat] of the point to project.
  * @param {number[][]} lineCoords - The vertices of the line.
- * @returns {{distance: number, segmentIndex: number}} The projected distance from the start of the line in meters.
+ * @returns {number} The projected distance from the start of the line in meters.
  */
 function projectPointOntoLine(pointCoords, lineCoords) {
     let minDistanceSq = Infinity;
     let projectedDistance = 0;
-    let closestSegmentIndex = 0;
     let accumulatedLength = 0;
 
     for (let i = 0; i < lineCoords.length - 1; i++) {
@@ -53,13 +52,12 @@ function projectPointOntoLine(pointCoords, lineCoords) {
         if (distToProjected * distToProjected < minDistanceSq) {
             minDistanceSq = distToProjected * distToProjected;
             projectedDistance = accumulatedLength + (haversine(start, projectedPoint) * 1000);
-            closestSegmentIndex = i;
         }
 
         accumulatedLength += haversine(start, end) * 1000;
     }
 
-    return { distance: projectedDistance, segmentIndex: closestSegmentIndex };
+    return projectedDistance;
 }
 
 
@@ -80,7 +78,7 @@ export function calculateProfileData(selectedFeatures, lineCoords, metricFields 
 
     selectedFeatures.features.forEach(feature => {
         const pointCoords = feature.geometry.coordinates;
-        const { distance } = projectPointOntoLine(pointCoords, lineCoords);
+        const distance = projectPointOntoLine(pointCoords, lineCoords);
         
         // Extract all requested metrics
         metricFields.forEach(field => {
@@ -88,7 +86,7 @@ export function calculateProfileData(selectedFeatures, lineCoords, metricFields 
                 metricsData[field] = [];
             }
             
-            const value = feature.properties[field] || 0;
+            const value = feature.properties[field] ?? null;
             metricsData[field].push({
                 x: distance,
                 y: value,
@@ -97,9 +95,11 @@ export function calculateProfileData(selectedFeatures, lineCoords, metricFields 
         });
     });
 
-    // Sort each metric's data by distance and convert to Nivo format
-    return Object.entries(metricsData).map(([fieldName, data]) => ({
-        id: fieldName,
-        data: data.sort((a, b) => a.x - b.x)
-    }));
+    // Sort each metric's data by distance, convert to Nivo format, and drop series with no real values
+    return Object.entries(metricsData)
+        .map(([fieldName, data]) => ({
+            id: fieldName,
+            data: data.sort((a, b) => a.x - b.x)
+        }))
+        .filter(series => series.data.some(point => point.y !== null));
 }

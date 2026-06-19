@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { SphereGeometry } from '@luma.gl/engine';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
-import { SelectionAnalysisPanel, pointInPolygon } from '../../components/PointSelection';
+import { SelectionAnalysisPanel, pointInPolygon, normalizeGeometry } from '../../components/PointSelection';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 import { CogTerrainLayer, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
 import chroma from 'chroma-js';
@@ -181,6 +181,38 @@ export default function SelectionDrawing3D() {
     return null;
   }, [selectedFeatures, drawnLineCoords]);
 
+  const applySelection = useCallback((geometry) => {
+    const selected = allFeatures.filter(feature => {
+      const [lon, lat] = feature.geometry?.coordinates || [0, 0];
+      return pointInPolygon([lon, lat], geometry);
+    });
+
+    const result = selected.map(f => ({
+      id: getPointId(f) ?? `${f.geometry?.coordinates?.[0]}_${f.geometry?.coordinates?.[1]}`,
+      properties: f.properties
+    }));
+
+    console.log('Selected points:', result);
+    setSelectedPoints(result);
+
+    setSelectedFeatures({
+      type: 'FeatureCollection',
+      features: selected.map(f => {
+        const pointId = getPointId(f);
+        return {
+          type: 'Feature',
+          id: pointId,
+          geometry: f.geometry,
+          properties: {
+            ...f.properties,
+            mean_velocity: f.properties?.vel_rel ?? f.properties?.mean_velocity ?? null,
+            point_id: pointId,
+          }
+        };
+      })
+    });
+  }, [allFeatures]);
+
   const handleGeometryComplete = (geometry, mode, coords) => {
     if (!geometry) return;
 
@@ -194,42 +226,20 @@ export default function SelectionDrawing3D() {
       setDrawnLineCoords(null);
     }
 
-    // Query all features directly against geometry
-    const selected = allFeatures.filter(feature => {
-      const [lon, lat] = feature.geometry?.coordinates || [0, 0];
-      return pointInPolygon([lon, lat], geometry);
-    });
-
-    const result = selected.map(f => ({
-      id: getPointId(f) ?? `${f.geometry?.coordinates?.[0]}_${f.geometry?.coordinates?.[1]}`,
-      properties: f.properties
-    }));
-
-    // Log selected points (single retained debug log)
-    console.log('Selected points:', result);
-    setSelectedPoints(result);
-
-    // Build a simple FeatureCollection for the TimeSeriesChart demo
-    const fc = {
-      type: 'FeatureCollection',
-      features: selected.map(f => {
-        const pointId = getPointId(f);
-        return {
-          type: 'Feature',
-          id: pointId,
-          geometry: f.geometry,
-          properties: {
-            ...f.properties,
-            // map available velocity field to mean_velocity expected by chart
-            mean_velocity: f.properties?.vel_rel ?? f.properties?.mean_velocity ?? null,
-            point_id: pointId,
-          }
-        };
-      })
-    };
-
-    setSelectedFeatures(fc);
+    applySelection(geometry);
   };
+
+  // Recompute the line corridor and re-select when buffer distance changes after a line is drawn
+  useEffect(() => {
+    if (selectionMode !== 'line' || !drawnLineCoords || drawnLineCoords.length < 2) return;
+    const newGeometry = normalizeGeometry('line', drawnLineCoords, bufferDistance);
+    if (newGeometry) {
+      setDrawnGeometry(newGeometry);
+      applySelection(newGeometry);
+    }
+  // Only re-run when buffer changes; mode/coords are handled by handleGeometryComplete
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bufferDistance]);
 
   const layers = [baseMapLayer, terrainLayer, meshLayer];
 
@@ -324,7 +334,6 @@ export default function SelectionDrawing3D() {
         onGeometryComplete={handleGeometryComplete}
         selectedCount={selectedPoints.length}
         selectedFeatures={selectedFeatures}
-        drawnLineCoords={drawnLineCoords}
         profileData={profileData}
         isLoading={isLoading}
         lineProfileMetrics={['vel_rel', 'vel_last']}

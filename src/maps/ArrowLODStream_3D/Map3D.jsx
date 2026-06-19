@@ -10,7 +10,7 @@ import {_TerrainExtension as TerrainExtension } from "@deck.gl/extensions";
 
 import { HUD } from '../../components/HUD';
 import { PlaybackControls } from '../../components/PlaybackControls';
-import { SelectionAnalysisPanel, filterPointsByGeometryInBounds, getGeometryBounds } from '../../components/PointSelection';
+import { SelectionAnalysisPanel, filterPointsByGeometryInBounds, getGeometryBounds, normalizeGeometry } from '../../components/PointSelection';
 import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
@@ -67,6 +67,7 @@ function ArrowLODStream3D() {
     const [selectionMode, setSelectionMode] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [bufferDistance, setBufferDistance] = useState(100);
+    const [debouncedBufferDistance, setDebouncedBufferDistance] = useState(100);
     const [selectedPointIds, setSelectedPointIds] = useState(new Set());
     const [drawnGeometry, setDrawnGeometry] = useState(null);
     const [selectedFeatures, setSelectedFeatures] = useState(null);
@@ -145,6 +146,23 @@ function ArrowLODStream3D() {
         }
         return null;
     }, [selectedFeatures, drawnLineCoords, selectionMode]);
+
+    useEffect(() => {
+        const handler = setTimeout(() => setDebouncedBufferDistance(bufferDistance), 400);
+        return () => clearTimeout(handler);
+    }, [bufferDistance]);
+
+    // Recompute the line corridor and re-select when buffer changes after a line is drawn
+    useEffect(() => {
+        if (selectionMode !== 'line' || !drawnLineCoords || drawnLineCoords.length < 2) return;
+        const newGeometry = normalizeGeometry('line', drawnLineCoords, debouncedBufferDistance);
+        if (newGeometry) {
+            lastProcessedGeometryRef.current = null; // force renderSubLayers to re-select
+            setDrawnGeometry(newGeometry);
+        }
+    // Only re-run when the debounced buffer changes; mode/coords are handled by handleGeometryComplete
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [debouncedBufferDistance]);
 
     // 🚀 Performance: Debounce fetching in static mode to avoid requests while sliding
     const [debouncedTimeIndex, setDebouncedTimeIndex] = useState(0);
@@ -420,7 +438,6 @@ function ArrowLODStream3D() {
 
                 selectedCount={selectedPointIds.size}
                 selectedFeatures={selectedFeatures}
-                drawnLineCoords={drawnLineCoords}
                 profileData={profileData}
                 isLoading={isSelectingBackend}
                 backendFeatureCount={selectedFeatures?.features?.length || 0}

@@ -44,9 +44,9 @@ This is the primary orchestrator for the selection UI. It's a controlled compone
     -   `bufferDistance`, `onBufferDistanceChange`: Manages the buffer size (in meters) for line selections.
     -   `onClear`: A callback to clear the current selection.
     -   `onGeometryComplete`: A callback fired when a user finishes drawing a shape. It receives the normalized GeoJSON geometry and the original drawn coordinates.
-    -   `selectedCount`, `selectedFeatures`, `profileData`: Data props to feed the charts.
+    -   `selectedCount`, `selectedFeatures`, `profileData`: Data props to feed the charts. `profileData` should be pre-computed by the parent using `calculateProfileData` and is passed directly to the `LineProfileChart`.
     -   `isLoading`, `backendFeatureCount`: Props to display loading status and feedback from backend queries.
-    -   `lineProfileMetrics`: An array of metric names to be displayed in the `LineProfileChart`.
+    -   `lineProfileMetrics`: An array of metric names. When non-empty, the "2D Profile" checkbox is shown in `SelectionControls`, allowing the user to toggle the `LineProfileChart`. The actual metric series shown are determined by how the parent computes `profileData`.
     -   `is3D`: A boolean that adapts the drawing overlay's behavior for 3D (terrain-aware) maps.
     -   `viewState`: The current Deck.gl view state, needed for coordinate projections.
     -   `onPointHover`: A callback to enable cross-highlighting between the chart and the map.
@@ -81,6 +81,7 @@ A collection of geospatial helper functions using `@turf/` libraries.
 -   `normalizeGeometry(mode, coords, bufferMeters)`: Converts a user's raw drawing into a valid GeoJSON `Polygon`.
     -   For `circle`, it creates a polygon from a center and a radius point.
     -   For `line`, it creates a polygonal corridor by buffering the line using the `@turf/buffer` library.
+        -   **Buffer recomputation**: When the user adjusts the buffer-distance slider after completing a line drawing, the corridor polygon and the point selection are automatically recomputed. In maps that query a backend, the recomputation is debounced (400 ms) to avoid spamming requests while dragging the slider.
         -   **Status & Limitation**: This process uses round endcaps for the buffer by default. The library does not currently support `flat` or `square` endcap styles, which could be a consideration for future enhancements.
     -   For `polygon`, it ensures the ring is closed.
 -   `filterPointsByGeometryInBounds(...)`: An efficient function to filter a large set of points (from an Arrow table) against a selection geometry and a pre-computed bounding box.

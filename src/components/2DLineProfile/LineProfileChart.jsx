@@ -15,9 +15,6 @@ import { useRef } from 'react';
  */
 export function LineProfileChart({
   data,
-  metrics = undefined,
-  // eslint-disable-next-line no-unused-vars
-  showErrorBands = true,
   title = 'Line Profile',
   yAxisLabel = 'Display rate (mm/y)',
   colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd'],
@@ -62,35 +59,9 @@ export function LineProfileChart({
     );
   }
 
-  // Filter data by metrics if specified
-  let filteredData = data;
-  if (metrics && metrics.length > 0) {
-    filteredData = data.filter(series => metrics.includes(series.id));
-  }
-
-  if (filteredData.length === 0 || filteredData[0].data.length === 0) {
-    return (
-        <div style={{
-            height: '300px',
-            textAlign: 'center',
-            color: '#999',
-            background: 'rgba(255, 255, 255, 0.95)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '8px',
-            fontFamily: 'system-ui, sans-serif',
-            fontSize: '11px',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-        }}>
-            No data for selected metrics
-        </div>
-    );
-  }
-
   // Create color map for series
   const colorMap = {};
-  filteredData.forEach((series, idx) => {
+  data.forEach((series, idx) => {
     colorMap[series.id] = colors[idx % colors.length];
   });
 
@@ -118,7 +89,7 @@ export function LineProfileChart({
       )}
       <div style={{ flex: 1 }}>
         <ResponsiveLine
-          data={filteredData}
+          data={data}
           margin={{ top: 10, right: 20, bottom: 50, left: 60 }}
           xScale={{ type: 'linear', min: 'auto', max: 'auto' }}
           yScale={{ type: 'linear', min: 'auto', max: 'auto', stacked: false, reverse: false }}
