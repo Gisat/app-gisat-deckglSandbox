@@ -1,3 +1,9 @@
+## [1.3.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.3.0...v1.3.1) (2026-06-19)
+
+### Bug Fixes
+
+* **ui:** Enforce light theme on UI components ([910fbb8](https://github.com/Gisat/app-gisat-deckglSandbox/commit/910fbb86b511ebaafe1c4883c48f4ea1838c3eb3))
+
 ## [1.3.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.2.0...v1.3.0) (2026-06-19)
 
 ### Features
