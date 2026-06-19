@@ -1,5 +1,6 @@
 import buffer from '@turf/buffer';
 import circle from '@turf/circle';
+import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 
 /**
  * Normalize drawn geometry to a GeoJSON Polygon
@@ -59,7 +60,7 @@ export function normalizeGeometry(mode, coords, bufferMeters = 100) {
 /**
  * Calculate distance between two points using Haversine formula (in km)
  */
-function haversine(point1, point2) {
+export function haversine(point1, point2) {
     const [lon1, lat1] = point1;
     const [lon2, lat2] = point2;
     const R = 6371; // Earth radius in km
@@ -76,32 +77,15 @@ function haversine(point1, point2) {
 }
 
 /**
- * Check if a point [lon, lat] is inside a polygon
- * Uses ray casting algorithm
+ * Check if a point [lon, lat] is inside a polygon.
+ * Uses robust Turf.js implementation.
  */
 export function pointInPolygon(point, polygon) {
-    if (polygon.type !== 'Polygon' || !polygon.coordinates || polygon.coordinates.length === 0) {
+    if (!point || !polygon) {
         return false;
     }
-
-    const [lon, lat] = point;
-    const ring = polygon.coordinates[0]; // Outer ring
-    let inside = false;
-
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const [lon1, lat1] = ring[i];
-        const [lon2, lat2] = ring[j];
-
-        // Ray casting: check if horizontal ray from point intersects edge
-        if (
-            ((lat1 > lat) !== (lat2 > lat)) &&  // Point is between edge's latitude range
-            (lon < (lon2 - lon1) * (lat - lat1) / (lat2 - lat1) + lon1)  // Point is left of edge intersection
-        ) {
-            inside = !inside;
-        }
-    }
-
-    return inside;
+    // Turf's booleanPointInPolygon expects a Point feature, so we wrap the coordinate.
+    return booleanPointInPolygon(point, polygon);
 }
 
 /**
@@ -182,4 +166,34 @@ export function filterPointsByGeometryInBounds(tableData, geometry, bounds) {
     }
     
     return selectedIds;
+}
+
+/**
+ * Get a unique identifier for a feature.
+ * Falls back through common ID properties (fid, ID_CELL, etc.).
+ * As a last resort, generates an ID from coordinates if available.
+ * @param {object} feature - A GeoJSON-like feature object.
+ * @returns {string|number|null} The best available ID, or null.
+ */
+export function getPointId(feature) {
+  if (!feature) return null;
+  
+  if (feature.properties) {
+    const p = feature.properties;
+    const id = p.fid ?? p.ID_CELL ?? p.ID ?? p.id_global ?? p.id;
+    if (id !== undefined && id !== null) {
+      return id;
+    }
+  }
+
+  // Fallback for features without standard ID properties
+  if (feature.id !== undefined && feature.id !== null) {
+      return feature.id;
+  }
+
+  if (feature.geometry?.coordinates?.length >= 2) {
+    return `${feature.geometry.coordinates[0]}_${feature.geometry.coordinates[1]}`;
+  }
+  
+  return null;
 }

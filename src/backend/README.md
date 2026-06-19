@@ -187,6 +187,26 @@ curl "http://localhost:5000/api/data?tile_x=10&tile_y=20&tier=2&mode=animation&i
 - binary arrow table serialized as IPC RecordBatchStream format
 - can be loaded in frontend using `@loaders.gl/arrow` or `apache-arrow` library
 
+### POST /api/select
+
+Selects the full time-series and specified metrics for a given list of point IDs. This is the preferred method for getting data for selected points, as it's more efficient than geometry-based queries on the backend.
+
+**Request Body (JSON):**
+- `point_ids` (Array[string]): **Required**. A list of unique point identifiers (`pid`) to fetch.
+- `metrics` (Array[string]): **Optional**. A list of additional metric columns to include in the response (e.g., `["mean_velocity_std", "los_up"]`). The backend will only return metrics from a predefined safelist.
+
+**Example Request:**
+```json
+{
+  "point_ids": [123, 456, 789],
+  "metrics": ["mean_velocity", "mean_velocity_std", "height"]
+}
+```
+
+**Response:**
+A GeoJSON `FeatureCollection` where each feature's `properties` object contains the `point_id`, `dates`, `displacements` array, and any requested (and allowed) metrics.
+
+
 ## expected geoparquet schema
 
 the backend expects the following columns in your geoparquet file:

@@ -10,10 +10,11 @@ import {_TerrainExtension as TerrainExtension } from "@deck.gl/extensions";
 
 import { HUD } from '../../components/HUD';
 import { PlaybackControls } from '../../components/PlaybackControls';
-import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds, getGeometryBounds } from '../../components/PointSelection';
+import { SelectionAnalysisPanel, filterPointsByGeometryInBounds, getGeometryBounds, normalizeGeometry } from '../../components/PointSelection';
 import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
+import { calculateProfileData } from '../../components/2DLineProfile';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch: 45, bearing: 0 };
@@ -66,11 +67,13 @@ function ArrowLODStream3D() {
     const [selectionMode, setSelectionMode] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [bufferDistance, setBufferDistance] = useState(100);
+    const [debouncedBufferDistance, setDebouncedBufferDistance] = useState(100);
     const [selectedPointIds, setSelectedPointIds] = useState(new Set());
     const [drawnGeometry, setDrawnGeometry] = useState(null);
     const [selectedFeatures, setSelectedFeatures] = useState(null);
     const [isSelectingBackend, setIsSelectingBackend] = useState(false);
     const [hoveredPointId, setHoveredPointId] = useState(null);
+    const [drawnLineCoords, setDrawnLineCoords] = useState(null);
     const { zRange, onZRangeUpdate } = useTerrainZRange();
 
     const lastProcessedGeometryRef = useRef(null);
@@ -83,26 +86,29 @@ function ArrowLODStream3D() {
     }, []);
 
     // Selection: Handle geometry completion from drawing overlay
-    const handleGeometryComplete = (mode, coords, bufferDist = 100) => {
-        // In 3D mode, coords may contain { geo, screenPos, elevation } objects
-        // Extract just the geo coordinates for normalizeGeometry
-        const geoCoords = coords.map(c => c.geo || c);
-        
-        const geometry = normalizeGeometry(mode, geoCoords, bufferDist);
+    const handleGeometryComplete = (geometry, mode, coords) => {
         if (!geometry) return;
 
         setDrawnGeometry(geometry);
         setIsDrawing(false);
+
+        if (mode === 'line') {
+            const geoCoords = coords.map(c => c.geo || c);
+            setDrawnLineCoords(geoCoords);
+        } else {
+            setDrawnLineCoords(null);
+        }
     };
 
     // Selection: Query backend for time-series data
-    const queryBackendForSelection = (pointIds) => {
+    const queryBackendForSelection = (pointIds, metrics = []) => {
         if (!pointIds || pointIds.length === 0) return;
 
         setIsSelectingBackend(true);
         
         const payload = {
-            point_ids: Array.from(pointIds)
+            point_ids: Array.from(pointIds),
+            metrics: metrics
         };
 
         fetch(`${DATA_API_URL.replace('/api/data', '')}/api/select`, {
@@ -126,11 +132,37 @@ function ArrowLODStream3D() {
     // Selection: When selected point IDs change, query backend
     useEffect(() => {
         if (selectedPointIds.size > 0) {
-            queryBackendForSelection(selectedPointIds);
+            // Define all metrics needed for any chart here
+            const metricsToFetch = ['mean_velocity', 'mean_velocity_std', 'height'];
+            queryBackendForSelection(selectedPointIds, metricsToFetch);
         } else {
             setSelectedFeatures(null);
         }
     }, [selectedPointIds]);
+
+    const profileData = useMemo(() => {
+        if (selectionMode === 'line' && selectedFeatures && drawnLineCoords) {
+            return calculateProfileData(selectedFeatures, drawnLineCoords, ['mean_velocity', 'mean_velocity_std']);
+        }
+        return null;
+    }, [selectedFeatures, drawnLineCoords, selectionMode]);
+
+    useEffect(() => {
+        const handler = setTimeout(() => setDebouncedBufferDistance(bufferDistance), 400);
+        return () => clearTimeout(handler);
+    }, [bufferDistance]);
+
+    // Recompute the line corridor and re-select when buffer changes after a line is drawn
+    useEffect(() => {
+        if (selectionMode !== 'line' || !drawnLineCoords || drawnLineCoords.length < 2) return;
+        const newGeometry = normalizeGeometry('line', drawnLineCoords, debouncedBufferDistance);
+        if (newGeometry) {
+            lastProcessedGeometryRef.current = null; // force renderSubLayers to re-select
+            setDrawnGeometry(newGeometry);
+        }
+    // Only re-run when the debounced buffer changes; mode/coords are handled by handleGeometryComplete
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [debouncedBufferDistance]);
 
     // 🚀 Performance: Debounce fetching in static mode to avoid requests while sliding
     const [debouncedTimeIndex, setDebouncedTimeIndex] = useState(0);
@@ -272,7 +304,7 @@ function ArrowLODStream3D() {
                             const pointId = tableData.getPointId(rowIndex);
                             
                             // If point is hovered, show bright red
-                            if (hoveredPointId === pointId) {
+                            if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
                                 return [255, 0, 0, 255];
                             }
                             
@@ -316,7 +348,7 @@ function ArrowLODStream3D() {
     ], [debouncedTimeIndex, mode, drawnGeometry, selectedPointIds, hoveredPointId, isDrawing, zRange, onZRangeUpdate]);
 
     return (
-        <div ref={mapContainerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <div ref={mapContainerRef} style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
             <DeckGL
                 ref={deckGLRef}
                 initialViewState={INITIAL_VIEW_STATE}
@@ -385,56 +417,36 @@ function ArrowLODStream3D() {
                 setTimeIndex={setTimeIndex}
             />
 
-            <DrawingOverlay
-                viewState={viewState}
+            <SelectionAnalysisPanel
+                top="130px"
+                left="10px"
                 selectionMode={selectionMode}
+                onSelectionModeChange={setSelectionMode}
                 isDrawing={isDrawing}
-                onGeometryComplete={handleGeometryComplete}
+                onIsDrawingChange={setIsDrawing}
                 bufferDistance={bufferDistance}
-                is3D={true}
-            />
-
-            <SelectionControls
-                selectionMode={selectionMode}
-                onModeChange={(mode) => {
-                    if (selectionMode === mode) {
-                        setSelectionMode(null);
-                        setIsDrawing(false);
-                    } else {
-                        setSelectionMode(mode);
-                        setIsDrawing(true);
-                    }
-                }}
+                onBufferDistanceChange={setBufferDistance}
                 onClear={() => {
                     setSelectedPointIds(new Set());
                     setDrawnGeometry(null);
                     setSelectedFeatures(null);
-                    // keep drawing active if selection mode is still selected
-                    setIsDrawing(selectionMode ? true : false);
+                    setDrawnLineCoords(null);
+                    setSelectionMode(null);
+                    setIsDrawing(false);
                 }}
-                selectedCount={selectedPointIds.size}
-                backendFeatureCount={selectedFeatures?.features?.length || 0}
-                isLoadingBackend={isSelectingBackend}
-                bufferDistance={bufferDistance}
-                onBufferChange={setBufferDistance}
-            />
+                onGeometryComplete={handleGeometryComplete}
 
-            {selectedFeatures && (
-                <div style={{
-                    position: 'absolute',
-                    bottom: '10px',
-                    left: '10px',
-                    width: 'calc(50% - 430px)',
-                    minWidth: '300px',
-                    zIndex: 999,
-                }}>
-                    <TimeSeriesChart 
-                        selectedFeatures={selectedFeatures}
-                        isLoading={isSelectingBackend}
-                        onPointHover={setHoveredPointId}
-                    />
-                </div>
-            )}
+                selectedCount={selectedPointIds.size}
+                selectedFeatures={selectedFeatures}
+                profileData={profileData}
+                isLoading={isSelectingBackend}
+                backendFeatureCount={selectedFeatures?.features?.length || 0}
+
+                lineProfileMetrics={['mean_velocity', 'mean_velocity_std']}
+                is3D={true}
+                viewState={viewState}
+                onPointHover={setHoveredPointId}
+            />
         </div>
     );
 }

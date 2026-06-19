@@ -1,13 +1,16 @@
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { GeoJsonLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
-import { CogTerrainLayer, CogTiles } from '@gisatcz/deckgl-geolib';
+import { CogTerrainLayer, CogTiles, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
 import { MaskExtension } from '@deck.gl/extensions';
 import { SphereGeometry, CubeGeometry } from '@luma.gl/engine';
 import { OBJLoader } from '@loaders.gl/obj';
+import { SelectionAnalysisPanel, pointInPolygon, getPointId, normalizeGeometry } from '../../components/PointSelection';
+import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
+import { calculateProfileData } from '../../components/2DLineProfile';
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
 const MULTIBAND_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/test/Misicuni_100_10x10_intermediate_cog.tif';
@@ -73,10 +76,12 @@ const VECTOR_POINT_DATA = [
 
 const ARROW_SIZE = 67; // eyeball measured, only for this object: https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/arrow_v3.obj
 
+const LINE_PROFILE_METRICS = ['VEL_RE_UP', 'VEL_LA_UP', 'LT_365_UP'];
+
 
 const INITIAL_VIEW_STATE = {
-  longitude: -66.3,
-  latitude: -17.12,
+  longitude: -66.3013500,
+  latitude: -17.0969928,
   zoom: 12,
   pitch: 40,
   bearing: 90,
@@ -188,9 +193,46 @@ function MisicuniDam() {
   const [showLegend, setShowLegend] = useState(false);
   const [showLegend2, setShowLegend2] = useState(false);
 
+  // Selection state
+  const [selectionMode, setSelectionMode] = useState(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [bufferDistance, setBufferDistance] = useState(100);
+  const [selectedPoints, setSelectedPoints] = useState([]);
+  const [selectedFeatures, setSelectedFeatures] = useState(null);
+  const [drawnLineCoords, setDrawnLineCoords] = useState(null);
+  const [allVectorData, setAllVectorData] = useState([]);
+  const lineProfileMetrics = LINE_PROFILE_METRICS;
+  const [hoveredPointId, setHoveredPointId] = useState(null);
+
+
   // Smooth slider updates: batch continuous input into RAF and commit to state once per frame
   const rafIdRef = useRef(null);
   const pendingIndexRef = useRef(null);
+  const mapContainerRef = useRef(null);
+  const deckGLRef = useRef(null);
+
+  // Set DeckGL instance for drawing utilities
+  useEffect(() => {
+    if (deckGLRef.current) setDeckGLInstance(deckGLRef.current);
+  }, []);
+
+  // Load all vector data for selection - only first layer for now
+  useEffect(() => {
+    const loadAllData = async () => {
+      try {
+        const firstLayer = VECTOR_POINT_DATA[0];
+        const res = await fetch(firstLayer.url);
+        const data = await res.json();
+        
+        // Data could be a FeatureCollection or direct array
+        const features = data.features ? data.features : (Array.isArray(data) ? data : []);
+        setAllVectorData(features);
+      } catch (err) {
+        console.error('❌ Failed to load vector data:', err);
+      }
+    };
+    loadAllData();
+  }, []);
 
   const scheduleBandIndexUpdate = (index) => {
     pendingIndexRef.current = index;
@@ -238,6 +280,87 @@ function MisicuniDam() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Shared selection logic: filter allVectorData against a geometry and update state
+  const applySelection = useCallback((geometry) => {
+    const selected = allVectorData.filter(feature => {
+      const [lon, lat] = feature.geometry?.coordinates || [0, 0];
+      return pointInPolygon([lon, lat], geometry);
+    });
+
+    setSelectedPoints(selected.map(f => ({ id: getPointId(f), properties: f.properties })));
+
+    setSelectedFeatures({
+      type: 'FeatureCollection',
+      features: selected.map((f, i) => ({
+        type: 'Feature',
+        id: getPointId(f) ?? i,
+        geometry: f.geometry,
+        properties: {
+          ...f.properties,
+          mean_velocity: f.properties?.VEL_REL ?? f.properties?.VEL_RE_UP ?? f.properties?.VEL_RE_EW ?? 0,
+          point_id: getPointId(f),
+        }
+      }))
+    });
+  }, [allVectorData]);
+
+  // Handle geometry completion from drawing overlay
+  const handleGeometryComplete = (geometry, mode, coords) => {
+    if (!geometry) return;
+
+    setIsDrawing(false);
+
+    if (mode === 'line') {
+      setDrawnLineCoords(coords.map(c => c.geo || c));
+    } else {
+      setDrawnLineCoords(null);
+    }
+
+    applySelection(geometry);
+  };
+
+  // Recompute the line corridor and re-select when buffer distance changes after a line is drawn
+  useEffect(() => {
+    if (selectionMode !== 'line' || !drawnLineCoords || drawnLineCoords.length < 2) return;
+    const newGeometry = normalizeGeometry('line', drawnLineCoords, bufferDistance);
+    if (newGeometry) {
+      applySelection(newGeometry);
+    }
+  // Only re-run when buffer changes; mode/coords are handled by handleGeometryComplete
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bufferDistance]);
+
+  // Calculate profile data for line selection
+  const profileData = useMemo(() => {
+    if (selectionMode === 'line' && selectedFeatures && drawnLineCoords) {
+      return calculateProfileData(selectedFeatures, drawnLineCoords, lineProfileMetrics);
+    }
+    return null;
+  }, [selectedFeatures, drawnLineCoords, selectionMode, lineProfileMetrics]);
+
+  // Create selected IDs set once for use in all mesh layers
+  const selectedIdsSet = useMemo(() => {
+    return new Set(selectedPoints.map(p => p.id));
+  }, [selectedPoints]);
+
+  // Selection is only supported for the first two layers (same URL, GDA-AID-WR dam data).
+  // Disable it when any other layer is toggled on (temporary demo limitation).
+  const selectionAvailable = useMemo(
+    () => !VECTOR_POINT_DATA.slice(2).some(l => layerVisibility[l.id]),
+    [layerVisibility]
+  );
+
+  // Clear any active selection when selection becomes unavailable
+  useEffect(() => {
+    if (!selectionAvailable) {
+      setSelectedPoints([]);
+      setSelectedFeatures(null);
+      setDrawnLineCoords(null);
+      setSelectionMode(null);
+      setIsDrawing(false);
+    }
+  }, [selectionAvailable]);
+
   const layers = useMemo(() => {
     const maskLayer = new GeoJsonLayer({
       id: 'water-mask',
@@ -251,6 +374,9 @@ function MisicuniDam() {
       elevationData: DEM_COG_URL,
       isTiled: true,
       tileSize: 256,
+      operation: 'terrain+draw',
+      pickable: '3d',
+      visible: true,
       terrainOptions: {
         type: 'terrain',
         useSwissRelief: true,
@@ -305,6 +431,16 @@ function MisicuniDam() {
             ...baseOptions,
             mesh: config.mesh,
             getColor: (d) => {
+              const pointId = getPointId(d);
+              if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
+                return [255, 0, 0, 255]; // Bright red for hovered
+              }
+              if (selectedIdsSet.has(pointId)) {
+                return [66, 212, 244, 255]; // Bright cyan for selected
+              }
+              if (selectedIdsSet.size > 0) {
+                return [200, 200, 200, 100]; // Dim unselected
+              }
               if (d.properties.VEL_RE_EW !== undefined) {
                 const color = getColorForVelReEw(d.properties.VEL_RE_EW);
                 return [...color, 255];
@@ -348,7 +484,7 @@ function MisicuniDam() {
               return [0, 0, 0];
             },
             updateTriggers: {
-              getColor: [config.useVelReEwColor],
+              getColor: [config.useVelReEwColor, selectedIdsSet, hoveredPointId],
               getScale: [config.useVelReEwColor],
               getOrientation: [config.useVelReEwColor],
               getTranslation: [config.useVelReEwColor]
@@ -361,6 +497,16 @@ function MisicuniDam() {
           ...baseOptions,
           mesh: config.geometryType === 'cube' ? new CubeGeometry() : new SphereGeometry(),
           getColor: (d) => {
+            const pointId = getPointId(d);
+            if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
+                return [255, 0, 0, 255]; // Bright red for hovered
+            }
+            if (selectedIdsSet.has(pointId)) {
+              return [66, 212, 244, 255]; // Bright cyan for selected
+            }
+            if (selectedIdsSet.size > 0) {
+              return [200, 200, 200, 100]; // Dim unselected
+            }
             if (config.useVelReEwColor && d.properties.VEL_RE_EW !== undefined) {
               const color = getColorForVelReEw(d.properties.VEL_RE_EW);
               return [...color, 255];
@@ -386,21 +532,66 @@ function MisicuniDam() {
             return [baseScale, baseScale, baseScale];
           },
           updateTriggers: {
-            getColor: [config.useVelRelColor, config.useVelReUpColor, config.useVelReEwColor],
+            getColor: [config.useVelRelColor, config.useVelReUpColor, config.useVelReEwColor, selectedIdsSet, hoveredPointId],
             getScale: [config.useVelRelColor, config.useVelReUpColor]
           }
         });
       });
 
     return [maskLayer, backgroundDem, ...meshLayers, multibandDem];
-  }, [currentBandIndex, cogInstance, isFetched, layerVisibility]);
+  }, [currentBandIndex, cogInstance, isFetched, layerVisibility, selectedIdsSet, hoveredPointId]);
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+    <div ref={mapContainerRef} style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
       <DeckGL
+        ref={deckGLRef}
         viewState={viewState}
         onViewStateChange={({ viewState }) => setViewState(viewState)}
-        controller={true}
+        controller={{
+          dragPan: !isDrawing,
+          scrollZoom: !isDrawing,
+          dragRotate: !isDrawing,
+          doubleClickZoom: !isDrawing,
+        }}
+        getCursor={() => isDrawing ? 'crosshair' : 'grab'}
+        onClick={(info) => {
+          if (isDrawing && selectionMode) {
+            const tryUseTerrainPick = async () => {
+              // If clicked directly on terrain layer, use extractTerrainCoordinate
+              if ((info.layer?.id === 'terrain-layer' || info.layer?.id === 'dem-cog-layer') && info.coordinate) {
+                const coord = extractTerrainCoordinate(info);
+                if (coord) {
+                  window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
+                    detail: { geo: [coord.longitude, coord.latitude], screenPos: [info.x, info.y], elevation: coord.elevation }
+                  }));
+                  return;
+                }
+              }
+
+              // Otherwise, try explicit pick on the terrain layer via DeckGL instance
+              const deck = deckGLRef.current;
+              if (deck && typeof deck.pickObject === 'function') {
+                const pick = deck.pickObject({ x: info.x, y: info.y, layerIds: ['dem-cog-layer', 'terrain-layer'], radius: 1 });
+                if (pick?.coordinate) {
+                  const coord = extractTerrainCoordinate(pick);
+                  if (coord) {
+                    window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
+                      detail: { geo: [coord.longitude, coord.latitude], screenPos: [info.x, info.y], elevation: coord.elevation }
+                    }));
+                    return;
+                  }
+                }
+              }
+
+              // Fallback to basic coordinate
+              window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
+                detail: { geo: [info.coordinate?.[0], info.coordinate?.[1]], screenPos: [info.x, info.y], elevation: info.coordinate?.[2] }
+              }));
+            };
+
+            tryUseTerrainPick();
+          }
+        }}
         layers={layers}
         views={[new MapView({ id: 'main', controller: true, nearZMultiplier: viewState.zoom > 14 ? 0.0001 : 0.1 })]}
       />
@@ -494,8 +685,25 @@ function MisicuniDam() {
             style={{ width: '100%', cursor: isFetched ? 'pointer' : 'not-allowed', opacity: isFetched ? 1 : 0.5 }}
           />
         </div>
+      </div>
 
-        {/* VEL_RE_UP Color Legend */}
+      {/* Legend Panel */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 20,
+          right: 20,
+          background: 'rgba(255, 255, 255, 0.95)',
+          padding: '11px',
+          borderRadius: '8px',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '13px',
+          color: '#333',
+          width: '240px',
+          zIndex: 1000,
+        }}
+      >
         <div style={{ marginBottom: '8px', paddingTop: '4px' }}>
           <button
             onClick={() => setShowLegend(!showLegend)}
@@ -537,7 +745,6 @@ function MisicuniDam() {
           )}
         </div>
 
-        {/* VEL_RE_EW Color Legend */}
         <div style={{ marginBottom: '0px', paddingTop: '4px' }}>
           <button
             onClick={() => setShowLegend2(!showLegend2)}
@@ -579,6 +786,52 @@ function MisicuniDam() {
           )}
         </div>
       </div>
+
+      {selectionAvailable ? (
+        <SelectionAnalysisPanel
+          top="10px"
+          left="calc(10px + 240px + 30px)"
+          selectionMode={selectionMode}
+          onSelectionModeChange={setSelectionMode}
+          isDrawing={isDrawing}
+          onIsDrawingChange={setIsDrawing}
+          bufferDistance={bufferDistance}
+          onBufferDistanceChange={setBufferDistance}
+          onClear={() => {
+            setSelectedPoints([]);
+            setSelectedFeatures(null);
+            setDrawnLineCoords(null);
+            setSelectionMode(null);
+            setIsDrawing(false);
+          }}
+          onGeometryComplete={handleGeometryComplete}
+          selectedCount={selectedPoints.length}
+          selectedFeatures={selectedFeatures}
+          profileData={profileData}
+          isLoading={false}
+          lineProfileMetrics={lineProfileMetrics}
+          is3D={true}
+          viewState={viewState}
+          onPointHover={setHoveredPointId}
+        />
+      ) : (
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          left: 'calc(10px + 240px + 30px)',
+          background: 'rgba(255, 255, 255, 0.9)',
+          borderRadius: '8px',
+          padding: '10px 14px',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '12px',
+          color: '#888',
+          maxWidth: '220px',
+          zIndex: 1000,
+        }}>
+          ⚠️ Selection available only when GDA-AID-WR layers are the only visible layers.
+        </div>
+      )}
     </div>
   );
 }

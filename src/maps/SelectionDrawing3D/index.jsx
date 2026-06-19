@@ -1,15 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { SphereGeometry } from '@luma.gl/engine';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
-import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, pointInPolygon } from '../../components/PointSelection';
+import { SelectionAnalysisPanel, pointInPolygon, normalizeGeometry } from '../../components/PointSelection';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 import { CogTerrainLayer, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
 import chroma from 'chroma-js';
 import { scaleLinear } from 'd3-scale';
+import { calculateProfileData } from '../../components/2DLineProfile';
 
 const INITIAL_VIEW_STATE = {
   longitude: 14.015511800867504,
@@ -29,6 +30,12 @@ const sizeScale = scaleLinear([0, 5], [2, 7]).clamp(true);
 // Data URL
 const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3.json';
 
+// Helper to consistently get a point's ID
+const getPointId = (feature) => {
+    if (!feature || !feature.properties) return null;
+    return feature.properties.id_global ?? feature.properties.id_orig;
+};
+
 export default function SelectionDrawing3D() {
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
   const [selectionMode, setSelectionMode] = useState(null);
@@ -37,9 +44,10 @@ export default function SelectionDrawing3D() {
   const [drawnGeometry, setDrawnGeometry] = useState(null);
   const [selectedPoints, setSelectedPoints] = useState([]);
   const [selectedFeatures, setSelectedFeatures] = useState(null);
-  const [, setHoveredPointId] = useState(null);
+  const [hoveredPointId, setHoveredPointId] = useState(null);
   const [allFeatures, setAllFeatures] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [drawnLineCoords, setDrawnLineCoords] = useState(null);
 
   const mapContainerRef = useRef(null);
   const deckGLRef = useRef(null);
@@ -127,13 +135,8 @@ export default function SelectionDrawing3D() {
   });
 
   const isPointSelected = (feature) => {
-    const idGlobal = feature.properties?.id_global;
-    const idOrig = feature.properties?.id_orig;
-    
-    if (idGlobal && selectedIdsSet.has(String(idGlobal))) return true;
-    if (idOrig && selectedIdsSet.has(String(idOrig))) return true;
-    
-    return false;
+    const pointId = getPointId(feature);
+    return pointId ? selectedIdsSet.has(String(pointId)) : false;
   };
 
   const meshLayer = new SimpleMeshLayer({
@@ -144,12 +147,18 @@ export default function SelectionDrawing3D() {
     pickable: true,
     getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm || 0],
     getColor: (d) => {
+      const pointId = getPointId(d);
+      
+      if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
+        return [255, 0, 0, 255]; // Bright red for hovered
+      }
+      
       if (isPointSelected(d)) {
-        return [66, 212, 244, 255]; // cyan - selected
+        return [66, 212, 244, 255]; // cyan for selected
       }
       
       if (selectedIdsSet.size > 0) {
-        return [200, 200, 200, 100]; // grey - dimmed
+        return [200, 200, 200, 100]; // grey for dimmed
       }
       
       return [...colorScale(d.properties?.vel_rel || 0).rgb(), 255];
@@ -160,51 +169,77 @@ export default function SelectionDrawing3D() {
       return [isSelected ? size * 1.3 : size, isSelected ? size * 1.3 : size, isSelected ? size * 1.3 : size];
     },
     updateTriggers: {
-      getColor: [selectedPoints],
+      getColor: [selectedPoints, hoveredPointId],
       getScale: [selectedPoints]
     }
   });
 
-  const handleGeometryComplete = (mode, coords, bufferDist = 100) => {
-    const geoCoords = coords.map(c => c.geo || c);
-    const geometry = normalizeGeometry(mode, geoCoords, bufferDist);
-    if (!geometry) return;
+  const profileData = useMemo(() => {
+    if (selectedFeatures && drawnLineCoords) {
+        return calculateProfileData(selectedFeatures, drawnLineCoords, ['vel_rel', 'vel_last']);
+    }
+    return null;
+  }, [selectedFeatures, drawnLineCoords]);
 
-    setDrawnGeometry(geometry);
-    setIsDrawing(false);
-
-    // Query all features directly against geometry
+  const applySelection = useCallback((geometry) => {
     const selected = allFeatures.filter(feature => {
       const [lon, lat] = feature.geometry?.coordinates || [0, 0];
       return pointInPolygon([lon, lat], geometry);
     });
 
     const result = selected.map(f => ({
-      id: f.properties?.id_global ?? f.properties?.id_orig ?? `${f.geometry?.coordinates?.[0]}_${f.geometry?.coordinates?.[1]}`,
+      id: getPointId(f) ?? `${f.geometry?.coordinates?.[0]}_${f.geometry?.coordinates?.[1]}`,
       properties: f.properties
     }));
 
-    // Log selected points (single retained debug log)
     console.log('Selected points:', result);
     setSelectedPoints(result);
 
-    // Build a simple FeatureCollection for the TimeSeriesChart demo
-    const fc = {
+    setSelectedFeatures({
       type: 'FeatureCollection',
-      features: selected.map(f => ({
-        type: 'Feature',
-        id: f.id,
-        properties: {
-          ...f.properties,
-          // map available velocity field to mean_velocity expected by chart
-          mean_velocity: f.properties?.vel_rel ?? f.properties?.mean_velocity ?? null,
-          point_id: f.id,
-        }
-      }))
-    };
+      features: selected.map(f => {
+        const pointId = getPointId(f);
+        return {
+          type: 'Feature',
+          id: pointId,
+          geometry: f.geometry,
+          properties: {
+            ...f.properties,
+            mean_velocity: f.properties?.vel_rel ?? f.properties?.mean_velocity ?? null,
+            point_id: pointId,
+          }
+        };
+      })
+    });
+  }, [allFeatures]);
 
-    setSelectedFeatures(fc);
+  const handleGeometryComplete = (geometry, mode, coords) => {
+    if (!geometry) return;
+
+    setDrawnGeometry(geometry);
+    setIsDrawing(false);
+
+    if (mode === 'line') {
+      const geoCoords = coords.map(c => c.geo || c);
+      setDrawnLineCoords(geoCoords);
+    } else {
+      setDrawnLineCoords(null);
+    }
+
+    applySelection(geometry);
   };
+
+  // Recompute the line corridor and re-select when buffer distance changes after a line is drawn
+  useEffect(() => {
+    if (selectionMode !== 'line' || !drawnLineCoords || drawnLineCoords.length < 2) return;
+    const newGeometry = normalizeGeometry('line', drawnLineCoords, bufferDistance);
+    if (newGeometry) {
+      setDrawnGeometry(newGeometry);
+      applySelection(newGeometry);
+    }
+  // Only re-run when buffer changes; mode/coords are handled by handleGeometryComplete
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bufferDistance]);
 
   const layers = [baseMapLayer, terrainLayer, meshLayer];
 
@@ -279,58 +314,33 @@ export default function SelectionDrawing3D() {
         </div>
       )}
 
-      <SelectionControls
+      <SelectionAnalysisPanel
+        top="10px"
+        left="10px"
         selectionMode={selectionMode}
-        onModeChange={(newMode) => {
-          if (selectionMode === newMode) {
-            // toggle off
-            setSelectionMode(null);
-            setIsDrawing(false);
-          } else {
-            setSelectionMode(newMode);
-            setIsDrawing(true);
-          }
-        }}
+        onSelectionModeChange={setSelectionMode}
+        isDrawing={isDrawing}
+        onIsDrawingChange={setIsDrawing}
         bufferDistance={bufferDistance}
-        onBufferChange={setBufferDistance}
-        selectedCount={selectedPoints.length}
+        onBufferDistanceChange={setBufferDistance}
         onClear={() => {
           setSelectedPoints([]);
           setDrawnGeometry(null);
-          // hide chart when cleared
           setSelectedFeatures(null);
-          // keep drawing active if selection mode is still selected
-          setIsDrawing(selectionMode ? true : false);
+          setDrawnLineCoords(null);
+          setSelectionMode(null);
+          setIsDrawing(false);
         }}
-        top="10px"
-        left="10px"
-      />
-
-      <DrawingOverlay
-        viewState={viewState}
-        selectionMode={selectionMode}
-        isDrawing={isDrawing}
         onGeometryComplete={handleGeometryComplete}
-        bufferDistance={bufferDistance}
+        selectedCount={selectedPoints.length}
+        selectedFeatures={selectedFeatures}
+        profileData={profileData}
+        isLoading={isLoading}
+        lineProfileMetrics={['vel_rel', 'vel_last']}
         is3D={true}
+        viewState={viewState}
+        onPointHover={setHoveredPointId}
       />
-
-      {selectedFeatures && (
-        <div style={{
-          position: 'absolute',
-          bottom: '10px',
-          left: '10px',
-          width: 'calc(50% - 430px)',
-          minWidth: '300px',
-          zIndex: 999,
-        }}>
-          <TimeSeriesChart
-            selectedFeatures={selectedFeatures}
-            isLoading={false}
-            onPointHover={setHoveredPointId}
-          />
-        </div>
-      )}
     </div>
   );
 }
