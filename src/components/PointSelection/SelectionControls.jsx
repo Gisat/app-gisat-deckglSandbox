@@ -47,6 +47,7 @@ export function SelectionControls({
                 zIndex: 1000,
                 fontFamily: 'system-ui, sans-serif',
                 fontSize: '13px',
+                color: '#333',
                 minWidth: '220px'
             }}
         >
@@ -65,6 +66,7 @@ export function SelectionControls({
                                 border: selectionMode === mode ? '2px solid #0066cc' : '1px solid #ccc',
                                 borderRadius: '4px',
                                 background: selectionMode === mode ? '#e6f0ff' : '#fff',
+                                color: '#333',
                                 cursor: 'pointer',
                                 fontSize: '11px',
                                 fontWeight: selectionMode === mode ? '600' : '400',
