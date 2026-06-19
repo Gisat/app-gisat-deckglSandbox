@@ -1,3 +1,22 @@
+## [1.3.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.2.0...v1.3.0) (2026-06-19)
+
+### Features
+
+* **backend:** optimize attribute fetching and set default metrics ([a005eae](https://github.com/Gisat/app-gisat-deckglSandbox/commit/a005eae2adc89da4b180a454b05cc35808fb2a88))
+* **charts:** enable hover highlight on line profile chart ([87e3e6b](https://github.com/Gisat/app-gisat-deckglSandbox/commit/87e3e6ba560fb3f55e59a9c31f4a69b1ac7094f3))
+* **line-profile:** enhance line profile chart with multi-metric support ([4f16e3f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/4f16e3f63b3e769a510cca88ee798eba6ed60b58))
+* **line-profile:** update chart style and add new metric ([dd6eedf](https://github.com/Gisat/app-gisat-deckglSandbox/commit/dd6eedfad8fd3cdd212e7dbab32a1e5dea94a783))
+* **misicuni-dam:** implement point selection with terrain-aware coordinate extraction ([d5dd355](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d5dd3552d415d6874d74d50f7886872d82d2e5de))
+* **selection:** add chart toggle for line selection ([206b147](https://github.com/Gisat/app-gisat-deckglSandbox/commit/206b1478ca48cd8e239a55b4d5313590561a80fe))
+* **selection:** Implement interactive buffer for line selections ([9abd114](https://github.com/Gisat/app-gisat-deckglSandbox/commit/9abd114772f55646afd05745938504dac40e2733))
+
+### Bug Fixes
+
+* **charts:** disable tooltip on line profile chart ([1fb50d5](https://github.com/Gisat/app-gisat-deckglSandbox/commit/1fb50d575f7a19a087f9e9859facb7394bf51d85))
+* improve UI component positioning and layout consistency ([d5c0061](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d5c006117037ebbf519de2d7ee7befe8f1d1db7c))
+* **maps:** enable hover highlight on 3D maps ([30827ed](https://github.com/Gisat/app-gisat-deckglSandbox/commit/30827ed438c94d8137d98bdc36b346726be362b5))
+* **Misicuni_dam:** adjust initial zoom level to 12 ([de70f8a](https://github.com/Gisat/app-gisat-deckglSandbox/commit/de70f8a8254ce9463cda4f1ed68a6e7389fc44ac))
+
 ## [1.2.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.1.0...v1.2.0) (2026-06-17)
 
 ### Features
