@@ -107,9 +107,9 @@ const createIconSublayers = (props, getPosition) => {
 };
 
 // Helper: create latlon sphere sublayer with LNGLAT coordinate system
-const createLatlonSphereSublayer = (props) => {
+const createLatlonSphereSublayer = (props, selectedPoint) => {
   if (!props.data) return null;
-  const safeProps = { ...props };
+  const { modelMatrix, coordinateOrigin, _offset, ...safeProps } = props;
   return new SimpleMeshLayer({
     ...safeProps,
     id: `${props.id}-spheres`,
@@ -117,8 +117,22 @@ const createLatlonSphereSublayer = (props) => {
     coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
     extensions: [],
     getPosition: (d) => [d.properties.lon, d.properties.lat, d.properties.h_dtm || 0],
-    getColor: (d) => [...colorScale(d.properties.vel_rel || 0).rgb(), 255],
+    getColor: (d) => {
+      const isSelected =
+        selectedPoint &&
+        selectedPoint.properties &&
+        d.properties.lon === selectedPoint.properties.lon &&
+        d.properties.lat === selectedPoint.properties.lat;
+
+      if (isSelected) {
+        return [0, 255, 255, 255];
+      }
+      return [...colorScale(d.properties.vel_rel || 0).rgb(), 255];
+    },
     sizeScale: 8,
+    updateTriggers: {
+      getColor: selectedPoint,
+    },
   });
 };
 
@@ -162,7 +176,7 @@ const LAYER_CONFIGS = [
     type: 'mvt-icons',
     source: 's3',
     data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3_latlon/{z}/{x}/{y}.pbf',
-    visible: true,
+    visible: false,
   },
   {
     id: 'mvt-3d-spheres-ds',
@@ -186,12 +200,12 @@ const LAYER_CONFIGS = [
     type: 'mvt-latlon-spheres',
     source: 's3',
     data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3_latlon/{z}/{x}/{y}.pbf',
-    visible: false,
+    visible: true,
   },
 ];
 
 // Create layer from config
-const createLayer = (config, visible) => {
+const createLayer = (config, visible, selectedPoint, setSelectedPoint) => {
   const baseProps = {
     id: config.id,
     data: config.data,
@@ -257,7 +271,25 @@ const createLayer = (config, visible) => {
   if (config.type === 'mvt-latlon-spheres') {
     return new MVTLayer({
       ...baseProps,
-      renderSubLayers: (props) => createLatlonSphereSublayer(props),
+      pickable: true,
+      onClick: ({ object }) => {
+        if (!setSelectedPoint) {
+          return;
+        }
+
+        const isCurrentlySelected =
+          selectedPoint && object && selectedPoint.properties.lon === object.properties.lon && selectedPoint.properties.lat === object.properties.lat;
+
+        if (isCurrentlySelected) {
+          setSelectedPoint(null); // Deselect if clicking the same point
+        } else {
+          setSelectedPoint(object); // Select new point (or deselect if clicking empty space)
+        }
+      },
+      renderSubLayers: (props) => createLatlonSphereSublayer(props, selectedPoint),
+      updateTriggers: {
+        renderSubLayers: selectedPoint,
+      },
     });
   }
 
@@ -272,6 +304,7 @@ export default function GisatDataService() {
     });
     return initial;
   });
+  const [selectedPoint, setSelectedPoint] = useState(null);
 
   const toggleLayer = (layerId) => {
     setLayerVisibility((prev) => ({
@@ -297,7 +330,7 @@ export default function GisatDataService() {
   });
 
   const dataLayers = LAYER_CONFIGS.map((config) =>
-    createLayer(config, layerVisibility[config.id])
+    createLayer(config, layerVisibility[config.id], selectedPoint, setSelectedPoint)
   );
   const layers = [baseMapLayer, ...dataLayers];
 
