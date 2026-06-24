@@ -24,6 +24,7 @@ import GisatDataService from './GisatDataService/index.jsx';
 import SelectionDrawing3D from './SelectionDrawing3D/index.jsx';
 import ArrowLODStream3D from './ArrowLODStream_3D/Map3D.jsx';
 import ArrowLODStream2D from './ArrowLODStream_2D/Map2D.jsx';
+import Insar3DDEM from './Insar3DDEM/index.jsx';
 
 const mapApps = [
     { category: '3DFLUS', name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
@@ -46,6 +47,7 @@ const mapApps = [
     { category: 'GeoParquet', name: 'GeoParquet Tiled', path: '/geoparquet-tiled', component: geoParquetTiled },
     { category: 'GeoParquet', name: 'GeoParquet Virtual Tiles', path: '/geoparquet-virtual-tiles', component: geoParquetVirtualTiles },
     { category: 'Other', name: 'Deck.gl-raster COG', path: '/deck.gl-raster', component: devSeedCOG },
+    { category: 'Other', name: 'DEM & MVT 3D spheres', path: '/insar-3d-dem', component: Insar3DDEM, description: 'DEM terrain with 3D MVT latlon spheres' },
     // { name: 'Test Gisat Geotiff', path: '/test-gisat-geotiff', component: GisatGeotiffMap, description: 'Testing Gisat Geotiff rendering' },
     { category: '3DFLUS CCN', name: 'COG Terrain Kernel', path: '/cog-kernel', component: CogTerrainKernel, description: 'Showcase kernel calculation and hover features with deck.gl-geotiff' },
     { category: '3DFLUS CCN', name: 'Gisat Data Service', path: '/gisat-data-service', component: GisatDataService },
