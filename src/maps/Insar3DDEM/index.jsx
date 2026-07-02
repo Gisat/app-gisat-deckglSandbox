@@ -24,16 +24,16 @@ const colorScale = chroma
 
 const sphereGeometry = new SphereGeometry();
 
-const createLatlonSphereSublayer = (props, selectedPoint) => {
+const createLatlonSphereSublayer = (props, selectedPoint, isFlat) => {
   if (!props.data) return null;
   const { modelMatrix, coordinateOrigin, _offset, ...safeProps } = props;
   return new SimpleMeshLayer({
     ...safeProps,
-    id: `${props.id}-spheres`,
+    id: `${props.id}-spheres${isFlat ? '-flat' : ''}`,
     mesh: sphereGeometry,
     coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
     extensions: [],
-    getPosition: (d) => [d.properties.lon, d.properties.lat, d.properties.h_dtm || 0],
+    getPosition: (d) => [d.properties.lon, d.properties.lat, isFlat ? 0 : (d.properties.h_dtm || 0)],
     getColor: (d) => {
       const isSelected =
         selectedPoint &&
@@ -160,6 +160,7 @@ const createLayer = (config, visible, isDemOn, selectedPoint, setSelectedPoint, 
   }
 
   if (config.type === 'insar') {
+    const isFlat = !isDemOn;
     return new MVTLayer({
       ...baseProps,
       data: config.data,
@@ -179,9 +180,9 @@ const createLayer = (config, visible, isDemOn, selectedPoint, setSelectedPoint, 
           setSelectedPoint(object);
         }
       },
-      renderSubLayers: (props) => createLatlonSphereSublayer(props, selectedPoint),
+      renderSubLayers: (props) => createLatlonSphereSublayer(props, selectedPoint, isFlat),
       updateTriggers: {
-        renderSubLayers: selectedPoint,
+        renderSubLayers: [selectedPoint, isFlat],
       },
     });
   }
