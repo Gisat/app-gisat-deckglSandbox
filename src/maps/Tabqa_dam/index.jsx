@@ -68,22 +68,9 @@ const TabqaDam = () => {
         },
     });
 
-    const rawDemLayer = new CogBitmapLayer({
-        id: 'glaze-raw-dem',
-        rasterData: RAW_DEM_URL,
-        isTiled: true,
-        tileSize: 256,
-        cogBitmapOptions: {
-            type: 'data',
-            useHeatMap: true,
-            colorScaleValueRange: [0, 255],
-            colorScale: ['#283250', '#283250'],
-        },
-    });
-
     const layers = [
         basemap,
-        ...(glazeMode === 'precalculated' ? [precalculatedGlaze] : glazeMode === 'onthefly' ? [onTheFlyGlaze] : [rawDemLayer]),
+        ...(glazeMode === 'precalculated' ? [precalculatedGlaze] : [onTheFlyGlaze]),
     ];
 
     return (
@@ -133,16 +120,6 @@ const TabqaDam = () => {
                         style={{ marginRight: 6 }}
                     />
                     On-the-fly Glaze
-                </label>
-                <label style={{ display: 'block', cursor: 'pointer' }}>
-                    <input
-                        type="radio"
-                        value="raw-dem"
-                        checked={glazeMode === 'raw-dem'}
-                        onChange={() => setGlazeMode('raw-dem')}
-                        style={{ marginRight: 6 }}
-                    />
-                    Raw DEM
                 </label>
             </div>
         </DeckGL>
