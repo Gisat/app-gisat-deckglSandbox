@@ -6,8 +6,8 @@ import { BitmapLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
 
 // const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_cog.tif';
-const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_z4_cog.tif';
-const RAW_DEM_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_cog.tif';
+const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_z4_bilinear_cog.tif';
+const RAW_DEM_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_bilinear_cog.tif';
 
 const INITIAL_VIEW_STATE = {
     longitude: 38.5667,
@@ -68,9 +68,22 @@ const TabqaDam = () => {
         },
     });
 
+    const rawDemLayer = new CogBitmapLayer({
+        id: 'glaze-raw-dem',
+        rasterData: RAW_DEM_URL,
+        isTiled: true,
+        tileSize: 256,
+        cogBitmapOptions: {
+            type: 'data',
+            useHeatMap: true,
+            colorScaleValueRange: [0, 255],
+            colorScale: ['#283250', '#283250'],
+        },
+    });
+
     const layers = [
         basemap,
-        ...(glazeMode === 'precalculated' ? [precalculatedGlaze] : [onTheFlyGlaze]),
+        ...(glazeMode === 'precalculated' ? [precalculatedGlaze] : glazeMode === 'onthefly' ? [onTheFlyGlaze] : [rawDemLayer]),
     ];
 
     return (
@@ -120,6 +133,16 @@ const TabqaDam = () => {
                         style={{ marginRight: 6 }}
                     />
                     On-the-fly Glaze
+                </label>
+                <label style={{ display: 'block', cursor: 'pointer' }}>
+                    <input
+                        type="radio"
+                        value="raw-dem"
+                        checked={glazeMode === 'raw-dem'}
+                        onChange={() => setGlazeMode('raw-dem')}
+                        style={{ marginRight: 6 }}
+                    />
+                    Raw DEM
                 </label>
             </div>
         </DeckGL>
