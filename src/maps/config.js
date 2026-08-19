@@ -24,6 +24,9 @@ import GisatDataService from './GisatDataService/index.jsx';
 import SelectionDrawing3D from './SelectionDrawing3D/index.jsx';
 import ArrowLODStream3D from './ArrowLODStream_3D/Map3D.jsx';
 import ArrowLODStream2D from './ArrowLODStream_2D/Map2D.jsx';
+import NepalSnow from './TiTilerDemo/NepalSnow.jsx';
+import UgandaLUC from './TiTilerDemo/UgandaLUC.jsx';
+import ManilaRGB from './TiTilerDemo/ManilaRGB.jsx';
 
 const mapApps = [
     { category: '3DFLUS', name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
@@ -54,6 +57,9 @@ const mapApps = [
     { category: '3DFLUS CCN', name: 'Terrain Interactive Slider', path: '/terrain-interactive-slider', component: MisicuniDam },
     { category: '3DFLUS CCN', name: 'Selection Drawing 3D', path: '/selection-drawing-3d', component: SelectionDrawing3D },
     { category: 'GDA Water', name: 'Misicuni Dam', path: '/misicuni-dam', component: MisicuniDam, description: 'Simple dam presentation map connected to GDA Water group' },
+    { category: 'TiTiler DEMO', name: 'Nepal Snow Cover', path: '/titiler-demo-nepal-snow', component: NepalSnow },
+    { category: 'TiTiler DEMO', name: 'Uganda Multiband', path: '/titiler-demo-uganda', component: UgandaLUC },
+    { category: 'TiTiler DEMO', name: 'Manila RGB', path: '/titiler-demo-manila', component: ManilaRGB },
 ];
 
 export default mapApps;

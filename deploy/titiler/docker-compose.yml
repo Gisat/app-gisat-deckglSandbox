@@ -1,0 +1,41 @@
+# Local-dev TiTiler instance for the TiTiler DEMO sandbox category.
+#
+# Image: published developmentseed TiTiler (https://github.com/developmentseed/titiler)
+# Data: the demo COGs are public Linode S3 objects fetched by TiTiler via GDAL /vsicurl/
+#       -> no local data download required.
+#
+# Start:   docker compose -f deploy/titiler/docker-compose.yml up -d
+# Health:  curl http://localhost:8000/healthz
+# Tiles:   http://localhost:8000/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=<urlencoded-cog-url>&...
+#
+# The sandbox reads the base URL from VITE_TITILER_URL (see .env.example);
+# default fallback is http://localhost:8000 so the demo works without any .env.
+
+services:
+  titiler:
+    image: ghcr.io/developmentseed/titiler:latest
+    container_name: titiler-demo
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "titiler.application.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    environment:
+      # Browser hits TiTiler cross-origin (sandbox dev server on :5173)
+      - TITILER_API_CORS_ORIGIN=*
+      - TITILER_API_CACHECONTROL=public, max-age=3600
+      # GDAL /vsicurl/ tuning for the remote Linode S3 COGs
+      - GDAL_CACHEMAX=75%
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_VERSION=2
+      - CPL_TMPDIR=/tmp
+      - PYTHONWARNINGS=ignore
+      # TiTiler telemetry off for the local demo (no otel collector present)
+      - TITILER_API_TELEMETRY_ENABLED=False
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
