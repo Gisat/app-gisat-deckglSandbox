@@ -3,6 +3,24 @@ import TiTilerTileMap from './TiTilerTileMap';
 import { UGANDA_COLORMAP } from './colormaps';
 import './UgandaLUC.css';
 
+// ~98% of the COG's pixels are exactly 0 (the task's noDataValue 0, but the
+// COG has no internal mask). TiTiler 2.x cannot combine `nodata=0` with a
+// colormap ("Source data must be 1 band"), so instead we make the colormap
+// entry for byte 0 fully transparent ([r,g,b,0]).
+//
+// Verified empirically (probe tiles from TiTiler): masked background pixels
+// render as byte 0 *regardless of rescale* — they bypass the rescale math and
+// hit the colormap lookup at index 0. So a single byte-0 transparent entry
+// gives a see-through background for every band; no per-band computation is
+// needed. (The only side effect: valid pixels below the rescale min clamp to
+// byte 0 too, hiding the darkest ~2% sub-percentile tail — consistent with
+// the p2–p98 contrast choice.)
+const TRANSPARENT_COLORMAP = (() => {
+    const colormap = JSON.parse(UGANDA_COLORMAP);
+    colormap[0] = [...colormap[0], 0];
+    return JSON.stringify(colormap);
+})();
+
 // Uganda Land Use / Land Cover (multiband COG) — band slider demo.
 const COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_bitmap/cog_UG_hanpp_luc_multiband.tif';
 
@@ -48,7 +66,7 @@ const UgandaLUC = () => {
     const queryParams = [
         `bidx=${band}`,
         `rescale=${BAND_RESCALE[band]}`,
-        `colormap=${encodeURIComponent(UGANDA_COLORMAP)}`
+        `colormap=${encodeURIComponent(TRANSPARENT_COLORMAP)}`
     ].join('&');
 
     return (
