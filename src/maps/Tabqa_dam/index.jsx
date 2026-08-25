@@ -1,13 +1,26 @@
 import { useState } from 'react';
 import DeckGL from '@deck.gl/react';
 import { MapView } from '@deck.gl/core';
-import { TileLayer, MVTLayer } from '@deck.gl/geo-layers';
+import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
+import chroma from 'chroma-js';
+import buildDeckGLLayerWithSymbology, { getRadiusUnits } from '../../layers/factory/buildDeckGLLayerWithSymbology';
 
 // const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_cog.tif';
 const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_z4_bilinear_cog.tif';
 const RAW_DEM_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_bilinear_cog.tif';
+
+const colorScale = chroma
+    .scale(['#b1001d', '#ca2d2f', '#e25b40', '#ffaa00', '#ffff00', '#a0f000', '#4ce600', '#50d48e', '#00c3ff', '#0f80d1', '#004ca8', '#003e8a'])
+    .domain([-5, 5]);
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const normalize = (value, domainMin, domainMax, rangeMin, rangeMax) => {
+    const t = clamp((Number(value) - domainMin) / (domainMax - domainMin), 0, 1);
+    return rangeMin + t * (rangeMax - rangeMin);
+};
 
 const INITIAL_VIEW_STATE = {
     longitude: 38.5667,
@@ -68,14 +81,30 @@ const TabqaDam = () => {
         },
     });
 
-    const mvtPoints = new MVTLayer({
+    const radiusUnits = getRadiusUnits(viewState.zoom);
+
+    const mvtPoints = buildDeckGLLayerWithSymbology({
         id: 'tabqua-116a-123d-points',
         data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/los_tiles/{z}/{x}/{y}.pbf',
-        binary: false,
         minZoom: 0,
         maxZoom: 14,
-        getFillColor: [255, 0, 0, 255],
-        pointRadiusMinPixels: 4,
+        radiusUnits,
+        getFillColor: (f) => [...colorScale(Number(f.properties.VEL_LAST) || 0).rgb(), 255],
+        getAngle: (f) => {
+            const azAng = Number(f.properties.az_ang);
+            if (Number.isFinite(azAng)) {
+                return 180 + azAng;
+            }
+            const vel = Number(f.properties.VEL_AVG ?? f.properties.VEL_LAST);
+            return vel < 0 ? 80 : 260;
+        },
+        getStemLength: (f) => normalize(f.properties.REL, 0, 1, 0.2, 0.8),
+        getStemThickness: (f) => normalize(Number(f.properties.REL_LEN) || 0, 0.4, 1, 0.05, 0.2),
+        getHeadSize: (f) => normalize(Number(f.properties.COH_MOD) || 0, 0.4, 1, 0.15, 0.3),
+        getRadius: (f) => {
+            const size = normalize(Math.abs(Number(f.properties.VEL_LAST) || 0), 0, 21, 5, 20);
+            return radiusUnits === 'meters' ? size * 8 : size;
+        },
     });
 
     const layers = [
