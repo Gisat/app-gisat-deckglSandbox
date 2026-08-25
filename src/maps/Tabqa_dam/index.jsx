@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import DeckGL from '@deck.gl/react';
 import { MapView } from '@deck.gl/core';
-import { TileLayer } from '@deck.gl/geo-layers';
+import { TileLayer, MVTLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
 
@@ -68,8 +68,19 @@ const TabqaDam = () => {
         },
     });
 
+    const mvtPoints = new MVTLayer({
+        id: 'tabqua-116a-123d-points',
+        data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/los_tiles/{z}/{x}/{y}.pbf',
+        binary: false,
+        minZoom: 0,
+        maxZoom: 14,
+        getFillColor: [255, 0, 0, 255],
+        pointRadiusMinPixels: 4,
+    });
+
     const layers = [
         basemap,
+        mvtPoints,
         ...(glazeMode === 'precalculated' ? [precalculatedGlaze] : [onTheFlyGlaze]),
     ];
 
