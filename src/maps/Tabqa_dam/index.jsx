@@ -110,13 +110,16 @@ const TabqaDam = () => {
     
     const getArrowStemLength = (f) => {
         const rel = getNum(f, ['REL', 'rel', 'vel_rel', 'VEL_REL']);
-        // Increased min length from 0.2 to 0.45 so it always exceeds the max head size (0.3)
-        return normalize(rel, 0, 1, 0.45, 0.9);
+        // Wide range: at low REL the head dominates (like the 3D model), at high REL the stem is longer
+        return normalize(rel, 0, 1, 0.4, 0.9);
     };
     
     const getArrowHeadSize = (f) => {
         const coh = getNum(f, ['COH_MOD', 'coh_mod', 'COH', 'coh']);
-        return normalize(coh, 0.4, 1, 0.15, 0.3);
+        const head = normalize(coh, 0.4, 1, 0.2, 0.3);
+        const stemLen = getArrowStemLength(f);
+        // Keep a visible stem: the head length (vHeadSize) must stay below the stem length (vStemLength)
+        return Math.min(head, stemLen - 0.15);
     };
     
     const getArrowStemThickness = (f) => {
