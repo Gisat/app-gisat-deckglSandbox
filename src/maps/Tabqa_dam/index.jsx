@@ -110,12 +110,14 @@ const TabqaDam = () => {
     
     const getArrowStemLength = (f) => {
         const rel = getNum(f, ['REL', 'rel', 'vel_rel', 'VEL_REL']);
-        return normalize(rel, 0, 1, 0.2, 0.8);
+        // Increased min length from 0.2 to 0.45 so it always exceeds the max head size (0.3)
+        return normalize(rel, 0, 1, 0.45, 0.9);
     };
     
     const getArrowStemThickness = (f) => {
         const relLen = getNum(f, ['REL_LEN', 'rel_len']);
-        return normalize(relLen, 0.4, 1, 0.05, 0.2);
+        // Increased min thickness from 0.05 to 0.1 for better visibility
+        return normalize(relLen, 0.4, 1, 0.1, 0.3);
     };
     
     const getArrowHeadSize = (f) => {
@@ -157,8 +159,8 @@ const TabqaDam = () => {
 
     const layers = [
         basemap,
-        mvtPoints,
         ...(glazeMode === 'precalculated' ? [precalculatedGlaze] : [onTheFlyGlaze]),
+        mvtPoints,
     ];
 
     return (
