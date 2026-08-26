@@ -5,7 +5,7 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
 import chroma from 'chroma-js';
-import buildDeckGLLayerWithSymbology from '../../layers/factory/buildDeckGLLayerWithSymbology';
+import buildDeckGLLayerWithSymbology, { getRadiusUnits } from '../../layers/factory/buildDeckGLLayerWithSymbology';
 
 // const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_cog.tif';
 const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_z4_bilinear_cog.tif';
@@ -82,8 +82,8 @@ const TabqaDam = () => {
         },
     });
 
-    // Always use pixels so arrows maintain consistent, legible screen sizes at all zooms
-    const radiusUnits = 'pixels';
+    // Use geographic meters below zoom 16, and fixed pixels at or above zoom 16
+    const radiusUnits = getRadiusUnits(viewState.zoom, 16);
 
     // Helper to safely extract a number from various possible property keys
     const getNum = (f, keys, fallback = 0) => {
@@ -128,9 +128,12 @@ const TabqaDam = () => {
     
     const getArrowRadius = (f) => {
         const vel = getNum(f, ['vel_avg', 'VEL_AVG', 'vel_last', 'VEL_LAST']);
-        // Returns the pure pixel size (scaled up to 32-80)
-        return normalize(Math.abs(vel), 0, 21, 32, 80); 
-    };
+        // Base pixel sizes
+        const size = normalize(Math.abs(vel), 0, 21, 32, 80); 
+        
+        // Corrected deck.gl 512px base resolution at lat 35.87° and zoom 16 is ~0.9677 meters/pixel.
+        return radiusUnits === 'meters' ? size * 0.9677 : size;
+    }; 
 
     const mvtPoints = buildDeckGLLayerWithSymbology({
         id: 'tabqua-116a-123d-points',
@@ -154,7 +157,9 @@ const TabqaDam = () => {
             return (matchesId || matchesFid) ? [0, 255, 255, 255] : [0, 255, 255, 0];
         },
         updateTriggers: {
-            getLineColor: [selectedFeature]
+            getLineColor: [selectedFeature],
+            // Force deck.gl to flush the cache and recalculate sizes when crossing zoom 16
+            getRadius: [radiusUnits]
         }
     });
 
