@@ -22,6 +22,7 @@ export interface BuildDeckGLLayerWithSymbologyProps<DataT = any> {
   getStemThickness?: Accessor<DataT, number>;
   getHeadSize?: Accessor<DataT, number>;
   getRadius?: Accessor<DataT, number>;
+  updateTriggers?: Record<string, unknown[]>;
 }
 
 type Feature = {geometry: {coordinates: number[]}; properties: Record<string, any>};
@@ -101,7 +102,8 @@ const buildDeckGLLayerWithSymbology = <DataT = any>({
   getStemLength,
   getStemThickness,
   getHeadSize,
-  getRadius
+  getRadius,
+  updateTriggers
 }: BuildDeckGLLayerWithSymbologyProps<DataT>) => {
   return new MVTLayer({
     id,
@@ -113,6 +115,7 @@ const buildDeckGLLayerWithSymbology = <DataT = any>({
     pickable,
     autoHighlight,
     highlightColor,
+    updateTriggers,
     renderSubLayers: (props: any) => {
       if (!props.data) {
         return null;
@@ -140,7 +143,8 @@ const buildDeckGLLayerWithSymbology = <DataT = any>({
         highlightColor,
         stroked,
         getLineWidth,
-        getLineColor
+        getLineColor,
+        updateTriggers
       });
     }
   });

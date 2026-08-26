@@ -57,8 +57,16 @@ export default class DynamicArrowLayer<DataT = any, ExtraPropsT extends {} = {}>
     vStemThickness = instanceStemThicknesses;
     vHeadSize = instanceHeadSizes;
     vLineWidth = instanceLineWidths;
-    vArrowFill = vec4(instanceArrowFillColors.rgb, instanceArrowFillColors.a * layer.opacity);
-    vArrowLine = vec4(instanceArrowLineColors.rgb, instanceArrowLineColors.a * layer.opacity);
+    
+    // Fix: Remove pow(2.2) to prevent dark gamma fringes on anti-aliased edges.
+    // Premultiply by alpha standardly.
+    vec3 fillRGB = instanceArrowFillColors.rgb;
+    float fillA = instanceArrowFillColors.a * layer.opacity;
+    vArrowFill = vec4(fillRGB * fillA, fillA);
+    
+    vec3 lineRGB = instanceArrowLineColors.rgb;
+    float lineA = instanceArrowLineColors.a * layer.opacity;
+    vArrowLine = vec4(lineRGB * lineA, lineA);
     
     // 'positions' is a built-in deck.gl attribute for the base mesh geometry (-1.0 to +1.0)
     vLocalPos = positions.xy;
@@ -133,31 +141,42 @@ export default class DynamicArrowLayer<DataT = any, ExtraPropsT extends {} = {}>
     float dist = min(min(d1, d2), min(d3, d4));
     
     // 3. Anti-aliasing and Outward Stroke logic
-    // FIX: Calculate pixel size using the coordinate space itself (p.x), NOT the distance field (dist).
-    // The derivative of 'dist' drops to zero at geometric creases (like the head/stem joint), causing the stroke to vanish.
     float pixelSize = length(vec2(dFdx(p.x), dFdy(p.x))); 
-    // Constant screen-pixel stroke width, independent of arrow size/shape or zoom
-    float strokeW = vLineWidth * pixelSize; 
-    float feather = 1.0 * pixelSize; 
+    
+    // Detect if the arrow is selected based on the transparent alpha
+    bool isSelected = vArrowLine.a > 0.1;
+    
+    // Reduce unselected stroke width to 0.5 pixels for a softer look
+    float activeStrokeW = (isSelected ? vLineWidth : 0.5) * pixelSize; 
+    
+    // Use a standard soft feather for the outer boundary to smooth it against the map background
+    float outerFeather = 1.0 * pixelSize; 
+    
+    // FIX: Use a razor-sharp feather for the inner boundary between Fill and Stroke. 
+    // A wide feather linearly mixes complementary colors (like Red + Cyan), creating a muddy Dark Gray ring.
+    float innerFeather = 0.15 * pixelSize; 
     
     // Create a true Signed Distance Field: negative inside, positive outside
     float signedDist = isInside ? -dist : dist;
     
     // Discard pixels far outside the stroke buffer
-    if (signedDist > strokeW + feather) {
+    if (signedDist > activeStrokeW + outerFeather) {
       discard;
     }
     
     // 1. Calculate the outer edge anti-aliasing (fade to transparent)
-    float outerAlpha = 1.0 - smoothstep(strokeW - feather, strokeW + feather, signedDist);
+    float outerAlpha = 1.0 - smoothstep(activeStrokeW - outerFeather, activeStrokeW + outerFeather, signedDist);
     
-    // 2. Mix the Fill and Line colors perfectly at the original boundary (signedDist == 0.0)
-    // If inside (-feather), it's 100% Fill. If outside (+feather), it's 100% Line.
-    float fillMix = 1.0 - smoothstep(-feather, feather, signedDist);
+    // 2. Mix the Fill and Line colors perfectly using the sharp inner feather
+    float fillMix = 1.0 - smoothstep(-innerFeather, innerFeather, signedDist);
     
-    // 3. Apply the final colors
-    color = mix(vArrowLine, vArrowFill, fillMix);
-    color.a *= outerAlpha;
+    // 3. Explicitly use a black stroke for unselected arrows, and the Cyan color for selected
+    // Drop the opacity of the unselected black stroke to 50% so it feels less harsh
+    vec4 finalStrokeColor = isSelected ? vArrowLine : vec4(0.0, 0.0, 0.0, vArrowFill.a * 0.5); 
+    
+    // Apply the final colors
+    color = mix(finalStrokeColor, vArrowFill, fillMix);
+    color *= outerAlpha; 
   `
     };
 

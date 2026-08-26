@@ -5,7 +5,7 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
 import chroma from 'chroma-js';
-import buildDeckGLLayerWithSymbology, { getRadiusUnits } from '../../layers/factory/buildDeckGLLayerWithSymbology';
+import buildDeckGLLayerWithSymbology from '../../layers/factory/buildDeckGLLayerWithSymbology';
 
 // const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_cog.tif';
 const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_z4_bilinear_cog.tif';
@@ -33,6 +33,7 @@ const INITIAL_VIEW_STATE = {
 const TabqaDam = () => {
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
     const [glazeMode, setGlazeMode] = useState('precalculated');
+    const [selectedFeature, setSelectedFeature] = useState(null);
 
     const basemap = new TileLayer({
         id: 'osm-basemap',
@@ -81,7 +82,52 @@ const TabqaDam = () => {
         },
     });
 
-    const radiusUnits = getRadiusUnits(viewState.zoom);
+    // Always use pixels so arrows maintain consistent, legible screen sizes at all zooms
+    const radiusUnits = 'pixels';
+
+    // Helper to safely extract a number from various possible property keys
+    const getNum = (f, keys, fallback = 0) => {
+        for (const key of keys) {
+            if (f.properties[key] !== undefined && f.properties[key] !== null) {
+                return Number(f.properties[key]);
+            }
+        }
+        return fallback;
+    };
+
+    const getArrowFillColor = (f) => {
+        const vel = getNum(f, ['vel_avg', 'VEL_AVG', 'vel_last', 'VEL_LAST']);
+        return [...colorScale(vel).rgb(), 255];
+    };
+    
+    const getArrowAngle = (f) => {
+        const azAng = getNum(f, ['az_ang', 'AZ_ANG'], null);
+        if (azAng !== null) return 180 + azAng;
+        
+        const vel = getNum(f, ['vel_avg', 'VEL_AVG', 'vel_last', 'VEL_LAST']);
+        return vel < 0 ? 80 : 260;
+    };
+    
+    const getArrowStemLength = (f) => {
+        const rel = getNum(f, ['REL', 'rel', 'vel_rel', 'VEL_REL']);
+        return normalize(rel, 0, 1, 0.2, 0.8);
+    };
+    
+    const getArrowStemThickness = (f) => {
+        const relLen = getNum(f, ['REL_LEN', 'rel_len']);
+        return normalize(relLen, 0.4, 1, 0.05, 0.2);
+    };
+    
+    const getArrowHeadSize = (f) => {
+        const coh = getNum(f, ['COH_MOD', 'coh_mod', 'COH', 'coh']);
+        return normalize(coh, 0.4, 1, 0.15, 0.3);
+    };
+    
+    const getArrowRadius = (f) => {
+        const vel = getNum(f, ['vel_avg', 'VEL_AVG', 'vel_last', 'VEL_LAST']);
+        // Returns the pure pixel size (scaled up to 32-80)
+        return normalize(Math.abs(vel), 0, 21, 32, 80); 
+    };
 
     const mvtPoints = buildDeckGLLayerWithSymbology({
         id: 'tabqua-116a-123d-points',
@@ -89,23 +135,24 @@ const TabqaDam = () => {
         minZoom: 0,
         maxZoom: 14,
         radiusUnits,
-        getFillColor: (f) => [...colorScale(Number(f.properties.VEL_LAST) || 0).rgb(), 255],
-        getAngle: (f) => {
-            const azAng = Number(f.properties.az_ang);
-            if (Number.isFinite(azAng)) {
-                return 180 + azAng;
-            }
-            const vel = Number(f.properties.VEL_AVG ?? f.properties.VEL_LAST);
-            return vel < 0 ? 80 : 260;
-        },
-        getStemLength: (f) => normalize(f.properties.REL, 0, 1, 0.2, 0.8),
-        getStemThickness: (f) => normalize(Number(f.properties.REL_LEN) || 0, 0.4, 1, 0.05, 0.2),
-        getHeadSize: (f) => normalize(Number(f.properties.COH_MOD) || 0, 0.4, 1, 0.15, 0.3),
-        getRadius: (f) => {
-            const size = normalize(Math.abs(Number(f.properties.VEL_LAST) || 0), 0, 21, 5, 16);
-            return radiusUnits === 'meters' ? size * 8 : size;
-        },
+        getFillColor: getArrowFillColor,
+        getAngle: getArrowAngle,
+        getStemLength: getArrowStemLength,
+        getStemThickness: getArrowStemThickness,
+        getHeadSize: getArrowHeadSize,
+        getRadius: getArrowRadius,
+        // 1. Keep line width CONSTANT so the WebGL quad never resizes/shifts
         getLineWidth: 6,
+        // 2. Toggle stroke visibility using the Alpha channel to prevent undefined === undefined bugs
+        getLineColor: (f) => {
+            if (!selectedFeature) return [0, 255, 255, 0];
+            const matchesId = f.id !== undefined && f.id === selectedFeature.id;
+            const matchesFid = f.properties?.fid !== undefined && f.properties?.fid === selectedFeature.properties?.fid;
+            return (matchesId || matchesFid) ? [0, 255, 255, 255] : [0, 255, 255, 0];
+        },
+        updateTriggers: {
+            getLineColor: [selectedFeature]
+        }
     });
 
     const layers = [
@@ -118,6 +165,7 @@ const TabqaDam = () => {
         <DeckGL
             viewState={viewState}
             onViewStateChange={({ viewState }) => setViewState(viewState)}
+            onClick={(info) => setSelectedFeature(info.object || null)}
             controller={true}
             layers={layers}
             views={new MapView({ repeat: true })}
