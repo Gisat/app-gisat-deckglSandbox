@@ -20,6 +20,7 @@ import MetroDarrows3D from "./MetroD_arrows_3D/index.jsx";
 import devSeedCOG from "./DevSeedCOG/CogMap.jsx";
 import CogTerrainKernel from './CogTerrainKernel';
 import MisicuniDam from './Misicuni_dam/index.jsx';
+import TabqaDam from './Tabqa_dam/index.jsx';
 import GisatDataService from './GisatDataService/index.jsx';
 import SelectionDrawing3D from './SelectionDrawing3D/index.jsx';
 import ArrowLODStream3D from './ArrowLODStream_3D/Map3D.jsx';
@@ -54,6 +55,7 @@ const mapApps = [
     { category: '3DFLUS CCN', name: 'Terrain Interactive Slider', path: '/terrain-interactive-slider', component: MisicuniDam },
     { category: '3DFLUS CCN', name: 'Selection Drawing 3D', path: '/selection-drawing-3d', component: SelectionDrawing3D },
     { category: 'GDA Water', name: 'Misicuni Dam', path: '/misicuni-dam', component: MisicuniDam, description: 'Simple dam presentation map connected to GDA Water group' },
+    { category: 'GDA Water', name: 'Tabqa Dam', path: '/tabqa', component: TabqaDam, description: 'Tabqa Dam, Syria - OSM basemap' },
 ];
 
 export default mapApps;
