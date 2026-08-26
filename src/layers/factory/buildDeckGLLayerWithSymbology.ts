@@ -12,7 +12,6 @@ export interface BuildDeckGLLayerWithSymbologyProps<DataT = any> {
   pickable?: boolean;
   autoHighlight?: boolean;
   highlightColor?: Color;
-  stroked?: boolean;
   getLineWidth?: Accessor<DataT, number>;
   getLineColor?: Accessor<DataT, Color>;
   radiusUnits?: 'meters' | 'common' | 'pixels';
@@ -93,7 +92,6 @@ const buildDeckGLLayerWithSymbology = <DataT = any>({
   pickable = true,
   autoHighlight = true,
   highlightColor = [255, 255, 0, 255],
-  stroked = true,
   getLineWidth = 2,
   getLineColor = [0, 0, 0, 255],
   radiusUnits = 'pixels',
@@ -141,7 +139,7 @@ const buildDeckGLLayerWithSymbology = <DataT = any>({
         pickable,
         autoHighlight,
         highlightColor,
-        stroked,
+        stroked: true,
         getLineWidth,
         getLineColor,
         updateTriggers
