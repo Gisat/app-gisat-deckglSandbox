@@ -114,15 +114,16 @@ const TabqaDam = () => {
         return normalize(rel, 0, 1, 0.45, 0.9);
     };
     
-    const getArrowStemThickness = (f) => {
-        const relLen = getNum(f, ['REL_LEN', 'rel_len']);
-        // Increased min thickness from 0.05 to 0.1 for better visibility
-        return normalize(relLen, 0.4, 1, 0.1, 0.3);
-    };
-    
     const getArrowHeadSize = (f) => {
         const coh = getNum(f, ['COH_MOD', 'coh_mod', 'COH', 'coh']);
         return normalize(coh, 0.4, 1, 0.15, 0.3);
+    };
+    
+    const getArrowStemThickness = (f) => {
+        const relLen = getNum(f, ['REL_LEN', 'rel_len']);
+        // Max width equals the max head size (0.3); also clamped per-feature so the stem is never wider than its own head
+        const thickness = normalize(relLen, 0.4, 1, 0.1, 0.3);
+        return Math.min(thickness, getArrowHeadSize(f));
     };
     
     const getArrowRadius = (f) => {
