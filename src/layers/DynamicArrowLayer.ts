@@ -58,15 +58,14 @@ export default class DynamicArrowLayer<DataT = any, ExtraPropsT extends {} = {}>
     vHeadSize = instanceHeadSizes;
     vLineWidth = instanceLineWidths;
     
-    // Fix: Remove pow(2.2) to prevent dark gamma fringes on anti-aliased edges.
-    // Premultiply by alpha standardly.
+    // Use straight (unpremultiplied) alpha to match deck.gl's SRC_ALPHA / ONE_MINUS_SRC_ALPHA blending
     vec3 fillRGB = instanceArrowFillColors.rgb;
     float fillA = instanceArrowFillColors.a * layer.opacity;
-    vArrowFill = vec4(fillRGB * fillA, fillA);
+    vArrowFill = vec4(fillRGB, fillA);
     
     vec3 lineRGB = instanceArrowLineColors.rgb;
     float lineA = instanceArrowLineColors.a * layer.opacity;
-    vArrowLine = vec4(lineRGB * lineA, lineA);
+    vArrowLine = vec4(lineRGB, lineA);
     
     // 'positions' is a built-in deck.gl attribute for the base mesh geometry (-1.0 to +1.0)
     vLocalPos = positions.xy;
@@ -176,7 +175,8 @@ export default class DynamicArrowLayer<DataT = any, ExtraPropsT extends {} = {}>
     
     // Apply the final colors
     color = mix(finalStrokeColor, vArrowFill, fillMix);
-    color *= outerAlpha; 
+    // Straight alpha: fade only the alpha for coverage, not the RGB
+    color.a *= outerAlpha; 
   `
     };
 
