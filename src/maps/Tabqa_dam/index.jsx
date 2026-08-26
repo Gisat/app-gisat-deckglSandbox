@@ -5,7 +5,7 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
 import chroma from 'chroma-js';
-import buildDeckGLLayerWithSymbology from '../../layers/factory/buildDeckGLLayerWithSymbology';
+import buildDeckGLLayerWithSymbology, { getRadiusUnits } from '../../layers/factory/buildDeckGLLayerWithSymbology';
 
 // const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_cog.tif';
 const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_z4_bilinear_cog.tif';
@@ -81,12 +81,14 @@ const TabqaDam = () => {
         },
     });
 
+    const radiusUnits = getRadiusUnits(viewState.zoom);
+
     const mvtPoints = buildDeckGLLayerWithSymbology({
         id: 'tabqua-116a-123d-points',
         data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/los_tiles/{z}/{x}/{y}.pbf',
         minZoom: 0,
         maxZoom: 14,
-        radiusUnits: 'pixels',
+        radiusUnits,
         getFillColor: (f) => [...colorScale(Number(f.properties.VEL_LAST) || 0).rgb(), 255],
         getAngle: (f) => {
             const azAng = Number(f.properties.az_ang);
@@ -99,7 +101,10 @@ const TabqaDam = () => {
         getStemLength: (f) => normalize(f.properties.REL, 0, 1, 0.2, 0.8),
         getStemThickness: (f) => normalize(Number(f.properties.REL_LEN) || 0, 0.4, 1, 0.05, 0.2),
         getHeadSize: (f) => normalize(Number(f.properties.COH_MOD) || 0, 0.4, 1, 0.15, 0.3),
-        getRadius: (f) => normalize(Math.abs(Number(f.properties.VEL_LAST) || 0), 0, 21, 16, 100),
+        getRadius: (f) => {
+            const size = normalize(Math.abs(Number(f.properties.VEL_LAST) || 0), 0, 21, 5, 16);
+            return radiusUnits === 'meters' ? size * 8 : size;
+        },
         getLineWidth: 6,
     });
 
