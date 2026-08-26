@@ -150,8 +150,8 @@ const TabqaDam = () => {
         getStemThickness: getArrowStemThickness,
         getHeadSize: getArrowHeadSize,
         getRadius: getArrowRadius,
-        // 1. Keep line width CONSTANT so the WebGL quad never resizes/shifts
-        getLineWidth: 6,
+        // 1. Inflate the deck.gl quad geometry so the outward SDF stroke doesn't get clipped by the circular discard mask
+        getLineWidth: 24,
         // 2. Toggle stroke visibility using the Alpha channel to prevent undefined === undefined bugs
         getLineColor: (f) => {
             if (!selectedFeature) return [0, 255, 255, 0];

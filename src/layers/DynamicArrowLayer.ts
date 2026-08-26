@@ -146,7 +146,8 @@ export default class DynamicArrowLayer<DataT = any, ExtraPropsT extends {} = {}>
     bool isSelected = vArrowLine.a > 0.1;
     
     // Reduce unselected stroke width to 0.5 pixels for a softer look
-    float activeStrokeW = (isSelected ? vLineWidth : 0.5) * pixelSize; 
+    // Ignore the inflated vLineWidth padding and hardcode the visual stroke to 6.0 pixels
+    float activeStrokeW = (isSelected ? 6.0 : 0.5) * pixelSize; 
     
     // Use a standard soft feather for the outer boundary to smooth it against the map background
     float outerFeather = 1.0 * pixelSize; 
