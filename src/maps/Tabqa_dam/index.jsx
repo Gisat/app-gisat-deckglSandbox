@@ -204,6 +204,7 @@ const TabqaDam = () => {
                 <label style={{ display: 'block', marginBottom: 4, cursor: 'pointer' }}>
                     <input
                         type="radio"
+                        name="glazeMode"
                         value="precalculated"
                         checked={glazeMode === 'precalculated'}
                         onChange={() => setGlazeMode('precalculated')}
@@ -214,6 +215,7 @@ const TabqaDam = () => {
                 <label style={{ display: 'block', cursor: 'pointer' }}>
                     <input
                         type="radio"
+                        name="glazeMode"
                         value="onthefly"
                         checked={glazeMode === 'onthefly'}
                         onChange={() => setGlazeMode('onthefly')}

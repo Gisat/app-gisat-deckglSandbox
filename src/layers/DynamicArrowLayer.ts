@@ -143,7 +143,8 @@ export default class DynamicArrowLayer<DataT = any, ExtraPropsT extends {} = {}>
     float pixelSize = length(vec2(dFdx(p.x), dFdy(p.x))); 
     
     // Detect if the arrow is selected based on the transparent alpha
-    bool isSelected = vArrowLine.a > 0.1;
+    // Check for > 0.0 so selection works perfectly regardless of the overall layer.opacity scale
+    bool isSelected = vArrowLine.a > 0.0; 
     
     // Reduce unselected stroke width to 0.5 pixels for a softer look
     // Ignore the inflated vLineWidth padding and hardcode the visual stroke to 6.0 pixels
