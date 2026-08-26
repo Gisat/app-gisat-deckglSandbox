@@ -113,7 +113,8 @@ export default class DynamicArrowLayer<DataT = any, ExtraPropsT extends {} = {}>
     // 1. Boolean inside check (defines the fill area)
     bool inStem = p_abs.x <= thick && p.y >= 0.0 && p.y <= headBaseY;
     float currentHeadWidth = head * (headTipY - p.y) / max(head, 0.0001);
-    bool inHead = p.y > headBaseY && p.y <= headTipY && p_abs.x <= currentHeadWidth;
+    // FIX: Changed '>' to '>=' to guarantee no microscopic floating-point gaps at the exact joint
+    bool inHead = p.y >= headBaseY && p.y <= headTipY && p_abs.x <= currentHeadWidth;
     bool isInside = inStem || inHead;
     
     // 2. Exact Euclidean distance to the arrow boundary (4 line segments)
@@ -132,8 +133,10 @@ export default class DynamicArrowLayer<DataT = any, ExtraPropsT extends {} = {}>
     float dist = min(min(d1, d2), min(d3, d4));
     
     // 3. Anti-aliasing and Outward Stroke logic
-    // Use Euclidean length of the screen-space derivatives to ensure uniform stroke thickness on all angles
-    float pixelSize = length(vec2(dFdx(dist), dFdy(dist))); 
+    // FIX: Calculate pixel size using the coordinate space itself (p.x), NOT the distance field (dist).
+    // The derivative of 'dist' drops to zero at geometric creases (like the head/stem joint), causing the stroke to vanish.
+    float pixelSize = length(vec2(dFdx(p.x), dFdy(p.x))); 
+    // Constant screen-pixel stroke width, independent of arrow size/shape or zoom
     float strokeW = vLineWidth * pixelSize; 
     float feather = 1.0 * pixelSize; 
     
