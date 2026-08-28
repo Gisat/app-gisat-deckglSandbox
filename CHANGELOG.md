@@ -1,3 +1,26 @@
+## [1.4.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.3.1...v1.4.0) (2026-08-28)
+
+### Features
+
+* add Raw DEM third visualization option and update COG URLs to bilinear variants ([9043da5](https://github.com/Gisat/app-gisat-deckglSandbox/commit/9043da5c8c2ac1f6b7c5476311c3e8de9bb073bb))
+* add Tabqa Dam map app under GDA Water group with OSM basemap and dual glaze layer toggle ([2afec39](https://github.com/Gisat/app-gisat-deckglSandbox/commit/2afec39ce27c91b08ffe39845fe6323b11435a6f))
+* **Tabqa_dam:** add arrow selection with cyan stroke and pixel-locked sizing ([cc78a61](https://github.com/Gisat/app-gisat-deckglSandbox/commit/cc78a6163472803c3d6153f7c9cab12ab83ba97d))
+* **Tabqa_dam:** add MVT point layer from los_tiles data service ([1e9a3f9](https://github.com/Gisat/app-gisat-deckglSandbox/commit/1e9a3f98b93f3ac13f767454557f31e4d54c0818))
+* **Tabqa_dam:** hybrid radius units with seamless zoom 16 transition ([8b0c15c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8b0c15cc1eafc0658c6047f06f0fff690ac2aede))
+* **Tabqa_dam:** let arrow head dominate stem at low REL like 3D model ([8685134](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8685134d59056cea6f5932823dffe36696448a08))
+* **Tabqa_dam:** make arrow size zoom-adaptive with meters/pixels units ([fba3a1e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/fba3a1e7d15793160fac3a788370540f9c58dc4c))
+* **Tabqa_dam:** render dynamic arrows with SDF shader layer ([b30e823](https://github.com/Gisat/app-gisat-deckglSandbox/commit/b30e823d1215a38f5058f89e40ab576c3c42e8d5))
+
+### Bug Fixes
+
+* **DynamicArrowLayer:** expand quad geometry to prevent clipped SDF tip ([62271b9](https://github.com/Gisat/app-gisat-deckglSandbox/commit/62271b92d3852bbe923d9e8729ddbdde055dd9f2))
+* **DynamicArrowLayer:** fix shader precision and make arrows pixel-sized across zooms ([2fa85d1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/2fa85d1e6d90d98630d0ca7390272f166ba16997))
+* **DynamicArrowLayer:** use straight alpha to match deck.gl blending ([f0a62b6](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f0a62b60c3693105349d69da4a8856132d0aa58a))
+* radio group accessibility and selection opacity threshold ([29af350](https://github.com/Gisat/app-gisat-deckglSandbox/commit/29af350964ebb9d2c3c04ad24b157085f3f0b902))
+* **release:** pin conventional-changelog-conventionalcommits to v9 ([5029024](https://github.com/Gisat/app-gisat-deckglSandbox/commit/5029024e3c86923663edbf7b29795772e87cb92a))
+* **Tabqa_dam:** cap stem thickness at head size so the stem is never wider ([88432e1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/88432e1252d028b350c01aabfae3309891d56c79))
+* **Tabqa_dam:** raise stem bounds to prevent collapse and render arrows above glaze ([8778414](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8778414e65ed9edc6224a26551b40b385a2a43c1))
+
 ## [1.3.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.3.0...v1.3.1) (2026-06-19)
 
 ### Bug Fixes
