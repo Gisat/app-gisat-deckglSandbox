@@ -1,3 +1,17 @@
+## [1.5.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.4.0...v1.5.0) (2026-09-03)
+
+### Features
+
+* **Nepal:** add ASC/DSC InSAR spheres clamped to terrain ([64e776c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/64e776cd47fa37fcc66a2d84f5d5e9dc8da15961))
+* **Nepal:** add GISAT logo to the lower-left corner ([d73b39e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d73b39e1fc1effe538a6c90a81ecaf702943043b))
+* **Nepal:** add shaded satellite terrain map from COP30 DEM ([f4b37cc](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f4b37cc1cab9cec555c95dd1d064a788c574e9e2))
+* **Nepal:** add slope and elevation overlays, zRange for glaze ([164f664](https://github.com/Gisat/app-gisat-deckglSandbox/commit/164f664124065003a9f174e149113a97210d5e9e))
+* **Nepal:** add snow cover overlays and stack imagery under relief glaze ([3e632c2](https://github.com/Gisat/app-gisat-deckglSandbox/commit/3e632c21694a6eef64268a18cb426cb9a4f552cf))
+* **Nepal:** add switchable Esri satellite basemap and light map theme ([13ac0a1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/13ac0a10fecf78e1be8502f6d0ca99e9bf181104))
+* **Nepal:** add switchable SWIR overlays and independent layer checkboxes ([3fe8236](https://github.com/Gisat/app-gisat-deckglSandbox/commit/3fe82362e65ed20c078269c6a8d5b56bcd64127e))
+* **Nepal:** render precalculated relief glaze overlay ([cfa35d4](https://github.com/Gisat/app-gisat-deckglSandbox/commit/cfa35d450dfcc908c31c6bea81c40f341c855aa1))
+* **Nepal:** show snow cover 2020 and 2021 bands ([186f7e7](https://github.com/Gisat/app-gisat-deckglSandbox/commit/186f7e7d7e5c1c9f9d807d585237849c2eca415a))
+
 ## [1.4.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.3.1...v1.4.0) (2026-08-28)
 
 ### Features
