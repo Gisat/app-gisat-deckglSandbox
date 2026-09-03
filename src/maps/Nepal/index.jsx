@@ -126,7 +126,7 @@ const INITIAL_VIEW_STATE = {
   zoom: 11,
   pitch: 50,
   bearing: 0,
-  minZoom: 4,
+  minZoom: 11,
   maxZoom: 13,
   maxPitch: 70,
 };
@@ -137,6 +137,7 @@ const SPHERE_RADIUS = 15;
 function NepalMap() {
   const { zRange, onZRangeUpdate } = useTerrainZRange();
   const [visibility, setVisibility] = useState({
+    satellite: true,
     asc: true,
     dsc: false,
     swir2020: false,
@@ -213,7 +214,7 @@ function NepalMap() {
         elevationData: DEM_COG_URL,
         isTiled: true,
         tileSize: 256,
-        operation: 'terrain',
+        operation: 'terrain+draw',
         terrainOptions: {
           type: 'terrain',
           useChannel: 1,
@@ -227,6 +228,7 @@ function NepalMap() {
       new TileLayer({
         data: SATELLITE_TILE_URL,
         id: 'satellite-base',
+        visible: visibility.satellite,
         minZoom: 0,
         maxZoom: 19,
         tileSize: 256,
@@ -269,7 +271,14 @@ function NepalMap() {
   }, [zRange, onZRangeUpdate, visibility, featuresByTrack]);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+    <div style={{
+      position: 'relative',
+      width: '100%',
+      height: '100%',
+      overflow: 'hidden',
+      colorScheme: 'light',
+      background: '#ffffff',
+    }}>
       <DeckGL
         initialViewState={INITIAL_VIEW_STATE}
         controller={true}
@@ -339,6 +348,16 @@ function NepalMap() {
             {layer.label}
           </label>
         ))}
+        <div style={{ height: 1, background: '#ddd', margin: '4px 0' }} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none' }}>
+          <input
+            type="checkbox"
+            checked={visibility.satellite}
+            onChange={(e) => setVisibility(prev => ({ ...prev, satellite: e.target.checked }))}
+            style={{ cursor: 'pointer', width: 15, height: 15 }}
+          />
+          Satellite imagery (ESRI)
+        </label>
       </div>
     </div>
   );
