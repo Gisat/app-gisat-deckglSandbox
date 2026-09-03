@@ -285,6 +285,19 @@ function NepalMap() {
         layers={layers}
         deviceProps={{ waitForPageLoad: false }}
       />
+      <img
+        src="https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/gisat_logo_RGB.png?v=2"
+        crossOrigin="anonymous"
+        alt="GISAT logo"
+        style={{
+          position: 'absolute',
+          left: 8,
+          bottom: 8,
+          height: 32,
+          zIndex: 10,
+          pointerEvents: 'none',
+        }}
+      />
       <div style={{
         position: 'absolute',
         top: 10,
