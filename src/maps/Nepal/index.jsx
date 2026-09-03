@@ -12,6 +12,8 @@ import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
 const sphereGeometry = new SphereGeometry();
 
 const DEM_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_terrain/DEM_COP30_float32_wgs84_deflate_cog_float32.tif';
+// Precalculated relief glaze overlay (single band, pixel value = hillshade strength)
+const GLAZE_COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/DEM_COP30_float32_wgs84_deflate_cog_float32_final_glaze_overlay_z4_bilinear_cog.tif';
 const SATELLITE_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const INSAR_URLS = {
   asc: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/nepal_insar_asc.geojson',
@@ -247,23 +249,22 @@ function NepalMap() {
       // Imagery overlays (sentinels + snow) render under the relief glaze below
       ...cogOverlayLayers,
       new CogBitmapLayer({
-        id: 'relief-glaze-overlay',
-        rasterData: DEM_COG_URL,
+        id: 'glaze-precalculated',
+        rasterData: GLAZE_COG_URL,
         isTiled: true,
         tileSize: 256,
         clampToTerrain: true,
         extensions: [new TerrainExtension()],
+        opacity: 0.1,
         _subLayerProps: {
           tiles: { zRange },
         },
         cogBitmapOptions: {
           type: 'image',
-          useReliefGlaze: true,
-          noDataValue: 0,
-          useChannel: 1,
-          swissSlopeWeight: 0.3,
-          zFactor: 10,
-          maxGlazeAlpha: 80,
+          useHeatMap: true,
+          colorScaleValueRange: [0, 255],
+          colorScale: ['#000000', '#000000'],
+          useDataForOpacity: true,
         },
       }),
       ...insarLayers,
