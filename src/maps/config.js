@@ -19,6 +19,7 @@ import geoParquetVirtualTiles from './GeoParquetVirtualTile/VirtualTilesMap.jsx'
 import MetroDarrows3D from "./MetroD_arrows_3D/index.jsx";
 import devSeedCOG from "./DevSeedCOG/CogMap.jsx";
 import CogTerrainKernel from './CogTerrainKernel';
+import NepalMap from './Nepal';
 import MisicuniDam from './Misicuni_dam/index.jsx';
 import TabqaDam from './Tabqa_dam/index.jsx';
 import GisatDataService from './GisatDataService/index.jsx';
@@ -47,6 +48,7 @@ const mapApps = [
     { category: 'GeoParquet', name: 'GeoParquet Tiled', path: '/geoparquet-tiled', component: geoParquetTiled },
     { category: 'GeoParquet', name: 'GeoParquet Virtual Tiles', path: '/geoparquet-virtual-tiles', component: geoParquetVirtualTiles },
     { category: 'Other', name: 'Deck.gl-raster COG', path: '/deck.gl-raster', component: devSeedCOG },
+    { category: 'Other', name: 'Nepal', path: '/nepal', component: NepalMap, description: 'Nepal COP30 terrain COG with satellite imagery overlay' },
     // { name: 'Test Gisat Geotiff', path: '/test-gisat-geotiff', component: GisatGeotiffMap, description: 'Testing Gisat Geotiff rendering' },
     { category: '3DFLUS CCN', name: 'COG Terrain Kernel', path: '/cog-kernel', component: CogTerrainKernel, description: 'Showcase kernel calculation and hover features with deck.gl-geotiff' },
     { category: '3DFLUS CCN', name: 'Gisat Data Service', path: '/gisat-data-service', component: GisatDataService },
