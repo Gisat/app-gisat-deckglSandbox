@@ -24,21 +24,47 @@ const SWIR_LAYERS = [
   { key: 'swir2021', label: 'SWIR 2021 (post-GLOF)', url: 'https://gisat-gis.eu-central-1.linodeobjects.com/esaGdaAdbNepal23/rasters/sentinel_cog/2021-10-12-00_00_2021-10-12-23_59_Sentinel-2_L1C_SWIR_cog_nodata.tif', cogBitmapOptions: { type: 'image', useChannel: null } },
 ];
 
-// Snow cover / wet snow: multi-channel COG (5 bands, 2017–2021). Values are day-of-year;
-// channel 4 (2021) is used for now. Heatmap: continuous chroma ramp over days.
+// Snow cover / wet snow: multi-channel COG (5 bands: 2017..2021). Values are day-of-year.
+// Heatmap: continuous chroma ramp over days.
 const SNOW_COG_BITMAP_OPTIONS = {
   type: 'image',
-  useChannel: 4,
   useHeatMap: true,
   noDataValue: 0,
   blurredTexture: false,
   colorScale: ['#fde725', '#5dc962', '#20908d', '#3a528b', '#440154'],
-  colorScaleValueRange: [1, 100, 200, 300, 366],
+  colorScaleValueRange: [1, 400],
 };
 
+const SNOW_YEARS = [
+  { year: 2020, channel: 4 },
+  { year: 2021, channel: 5 },
+];
+
 const SNOW_LAYERS = [
-  { key: 'snow2021', label: 'Snow cover 2021', url: 'https://gisat-gis.eu-central-1.linodeobjects.com/esaGdaAdbNepal23/rasters/snow_cover_cog/SNOW_3857_2017-2021_cog_deflate_in16_zoom16_levels8.tif', cogBitmapOptions: SNOW_COG_BITMAP_OPTIONS },
-  { key: 'wetsnow2021', label: 'Wet snow 2021', url: 'https://gisat-gis.eu-central-1.linodeobjects.com/esaGdaAdbNepal23/rasters/snow_cover_cog/WET_SNOW_3857_2017-2021_cog_deflate_in16_zoom16_levels8.tif', cogBitmapOptions: SNOW_COG_BITMAP_OPTIONS },
+  {
+    key: 'snow2020',
+    label: 'Snow cover 2020',
+    url: 'https://gisat-gis.eu-central-1.linodeobjects.com/esaGdaAdbNepal23/rasters/snow_cover_cog/SNOW_3857_2017-2021_cog_deflate_in16_zoom16_levels8.tif',
+    cogBitmapOptions: { ...SNOW_COG_BITMAP_OPTIONS, useChannel: SNOW_YEARS[0].channel },
+  },
+  {
+    key: 'snow2021',
+    label: 'Snow cover 2021',
+    url: 'https://gisat-gis.eu-central-1.linodeobjects.com/esaGdaAdbNepal23/rasters/snow_cover_cog/SNOW_3857_2017-2021_cog_deflate_in16_zoom16_levels8.tif',
+    cogBitmapOptions: { ...SNOW_COG_BITMAP_OPTIONS, useChannel: SNOW_YEARS[1].channel },
+  },
+  {
+    key: 'wetsnow2020',
+    label: 'Wet snow 2020',
+    url: 'https://gisat-gis.eu-central-1.linodeobjects.com/esaGdaAdbNepal23/rasters/snow_cover_cog/WET_SNOW_3857_2017-2021_cog_deflate_in16_zoom16_levels8.tif',
+    cogBitmapOptions: { ...SNOW_COG_BITMAP_OPTIONS, useChannel: SNOW_YEARS[0].channel },
+  },
+  {
+    key: 'wetsnow2021',
+    label: 'Wet snow 2021',
+    url: 'https://gisat-gis.eu-central-1.linodeobjects.com/esaGdaAdbNepal23/rasters/snow_cover_cog/WET_SNOW_3857_2017-2021_cog_deflate_in16_zoom16_levels8.tif',
+    cogBitmapOptions: { ...SNOW_COG_BITMAP_OPTIONS, useChannel: SNOW_YEARS[1].channel },
+  },
 ];
 
 const SLOPE_COG_BITMAP_OPTIONS = {
@@ -115,7 +141,9 @@ function NepalMap() {
     dsc: false,
     swir2020: false,
     swir2021: false,
+    snow2020: false,
     snow2021: false,
+    wetsnow2020: false,
     wetsnow2021: false,
     slope: false,
     elevation: false,
