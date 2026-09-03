@@ -41,6 +41,33 @@ const SNOW_LAYERS = [
   { key: 'wetsnow2021', label: 'Wet snow 2021', url: 'https://gisat-gis.eu-central-1.linodeobjects.com/esaGdaAdbNepal23/rasters/snow_cover_cog/WET_SNOW_3857_2017-2021_cog_deflate_in16_zoom16_levels8.tif', cogBitmapOptions: SNOW_COG_BITMAP_OPTIONS },
 ];
 
+const SLOPE_COG_BITMAP_OPTIONS = {
+  type: 'image',
+  useChannel: 1,
+  useHeatMap: true,
+  noDataValue: -9999,
+  colorScale: ['#ffffff', '#feff51', '#fd8c3b', '#ff0037'],
+  colorScaleValueRange: [0, 45],
+};
+
+const ELEVATION_COG_BITMAP_OPTIONS = {
+  type: 'image',
+  useChannel: 1,
+  useHeatMap: true,
+  noDataValue: 0,
+  colorScale: [
+    '#00883f', '#109435', '#20a02a', '#31ac1f',
+    '#92b118', '#fab014', '#c88723', '#ac692c',
+    '#af5a2d', '#c8846c', '#ffffff',
+  ],
+  colorScaleValueRange: [900, 5800],
+};
+
+const TERRAIN_LAYERS = [
+  { key: 'slope', label: 'Slope', url: 'https://gisat-gis.eu-central-1.linodeobjects.com/esaGdaAdbNepal23/rasters/copdem_cog/copdem_slope_cog_deflate_float32_levels8.tif', cogBitmapOptions: SLOPE_COG_BITMAP_OPTIONS },
+  { key: 'elevation', label: 'Elevation', url: DEM_COG_URL, cogBitmapOptions: ELEVATION_COG_BITMAP_OPTIONS },
+];
+
 // vel range (mm/yr) → color, half-open [low, high) except last which is inclusive.
 // Alpha = 0.85 × 255 ≈ 217; missing/null vel → #cccccc.
 const VEL_COLOR_BANDS = [
@@ -90,6 +117,8 @@ function NepalMap() {
     swir2021: false,
     snow2021: false,
     wetsnow2021: false,
+    slope: false,
+    elevation: false,
   });
   const [featuresByTrack, setFeaturesByTrack] = useState({ asc: [], dsc: [] });
 
@@ -132,7 +161,7 @@ function NepalMap() {
     ));
 
     // Render in reverse of UI order so the first listed layer draws on top.
-    const cogOverlayLayers = [...SWIR_LAYERS, ...SNOW_LAYERS].reverse().map(layer => (
+    const cogOverlayLayers = [...SWIR_LAYERS, ...SNOW_LAYERS, ...TERRAIN_LAYERS].reverse().map(layer => (
       new CogBitmapLayer({
         id: layer.key,
         rasterData: layer.url,
@@ -194,6 +223,9 @@ function NepalMap() {
         tileSize: 256,
         clampToTerrain: true,
         extensions: [new TerrainExtension()],
+        _subLayerProps: {
+          tiles: { zRange },
+        },
         cogBitmapOptions: {
           type: 'image',
           useReliefGlaze: true,
@@ -257,6 +289,18 @@ function NepalMap() {
         ))}
         <div style={{ height: 1, background: '#ddd', margin: '4px 0' }} />
         {SNOW_LAYERS.map(layer => (
+          <label key={layer.key} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none' }}>
+            <input
+              type="checkbox"
+              checked={visibility[layer.key]}
+              onChange={(e) => setVisibility(prev => ({ ...prev, [layer.key]: e.target.checked }))}
+              style={{ cursor: 'pointer', width: 15, height: 15 }}
+            />
+            {layer.label}
+          </label>
+        ))}
+        <div style={{ height: 1, background: '#ddd', margin: '4px 0' }} />
+        {TERRAIN_LAYERS.map(layer => (
           <label key={layer.key} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none' }}>
             <input
               type="checkbox"
