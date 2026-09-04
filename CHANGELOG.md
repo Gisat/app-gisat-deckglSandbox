@@ -1,3 +1,9 @@
+## [1.5.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.5.0...v1.5.1) (2026-09-04)
+
+### Bug Fixes
+
+* **Nepal:** pass zRange to CogBitmapLayer for 3D frustum culling ([1e10877](https://github.com/Gisat/app-gisat-deckglSandbox/commit/1e108771e18aceb04ece91019b3e07322fcd779c))
+
 ## [1.5.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.4.0...v1.5.0) (2026-09-03)
 
 ### Features
