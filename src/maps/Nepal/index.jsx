@@ -201,11 +201,9 @@ function NepalMap() {
         tileSize: 256,
         clampToTerrain: true,
         extensions: [new TerrainExtension()],
-        // CogBitmapLayer does not forward zRange itself; push it into its inner
-        // TileLayer so draped tiles are not frustum-culled in tilted 3D view.
-        _subLayerProps: {
-          tiles: { zRange },
-        },
+        // CogBitmapLayer forwards zRange into its inner TileLayer so draped
+        // tiles are not frustum-culled in the tilted 3D view.
+        zRange,
         cogBitmapOptions: layer.cogBitmapOptions,
       })
     ));
@@ -256,9 +254,7 @@ function NepalMap() {
         clampToTerrain: true,
         extensions: [new TerrainExtension()],
         opacity: 0.1,
-        _subLayerProps: {
-          tiles: { zRange },
-        },
+        zRange,
         cogBitmapOptions: {
           type: 'image',
           useHeatMap: true,
