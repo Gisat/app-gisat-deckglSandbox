@@ -16,18 +16,24 @@ const RESCALE = '0,10';
 
 // Clear the lowest 11 bytes (0-10 of 256) -> population below ~0.43/px hidden,
 // plus nodata -200 (clamps to byte 0) also transparent.
-// (Same idiom as UgandaLUC's TRANSPARENT_COLORMAP.)
-const GHS_POP_COLORMAP_TRANSPARENT_LOW = (() => {
+//
+// We send this as a compact override against the NAMED viridis colormap
+// (colormap_name=viridis), not the full 256-entry ramp. A ~9KB inline colormap
+// bypasses the nginx tile cache (deploy/titiler-caching) entirely - measured:
+// no X-Cache-Status, nothing stored. colormap_name + a ~130-byte override keeps
+// the query short so caching engages and repeat views are server-cache HITs.
+const GHS_POP_TRANSPARENT_LOW = (() => {
     const colormap = JSON.parse(GHS_POP_COLORMAP);
-    for (let i = 0; i < 11; i++) colormap[i] = [...colormap[i], 0];
-    return JSON.stringify(colormap);
+    const out = {};
+    for (let i = 0; i < 11; i++) out[i] = [...colormap[i], 0];
+    return JSON.stringify(out);
 })();
 
 const queryParams = [
     'bidx=1',
     `rescale=${RESCALE}`,
-    `colormap=${encodeURIComponent(GHS_POP_COLORMAP_TRANSPARENT_LOW)}`
-    // `colormap=${encodeURIComponent(GHS_POP_COLORMAP)}`
+    `colormap_name=viridis`,
+    `colormap=${encodeURIComponent(GHS_POP_TRANSPARENT_LOW)}`
 ].join('&');
 
 // Global COG -> whole Earth visible from the start.
