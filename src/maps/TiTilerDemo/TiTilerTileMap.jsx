@@ -14,12 +14,16 @@ import './TiTilerEndpointSwitch.css';
 const DEFAULT_TITILER_ENDPOINTS = {
     plain: {
         label: 'TiTiler (plain)',
-        baseUrl: 'http://localhost:8000',
+        // Same-origin Vite proxy path (vite.config.js server.proxy): the page is
+        // served under COEP require-corp, which blocks direct cross-origin fetches
+        // to localhost:8000. '/titiler-plain/...' -> http://localhost:8000/...
+        baseUrl: '/titiler-plain',
         startCommand: 'docker compose -f deploy/titiler/docker-compose.yml up -d',
     },
     caching: {
         label: 'TiTiler + cache',
-        baseUrl: 'http://localhost:8001/api/v1/titiler',
+        // '/titiler/api/v1/titiler/...' -> http://localhost:8001/api/v1/titiler/...
+        baseUrl: '/titiler/api/v1/titiler',
         startCommand: 'docker compose -f deploy/titiler-caching/docker-compose.yml up -d',
     },
 };
