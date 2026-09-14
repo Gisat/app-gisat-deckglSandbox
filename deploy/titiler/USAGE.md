@@ -111,6 +111,8 @@ curl "http://localhost:8000/cog/bounds?url=$(python3 -c 'import urllib.parse,sys
 | Nepal Snow Cover | int16 snow-cover COG (EPSG:3857) | `bidx=1`, `rescale=0,300`, `colormap` |
 | Uganda Multiband (LUC) | multiband LUC COG | `bidx=<15..24>` (band slider), per-band `rescale`, transparent colormap |
 | Manila RGB | uint8 RGB composite | none (true RGB served directly) |
+| WorldCereal Active Cropland | uint8 single-band class COG | `bidx=1`, categorical `colormap` (0=gray not active, 100=green cropland, 254 "No crop"+255 nodata transparent) |
+| GHS Population Density | float32 global population COG | `bidx=1`, `rescale=0,10`, viridis `colormap` (nodata −200 transparent) |
 
 The web app hits the tile endpoint from the browser (CORS is opened with
 `TITILER_API_CORS_ORIGIN=*` in the compose file). If the container is not
