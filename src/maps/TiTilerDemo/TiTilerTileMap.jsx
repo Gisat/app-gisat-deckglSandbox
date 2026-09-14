@@ -65,6 +65,11 @@ function getInitialEndpointId() {
 const HEALTH_TIMEOUT_MS = 5000;
 const PROBE_TIMEOUT_MS = 8000;
 const TILE_ERROR_GRACE_MS = 500;
+// Timing measurement: single tunable knob. Used BOTH as the viewport-settle
+// debounce (wait for camera to stop before starting the clock) AND as the
+// quiescence threshold (a window closes when no new tile load arrives for this
+// long = "all tiles" for the settled viewport).
+const TIMING_SETTLE_MS = 800;
 // How often to re-check TiTiler reachability while the map is open. Needed
 // because TiTiler tiles are cached by the browser (max-age=3600): after a
 // mid-session outage no new tile requests fail (and onTileError never fires)
@@ -129,9 +134,29 @@ function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 })
     // Bumped on retry/endpoint switch to recreate the TileLayer and force a full tile reload.
     const [titilerLayerKey, setTitilerLayerKey] = useState(0);
 
+    // Timing HUD (opt-in via a toggle, default on). While enabled the basemap is
+    // hidden so the measurement isn't confounded by cartocdn requests sharing the
+    // same browser/network. Live values track the current settled-viewport window;
+    // `headline` freezes the FIRST (uncached) load of the session/endpoint.
+    const [timingEnabled, setTimingEnabled] = useState(true);
+    const [ttf, setTtf] = useState(null);     // Time-to-First tile (ms) since settle
+    const [tta, setTta] = useState(null);     // Time-to-All tiles (ms) since settle
+    const [tileCount, setTileCount] = useState(0);
+    const [headline, setHeadline] = useState(null); // { ttf, tta, count } | null
+
     // Debounce/dedupe machinery for tile errors (zoom/pan storms fire one error per tile).
     const errorTimerRef = useRef(null);
     const pendingErrorRef = useRef(null);
+    // Timing measurement state lives in refs so onTileLoad stays cheap/stable.
+    const measurementRef = useRef({
+        settleAt: null,   // when the viewport settled → measurement window opened
+        firstAt: null,    // first tile load in the window
+        lastAt: null,     // last tile load seen
+        count: 0,
+        headlineDone: false,
+    });
+    const settleTimerRef = useRef(null);  // viewport-settle debounce
+    const quiesceTimerRef = useRef(null); // "all tiles loaded" quiescence
     // Set when the user dismisses the modal: stay quiet while TiTiler stays down.
     // Auto-cleared as soon as a periodic check sees TiTiler reachable again, so a
     // later outage is reported again (the user asked for exactly that).
@@ -147,6 +172,104 @@ function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 })
     const probeTileUrl = `${baseUrl}/cog/tiles/WebMercatorQuad/0/0/0.png?url=${encodeURIComponent(cogUrl)}${params}`;
     const healthUrl = `${baseUrl}/healthz`;
 
+    // Reset the measurement window and drop any in-flight timers.
+    const resetMeasurement = useCallback(() => {
+        if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+        if (quiesceTimerRef.current) clearTimeout(quiesceTimerRef.current);
+        settleTimerRef.current = null;
+        quiesceTimerRef.current = null;
+        Object.assign(measurementRef.current, { settleAt: null, firstAt: null, lastAt: null, count: 0 });
+        setTtf(null);
+        setTta(null);
+        setTileCount(0);
+    }, []);
+
+    // Open a fresh measurement window STARTING NOW (settleAt = this instant), so
+    // any tile loads that follow are counted against this moment — no viewport
+    // settle required. Used when the timer starts (toggle -> on) and when a new
+    // endpoint is chosen (both recreate the TiTiler layer and reload its tiles).
+    // The caller is responsible for bumping titilerLayerKey to actually trigger
+    // the reload when that's the intent.
+    const startMeasurementNow = useCallback(() => {
+        if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+        if (quiesceTimerRef.current) clearTimeout(quiesceTimerRef.current);
+        settleTimerRef.current = null;
+        quiesceTimerRef.current = null;
+        const m = measurementRef.current;
+        m.settleAt = performance.now();
+        m.firstAt = null;
+        m.lastAt = null;
+        m.count = 0;
+        m.headlineDone = false;
+        setTtf(null);
+        setTta(null);
+        setTileCount(0);
+        setHeadline(null);
+    }, []);
+
+    // Viewport settle: every camera change restarts the debounce; when it fires we're
+    // settled, so open a fresh measurement window from that moment.
+    const handleViewStateChange = useCallback(({ viewState }) => {
+        setViewState(viewState);
+        if (!timingEnabled) return;
+        if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = setTimeout(() => {
+            settleTimerRef.current = null;
+            const m = measurementRef.current;
+            m.settleAt = performance.now();
+            m.firstAt = null;
+            m.lastAt = null;
+            m.count = 0;
+            setTtf(null);
+            setTta(null);
+            setTileCount(0);
+        }, TIMING_SETTLE_MS);
+    }, [timingEnabled]);
+
+    // Per-tile load: update live TTF/TTA/count, and start/restart the quiescence
+    // timer that declares "all tiles" and freezes the first (uncached) headline.
+    const handleTileLoad = useCallback(() => {
+        if (!timingEnabled) return;
+        const m = measurementRef.current;
+        if (m.settleAt == null) return; // still camera-moving; no open window yet
+        const now = performance.now();
+        if (m.firstAt == null) m.firstAt = now;
+        m.lastAt = now;
+        m.count += 1;
+        setTileCount(m.count);
+        setTtf(m.firstAt - m.settleAt);
+        setTta(m.lastAt - m.settleAt);
+        if (quiesceTimerRef.current) clearTimeout(quiesceTimerRef.current);
+        quiesceTimerRef.current = setTimeout(() => {
+            quiesceTimerRef.current = null;
+            const mm = measurementRef.current;
+            if (!mm.headlineDone && mm.firstAt != null && mm.lastAt != null && mm.count > 0) {
+                mm.headlineDone = true;
+                setHeadline({
+                    ttf: mm.firstAt - mm.settleAt,
+                    tta: mm.lastAt - mm.settleAt,
+                    count: mm.count,
+                });
+            }
+        }, TIMING_SETTLE_MS);
+    }, [timingEnabled]);
+
+    const handleToggleTiming = useCallback(() => {
+        setTimingEnabled(prev => {
+            const next = !prev;
+            if (!next) {
+                resetMeasurement(); // off: cancel pending timers + clear readout
+                return next;
+            }
+            // ON: the clock starts counting at the moment of the press, not after a
+            // viewport settle. Force a tile reload so the new window has something
+            // to measure even without panning.
+            setTitilerLayerKey(k => k + 1);
+            startMeasurementNow();
+            return next;
+        });
+    }, [startMeasurementNow, resetMeasurement]);
+
     const handleEndpointChange = useCallback((nextId) => {
         if (nextId === endpointId || !TITILER_ENDPOINTS[nextId]) return;
         setEndpointId(nextId);
@@ -160,8 +283,13 @@ function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 })
         // layer key so tiles reload from the newly selected endpoint.
         setModal(null);
         suppressedRef.current = false;
+        // Fresh endpoint → fresh uncached tile load. Force a reload and start the
+        // clock at this instant (same as toggling timing on): the new endpoint's
+        // tiles start counting immediately, no viewport settle needed.
         setTitilerLayerKey(k => k + 1);
-    }, [endpointId]);
+        startMeasurementNow();
+        setHeadline(null);
+    }, [endpointId, startMeasurementNow]);
 
     // On mount (and on endpoint switch): probe TiTiler reachability; only a
     // total network failure (timeout / connection refused) reports "unreachable".
@@ -199,9 +327,11 @@ function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 })
         return () => clearInterval(interval);
     }, [healthUrl, baseUrl]);
 
-    // Unmount cleanup for the pending debounce timer.
+    // Unmount cleanup for the pending debounce/measurement timers.
     useEffect(() => () => {
         if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+        if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+        if (quiesceTimerRef.current) clearTimeout(quiesceTimerRef.current);
     }, []);
 
     // Single-modal rule: an 'unreachable' modal wins over symptom 'tile-error's
@@ -305,8 +435,12 @@ function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 })
         setModal(null);
     }, []);
 
-    const layers = [
-        new TileLayer({
+    // When timing is ON the basemap is omitted (hidden): cartocdn requests would
+    // share the browser/network with TiTiler tiles and confound the measurement.
+    // Timing OFF restores the basemap for normal browsing.
+    const layers = [];
+    if (!timingEnabled) {
+        layers.push(new TileLayer({
             id: 'base-map',
             data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
             minZoom: 0,
@@ -320,30 +454,31 @@ function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 })
                     bounds: [west, south, east, north]
                 });
             }
-        }),
-        new TileLayer({
-            id: `titiler-tiles-${titilerLayerKey}`,
-            data: tileUrl,
-            minZoom: 0,
-            maxZoom: maxZoom,
-            tileSize: 256,
-            onTileError: handleTileError,
-            renderSubLayers: props => {
-                const { west, south, east, north } = props.tile.bbox;
-                return new BitmapLayer(props, {
-                    data: null,
-                    image: props.data,
-                    bounds: [west, south, east, north]
-                });
-            }
-        })
-    ];
+        }));
+    }
+    layers.push(new TileLayer({
+        id: `titiler-tiles-${titilerLayerKey}`,
+        data: tileUrl,
+        minZoom: 0,
+        maxZoom: maxZoom,
+        tileSize: 256,
+        onTileError: handleTileError,
+        onTileLoad: handleTileLoad,
+        renderSubLayers: props => {
+            const { west, south, east, north } = props.tile.bbox;
+            return new BitmapLayer(props, {
+                data: null,
+                image: props.data,
+                bounds: [west, south, east, north]
+            });
+        }
+    }));
 
     return (
         <>
             <DeckGL
                 viewState={viewState}
-                onViewStateChange={({ viewState }) => setViewState(viewState)}
+                onViewStateChange={handleViewStateChange}
                 controller={true}
                 layers={layers}
                 views={new MapView({ repeat: true })}
@@ -366,6 +501,30 @@ function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 })
                     ))}
                 </div>
                 <div className="titiler-endpoint-url" title={baseUrl}>{baseUrl}</div>
+                <div className="titiler-timing" role="group" aria-label="Tile timing">
+                    <button
+                        type="button"
+                        className={`titiler-timing-toggle${timingEnabled ? ' titiler-timing-toggle-on' : ''}`}
+                        aria-pressed={timingEnabled}
+                        onClick={handleToggleTiming}
+                        title={timingEnabled ? 'Stop timing (restores base map)' : 'Start timing (hides base map)'}
+                    >
+                        {timingEnabled ? '● Timing on' : '○ Timing off'}
+                    </button>
+                    {timingEnabled && (
+                        <div className="titiler-timing-stats">
+                            <div className="titiler-timing-note">base map hidden while timing</div>
+                            <div><b>First tile:</b> {ttf != null ? `${ttf.toFixed(0)} ms` : '—'}</div>
+                            <div><b>All tiles:</b> {tta != null ? `${tta.toFixed(0)} ms` : '—'}</div>
+                            <div><b>Tiles:</b> {tileCount}</div>
+                            <div className="titiler-timing-headline">
+                                {headline
+                                    ? `First (uncached) load: ${headline.ttf.toFixed(0)} ms → all in ${headline.tta.toFixed(0)} ms · ${headline.count} tiles`
+                                    : 'First (uncached) load: measuring…'}
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
             {modal && (
                 <TiTilerErrorModal

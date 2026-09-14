@@ -67,3 +67,69 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* Tile timing control + HUD (sits inside the endpoint switch panel) */
+
+.titiler-timing {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border-top: 1px solid #e5e5e5;
+    padding-top: 8px;
+}
+
+.titiler-timing-toggle {
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+    color: #2c3e50;
+    background-color: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 6px 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.titiler-timing-toggle:hover {
+    background-color: #e2e8f0;
+    border-color: #b8c4d0;
+}
+
+.titiler-timing-toggle-on {
+    color: #fff;
+    background-color: #27ae60;
+    border-color: #27ae60;
+}
+
+.titiler-timing-toggle-on:hover {
+    background-color: #229954;
+    border-color: #229954;
+}
+
+.titiler-timing-stats {
+    font-family: 'Roboto Mono', 'SFMono-Regular', Consolas, monospace;
+    font-size: 11px;
+    color: #333;
+    background-color: #fafbfc;
+    border: 1px solid #eee;
+    border-radius: 5px;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.titiler-timing-note {
+    font-size: 10px;
+    color: #999;
+    font-style: italic;
+}
+
+.titiler-timing-headline {
+    margin-top: 3px;
+    padding-top: 4px;
+    border-top: 1px dashed #ddd;
+    color: #2c3e50;
+    font-weight: 600;
+}
