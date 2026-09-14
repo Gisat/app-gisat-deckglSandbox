@@ -1,5 +1,4 @@
 import TiTilerTileMap from './TiTilerTileMap';
-import { SNOW_COLORMAP } from './colormaps';
 
 // Nepal Wet Snow 2017-2021 (single-band int16 COG, EPSG:3857)
 const COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_bitmap/WET_SNOW_3857_2017-2021_cog_deflate_in16_zoom16_levels8.tif';
@@ -9,10 +8,17 @@ const COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22
 // colorScaleValueRange [0,300]).
 // `bidx=1` pins a single band: without it TiTiler renders all bands and
 // colormap fails with "Source data must be 1 band" (same fix as Uganda).
+//
+// Delivered as a SERVER-SIDE registered colormap (deploy/titiler/colormaps/
+// nepal_snow_viridis.json, generated from colormaps.js by
+// gen-demo-colormaps.mjs) referenced by short `colormap_name`, so the tile
+// query stays small and the nginx tile cache (deploy/titiler-caching,
+// proxy_cache_key = full $args) engages. The full 256-entry ramp sent inline
+// would bypass the nginx cache (~11 KB query).
 const queryParams = [
     'bidx=1',
     'rescale=0,300',
-    `colormap=${encodeURIComponent(SNOW_COLORMAP)}`
+    'colormap_name=nepal_snow_viridis'
 ].join('&');
 
 // Nepal Wet Snow COG actual bounds (from /cog/info, EPSG:3857):

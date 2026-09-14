@@ -77,3 +77,12 @@ via the LUT; you normally want all 256 entries present.
 | Name | Purpose |
 | --- | --- |
 | `ghs_pop_transparent_low` | GHS population density: viridis ramp with low-density rural/background (bytes 0–10) fully transparent — "landmass dim, cities lit". |
+| `nepal_snow_viridis` | Nepal snow cover: 256-entry viridis-like ramp, no transparency (matches colormaps.js `SNOW_COLORMAP`). |
+| `uganda_blues_transparent` | Uganda LUC: 256-entry blues ramp, byte 0 fully transparent (masked no-data background). Band-independent — serves all 15–24 bands. |
+| `worldcereal_active` | WorldCereal: sparse categorical ramp (0 gray, 100 green, 254/255 transparent); all other bytes transparent black. |
+
+`nepal_snow_viridis`, `uganda_blues_transparent`, and `worldcereal_active` are
+regenerated from demo source by `gen-demo-colormaps.mjs` (run from the repo
+root: `node deploy/titiler/colormaps/gen-demo-colormaps.mjs`) so they stay
+byte-for-byte identical to what the inline ramps used to deliver. Regenerate
+any time the client colormaps change.

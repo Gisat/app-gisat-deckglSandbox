@@ -108,11 +108,25 @@ curl "http://localhost:8000/cog/bounds?url=$(python3 -c 'import urllib.parse,sys
 
 | Demo | COG | Params used |
 | --- | --- | --- |
-| Nepal Snow Cover | int16 snow-cover COG (EPSG:3857) | `bidx=1`, `rescale=0,300`, `colormap` |
-| Uganda Multiband (LUC) | multiband LUC COG | `bidx=<15..24>` (band slider), per-band `rescale`, transparent colormap |
+| Nepal Snow Cover | int16 snow-cover COG (EPSG:3857) | `bidx=1`, `rescale=0,300`, `colormap_name=nepal_snow_viridis` (server-side registered viridis ramp) |
+| Uganda Multiband (LUC) | multiband LUC COG | `bidx=<15..24>` (band slider), per-band `rescale`, `colormap_name=uganda_blues_transparent` (server-side registered, byte 0 transparent for all bands) |
 | Manila RGB | uint8 RGB composite | none (true RGB served directly) |
-| WorldCereal Active Cropland | uint8 single-band class COG | `bidx=1`, categorical `colormap` (0=gray not active, 100=green cropland, 254 "No crop"+255 nodata transparent) |
+| WorldCereal Active Cropland | uint8 single-band class COG | `bidx=1`, `colormap_name=worldcereal_active` (server-side registered categorical: 0=gray not active, 100=green cropland, 254 "No crop"+255 nodata transparent) |
 | GHS Population Density | float32 global population COG | `bidx=1`, `rescale=0,10`, `colormap_name=ghs_pop_transparent_low` (server-side registered RGBA ramp, alpha 0 on bytes 0–10 → nodata −200 & low-density transparent) |
+
+All registered colormaps live in `deploy/titiler/colormaps/` and are referenced by
+short `colormap_name` so tile queries stay small and the nginx tile cache
+(`deploy/titiler-caching`, cache key = full `$args`) engages. The full 256-entry
+ramps sent inline (`colormap=` ~10 KB) bypass the nginx cache. Manila RGB needs
+a colormap name only because its query has no colormap at all.
+
+After adding or editing a registered colormap, restart **both** stacks so
+`COLORMAP_DIRECTORY` re-scans at startup:
+
+```sh
+docker compose -f deploy/titiler/docker-compose.yml up -d --force-recreate
+docker compose -f deploy/titiler-caching/docker-compose.yml up -d --force-recreate
+```
 
 The web app hits the tile endpoint from the browser (CORS is opened with
 `TITILER_API_CORS_ORIGIN=*` in the compose file). If the container is not

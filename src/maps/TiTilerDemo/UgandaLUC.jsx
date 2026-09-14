@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import TiTilerTileMap from './TiTilerTileMap';
-import { UGANDA_COLORMAP } from './colormaps';
 import './UgandaLUC.css';
 
 // ~98% of the COG's pixels are exactly 0 (the task's noDataValue 0, but the
@@ -15,11 +14,13 @@ import './UgandaLUC.css';
 // needed. (The only side effect: valid pixels below the rescale min clamp to
 // byte 0 too, hiding the darkest ~2% sub-percentile tail — consistent with
 // the p2–p98 contrast choice.)
-const TRANSPARENT_COLORMAP = (() => {
-    const colormap = JSON.parse(UGANDA_COLORMAP);
-    colormap[0] = [...colormap[0], 0];
-    return JSON.stringify(colormap);
-})();
+//
+// The colormap is band-independent (only `bidx` and `rescale` change per band),
+// so one SERVER-SIDE registered name serves all bands: deploy/titiler/colormaps/
+// uganda_blues_transparent.json (generated from colormaps.js by
+// gen-demo-colormaps.mjs, byte 0 transparent), referenced by short
+// `colormap_name` so the tile query stays small and the nginx tile cache
+// (deploy/titiler-caching, proxy_cache_key = full $args) engages.
 
 // Uganda Land Use / Land Cover (multiband COG) — band slider demo.
 const COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_bitmap/cog_UG_hanpp_luc_multiband.tif';
@@ -66,7 +67,7 @@ const UgandaLUC = () => {
     const queryParams = [
         `bidx=${band}`,
         `rescale=${BAND_RESCALE[band]}`,
-        `colormap=${encodeURIComponent(TRANSPARENT_COLORMAP)}`
+        `colormap_name=uganda_blues_transparent`
     ].join('&');
 
     return (
