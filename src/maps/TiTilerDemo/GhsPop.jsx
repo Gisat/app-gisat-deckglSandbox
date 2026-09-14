@@ -1,5 +1,4 @@
 import TiTilerTileMap from './TiTilerTileMap';
-import { GHS_POP_COLORMAP } from './colormaps';
 
 // GHSL population density 2015 (float32 persons/pixel, EPSG:3857, global).
 const COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_bitmap/GHS_POP_E2015_COGeoN.tif';
@@ -17,23 +16,25 @@ const RESCALE = '0,10';
 // Clear the lowest 11 bytes (0-10 of 256) -> population below ~0.43/px hidden,
 // plus nodata -200 (clamps to byte 0) also transparent.
 //
-// We send this as a compact override against the NAMED viridis colormap
-// (colormap_name=viridis), not the full 256-entry ramp. A ~9KB inline colormap
-// bypasses the nginx tile cache (deploy/titiler-caching) entirely - measured:
-// no X-Cache-Status, nothing stored. colormap_name + a ~130-byte override keeps
-// the query short so caching engages and repeat views are server-cache HITs.
-const GHS_POP_TRANSPARENT_LOW = (() => {
-    const colormap = JSON.parse(GHS_POP_COLORMAP);
-    const out = {};
-    for (let i = 0; i < 11; i++) out[i] = [...colormap[i], 0];
-    return JSON.stringify(out);
-})();
-
+// Delivered as a SERVER-SIDE registered colormap: the full 256-entry RGBA ramp
+// (alpha=0 on bytes 0-10) is written to deploy/titiler/colormaps/ghs_pop_transparent_low.json
+// and registered by TiTiler at startup via COLORMAP_DIRECTORY (mounted into both
+// the plain and caching compose stacks). The client references it by the short
+// `colormap_name=ghs_pop_transparent_low`, so the tile query stays small & the
+// nginx tile cache (depoy/titiler-caching, proxy_cache_key = full $args) engages.
+//
+// Why server-side and not inline: TiTiler's colormap dependency short-circuits
+// on colormap_name (src/titiler/core/titiler/core/dependencies.py: `if
+// colormap_name: return cmap.get(colormap_name)`), so a `colormap_name` +
+// compact `colormap` override is NEVER merged. A full inline ramp DOES render
+// transparent but its ~10KB query bypasses the nginx cache; the registered
+// colormap gives transparency AND caching. If the JSON is missing, the tile URL
+// 400s with "Invalid colormap name" — both stacks must be restarted after adding
+// a colormap (COLORMAP_DIRECTORY is scanned at startup only).
 const queryParams = [
     'bidx=1',
     `rescale=${RESCALE}`,
-    `colormap_name=viridis`,
-    `colormap=${encodeURIComponent(GHS_POP_TRANSPARENT_LOW)}`
+    `colormap_name=ghs_pop_transparent_low`
 ].join('&');
 
 // Global COG -> whole Earth visible from the start.

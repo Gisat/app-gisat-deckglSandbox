@@ -6,7 +6,16 @@ services:
       --host 0.0.0.0 --port 8081 --workers 2
       --proxy-headers --forwarded-allow-ips='*'
       --root-path=/api/v1/titiler
+    volumes:
+      # local COGs (remote https:// / s3:// URLs work without any mount)
+      - ./data:/data:ro
+      # Server-side registered colormaps (COLORMAP_DIRECTORY, scanned at startup).
+      # Lives with the plain stack (../titiler/colormaps) so both instances register
+      # the same colormap_name. The GHS transparent-low ramp keeps the tile query
+      # short -> nginx tile cache (proxy_cache_key = full $args) engages.
+      - ../titiler/colormaps:/colormaps:ro
     environment:
+      - COLORMAP_DIRECTORY=/colormaps
       # GDAL/VSI: fast COG reads
       - CPL_TMPDIR=/tmp
       - GDAL_CACHEMAX=75%
@@ -22,9 +31,6 @@ services:
       # 3600 = 1h. Raise it if your COGs change rarely.
       - TITILER_API_CACHECONTROL=public, max-age=3600
       - TITILER_API_TELEMETRY_ENABLED=False
-    volumes:
-      # local COGs (remote https:// / s3:// URLs work without any mount)
-      - ./data:/data:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/healthz', timeout=3)"]
       interval: 30s

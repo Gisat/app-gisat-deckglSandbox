@@ -15,10 +15,17 @@
 #   Requests are sequential -> per-tile latency in isolation (upper bound of
 #   savings; a real browser fetches dozens in parallel).
 #
-# The demo (src/maps/TiTilerDemo/GhsPop.jsx) sends colormap_name=viridis plus a
-# compact 11-entry transparent-low override, NOT the full 256-entry inline ramp
-# (a ~9KB inline colormap bypasses the nginx cache entirely — measured: no
-# X-Cache-Status, nothing stored). This script derives the same short params.
+# The demo (src/maps/TiTilerDemo/GhsPop.jsx) now uses a SERVER-SIDE registered
+# colormap: the full 256-entry RGBA transparent-low ramp lives in
+# deploy/titiler/colormaps/ghs_pop_transparent_low.json and is registered by
+# TiTiler at startup via COLORMAP_DIRECTORY (both stacks). The client references
+# it by the short `colormap_name=ghs_pop_transparent_low`, so the tile query is
+# small and the nginx cache engages (a full ~10KB inline ramp would bypass it).
+# This script uses the same short params.
+#
+# If the colormap JSON is missing (not mounted / stack not restarted after) the
+# tile URL 400s with "Invalid colormap name" — restart BOTH stacks after adding
+# a colormap file (COLORMAP_DIRECTORY is scanned at startup only).
 #
 # Prereqs:
 #   - plain stack up:    docker compose -f deploy/titiler/docker-compose.yml up -d
@@ -43,30 +50,10 @@ HITS=${HITS:-10}           # repeat HIT requests on the cached stack (after 1 wa
 CURL="${CURL:-curl}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-COLMAPS="$SCRIPT_DIR/../../src/maps/TiTilerDemo/colormaps.js"
 
-# Derive the exact demo query params used by src/maps/TiTilerDemo/GhsPop.jsx:
-#   bidx=1&rescale=0,10&colormap_name=viridis&colormap=<lowest 11 entries alpha=0>
-# The transparent-low override is built from the source colormap (never a
-# hand-typed copy). Python reads the file via argv; the heredoc owns stdin.
-PYGEN="$(python3 - "$COLMAPS" <<'PY'
-import sys, json, urllib.parse, re
-src = open(sys.argv[1]).read()
-m = re.search(r'GHS_POP_COLORMAP =\s*"(\{.*?\})"', src, re.S)
-if not m:
-    raise SystemExit("FATAL: could not parse GHS_POP_COLORMAP from colormaps.js")
-cm = json.loads(m.group(1).replace('\\"', '"'))
-out = {}
-for i in range(11):
-    out[str(i)] = cm[str(i)] + [0]
-s = json.dumps(out, separators=(",", ":"))
-print(urllib.parse.quote(s, safe=""))
-PY
-)"
-if [ -z "${PYGEN:-}" ]; then
-  echo "FATAL: could not derive GHS colormap (colormaps.js parse failed)"; exit 1
-fi
-TPARAMS="bidx=1&rescale=0,10&colormap_name=viridis&colormap=$PYGEN"
+# Param transport used by src/maps/TiTilerDemo/GhsPop.jsx: the registered
+# server-side colormap referenced by name keeps the query short.
+TPARAMS="bidx=1&rescale=0,10&colormap_name=ghs_pop_transparent_low"
 
 # ---------------------------------------------------------------- helpers
 checkup() { # $1 label, $2 health url
@@ -117,7 +104,7 @@ time_tile() { # $1 base, $2 z, $3 x, $4 y
 echo "== Plain  : $PLAIN_BASE"
 echo "== Cached : $CACHED_BASE"
 echo "== COG    : $COG_URL"
-echo "== Params : bidx=1&rescale=0,10&colormap_name=viridis&colormap=...(from colormaps.js)"
+echo "== Params : bidx=1&rescale=0,10&colormap_name=ghs_pop_transparent_low (registered server-side)"
 checkup "plain" "$PLAIN_BASE/healthz"
 checkup "cached" "$CACHED_BASE/healthz"
 echo "== both stacks reachable"
