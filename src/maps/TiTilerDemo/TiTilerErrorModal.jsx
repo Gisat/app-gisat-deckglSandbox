@@ -1,17 +1,18 @@
 import './TiTilerErrorModal.css';
 
-const START_COMMAND = 'docker compose -f deploy/titiler/docker-compose.yml up -d';
-
 /**
  * Modal reporting which TiTiler endpoint is expected to run when it is
  * unreachable or returns tile errors. The endpoint + startup instructions
- * mirror deploy/titiler/docker-compose.yml.
+ * are provided by the caller and mirror the selected deployment
+ * (deploy/titiler/docker-compose.yml or deploy/titiler-caching/docker-compose.yml).
  *
  * @param {string} kind            - 'unreachable' (health probe failed) | 'tile-error' (tile requests failed)
- * @param {string} baseUrl         - resolved TiTiler base URL (VITE_TITILER_URL or default)
+ * @param {string} baseUrl         - resolved TiTiler base URL of the selected endpoint
  * @param {string} healthUrl       - full /healthz URL
  * @param {string} tileUrlTemplate - tile URL template actually used by the TileLayer
  * @param {string} cogUrl          - COG passed to TiTiler as `url` param
+ * @param {string|null} startCommand - docker compose command to start the selected stack
+ *                                     (null for custom/deployed endpoints without a local stack)
  * @param {string} errorMessage    - human-readable error (may be empty)
  * @param {string} errorDetail     - enriched detail (HTTP status + TiTiler JSON detail)
  */
@@ -21,6 +22,7 @@ function TiTilerErrorModal({
     healthUrl,
     tileUrlTemplate,
     cogUrl,
+    startCommand = null,
     errorMessage,
     errorDetail,
     onRetry,
@@ -58,14 +60,22 @@ function TiTilerErrorModal({
                         <div><span className="label">COG</span><span>{cogUrl}</span></div>
                     </div>
                     <div className="titiler-modal-note">
-                        Base URL comes from <code>VITE_TITILER_URL</code> (see <code>.env.example</code>); defaults to <code>http://localhost:8000</code>.
+                        Base URL is set by the endpoint switcher (top right of the map); a <code>VITE_TITILER_URL</code> override (see <code>.env.example</code>) adds a custom entry. Default is <code>http://localhost:8000</code> (plain TiTiler).
                     </div>
                 </div>
 
                 <div className="titiler-modal-section">
                     <div className="titiler-modal-section-title">How to start it</div>
-                    <pre className="titiler-modal-command">{START_COMMAND}</pre>
-                    <div className="titiler-modal-note">After starting, wait a moment for the health check to pass, then press Retry.</div>
+                    {startCommand ? (
+                        <>
+                            <pre className="titiler-modal-command">{startCommand}</pre>
+                            <div className="titiler-modal-note">After starting, wait a moment for the health check to pass, then press Retry.</div>
+                        </>
+                    ) : (
+                        <div className="titiler-modal-note">
+                            This endpoint comes from <code>VITE_TITILER_URL</code> and has no local compose command — start that instance however it is deployed, then press Retry.
+                        </div>
+                    )}
                 </div>
 
                 {(errorMessage || errorDetail) && (

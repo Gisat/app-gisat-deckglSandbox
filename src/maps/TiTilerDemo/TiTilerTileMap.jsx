@@ -4,11 +4,59 @@ import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import TiTilerErrorModal from './TiTilerErrorModal';
+import './TiTilerEndpointSwitch.css';
 
-const DEFAULT_TITILER_URL = 'http://localhost:8000';
-// Base URL of the TiTiler instance (see deploy/titiler/docker-compose.yml).
-// Override via .env: VITE_TITILER_URL=https://your-deployed-titiler.example
-const TITILER_URL = import.meta.env.VITE_TITILER_URL || DEFAULT_TITILER_URL;
+// Selectable TiTiler endpoints. 'plain' mirrors deploy/titiler/docker-compose.yml
+// (uvicorn directly on :8000); 'caching' mirrors deploy/titiler-caching/docker-compose.yml
+// (nginx :8001 -> TiTiler :8081, URL prefix /api/v1/titiler stripped by nginx).
+// The startCommand is shown by the error modal so it always tells you which
+// stack to start for the currently selected endpoint.
+const DEFAULT_TITILER_ENDPOINTS = {
+    plain: {
+        label: 'TiTiler (plain)',
+        baseUrl: 'http://localhost:8000',
+        startCommand: 'docker compose -f deploy/titiler/docker-compose.yml up -d',
+    },
+    caching: {
+        label: 'TiTiler + cache',
+        baseUrl: 'http://localhost:8001/api/v1/titiler',
+        startCommand: 'docker compose -f deploy/titiler-caching/docker-compose.yml up -d',
+    },
+};
+
+// Optional override for a deployed/custom instance (see .env.example):
+// VITE_TITILER_URL=https://your-deployed-titiler.example
+const CUSTOM_TITILER_URL = import.meta.env.VITE_TITILER_URL;
+
+// Presets plus the env override when it points somewhere else.
+const TITILER_ENDPOINTS = (() => {
+    const endpoints = { ...DEFAULT_TITILER_ENDPOINTS };
+    if (CUSTOM_TITILER_URL && !Object.values(DEFAULT_TITILER_ENDPOINTS).some(ep => ep.baseUrl === CUSTOM_TITILER_URL)) {
+        endpoints.custom = {
+            label: 'Custom (env)',
+            baseUrl: CUSTOM_TITILER_URL,
+            startCommand: null, // deployment-specific, not a local compose stack
+        };
+    }
+    return endpoints;
+})();
+
+const ENDPOINT_STORAGE_KEY = 'titiler-demo-endpoint';
+
+function getInitialEndpointId() {
+    // Remember the last choice across demos/reloads (comparison workflow);
+    // fall back to the VITE_TITILER_URL override when configured, else plain.
+    try {
+        const stored = window.localStorage.getItem(ENDPOINT_STORAGE_KEY);
+        if (stored && TITILER_ENDPOINTS[stored]) return stored;
+    } catch {
+        /* storage unavailable (e.g. private mode) — use defaults */
+    }
+    if (!CUSTOM_TITILER_URL) return 'plain';
+    const match = Object.keys(DEFAULT_TITILER_ENDPOINTS)
+        .find(id => DEFAULT_TITILER_ENDPOINTS[id].baseUrl === CUSTOM_TITILER_URL);
+    return match || 'custom';
+}
 
 const HEALTH_TIMEOUT_MS = 5000;
 const PROBE_TIMEOUT_MS = 8000;
@@ -52,10 +100,14 @@ async function isTiTilerReachable(healthUrl) {
  * light base map. Tiles are generated on the fly by TiTiler
  * (/cog/tiles/{z}/{x}/{y}.png?url=...&...).
  *
+ * The endpoint switcher (top right) toggles between the plain TiTiler instance
+ * (:8000) and the nginx-cached one (:8001/api/v1/titiler) so both can be
+ * compared side by side; VITE_TITILER_URL adds a custom entry when set.
+ *
  * If TiTiler is unreachable (health probe) or fails systemically (tile errors
  * confirmed by a z0 probe), a modal reports which endpoint is expected to run
- * and how to start it (see deploy/titiler/docker-compose.yml). Per-tile errors
- * for tiles outside the COG bounds/zoom are normal and stay silent.
+ * and how to start it (start command of the selected endpoint). Per-tile
+ * errors for tiles outside the COG bounds/zoom are normal and stay silent.
  *
  * @param {string} cogUrl        - public COG URL passed to TiTiler as `url` param
  * @param {string} queryParams   - already-URL-encoded extra params (bands, rescale, colormap, nodata...)
@@ -64,10 +116,13 @@ async function isTiTilerReachable(healthUrl) {
  */
 function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 }) {
     const [viewState, setViewState] = useState(initialViewState);
+    const [endpointId, setEndpointId] = useState(getInitialEndpointId);
+    const endpoint = TITILER_ENDPOINTS[endpointId] || TITILER_ENDPOINTS.plain;
+    const { baseUrl, startCommand } = endpoint;
     // null | { kind: 'unreachable' | 'tile-error', message, detail }
     const [modal, setModal] = useState(null);
     const [retrying, setRetrying] = useState(false);
-    // Bumped on retry to recreate the TileLayer and force a full tile reload.
+    // Bumped on retry/endpoint switch to recreate the TileLayer and force a full tile reload.
     const [titilerLayerKey, setTitilerLayerKey] = useState(0);
 
     // Debounce/dedupe machinery for tile errors (zoom/pan storms fire one error per tile).
@@ -82,14 +137,30 @@ function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 })
 
     const params = queryParams ? `&${queryParams}` : '';
     // TiTiler 2.x route: /cog/tiles/{tileMatrixSetId}/{z}/{x}/{y}.png (WebMercatorQuad = default)
-    const tileUrl = `${TITILER_URL}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=${encodeURIComponent(cogUrl)}${params}`;
+    const tileUrl = `${baseUrl}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=${encodeURIComponent(cogUrl)}${params}`;
     // z0 tile covers the whole world, so it always intersects the COG — a
     // reliable systemic probe (per-tile 4xx for out-of-bounds tiles are normal).
-    const probeTileUrl = `${TITILER_URL}/cog/tiles/WebMercatorQuad/0/0/0.png?url=${encodeURIComponent(cogUrl)}${params}`;
-    const healthUrl = `${TITILER_URL}/healthz`;
+    const probeTileUrl = `${baseUrl}/cog/tiles/WebMercatorQuad/0/0/0.png?url=${encodeURIComponent(cogUrl)}${params}`;
+    const healthUrl = `${baseUrl}/healthz`;
 
-    // On mount: probe TiTiler reachability; only a total network failure
-    // (timeout / connection refused) reports "unreachable".
+    const handleEndpointChange = useCallback((nextId) => {
+        if (nextId === endpointId || !TITILER_ENDPOINTS[nextId]) return;
+        setEndpointId(nextId);
+        try {
+            window.localStorage.setItem(ENDPOINT_STORAGE_KEY, nextId);
+        } catch {
+            /* storage unavailable — in-memory switch only */
+        }
+        // Drop any modal: it describes the previous endpoint. The health/probe
+        // URLs changed, so the mount-style checks re-run on their own; bump the
+        // layer key so tiles reload from the newly selected endpoint.
+        setModal(null);
+        suppressedRef.current = false;
+        setTitilerLayerKey(k => k + 1);
+    }, [endpointId]);
+
+    // On mount (and on endpoint switch): probe TiTiler reachability; only a
+    // total network failure (timeout / connection refused) reports "unreachable".
     useEffect(() => {
         let cancelled = false;
         (async () => {
@@ -98,12 +169,12 @@ function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 })
                 suppressedRef.current = false;
                 setModal({
                     kind: 'unreachable',
-                    message: `TiTiler is not reachable at ${TITILER_URL} (health check ${healthUrl} failed). Start it with the docker-compose command below, then press Retry.`,
+                    message: `TiTiler is not reachable at ${baseUrl} (health check ${healthUrl} failed). Start it with the docker-compose command below, then press Retry.`,
                 });
             }
         })();
         return () => { cancelled = true; };
-    }, [healthUrl]);
+    }, [healthUrl, baseUrl]);
 
     // Periodic reachability re-check (see HEALTH_CHECK_INTERVAL_MS): reports a
     // mid-session TiTiler outage even when every tile is served from cache, and
@@ -118,11 +189,11 @@ function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 })
             if (suppressedRef.current || modalRef.current) return; // user dismissed / already reported
             setModal({
                 kind: 'unreachable',
-                message: `TiTiler became unreachable while the map was open (${TITILER_URL}). It was reachable before, so check whether the service stopped (docker compose logs) and press Retry.`,
+                message: `TiTiler became unreachable while the map was open (${baseUrl}). It was reachable before, so check whether the service stopped (docker compose logs) and press Retry.`,
             });
         }, HEALTH_CHECK_INTERVAL_MS);
         return () => clearInterval(interval);
-    }, [healthUrl]);
+    }, [healthUrl, baseUrl]);
 
     // Unmount cleanup for the pending debounce timer.
     useEffect(() => () => {
@@ -207,11 +278,11 @@ function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 })
                         const detail = body && body.detail
                             ? `HTTP ${res.status} — ${typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)}`
                             : `HTTP ${res.status}`;
-                        showModal({ kind: 'tile-error', message: `Tile loading still fails (${TITILER_URL}).`, detail });
+                        showModal({ kind: 'tile-error', message: `Tile loading still fails (${baseUrl}).`, detail });
                     }
                 } catch {
                     ok = false;
-                    showModal({ kind: 'tile-error', message: `Tile endpoint still not reachable (${TITILER_URL}).`, detail: '' });
+                    showModal({ kind: 'tile-error', message: `Tile endpoint still not reachable (${baseUrl}).`, detail: '' });
                 }
             }
 
@@ -223,7 +294,7 @@ function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 })
         } finally {
             setRetrying(false);
         }
-    }, [modal, healthUrl, probeTileUrl, showModal]);
+    }, [modal, healthUrl, probeTileUrl, baseUrl, showModal]);
 
     const handleDismiss = useCallback(() => {
         suppressedRef.current = true;
@@ -274,13 +345,32 @@ function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 })
                 views={new MapView({ repeat: true })}
                 style={{ width: '100vw', height: '100vh' }}
             />
+            <div className="titiler-endpoint-switch" role="group" aria-label="TiTiler endpoint">
+                <span className="titiler-endpoint-title">TiTiler endpoint</span>
+                <div className="titiler-endpoint-options">
+                    {Object.entries(TITILER_ENDPOINTS).map(([id, ep]) => (
+                        <button
+                            key={id}
+                            type="button"
+                            className={`titiler-endpoint-btn${id === endpointId ? ' titiler-endpoint-btn-active' : ''}`}
+                            aria-pressed={id === endpointId}
+                            onClick={() => handleEndpointChange(id)}
+                            title={ep.startCommand ? `${ep.baseUrl}\nStart: ${ep.startCommand}` : ep.baseUrl}
+                        >
+                            {ep.label}
+                        </button>
+                    ))}
+                </div>
+                <div className="titiler-endpoint-url" title={baseUrl}>{baseUrl}</div>
+            </div>
             {modal && (
                 <TiTilerErrorModal
                     kind={modal.kind}
-                    baseUrl={TITILER_URL}
+                    baseUrl={baseUrl}
                     healthUrl={healthUrl}
                     tileUrlTemplate={tileUrl}
                     cogUrl={cogUrl}
+                    startCommand={startCommand}
                     errorMessage={modal.message}
                     errorDetail={modal.detail}
                     onRetry={handleRetry}
