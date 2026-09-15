@@ -29,6 +29,7 @@ import UgandaLUC from './TiTilerDemo/UgandaLUC.jsx';
 import ManilaRGB from './TiTilerDemo/ManilaRGB.jsx';
 import WorldCereal from './TiTilerDemo/WorldCereal.jsx';
 import GhsPop from './TiTilerDemo/GhsPop.jsx';
+import MisicuniTerrain from './TiTilerDemo/MisicuniTerrain.jsx';
 
 const mapApps = [
     { category: '3DFLUS', name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
@@ -63,6 +64,7 @@ const mapApps = [
     { category: 'TiTiler DEMO', name: 'Uganda Multiband', path: '/titiler-demo-uganda', component: UgandaLUC },
     { category: 'TiTiler DEMO', name: 'Manila RGB', path: '/titiler-demo-manila', component: ManilaRGB },
     { category: 'TiTiler DEMO', name: 'WorldCereal Active Cropland', path: '/titiler-demo-worldcereal', component: WorldCereal },
+    { category: 'TiTiler DEMO', name: 'Misicuni Terrain (DEM)', path: '/titiler-demo-misicuni-terrain', component: MisicuniTerrain, description: 'Native deck.gl TerrainLayer fed from TiTiler grayscale tiles of the Misicuni GLO-30+geoid DEM' },
     { category: 'TiTiler DEMO', name: 'GHS Population Density', path: '/titiler-demo-ghs-pop', component: GhsPop },
 ];
 

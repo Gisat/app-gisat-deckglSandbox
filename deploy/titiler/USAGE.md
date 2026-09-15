@@ -113,6 +113,7 @@ curl "http://localhost:8000/cog/bounds?url=$(python3 -c 'import urllib.parse,sys
 | Manila RGB | uint8 RGB composite | none (true RGB served directly) |
 | WorldCereal Active Cropland | uint8 single-band class COG | `bidx=1`, `colormap_name=worldcereal_active` (server-side registered categorical: 0=gray not active, 100=green cropland, 254 "No crop"+255 nodata transparent) |
 | GHS Population Density | float32 global population COG | `bidx=1`, `rescale=0,10`, `colormap_name=ghs_pop_transparent_low` (server-side registered RGBA ramp, alpha 0 on bytes 0–10 → nodata −200 & low-density transparent) |
+| Misicuni Terrain (DEM) | float32 single-band DEM, EPSG:3857 (GLO-30 + geoid, Misicuni/Cochabamba) | `bidx=1`, `rescale=0,5600` — **no colormap**: served grayscale, decoded client-side by a native deck.gl `TerrainLayer` |
 
 All registered colormaps live in `deploy/titiler/colormaps/` and are referenced by
 short `colormap_name` so tile queries stay small and the nginx tile cache
@@ -132,6 +133,32 @@ The web app hits the tile endpoint from the browser (CORS is opened with
 `TITILER_API_CORS_ORIGIN=*` in the compose file). If the container is not
 running, the sandbox shows an error modal reporting the expected endpoint and
 this start command.
+
+### Misicuni Terrain (native TerrainLayer)
+
+Unlike the other TiTiler demos (flat `BitmapLayer` tiles), Misicuni Terrain
+renders a **3D mesh** via deck.gl's native `TerrainLayer`, fed by TiTiler
+**grayscale** PNG tiles of a float32 single-band DEM:
+
+```
+GET /cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=<COG>&bidx=1&rescale=0,5600
+```
+
+- **Why grayscale + custom `elevationDecoder`, not Mapzen/Terrarium:** TiTiler
+  cannot emit Terrarium-packed RGB elevation tiles from an arbitrary float COG
+  (single band → R=G=B grayscale). A Terrarium decoder (`rScaler:256,
+  gScaler:1, bScaler:1/256, offset:-32768`) would just multiply three equal
+  bytes and collapse to one effective gain — no extra resolution.
+- **Decoder inverts TiTiler's linear rescale:** `height = value*rScaler + offset`
+  with `rScaler = (rescale[1]-rescale[0])/255`, `offset = rescale[0]`.
+- **Resolution driver is the same 8-bit PNG** as the flat demos (~256
+  discrete levels over the stretch). It looks smooth at the intended
+  relief-wide 3D zoom; it steps if you zoom far in. Full-precision terrain
+  would need a client-side float COG read (not a TiTiler demo).
+
+See `src/maps/TiTilerDemo/MisicuniTerrain.jsx` for the `RESCALE_MIN`/`RESCALE_MAX`
+constants, which must stay in sync with the `rescale` query param and the
+`ELEVATION_DECODER`.
 
 ## Notes & troubleshooting
 
