@@ -191,6 +191,54 @@ app at the caching stack instead, set
 `VITE_TITILER_URL=http://localhost:8001/api/v1/titiler` (full prefix
 included — the app appends `/cog/…` paths) and restart the Vite dev server.
 
+## Terrarium encoder (Mapzen-style elevation tiles)
+
+This stack also ships a **Terrarium elevation-tile encoder** — a Mapzen-style
+pipeline that is *separate from* (and sibling to) TiTiler:
+
+- **Role:** reads the same public float32 DEM COG directly via rasterio
+  windowed reads (`/vsicurl/`) and packs each `WebMercatorQuad {z}/{x}/{y}`
+  tile in the Mapzen **Terrarium** RGB format (`encoded = (elev + CLAMP)*256`;
+  R = high byte, G = middle, B = low). No reprojection — the COG is EPSG:3857.
+- **Where it lives:** `deploy/titiler-caching/terrarium-encoder/`
+  (`terrarium_encoder.py` + `Dockerfile`), built from a `python:3.12-slim`
+  image (rasterio + GDAL, fastapi, uvicorn, pillow, numpy).
+- **Topology:** the `terrarium` service exposes **no host port** — it is
+  reached only through this stack's **same nginx**, at
+  `/api/v1/terrarium/{z}/{x}/{y}.png`, and its tiles are cached by that same
+  nginx (the `/terrarium/` location gets the same `proxy_cache` treatment as
+  `/tiles/`).
+- **Why this matters vs. TiTiler's grayscale path:** TiTiler renders a
+  single-band COG as **grayscale** (R=G=B), so a Terrarium decoder there
+  collapses to ~256 levels. The encoder genuinely packs float resolution across
+  the RGB channels, so the canonical Terrarium decoder on the client recovers
+  **sub-metre precision**: `height = R*256 + G + B/256 - CLAMP` with
+  `CLAMP = 32768` (canonical Mapzen), set via `ENCODER_CLAMP` in the caching
+  compose file (the DEM spans 0..5631 m).
+
+Fetch a tile (MISS → HIT as it warms like TiTiler):
+
+```sh
+BASE=http://localhost:8001/api/v1/terrarium
+for i in 1 2 3; do
+  curl -s -o /dev/null -D - "$BASE/8/80/140.png" \
+    | grep -iE '^(HTTP|x-cache-status|cache-control)' | tr -d '\r' | tr '\n' ' '; echo
+done
+# req 1: HTTP/1.1 200 OK X-Cache-Status: MISS cache-control: public, max-age=3600
+# req 2: HTTP/1.1 200 OK X-Cache-Status: HIT
+# req 3: HTTP/1.1 200 OK X-Cache-Status: HIT
+```
+
+Notes:
+
+- The encoder `CLAMP` (m) in `docker-compose.yml` (`ENCODER_CLAMP`) and the client
+  `ELEVATION_DECODER.offset` in `src/maps/TiTilerDemo/TerrariumTerrain.jsx`
+  must stay equal (both 32768).
+- The encoder caps `ENCODER_Z_MAX` at 14 (the COG's native ~30 m GLO-30
+  detail); beyond that it is upsampling with no added precision.
+- The encoder's cache match is `/terrarium/` (distinct from TiTiler's
+  `/tiles/`), so the two producers cache independently in the same volume.
+
 ## Caching behaviour at a glance
 
 | Aspect | Value |

@@ -39,6 +39,35 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # Terrarium elevation-tile encoder (Mapzen-style): a SIBLING tile producer
+  # to TiTiler that reads the same public float32 COG directly via rasterio /
+  # vsicurl/ and packs {z}/{x}/{y}.png in Terrarium RGB (no host port — reached
+  # only through nginx at /api/v1/terrarium/).
+  terrarium:
+    build:
+      context: ./terrarium-encoder
+    container_name: titiler-terrarium
+    expose:
+      - "8000"                       # internal only; nothing maps to a host port
+    environment:
+      - ENCODER_COG_URL=https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif
+      - ENCODER_CLAMP=32768
+      # GDAL /vsicurl/ tuning mirrors the titiler service in this stack
+      - CPL_TMPDIR=/tmp
+      - GDAL_CACHEMAX=75%
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_VERSION=2
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
   nginx:
     image: nginx:1.27-alpine
     ports:
