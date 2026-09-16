@@ -48,7 +48,14 @@ export default defineConfig({
       },
       // caching stack: /titiler/api/v1/titiler/healthz -> http://localhost:8001/api/v1/titiler/healthz
       //                /titiler/api/v1/titiler/cog/...  -> http://localhost:8001/api/v1/titiler/cog/...
-      '/titiler': {
+      //
+      // IMPORTANT: the prefix is '/titiler/api' — NOT '/titiler'. The SPA has
+      // app routes that themselves begin with '/titiler' (e.g.
+      // /titiler-demo-terrarium-terrain). A bare '/titiler' prefix would make
+      // Vite proxy those app routes to nginx on hard reload (CTRL-SHIFT-R), which
+      // answers `location / { return 404; }` -> 404 nginx. All real caching-stack
+      // URLs live under /titiler/api, so narrowing to that kills the collision.
+      '/titiler/api': {
         target: 'http://localhost:8001',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/titiler/, ''),
