@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { TerrainLayer } from '@deck.gl/geo-layers';
+import TerrariumLoader from './TerrariumLoader';
 import TiTilerErrorModal from './TiTilerErrorModal';
 import './TiTilerEndpointSwitch.css';
 
@@ -39,6 +40,35 @@ const ELEVATION_DECODER = {
     bScaler: 1 / 256,
     offset: -CLAMP,
 };
+
+// Fix for the "needles" artifact (deck.gl issue #10400).
+//
+// TerrainLayer decodes its elevation PNG through a loaders.gl web worker,
+// which on the browser decodes the tile via createImageBitmap and then
+// extracts pixels with a canvas drawImage + getImageData round-trip. On
+// wide-gamut / color-managed displays (macOS defaults to a wide color
+// profile) that path shifts R/G/B channel values by ±1. The Terrarium Red
+// scaler is 256, so a single ±1 shift in the Red channel becomes a ±256 m
+// vertical spike — the scattered "needles" seen all over the mesh. The raw
+// PNG bytes are clean (verified independently); the corruption is introduced
+// client-side in the color-managed image pipeline, which is why the same
+// file renders clean under file:// (no worker) and spikes over http(s).
+//
+// (A previous attempt passed loadOptions: {image: {type: 'data'}} to try to
+// force a raw decode. That is a no-op: @loaders.gl/terrain's parseTerrain
+// already forces image: {type: 'data'} internally, yet on the browser that
+// still routes through createImageBitmap because getDefaultImageType()
+// returns 'imagebitmap'. So no TerrainLayer prop can dodge the worker path.)
+//
+// The fix: drive TerrainLayer with a custom pure-JS loader (TerrariumLoader)
+// via its `loaders` prop, replacing the default TerrainWorkerLoader. That
+// loader decodes each PNG with UPNG (pure JavaScript — no browser image
+// APIs, no color management) and builds the martini mesh on the main thread,
+// returning the same mesh shape TerrainLayer expects. The channel bytes reach
+// the decoder unmodified, at full 24-bit Terrarium precision, with no
+// needles. Downside: mesh tesselation runs on the main thread (fine for a
+// demo).
+const ELEVATION_LOADERS = [TerrariumLoader];
 
 // Misicuni / Cochabamba region (from /cog/info bounds, EPSG:3857 center:
 // lon ≈ -66.49, lat ≈ -17.04). Matches the view used by the Misicuni grayscale
@@ -308,6 +338,7 @@ function TerrariumTerrain() {
             texture: null,
             meshMaxError: 2.5,
             elevationDecoder: ELEVATION_DECODER,
+            loaders: ELEVATION_LOADERS,
             minZoom: 0,
             maxZoom: 14,
             tileSize: 256,
