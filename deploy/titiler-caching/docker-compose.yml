@@ -68,6 +68,37 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  # Raw float32 elevation-tile encoder: a SIBLING tile producer to TiTiler and
+  # the terrarium encoder that reads the same public float32 COG directly via
+  # rasterio /vsicurl/ and serves {z}/{x}/{y}.f32 as a HEADERLESS little-endian
+  # float32 stream (256*256*4 = 262,144 bytes, row-major north-up, heights in
+  # metres, NaN/masked filled with 0.0). No host port — reached only through
+  # nginx at /api/v1/float32/. No PIL: there is no image pipeline; this is
+  # what lets the client bypass the color-managed PNG path entirely.
+  float32:
+    build:
+      context: ./float32-encoder
+    container_name: titiler-float32
+    expose:
+      - "8000"                       # internal only; nothing maps to a host port
+    environment:
+      - ENCODER_COG_URL=https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif
+      # GDAL /vsicurl/ tuning mirrors the titiler/terrarium services in this stack
+      - CPL_TMPDIR=/tmp
+      - GDAL_CACHEMAX=75%
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_VERSION=2
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
   nginx:
     image: nginx:1.27-alpine
     ports:

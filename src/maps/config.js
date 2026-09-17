@@ -31,6 +31,7 @@ import WorldCereal from './TiTilerDemo/WorldCereal.jsx';
 import GhsPop from './TiTilerDemo/GhsPop.jsx';
 import MisicuniTerrain from './TiTilerDemo/MisicuniTerrain.jsx';
 import TerrariumTerrain from './TiTilerDemo/TerrariumTerrain.jsx';
+import Float32Terrain from './TiTilerDemo/Float32Terrain.jsx';
 
 const mapApps = [
     { category: '3DFLUS', name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
@@ -68,6 +69,7 @@ const mapApps = [
     { category: 'TiTiler DEMO', name: 'GHS Population Density', path: '/titiler-demo-ghs-pop', component: GhsPop },
     { category: 'TiTiler DEMO', name: 'Misicuni Terrain (DEM)', path: '/titiler-demo-misicuni-terrain', component: MisicuniTerrain, description: 'Native deck.gl TerrainLayer fed from TiTiler grayscale tiles of the Misicuni GLO-30+geoid DEM' },
     { category: 'TiTiler DEMO', name: 'Terrarium Terrain (Mapzen encoder)', path: '/titiler-demo-terrarium-terrain', component: TerrariumTerrain, description: 'True Mapzen-style Terrarium-packed elevation tiles from a separate GDAL/rasterio encoder behind the caching-stack nginx' },
+    { category: 'TiTiler DEMO', name: 'Float32 Terrain (raw binary)', path: '/titiler-demo-float32-terrain', component: Float32Terrain, description: 'Raw headerless little-endian float32 elevation tiles (262144 bytes, metres) from a separate GDAL/rasterio encoder — bypasses the browser image pipeline, no needles' },
 ];
 
 export default mapApps;
