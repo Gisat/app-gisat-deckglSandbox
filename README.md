@@ -43,6 +43,7 @@ A single Docker image serves both the web frontend and the backend API. The mode
 | `PORT` | `5000` | both | Port the service listens on |
 | `VITE_BASE` | `/` | web | Base path for the frontend (e.g. `/app-gisat-deckglSandbox/`) |
 | `BACKEND_API_URL` | *(empty → falls back to `http://localhost:5000`)* | web | Backend API URL the frontend calls |
+| `CARTO_API_KEY` | *(empty → tiles sent without key)* | web | Carto basemap API key injected into the frontend at runtime |
 | `GEOPARQUET_PATH` | S3 URL | backend | Path or HTTPS URL to the geoparquet data file |
 
 ### Quick Start
