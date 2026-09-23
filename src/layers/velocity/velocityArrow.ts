@@ -1,0 +1,83 @@
+import {
+  computeArrowTargetMeters,
+  computeHeadSizeMeters,
+  computeStemThicknessMeters,
+  HEAD_WIDTH_RATIO
+} from './velocitySymbols';
+
+/**
+ * Pure geometry math for the 2D (shader-based) InSAR velocity arrow symbology.
+ *
+ * Ported from `app-damStabilityInspector/src/lib/symbologies/velocity2d/velocity2dArrow.ts`.
+ * The 2D arrows share the absolute map-meter functions with the symbols module,
+ * then express them as normalized fractions of the point quad radius (the size
+ * of the deck.gl point quad) so the `DynamicArrowLayer` fragment shader can
+ * rasterize the arrow inside that quad.
+ *
+ * The quad radius is a fixed reference (`ARROW_REFERENCE_RADIUS_METERS`) large
+ * enough to hold the longest possible arrow — stem (20 m) + head (13 m) = 33 m.
+ * Fractions are `meters / (2 * radius)` because the quad spans `2 * radius` map
+ * meters (`p.y = 0.5` maps to `+radius`).
+ */
+
+/**
+ * Fixed reference radius (in map meters) of the point quad the arrow is
+ * rasterized into. Must be >= half the longest possible arrow so the tip stays
+ * inside the quad edge (`0.5` in shader space).
+ */
+export const ARROW_REFERENCE_RADIUS_METERS = 40;
+
+/**
+ * Converts an absolute meter dimension into a fraction of the point quad radius.
+ *
+ * @param meters - Dimension in map meters.
+ * @returns Dimension as a fraction of the quad half-side.
+ */
+const toRadiusFraction = (meters: number): number => meters / (2 * ARROW_REFERENCE_RADIUS_METERS);
+
+/**
+ * Computes the stem length fraction from the relative velocity.
+ *
+ * @param velRel - `vel_rel` attribute value, or null when missing.
+ * @returns Stem length as a fraction of the point quad radius.
+ */
+export const computeStemLengthFraction = (velRel: number | null): number =>
+  toRadiusFraction(computeArrowTargetMeters(velRel));
+
+/**
+ * Computes the stem thickness fraction from the reliability length rate.
+ *
+ * The returned value is the full width; the shader halves it.
+ *
+ * @param relLen - `rel_len` attribute value, or null when missing.
+ * @returns Stem thickness as a fraction of the point quad radius.
+ */
+export const computeStemThicknessFraction = (relLen: number | null): number =>
+  toRadiusFraction(computeStemThicknessMeters(relLen));
+
+/**
+ * Computes the arrow head length fraction from the coherence.
+ *
+ * @param coh - `coh` attribute value, or null when missing.
+ * @returns Head length as a fraction of the point quad radius.
+ */
+export const computeHeadSizeFraction = (coh: number | null): number => toRadiusFraction(computeHeadSizeMeters(coh));
+
+/**
+ * Computes the arrow head base width fraction from the coherence.
+ *
+ * The head width equals `HEAD_WIDTH_RATIO x head size` in map meters. The
+ * returned value is the full base width; the shader halves it.
+ *
+ * @param coh - `coh` attribute value, or null when missing.
+ * @returns Head base width as a fraction of the point quad radius.
+ */
+export const computeHeadWidthFraction = (coh: number | null): number =>
+  toRadiusFraction(HEAD_WIDTH_RATIO * computeHeadSizeMeters(coh));
+
+/**
+ * Returns the fixed reference radius of the point quad, in map meters.
+ *
+ * @returns The reference quad radius in map meters.
+ */
+export const computeArrowRadius = (): number => ARROW_REFERENCE_RADIUS_METERS;

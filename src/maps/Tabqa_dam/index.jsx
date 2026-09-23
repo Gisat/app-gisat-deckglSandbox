@@ -1,26 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import DeckGL from '@deck.gl/react';
 import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
-import chroma from 'chroma-js';
-import buildDeckGLLayerWithSymbology, { getRadiusUnits } from '../../layers/factory/buildDeckGLLayerWithSymbology';
+import buildDeckGLLayerWithSymbology from '../../layers/factory/buildDeckGLLayerWithSymbology';
 
 // const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_cog.tif';
 const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_z4_bilinear_cog.tif';
 const RAW_DEM_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_bilinear_cog.tif';
-
-const colorScale = chroma
-    .scale(['#b1001d', '#ca2d2f', '#e25b40', '#ffaa00', '#ffff00', '#a0f000', '#4ce600', '#50d48e', '#00c3ff', '#0f80d1', '#004ca8', '#003e8a'])
-    .domain([-5, 5]);
-
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
-const normalize = (value, domainMin, domainMax, rangeMin, rangeMax) => {
-    const t = clamp((Number(value) - domainMin) / (domainMax - domainMin), 0, 1);
-    return rangeMin + t * (rangeMax - rangeMin);
-};
+const LOS_GEOJSON_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/Tabqua_LOS_selected.geojson';
 
 const INITIAL_VIEW_STATE = {
     longitude: 38.5667,
@@ -34,6 +23,22 @@ const TabqaDam = () => {
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
     const [glazeMode, setGlazeMode] = useState('precalculated');
     const [selectedFeature, setSelectedFeature] = useState(null);
+    const [losFeatures, setLosFeatures] = useState([]);
+
+    useEffect(() => {
+        let active = true;
+        fetch(LOS_GEOJSON_URL)
+            .then((response) => response.json())
+            .then((collection) => {
+                if (active) setLosFeatures(collection?.features ?? []);
+            })
+            .catch(() => {
+                if (active) setLosFeatures([]);
+            });
+        return () => {
+            active = false;
+        };
+    }, []);
 
     const basemap = new TileLayer({
         id: 'osm-basemap',
@@ -82,83 +87,10 @@ const TabqaDam = () => {
         },
     });
 
-    // Use geographic meters below zoom 16, and fixed pixels at or above zoom 16
-    const radiusUnits = getRadiusUnits(viewState.zoom, 16);
-
-    // Helper to safely extract a number from various possible property keys
-    const getNum = (f, keys, fallback = 0) => {
-        for (const key of keys) {
-            if (f.properties[key] !== undefined && f.properties[key] !== null) {
-                return Number(f.properties[key]);
-            }
-        }
-        return fallback;
-    };
-
-    const getArrowFillColor = (f) => {
-        const vel = getNum(f, ['vel_avg', 'VEL_AVG', 'vel_last', 'VEL_LAST']);
-        return [...colorScale(vel).rgb(), 255];
-    };
-    
-    const getArrowAngle = (f) => {
-        const azAng = getNum(f, ['az_ang', 'AZ_ANG'], null);
-        if (azAng !== null) return 180 + azAng;
-        
-        const vel = getNum(f, ['vel_avg', 'VEL_AVG', 'vel_last', 'VEL_LAST']);
-        return vel < 0 ? 80 : 260;
-    };
-    
-    const getArrowStemLength = (f) => {
-        const rel = getNum(f, ['REL', 'rel', 'vel_rel', 'VEL_REL']);
-        // Fraction of the point quad half-side (0.5 == quad edge): at low REL the
-        // head dominates, at high REL the stem is longer.
-        return normalize(rel, 0, 1, 0.05, 0.25);
-    };
-    
-    const getArrowHeadSize = (f) => {
-        const coh = getNum(f, ['COH_MOD', 'coh_mod', 'COH', 'coh']);
-        // Head length as a fraction of the quad half-side.
-        return normalize(coh, 0.4, 1, 0.08, 0.16);
-    };
-    
-    const getArrowHeadWidth = (f) => {
-        // HEAD_WIDTH_RATIO (0.8) x head size, matching the 3D arrowhead silhouette.
-        return getArrowHeadSize(f) * 0.8;
-    };
-    
-    const getArrowStemThickness = (f) => {
-        const relLen = getNum(f, ['REL_LEN', 'rel_len']);
-        // Full stem width; clamped per-feature so the stem is never wider than its own head.
-        const thickness = normalize(relLen, 0.4, 1, 0.0125, 0.0625);
-        return Math.min(thickness, getArrowHeadWidth(f));
-    };
-    
-    const getArrowRadius = (f) => {
-        const vel = getNum(f, ['vel_avg', 'VEL_AVG', 'vel_last', 'VEL_LAST']);
-        // Base pixel sizes
-        const size = normalize(Math.abs(vel), 0, 21, 32, 80); 
-        
-        // Corrected deck.gl 512px base resolution at lat 35.87° and zoom 16 is ~0.9677 meters/pixel.
-        return radiusUnits === 'meters' ? size * 0.9677 : size;
-    }; 
-
-    const mvtPoints = buildDeckGLLayerWithSymbology({
+    const losLayers = buildDeckGLLayerWithSymbology({
         id: 'tabqua-116a-123d-points',
-        data: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/los_tiles/{z}/{x}/{y}.pbf',
-        minZoom: 0,
-        maxZoom: 14,
-        radiusUnits,
-        getFillColor: getArrowFillColor,
-        getAngle: getArrowAngle,
-        getStemLength: getArrowStemLength,
-        getStemThickness: getArrowStemThickness,
-        getHeadSize: getArrowHeadSize,
-        getHeadWidth: getArrowHeadWidth,
-        getRadius: getArrowRadius,
-        // Zero line width: the quad must stay exactly 2 * radius because the SDF
-        // arrow is measured as a fraction of the rendered quad. The visible
-        // selection stroke is hardcoded in the shader.
-        getLineWidth: 0,
+        features: losFeatures,
+        zoom: viewState.zoom,
         // Toggle stroke visibility using the Alpha channel to prevent undefined === undefined bugs
         getLineColor: (f) => {
             if (!selectedFeature) return [0, 255, 255, 0];
@@ -167,16 +99,14 @@ const TabqaDam = () => {
             return (matchesId || matchesFid) ? [0, 255, 255, 255] : [0, 255, 255, 0];
         },
         updateTriggers: {
-            getLineColor: [selectedFeature],
-            // Force deck.gl to flush the cache and recalculate sizes when crossing zoom 16
-            getRadius: [radiusUnits]
+            getLineColor: [selectedFeature]
         }
     });
 
     const layers = [
         basemap,
         ...(glazeMode === 'precalculated' ? [precalculatedGlaze] : [onTheFlyGlaze]),
-        mvtPoints,
+        ...losLayers,
     ];
 
     return (

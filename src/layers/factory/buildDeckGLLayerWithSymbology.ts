@@ -1,159 +1,203 @@
-import {MVTLayer} from '@deck.gl/geo-layers';
-import type {Accessor, Color} from '@deck.gl/core';
-import chroma from 'chroma-js';
+import { ScatterplotLayer } from '@deck.gl/layers';
+import type { Accessor, Color, Layer } from '@deck.gl/core';
 import { DynamicArrowLayer } from '../DynamicArrowLayer';
+import {
+  computeArrowHeading,
+  isNonDominantOrbit,
+  isSphere,
+  SMALL_SPHERE_RADIUS_METERS,
+  SPHERE_RADIUS_METERS
+} from '../velocity/velocitySymbols';
+import {
+  computeArrowRadius,
+  computeHeadSizeFraction,
+  computeHeadWidthFraction,
+  computeStemLengthFraction,
+  computeStemThicknessFraction
+} from '../velocity/velocityArrow';
+import {
+  DEFAULT_FEATURE_FILL_RGBA,
+  VELOCITY_COLORMAP,
+  VELOCITY_DESCENDING_COLORMAP,
+  type RgbaColor
+} from '../velocity/velocityColormap';
+import { computeVelocitySizeZoomScale } from '../velocity/velocityZoom';
 
-export interface BuildDeckGLLayerWithSymbologyProps<DataT = any> {
+/** Point feature as decoded from the LOS GeoJSON. */
+export interface VelocityFeature {
+  geometry: { type?: string; coordinates: number[] };
+  properties: Record<string, any>;
+}
+
+export interface BuildDeckGLLayerWithSymbologyProps {
   id: string;
-  data: string;
-  minZoom?: number;
-  maxZoom?: number;
+  /** Decoded GeoJSON features (Point geometry in lng/lat). */
+  features: VelocityFeature[];
+  /** Current view zoom; drives the zoom-adaptive meter size band. */
+  zoom: number;
   visible?: boolean;
   pickable?: boolean;
-  autoHighlight?: boolean;
-  highlightColor?: Color;
-  getLineWidth?: Accessor<DataT, number>;
-  getLineColor?: Accessor<DataT, Color>;
-  radiusUnits?: 'meters' | 'common' | 'pixels';
-  getFillColor?: Accessor<DataT, Color>;
-  getAngle?: Accessor<DataT, number>;
-  getStemLength?: Accessor<DataT, number>;
-  getStemThickness?: Accessor<DataT, number>;
-  getHeadSize?: Accessor<DataT, number>;
-  getHeadWidth?: Accessor<DataT, number>;
-  anchorCentered?: boolean;
-  getRadius?: Accessor<DataT, number>;
+  /** Dominant orbit of the active style; features from the other orbit render as small gray circles. */
+  dominantOrbit?: 'A' | 'D' | null;
+  /** Per-feature selection stroke color (alpha 0 = unselected); drives selection on both sublayers. */
+  getLineColor?: Accessor<VelocityFeature, Color>;
   updateTriggers?: Record<string, unknown[]>;
 }
 
-type Feature = {geometry: {coordinates: number[]}; properties: Record<string, any>};
+/** Selected-feature stroke width (CSS px), mirroring the shader's `SELECTED_FEATURE_LINE_WIDTH`. */
+const SELECTED_FEATURE_LINE_WIDTH = 3;
 
-const colorScale = chroma
-  .scale([
-    '#b1001d',
-    '#ca2d2f',
-    '#e25b40',
-    '#ffaa00',
-    '#ffff00',
-    '#a0f000',
-    '#4ce600',
-    '#50d48e',
-    '#00c3ff',
-    '#0f80d1',
-    '#004ca8',
-    '#003e8a'
-  ])
-  .domain([-5, 5]);
+const TRANSPARENT: RgbaColor = [0, 0, 0, 0];
 
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
-const normalize = (
-  value: number,
-  domainMin: number,
-  domainMax: number,
-  rangeMin: number,
-  rangeMax: number
-) => {
-  if (!Number.isFinite(value)) {
-    return rangeMin;
+const readNumber = (feature: VelocityFeature, keys: readonly string[]): number | null => {
+  const properties = feature?.properties ?? {};
+  for (const key of keys) {
+    const value = properties[key];
+    if (value !== undefined && value !== null && value !== '') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
   }
-  const t = clamp((value - domainMin) / (domainMax - domainMin), 0, 1);
-  return rangeMin + t * (rangeMax - rangeMin);
+  return null;
 };
-
-const getFeatureColor = (f: Feature): Color => [
-  ...colorScale(f.properties.vel_avg ?? 0).rgb(),
-  255
-];
-
-const getIconAngle = (f: Feature): number => {
-  const azAng = Number(f.properties.az_ang);
-  if (Number.isFinite(azAng)) {
-    return 180 + azAng;
-  }
-  const isDesc = f.properties.orbit === 'D';
-  return (Number(f.properties.vel_avg) || 0) < 0 ? (isDesc ? 280 : 80) : (isDesc ? 100 : 260);
-};
-
-const getIconSizeFromAttribute = (value: number | null | undefined): number =>
-  normalize(Math.abs(value ?? 0), 0, 30, 10, 40);
 
 /**
- * Zoom-adaptive radius units: below the threshold the size is in geographic meters
- * (screen size grows/shrinks with zoom), at/above it the size is in pixels (fixed screen size).
+ * Reads the velocity symbology attributes from a feature, tolerating the
+ * attribute spellings used by the different InSAR exports (`vel_avg`/`VEL_AVG`,
+ * `vel_rel`/`VEL_REL`, `rel_len`/`REL_LEN`, `coh`/`COH`).
  */
-export const getRadiusUnits = (zoom: number, threshold: number = 14): 'meters' | 'pixels' =>
-  zoom >= threshold ? 'pixels' : 'meters';
+const readVelocity = (feature: VelocityFeature) => {
+  const properties = feature?.properties ?? {};
+  return {
+    velAvg: readNumber(feature, ['vel_avg', 'VEL_AVG', 'vel_last', 'VEL_LAST']),
+    velRel: readNumber(feature, ['vel_rel', 'VEL_REL', 'REL', 'rel']),
+    relLen: readNumber(feature, ['rel_len', 'REL_LEN']),
+    coh: readNumber(feature, ['coh', 'COH', 'coh_mod', 'COH_MOD']),
+    orbit: (properties.orbit ?? properties.ORBIT ?? null) as string | null
+  };
+};
 
-const buildDeckGLLayerWithSymbology = <DataT = any>({
+const getPosition = (feature: VelocityFeature): [number, number] => {
+  const coordinates = feature?.geometry?.coordinates;
+  if (Array.isArray(coordinates) && coordinates.length >= 2) {
+    return [coordinates[0], coordinates[1]];
+  }
+  const properties = feature?.properties ?? {};
+  return [Number(properties.lon ?? properties.LON), Number(properties.lat ?? properties.LAT)];
+};
+
+const getFillColor = (feature: VelocityFeature, dominantOrbit: 'A' | 'D' | null): RgbaColor => {
+  const { velAvg, orbit } = readVelocity(feature);
+  if (isNonDominantOrbit(orbit, dominantOrbit)) {
+    return DEFAULT_FEATURE_FILL_RGBA;
+  }
+  return (orbit === 'D' ? VELOCITY_DESCENDING_COLORMAP : VELOCITY_COLORMAP)(velAvg);
+};
+
+/**
+ * Builds the shader-rasterized 2D InSAR velocity (LOS) layers: meter-sized SDF
+ * arrows for significant velocities plus ScatterplotLayer circles for near-zero
+ * values and the non-dominant orbit.
+ *
+ * The rendering rules mirror `app-damStabilityInspector`'s `velocitySymbology`
+ * (fixed 40 m reference radius, `vel_rel` stem, `rel_len` thickness, `coh`
+ * head, orbit-aware heading, discrete velocity colormap, zoom-adaptive meter
+ * band). Selection uses the parent-provided `getLineColor` accessor: arrows
+ * render a hardcoded 3 px stroke via the shader, circles use the same color with
+ * a 3 px stroke.
+ *
+ * Unlike the tiled MVT path, the source is a plain GeoJSON FeatureCollection, so
+ * positions come straight from `geometry.coordinates` (lng/lat) and no
+ * tile-local coordinate handling is needed.
+ */
+const buildDeckGLLayerWithSymbology = ({
   id,
-  data,
-  minZoom = 0,
-  maxZoom = 14,
+  features,
+  zoom,
   visible = true,
   pickable = true,
-  autoHighlight = true,
-  highlightColor = [255, 255, 0, 255],
-  getLineWidth = 0,
-  getLineColor = [0, 0, 0, 255],
-  radiusUnits = 'pixels',
-  getFillColor,
-  getAngle,
-  getStemLength,
-  getStemThickness,
-  getHeadSize,
-  getHeadWidth,
-  anchorCentered = false,
-  getRadius,
+  dominantOrbit = null,
+  getLineColor = (() => TRANSPARENT) as unknown as Accessor<VelocityFeature, Color>,
   updateTriggers
-}: BuildDeckGLLayerWithSymbologyProps<DataT>) => {
-  return new MVTLayer({
-    id,
-    data,
-    binary: false,
-    minZoom,
-    maxZoom,
-    visible,
-    pickable,
-    autoHighlight,
-    highlightColor,
-    updateTriggers,
-    renderSubLayers: (props: any) => {
-      if (!props.data) {
-        return null;
-      }
+}: BuildDeckGLLayerWithSymbologyProps): Layer[] => {
+  const zoomSizeScale = computeVelocitySizeZoomScale(zoom);
+  const resolveLineColor = getLineColor as unknown as (feature: VelocityFeature) => Color;
+  const mergedUpdateTriggers = { ...updateTriggers, getRadius: [zoomSizeScale] };
 
-      return new DynamicArrowLayer({
-        ...props,
-        id: `${props.id}-arrows`,
-        getPosition: (f: Feature) => f.geometry.coordinates,
-        getFillColor: getFillColor ?? getFeatureColor,
-        getAngle: getAngle ?? getIconAngle,
-        getStemLength:
-          getStemLength ??
-          ((f: Feature) => normalize(Math.abs(f.properties.vel_rel ?? 0), 0, 10, 0.05, 0.25)),
-        getStemThickness:
-          getStemThickness ??
-          ((f: Feature) => normalize(f.properties.rel_len ?? 0, 0.4, 1, 0.0125, 0.0625)),
-        getHeadSize:
-          getHeadSize ??
-          ((f: Feature) => normalize(f.properties.coh ?? 0, 0.4, 1, 0.08, 0.16)),
-        getHeadWidth:
-          getHeadWidth ??
-          ((f: Feature) => normalize(f.properties.coh ?? 0, 0.4, 1, 0.064, 0.128)),
-        anchorCentered,
-        getRadius: getRadius ?? ((f: Feature) => getIconSizeFromAttribute(f.properties.vel_last)),
-        radiusUnits,
-        pickable,
-        autoHighlight,
-        highlightColor,
-        stroked: true,
-        getLineWidth,
-        getLineColor,
-        updateTriggers
-      });
+  const arrowFeatures: VelocityFeature[] = [];
+  const circleFeatures: VelocityFeature[] = [];
+
+  for (const feature of features ?? []) {
+    const { velAvg, orbit } = readVelocity(feature);
+    if (isNonDominantOrbit(orbit, dominantOrbit) || isSphere(velAvg)) {
+      circleFeatures.push(feature);
+    } else {
+      arrowFeatures.push(feature);
     }
-  });
+  }
+
+  const layers: Layer[] = [];
+
+  if (arrowFeatures.length > 0) {
+    layers.push(
+      new DynamicArrowLayer<VelocityFeature>({
+        id: `${id}-arrows`,
+        data: arrowFeatures,
+        visible,
+        pickable,
+        getPosition,
+        getFillColor: (feature: VelocityFeature): RgbaColor => getFillColor(feature, dominantOrbit),
+        getAngle: (feature: VelocityFeature): number => {
+          const { velAvg, orbit } = readVelocity(feature);
+          return computeArrowHeading(velAvg, orbit);
+        },
+        getStemLength: (feature: VelocityFeature): number => computeStemLengthFraction(readVelocity(feature).velRel),
+        getStemThickness: (feature: VelocityFeature): number =>
+          computeStemThicknessFraction(readVelocity(feature).relLen),
+        getHeadSize: (feature: VelocityFeature): number => computeHeadSizeFraction(readVelocity(feature).coh),
+        getHeadWidth: (feature: VelocityFeature): number => computeHeadWidthFraction(readVelocity(feature).coh),
+        getRadius: computeArrowRadius() * zoomSizeScale,
+        radiusUnits: 'meters',
+        lineWidthUnits: 'pixels',
+        stroked: true,
+        getLineWidth: 0,
+        getLineColor: resolveLineColor,
+        updateTriggers: mergedUpdateTriggers
+      })
+    );
+  }
+
+  if (circleFeatures.length > 0) {
+    layers.push(
+      new ScatterplotLayer<VelocityFeature>({
+        id: `${id}-circles`,
+        data: circleFeatures,
+        visible,
+        pickable,
+        getPosition,
+        getFillColor: (feature: VelocityFeature): RgbaColor => getFillColor(feature, dominantOrbit),
+        getRadius: (feature: VelocityFeature): number => {
+          const { orbit } = readVelocity(feature);
+          const hidden = isNonDominantOrbit(orbit, dominantOrbit);
+          return (hidden ? SMALL_SPHERE_RADIUS_METERS : SPHERE_RADIUS_METERS) * zoomSizeScale;
+        },
+        radiusUnits: 'meters',
+        lineWidthUnits: 'pixels',
+        getLineColor: resolveLineColor,
+        getLineWidth: (feature: VelocityFeature): number => {
+          const color = resolveLineColor(feature);
+          return color && color[3] > 0 ? SELECTED_FEATURE_LINE_WIDTH : 0;
+        },
+        stroked: true,
+        filled: true,
+        updateTriggers: mergedUpdateTriggers
+      })
+    );
+  }
+
+  return layers;
 };
 
 export default buildDeckGLLayerWithSymbology;
