@@ -33,8 +33,10 @@ const INITIAL_VIEW_STATE = {
  */
 const sameFeature = (a, b) => {
     if (!a || !b) return false;
-    const byId = a.id !== undefined && a.id === b.id;
-    const byFid = a.properties?.fid !== undefined && a.properties?.fid === b.properties?.fid;
+    // Guard against null ids/fids: `null === null` must not count as a match, or
+    // every feature with a missing id would highlight together.
+    const byId = a.id != null && a.id === b.id;
+    const byFid = a.properties?.fid != null && a.properties.fid === b.properties?.fid;
     return byId || byFid;
 };
 
