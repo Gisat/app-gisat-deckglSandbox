@@ -56,7 +56,8 @@ export interface BuildDeckGLLayerWithSymbologyProps {
    * `SELECTED_FEATURE_LINE_WIDTH` for features whose `getLineColor` alpha is
    * non-zero, otherwise `NON_SELECTED_FEATURE_LINE_WIDTH` (transparent 1px).
    * Arrows ignore this (their stroke is fixed in the shader and their quad must
-   * stay uninflated), so it only affects the circle sublayer.
+   * stay uninflated), so it only affects the circle sublayer. When the selected
+   * preset is thin-edge, unselected circles are forced to 0.
    */
   getLineWidth?: Accessor<VelocityFeature, number>;
   updateTriggers?: Record<string, unknown[]>;
@@ -64,7 +65,9 @@ export interface BuildDeckGLLayerWithSymbologyProps {
    * When set, overrides the data-driven arrow geometry (stem/head dimensions)
    * with a fixed shape preset so the shapes can be compared on the map. The
    * orientation always uses the data-driven heading (`computeArrowHeading`).
-   * `null`/undefined keeps the data-driven LOS symbology.
+   * A preset can also be thin-edged, which removes the unselected border from
+   * both the arrows and the circles. `null`/undefined keeps the data-driven LOS
+   * symbology.
    */
   arrowShapePresetId?: ArrowShapePresetId | null;
 }
@@ -166,6 +169,25 @@ const buildDeckGLLayerWithSymbology = ({
   const mergedUpdateTriggers = { ...updateTriggers, getRadius: [zoomSizeScale] };
   const arrowPreset = getArrowShapePreset(arrowShapePresetId);
 
+  // The thin-edge variant drops the unselected border on the arrows (via the
+  // shader) and on the circles (here). Selection / hover borders are kept.
+  const thinEdge = arrowPreset?.thinEdge === true;
+  const resolveCircleLineWidth = (feature: VelocityFeature): number => {
+    if (thinEdge) {
+      const color = resolveLineColor(feature);
+      if (!(color && color[3] > 0)) {
+        return 0;
+      }
+    }
+    return resolveLineWidth(feature);
+  };
+  // The circle layer is not recreated when the preset changes, so its line
+  // widths must also recompute when the thin-edge treatment changes.
+  const circleUpdateTriggers = {
+    ...mergedUpdateTriggers,
+    getLineWidth: [...(mergedUpdateTriggers.getLineWidth ?? []), thinEdge]
+  };
+
   // Each feature's symbology attributes are read many times per render (fill,
   // angle, stem length, stem thickness, head size/width), so parse them once
   // per feature for this build. The cache is scoped to the call, so replacing
@@ -216,6 +238,7 @@ const buildDeckGLLayerWithSymbology = ({
         visible,
         pickable,
         glyph: arrowPreset ? arrowPreset.glyph : 'triangle',
+        thinEdge,
         getPosition,
         getFillColor: (feature: VelocityFeature): RgbaColor => getFillColor(feature, dominantOrbit),
         getAngle: (feature: VelocityFeature): number => {
@@ -263,10 +286,10 @@ const buildDeckGLLayerWithSymbology = ({
         radiusUnits: 'meters',
         lineWidthUnits: 'pixels',
         getLineColor: resolveLineColor,
-        getLineWidth: resolveLineWidth,
+        getLineWidth: resolveCircleLineWidth,
         stroked: true,
         filled: true,
-        updateTriggers: mergedUpdateTriggers
+        updateTriggers: circleUpdateTriggers
       })
     );
   }

@@ -35,7 +35,8 @@
  * `./selectionConstants` module, expressed in CSS pixels via the device pixel
  * ratio (passed from the vertex shader as a varying, because `dFdx` measures
  * per device pixel and the `project` uniform block is only declared in the
- * vertex shader).
+ * vertex shader). The compile-time `thinEdge` flag sets the unselected width to 0
+ * so the arrow renders a smaller soft fringe instead of its default 1px edge.
  *
  * Ported from `app-damStabilityInspector/src/lib/layers/factory/DynamicArrowLayer.shader.ts`.
  * There the widths come from a shared `@lib/symbologies/constants/selection`
@@ -326,14 +327,19 @@ const buildGeometryGLSL = (glyph: ArrowGlyph): string => {
  * (tail starts half its total length before the anchor and the head tip ends
  * half after it). When false the tail stays on the anchor.
  * @param options.glyph - Arrow head glyph to rasterize. Defaults to `triangle`.
+ * @param options.thinEdge - When true the unselected stroke width drops to 0, so
+ * the arrow keeps only a smaller soft fringe instead of the default 1px
+ * transparent edge. Selection / hover strokes are unaffected. Defaults to false.
  * @returns The merged shader injections (vertex + fragment).
  */
 export const getArrowShaderInjections = ({
   anchorCentered,
-  glyph = 'triangle'
+  glyph = 'triangle',
+  thinEdge = false
 }: {
   anchorCentered: boolean;
   glyph?: ArrowGlyph;
+  thinEdge?: boolean;
 }): Record<string, string> => {
   // Minimum stem length. It reserves a shared bare-stem distance (`MIN_BARE_STEM_RATIO`
   // pen widths) *in front of the glyph's own wing sweep*, so the visible stem is
@@ -348,6 +354,11 @@ export const getArrowShaderInjections = ({
     glyph === 'triangle'
       ? '0.0'
       : `${glslFloat(MIN_BARE_STEM_RATIO)} * instanceStemThicknesses + ${wingBackExpr}`;
+
+  // Unselected arrows default to a 1px transparent stroke (a soft fade-to-
+  // transparent edge). `thinEdge` drops it to 0 so the fill meets the stroke
+  // band directly, leaving a smaller fringe. The selected stroke is unchanged.
+  const unselectedStrokeWidth = thinEdge ? 0 : NON_SELECTED_FEATURE_LINE_WIDTH;
 
   const vsMainEnd: string = `
     vAngle = instanceAngles;
@@ -408,7 +419,7 @@ export const getArrowShaderInjections = ({
     // of the circle points.
     float activeStrokeW = (isSelected
       ? (${glslFloat(SELECTED_FEATURE_LINE_WIDTH)} + 1.0)
-      : ${glslFloat(NON_SELECTED_FEATURE_LINE_WIDTH)}) * pixelSize;
+      : ${glslFloat(unselectedStrokeWidth)}) * pixelSize;
 
     // Use a standard soft feather for the outer boundary to smooth it against the map background
     float outerFeather = 1.0 * pixelSize;

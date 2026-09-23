@@ -46,10 +46,17 @@ export interface DynamicArrowLayerProps<DataT = any> extends ScatterplotLayerPro
   anchorCentered?: boolean;
   /**
    * Arrow head glyph rasterized by the shader: `triangle` (default), `barbed`,
-   * `dart` or `open`. Resolved at shader-compile time — it is not a
-   * per-instance attribute, to stay within the WebGL instanced-attribute limit.
+   * `dart` or `open`. Resolved at shader-compile time — it is not a per-instance
+   * attribute, to stay within the WebGL instanced-attribute limit.
    */
   glyph?: ArrowGlyph;
+  /**
+   * When true the unselected arrow drops the default 1px transparent stroke and
+   * renders only a smaller soft fringe. Selection and hover strokes are
+   * unaffected. Resolved at shader-compile time (not a per-instance attribute,
+   * to stay within the WebGL instanced-attribute limit).
+   */
+  thinEdge?: boolean;
 }
 
 const defaultProps: DefaultProps<DynamicArrowLayerProps> = {
@@ -61,6 +68,7 @@ const defaultProps: DefaultProps<DynamicArrowLayerProps> = {
   getHeadWidth: { type: 'accessor', value: 0.1 },
   anchorCentered: false,
   glyph: 'triangle',
+  thinEdge: false,
   // The shader treats a non-zero line alpha as "selected" and paints the
   // selection stroke, so default the line color to fully transparent. Without
   // this, a standalone instance (no `getLineColor` accessor) would inherit the
@@ -104,7 +112,8 @@ export class DynamicArrowLayer<DataT = any, ExtraPropsT extends object = object>
     const shaders = super.getShaders();
     shaders.inject = getArrowShaderInjections({
       anchorCentered: Boolean(this.props.anchorCentered),
-      glyph: this.props.glyph ?? 'triangle'
+      glyph: this.props.glyph ?? 'triangle',
+      thinEdge: Boolean(this.props.thinEdge)
     });
     return shaders;
   }

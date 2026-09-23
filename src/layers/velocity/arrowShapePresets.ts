@@ -26,6 +26,10 @@ import type { ArrowGlyph } from '../DynamicArrowLayer.shader';
  * *total* along-axis head extent for `dart`, and the backward arm length for
  * `open`. `DynamicArrowLayer` compensates with per-glyph wing-sweep factors, so
  * do not read `headSize` as a shared "tip distance".
+ *
+ * One preset is a *thin-edge* variant of another: it reuses the exact same head
+ * proportions but drops the default 1px unselected stroke, so the arrow keeps
+ * only a smaller soft fringe and the circle points lose their border.
  */
 
 /**
@@ -37,7 +41,7 @@ import type { ArrowGlyph } from '../DynamicArrowLayer.shader';
 export const ARROW_SHAPE_PRESET_STROKE_WIDTH_SCALE = 0.5;
 
 /** Identifier of a built-in arrow shape preset. */
-export type ArrowShapePresetId = 'round-cap' | 'butt-cap' | 'flush-cap';
+export type ArrowShapePresetId = 'round-cap' | 'butt-cap' | 'flush-cap' | 'flush-cap-thin';
 
 /**
  * A fixed arrow-head preset.
@@ -57,9 +61,25 @@ export interface ArrowShapePreset {
   headWidth: number;
   /** Head length as a multiple of the pen width. */
   headSize: number;
+  /**
+   * When true, drop the default 1px unselected stroke so the arrow renders a
+   * smaller soft fringe and the circle points lose their unselected border.
+   * Selection / hover borders are unaffected.
+   */
+  thinEdge?: boolean;
 }
 
-/** The three arrow heads available for comparison. */
+/**
+ * Shared head proportions of the Vertical-Cut / Flush-Cap Arrow, reused by its
+ * thin-edge variant so the two options cannot drift apart.
+ */
+const FLUSH_CAP_HEAD = {
+  glyph: 'barbed',
+  headWidth: 3.32,
+  headSize: 1.916
+} as const;
+
+/** The arrow heads available for comparison. */
 export const ARROW_SHAPE_PRESETS: ArrowShapePreset[] = [
   {
     id: 'round-cap',
@@ -78,9 +98,13 @@ export const ARROW_SHAPE_PRESETS: ArrowShapePreset[] = [
   {
     id: 'flush-cap',
     label: 'Vertical-Cut / Flush-Cap Arrow',
-    glyph: 'barbed',
-    headWidth: 3.32,
-    headSize: 1.916
+    ...FLUSH_CAP_HEAD
+  },
+  {
+    id: 'flush-cap-thin',
+    label: 'Vertical-Cut / Flush-Cap Arrow (Thin Border)',
+    ...FLUSH_CAP_HEAD,
+    thinEdge: true
   }
 ];
 
