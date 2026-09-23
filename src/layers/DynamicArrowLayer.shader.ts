@@ -9,22 +9,22 @@
  * shader maps them back to pixels so the rendered arrow matches the on-map
  * meters exactly.
  *
- * Four glyph heads are supported and selected at shader-compile time via
- * {@link ArrowGlyph}:
- * - `triangle` — rectangle stem + straight triangular head (legacy default).
- * - `barbed`   — swept-back barbed head (the "standard" SVG arrow).
- * - `dart`     — forward-flared kite/dart head (the "bold" SVG arrow).
- * - `open`     — rounded stem + open V head made of two capsule strokes (the
- *   "open V" SVG arrow).
+ * Glyph shapes are selected at shader-compile time via {@link ArrowGlyph}:
+ * - `triangle` — filled rectangle stem + triangular head (the legacy / data
+ *   path).
+ * - `open`, `dart`, `barbed` — one and the same stroked open-V arrow: a stem
+ *   plus two barbs drawn with a single pen, so the head's stroke always equals
+ *   the stem's. They differ only in their caps, per {@link STROKED_ARROW_CAP}:
+ *   round ends and apex (`open`), flat/perpendicular ends with a mitered point
+ *   (`dart`), or flat/vertical ends with a mitered point (`barbed`).
  *
- * Every non-`triangle` glyph is given a minimum stem length that keeps the tail
- * behind the head "wings", then the data-driven stem length is added on top.
- * The minimum reserves a shared bare-stem distance in front of the glyph's own
- * wing sweep, so all presets show the same visible stem from the tail to the
- * wings even though their wings sweep back by different amounts. Without it a
- * head that sweeps back further than the stem leaves no visible tail and the
- * glyph reads as a bare chevron. The minimum is applied in the vertex shader so
- * the centered-anchor offset uses the same stem length as the fragment geometry.
+ * Every stroked glyph is given a minimum stem length that keeps the tail behind
+ * the head barbs, then the data-driven stem length is added on top. The minimum
+ * reserves a shared bare-stem distance in front of the barbs, so all glyphs show
+ * the same visible stem from the tail to the barbs. Without it a head whose barbs
+ * sweep back further than the stem leaves no visible tail and the glyph reads as
+ * a bare chevron. The minimum is applied in the vertex shader so the
+ * centered-anchor offset uses the same stem length as the fragment geometry.
  *
  * Whether the arrow is centered on its anchor or starts at it is resolved at
  * shader-compile time from a per-layer flag — deliberately NOT a per-instance
@@ -53,91 +53,44 @@ import {
 export type ArrowGlyph = 'triangle' | 'barbed' | 'dart' | 'open';
 
 /**
- * Along-axis backward sweep of each solid glyph's outer head vertices behind
- * the head base, as a multiple of `vHeadSize`. Shared by the `HEAD_POLYGONS`
- * vertices and `WING_BACK_EXTENT_FACTOR`, so the traced geometry and the
- * min-stem reserve can never drift apart.
+ * Cap treatment of a stroked glyph's ends. The three stroked glyphs (`open`,
+ * `dart`, `barbed`) share one centerline — a stem plus an open-V head drawn with
+ * the same pen, so the head's stroke always equals the stem's — and differ only
+ * in their caps:
+ * - `round`    — line-cap `round` (capsule ends), rounded apex.
+ * - `butt`     — free ends cut flat perpendicular to each segment, apex mitered
+ *   to a point.
+ * - `vertical` — free ends cut flat parallel to the arrow axis, apex mitered to
+ *   a point.
  */
-const BARBED_WING_BACK_EXTENT = 0.646;
-const DART_WING_BACK_EXTENT = 0.784;
+export type ArrowCap = 'round' | 'butt' | 'vertical';
 
-/**
- * Head outlines for the solid polygon glyphs, expressed as GLSL vertex
- * expressions in terms of `thick` (stem half thickness), `headHalfWidth` (w),
- * `headBaseY` (L) and `vHeadSize` (H).
- *
- * Each glyph is a list of full, both-halves simple polygons; the arrow SDF is
- * the union of those polygons. Along offsets are relative to the stem end
- * `headBaseY`, positive toward the tip.
- *
- * `triangle` and `barbed` are traced as ONE combined polygon that already
- * includes the stem: unioning a stem rectangle with the head as two separate
- * shapes leaves a coincident boundary along their seam, where the SDF is 0 and
- * the stroke logic paints a false internal line. `dart` keeps its two
- * overlapping quads plus an explicit stem rectangle — its quads genuinely
- * overlap (no coincident boundary), so no seam line appears.
- */
-const HEAD_POLYGONS: Record<Exclude<ArrowGlyph, 'open'>, string[][]> = {
-  triangle: [
-    [
-      'vec2(thick, 0.0)',
-      'vec2(thick, headBaseY)',
-      'vec2(headHalfWidth, headBaseY)',
-      'vec2(0.0, headTipY)',
-      'vec2(-headHalfWidth, headBaseY)',
-      'vec2(-thick, headBaseY)',
-      'vec2(-thick, 0.0)'
-    ]
-  ],
-  barbed: [
-    [
-      'vec2(thick, 0.0)',
-      'vec2(thick, headBaseY)',
-      `vec2(headHalfWidth, headBaseY - ${BARBED_WING_BACK_EXTENT} * vHeadSize)`,
-      'vec2(headHalfWidth, headBaseY + 0.077 * vHeadSize)',
-      'vec2(0.0, headTipY)',
-      'vec2(-headHalfWidth, headBaseY + 0.077 * vHeadSize)',
-      `vec2(-headHalfWidth, headBaseY - ${BARBED_WING_BACK_EXTENT} * vHeadSize)`,
-      'vec2(-thick, headBaseY)',
-      'vec2(-thick, 0.0)'
-    ]
-  ],
-  dart: [
-    [
-      'vec2(-headHalfWidth, headBaseY - 0.567 * vHeadSize)',
-      `vec2(-0.712 * headHalfWidth, headBaseY - ${DART_WING_BACK_EXTENT} * vHeadSize)`,
-      'vec2(0.144 * headHalfWidth, headBaseY - 0.109 * vHeadSize)',
-      'vec2(0.0, headBaseY + 0.216 * vHeadSize)'
-    ],
-    [
-      'vec2(-0.144 * headHalfWidth, headBaseY - 0.109 * vHeadSize)',
-      `vec2(0.712 * headHalfWidth, headBaseY - ${DART_WING_BACK_EXTENT} * vHeadSize)`,
-      'vec2(headHalfWidth, headBaseY - 0.567 * vHeadSize)',
-      'vec2(0.0, headBaseY + 0.216 * vHeadSize)'
-    ],
-    [
-      'vec2(-thick, 0.0)',
-      'vec2(thick, 0.0)',
-      'vec2(thick, headBaseY)',
-      'vec2(-thick, headBaseY)'
-    ]
-  ]
+/** Free-end cap treatment of each stroked glyph. */
+export const STROKED_ARROW_CAP: Record<Exclude<ArrowGlyph, 'triangle'>, ArrowCap> = {
+  open: 'round',
+  dart: 'butt',
+  barbed: 'vertical'
 };
 
 /**
- * Rear-most along-axis extent of each solid glyph's head "wings" behind the
- * head base, as a multiple of `vHeadSize`. `triangle` wings sit on the base
- * (0); `barbed`/`dart` sweep back. Used to equalize the *visible* stem across
- * glyphs. The `open` glyph is not listed: its arms sweep back a full head
- * length plus their capsule cap radius, handled explicitly by the min-stem
- * expression. The values reuse the same constants as the `HEAD_POLYGONS`
- * vertices, so the two cannot drift apart.
+ * Head outline of the filled `triangle` glyph (the data-driven fill head),
+ * expressed as GLSL vertex expressions in terms of `thick` (stem half
+ * thickness), `headHalfWidth` (w), `headBaseY` (L) and `headTipY`.
+ *
+ * Authored as ONE combined polygon that already includes the stem: unioning a
+ * stem rectangle with the head as two separate shapes leaves a coincident
+ * boundary along their seam, where the SDF is 0 and the stroke logic paints a
+ * false internal line.
  */
-const WING_BACK_EXTENT_FACTOR: Record<Exclude<ArrowGlyph, 'open'>, number> = {
-  triangle: 0,
-  barbed: BARBED_WING_BACK_EXTENT,
-  dart: DART_WING_BACK_EXTENT
-};
+const TRIANGLE_HEAD_POLYGON: string[] = [
+  'vec2(thick, 0.0)',
+  'vec2(thick, headBaseY)',
+  'vec2(headHalfWidth, headBaseY)',
+  'vec2(0.0, headTipY)',
+  'vec2(-headHalfWidth, headBaseY)',
+  'vec2(-thick, headBaseY)',
+  'vec2(-thick, 0.0)'
+];
 
 /**
  * Visible bare stem kept in front of the wings, in pen widths, for every glyph.
@@ -220,6 +173,20 @@ const ARROW_FS_DECL: string = `
       return sdSegment(p, a, b) - r;
     }
 
+    // SDF helper: exact distance to a triangle
+    float sdTriangle(vec2 p, vec2 p0, vec2 p1, vec2 p2) {
+      vec2 e0 = p1 - p0, e1 = p2 - p1, e2 = p0 - p2;
+      vec2 v0 = p - p0, v1 = p - p1, v2 = p - p2;
+      vec2 pq0 = v0 - e0 * clamp(dot(v0, e0) / dot(e0, e0), 0.0, 1.0);
+      vec2 pq1 = v1 - e1 * clamp(dot(v1, e1) / dot(e1, e1), 0.0, 1.0);
+      vec2 pq2 = v2 - e2 * clamp(dot(v2, e2) / dot(e2, e2), 0.0, 1.0);
+      float s = sign(e0.x * e2.y - e0.y * e2.x);
+      vec2 d = min(min(vec2(dot(pq0, pq0), s * (v0.x * e0.y - v0.y * e0.x)),
+                       vec2(dot(pq1, pq1), s * (v1.x * e1.y - v1.y * e1.x))),
+                       vec2(dot(pq2, pq2), s * (v2.x * e2.y - v2.y * e2.x)));
+      return -sqrt(d.x) * sign(d.y);
+    }
+
     // Winding-number contributor for one polygon edge (division-free isLeft)
     float windingEdge(vec2 pt, vec2 a, vec2 b) {
       if (a.y <= pt.y) {
@@ -234,6 +201,54 @@ const ARROW_FS_DECL: string = `
       return 0.0;
     }
   `;
+
+/**
+ * Builds the stroked open-V arrow body for a cap treatment: a stem from the tail
+ * to the apex plus one barb (the other is its mirror through `pa`), both stroked
+ * with `thick`. Defines `signedDist`.
+ *
+ * `round` keeps the capsule's rounded apex; the flat-capped variants (`butt`,
+ * `vertical`) add a miter wedge that runs the barbs' outer edges to their
+ * intersection, so the tip comes to a point instead of a round cap.
+ *
+ * @param cap - Free-end cap treatment.
+ * @returns GLSL statements defining `signedDist`.
+ */
+const buildStrokedArrowGLSL = (cap: ArrowCap): string => {
+  const stem =
+    cap === 'round'
+      ? 'sdCapsule(pa, vec2(0.0, thick), vec2(0.0, headBaseY), thick)'
+      : 'max(sdCapsule(pa, vec2(0.0, 0.0), vec2(0.0, headBaseY), thick), -pa.y)';
+  const armBase = 'sdCapsule(pa, vec2(0.0, headBaseY), vec2(headHalfWidth, headBaseY - vHeadSize), thick)';
+  const arm =
+    cap === 'round'
+      ? armBase
+      : cap === 'butt'
+        ? `max(${armBase}, dot(pa - vec2(headHalfWidth, headBaseY - vHeadSize), normalize(vec2(headHalfWidth, -vHeadSize))))`
+        : `max(${armBase}, pa.x - headHalfWidth)`;
+
+  if (cap === 'round') {
+    return `float sStem = ${stem};
+    float sArm = ${arm};
+    float signedDist = min(sStem, sArm);`;
+  }
+
+  // Pointed tip: the miter wedge between the two barbs' outer edges. Both edges
+  // are tangent to the apex's capsule cap at the barb's outer corner, so the
+  // union stays smooth and only the forward tip is sharpened to a point.
+  return `float sStem = ${stem};
+    float sArm = ${arm};
+    float armLength = length(vec2(headHalfWidth, -vHeadSize));
+    float miterExtend = thick * armLength / headHalfWidth;
+    float miterShoulderY = headBaseY + headHalfWidth * thick / armLength;
+    float sTip = sdTriangle(
+      pa,
+      vec2(0.0, headBaseY + miterExtend),
+      vec2(0.0, miterShoulderY),
+      vec2(vHeadSize * thick / armLength, miterShoulderY)
+    );
+    float signedDist = min(sStem, min(sArm, sTip));`;
+};
 
 /**
  * Builds the glyph-specific geometry GLSL. The snippet must define a
@@ -262,60 +277,35 @@ const buildGeometryGLSL = (glyph: ArrowGlyph): string => {
     vec2 pt = vec2(p.x, y);
   `;
 
-  if (glyph === 'open') {
+  if (glyph !== 'triangle') {
     return `${preamble}
-    // Rounded stem + two capsule strokes forming an open V head that sweeps
-    // back from the tip. headWidth is the full V span, headSize the along-axis
-    // arm length. The stem capsule starts at thick (not 0) so its rounded
-    // tail cap is tangent to the measurement point (y == 0) instead of
-    // overshooting it by half the stroke width. Fold x for the symmetric arms.
+    // Stroked open-V arrow: one pen (thick) draws the stem and both barbs, so
+    // the head's stroke always equals the stem's. headWidth is the full V span,
+    // headSize the along-axis arm length. Only the cap treatment differs between
+    // the stroked glyphs (see STROKED_ARROW_CAP). Fold x for the symmetric barbs.
     vec2 pa = vec2(abs(pt.x), pt.y);
-    float sStem = sdCapsule(pa, vec2(0.0, thick), vec2(0.0, headBaseY), thick);
-    float sArm = sdCapsule(pa, vec2(0.0, headBaseY), vec2(headHalfWidth, headBaseY - vHeadSize), thick);
-    float signedDist = min(sStem, sArm);
+    ${buildStrokedArrowGLSL(STROKED_ARROW_CAP[glyph])}
   `;
   }
 
-  const polygons = HEAD_POLYGONS[glyph];
-  const headBlocks: string[] = [];
-  const headNames: string[] = [];
-
-  polygons.forEach((vertices, polygonIndex) => {
-    const vertexDecls = vertices
-      .map((vertex, index) => `vec2 g${polygonIndex}_${index} = ${vertex};`)
-      .join('\n    ');
-    const edgeExprs = vertices.map(
-      (_, index) => `sdSegment(pt, g${polygonIndex}_${index}, g${polygonIndex}_${(index + 1) % vertices.length})`
-    );
-    const dHeadExpr = edgeExprs.reduce((acc, edge) => (acc ? `min(${acc}, ${edge})` : edge), '');
-    const wnExpr = vertices
-      .map((_, index) => `windingEdge(pt, g${polygonIndex}_${index}, g${polygonIndex}_${(index + 1) % vertices.length})`)
-      .join(' + ');
-
-    headBlocks.push(`${vertexDecls}
-    float dHead${polygonIndex} = ${dHeadExpr};
-    float wn${polygonIndex} = ${wnExpr};
-    float sdfHead${polygonIndex} = (wn${polygonIndex} != 0.0) ? -dHead${polygonIndex} : dHead${polygonIndex};`);
-    headNames.push(`sdfHead${polygonIndex}`);
-  });
-
-  const headUnion = headNames.reduce((acc, name) => (acc ? `min(${acc}, ${name})` : name), '');
-
-  // `headTipY` is the along-axis tip for the glyphs whose tip sits at
-  // `headBaseY + headSize` (`triangle`, `barbed`). `dart` places its tip at
-  // `headBaseY + 0.216 * headSize`, so it does not declare the variable.
-  const headTipDecl = glyph === 'dart' ? '' : 'float headTipY = vStemLength + vHeadSize;';
+  // Filled data-driven head: SDF of the single traced outline polygon.
+  const vertices = TRIANGLE_HEAD_POLYGON;
+  const vertexDecls = vertices.map((vertex, index) => `vec2 g${index} = ${vertex};`).join('\n    ');
+  const edgeExprs = vertices.map((_, index) => `sdSegment(pt, g${index}, g${(index + 1) % vertices.length})`);
+  const dHeadExpr = edgeExprs.reduce((acc, edge) => (acc ? `min(${acc}, ${edge})` : edge), '');
+  const wnExpr = vertices
+    .map((_, index) => `windingEdge(pt, g${index}, g${(index + 1) % vertices.length})`)
+    .join(' + ');
 
   return `${preamble}
-    // Arrow: union of the traced full outline polygons. triangle and barbed
-    // are authored as a single stem+head polygon; the dart unions two
-    // overlapping quads with an explicit stem rectangle. Unioning full
-    // polygons avoids the false SDF boundary (and internal stroke line) that a
-    // separate stem+head split produces along their shared seam.
-    ${headTipDecl}
-    ${headBlocks.join('\n    ')}
-
-    float signedDist = ${headUnion};
+    // Arrow: the filled data-driven head, authored as one stem+head polygon with
+    // no internal seam (a separate stem rectangle would leave a coincident
+    // boundary where the SDF is 0 and a false internal stroke line is painted).
+    float headTipY = vStemLength + vHeadSize;
+    ${vertexDecls}
+    float dHead = ${dHeadExpr};
+    float wn = ${wnExpr};
+    float signedDist = (wn != 0.0) ? -dHead : dHead;
   `;
 };
 
@@ -341,15 +331,10 @@ export const getArrowShaderInjections = ({
   glyph?: ArrowGlyph;
   thinEdge?: boolean;
 }): Record<string, string> => {
-  // Minimum stem length. It reserves a shared bare-stem distance (`MIN_BARE_STEM_RATIO`
-  // pen widths) *in front of the glyph's own wing sweep*, so the visible stem is
-  // the same for every preset even though the head base sits at a different
-  // distance (the wings sweep back by different amounts per glyph). The legacy
-  // `triangle` head keeps the pure data-driven stem.
-  const wingBackExpr =
-    glyph === 'open'
-      ? '(instanceHeadSizes + instanceStemThicknesses * 0.5)'
-      : `${WING_BACK_EXTENT_FACTOR[glyph]} * instanceHeadSizes`;
+  // Minimum stem length. The stroked glyphs' barbs sweep back a full head length
+  // plus their capsule cap radius, so the reserve keeps the bare stem visible;
+  // the filled `triangle` head keeps the pure data-driven stem.
+  const wingBackExpr = '(instanceHeadSizes + instanceStemThicknesses * 0.5)';
   const minStemExpr =
     glyph === 'triangle'
       ? '0.0'
@@ -367,8 +352,8 @@ export const getArrowShaderInjections = ({
     vHeadWidth = instanceHeadWidths;
     // Keep the tail behind the wings: a stem shorter than the head's backward
     // sweep leaves no bare stem, so the glyph reads as a bare chevron. Reserve
-    // the shared bare-stem distance, then ADD the data-driven stem length so any
-    // scaling grows the arrow while preserving its shape.
+    // the shared bare-stem distance, then ADD the data-driven (vel_rel) stem
+    // length so the arrow grows from the tail while its shape is preserved.
     float minStemLength = ${minStemExpr};
     vStemLength = minStemLength + instanceStemLengths;
     // Centered arrows shift by half their total length so the anchor lands in

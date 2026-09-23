@@ -39,7 +39,7 @@ export const ARROW_REFERENCE_RADIUS_METERS = 52;
  * @param meters - Dimension in map meters.
  * @returns Dimension as a fraction of the quad half-side.
  */
-const toRadiusFraction = (meters: number): number => meters / (2 * ARROW_REFERENCE_RADIUS_METERS);
+export const metersToArrowFraction = (meters: number): number => meters / (2 * ARROW_REFERENCE_RADIUS_METERS);
 
 /**
  * Computes the stem length fraction from the relative velocity.
@@ -48,7 +48,7 @@ const toRadiusFraction = (meters: number): number => meters / (2 * ARROW_REFEREN
  * @returns Stem length as a fraction of the point quad radius.
  */
 export const computeStemLengthFraction = (velRel: number | null): number =>
-  toRadiusFraction(computeArrowTargetMeters(velRel));
+  metersToArrowFraction(computeArrowTargetMeters(velRel));
 
 /**
  * Computes the stem thickness fraction from the reliability length rate.
@@ -59,7 +59,7 @@ export const computeStemLengthFraction = (velRel: number | null): number =>
  * @returns Stem thickness as a fraction of the point quad radius.
  */
 export const computeStemThicknessFraction = (relLen: number | null): number =>
-  toRadiusFraction(computeStemThicknessMeters(relLen));
+  metersToArrowFraction(computeStemThicknessMeters(relLen));
 
 /**
  * Computes the arrow head length fraction from the coherence.
@@ -67,7 +67,7 @@ export const computeStemThicknessFraction = (relLen: number | null): number =>
  * @param coh - `coh` attribute value, or null when missing.
  * @returns Head length as a fraction of the point quad radius.
  */
-export const computeHeadSizeFraction = (coh: number | null): number => toRadiusFraction(computeHeadSizeMeters(coh));
+export const computeHeadSizeFraction = (coh: number | null): number => metersToArrowFraction(computeHeadSizeMeters(coh));
 
 /**
  * Computes the arrow head base width fraction from the coherence.
@@ -79,7 +79,7 @@ export const computeHeadSizeFraction = (coh: number | null): number => toRadiusF
  * @returns Head base width as a fraction of the point quad radius.
  */
 export const computeHeadWidthFraction = (coh: number | null): number =>
-  toRadiusFraction(HEAD_WIDTH_RATIO * computeHeadSizeMeters(coh));
+  metersToArrowFraction(HEAD_WIDTH_RATIO * computeHeadSizeMeters(coh));
 
 /**
  * Returns the fixed reference radius of the point quad, in map meters.

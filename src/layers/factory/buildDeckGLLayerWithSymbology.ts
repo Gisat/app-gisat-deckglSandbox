@@ -13,7 +13,8 @@ import {
   computeHeadSizeFraction,
   computeHeadWidthFraction,
   computeStemLengthFraction,
-  computeStemThicknessFraction
+  computeStemThicknessFraction,
+  metersToArrowFraction
 } from '../velocity/velocityArrow';
 import {
   ARROW_SHAPE_PRESET_STROKE_WIDTH_SCALE,
@@ -79,6 +80,16 @@ export interface BuildDeckGLLayerWithSymbologyProps {
  */
 const CIRCLE_RADIUS_SCALE = 2;
 
+/**
+ * Reference pen width (map meters) at which the preset head geometry is drawn.
+ *
+ * The three preset arrows keep a **fixed head size** — the same wing shape for
+ * every feature — while the pen (`rel_len`) changes only the stroke thickness and
+ * the stem length follows `vel_rel`. `headWidth` / `headSize` are multiples of
+ * this reference pen, so the head is sized once in map meters here.
+ */
+const ARROW_HEAD_PEN_METERS = 1.5;
+
 const readNumber = (feature: VelocityFeature, keys: readonly string[]): number | null => {
   const properties = feature?.properties ?? {};
   for (const key of keys) {
@@ -132,11 +143,12 @@ const getFillColor = (feature: VelocityFeature, dominantOrbit: 'A' | 'D' | null)
  * values and the non-dominant orbit.
  *
  * The rendering rules mirror `app-damStabilityInspector`'s `velocitySymbology`
- * (fixed 52 m reference radius, `vel_rel` stem, `rel_len` thickness, `coh`
- * head, orbit-aware heading, discrete velocity colormap, zoom-adaptive meter
- * band). Selection uses the parent-provided `getLineColor` accessor: arrows
- * render a `SELECTED_FEATURE_LINE_WIDTH` stroke via the shader, circles use the
- * same color with a `SELECTED_FEATURE_LINE_WIDTH` stroke.
+ * (fixed 52 m reference radius, `vel_rel` stem, `rel_len` thickness, a
+ * `coh`-sized head on the data path or a fixed preset head, orbit-aware heading,
+ * discrete velocity colormap, zoom-adaptive meter band). Selection uses the
+ * parent-provided `getLineColor` accessor: arrows render a
+ * `SELECTED_FEATURE_LINE_WIDTH` stroke via the shader, circles use the same color
+ * with a `SELECTED_FEATURE_LINE_WIDTH` stroke.
  *
  * Unlike the tiled MVT path, the source is a plain GeoJSON FeatureCollection, so
  * positions come straight from `geometry.coordinates` (lng/lat) and no
@@ -213,6 +225,12 @@ const buildDeckGLLayerWithSymbology = ({
   const arrowPenWidth = (feature: VelocityFeature): number =>
     computeStemThicknessFraction(getVelocity(feature).relLen) * arrowPenScale;
 
+  // Preset head geometry: a fixed wing shape, sized once at the reference pen.
+  // The pen only drives the stroke thickness and the stem length follows `vel_rel`.
+  const headPenFraction = metersToArrowFraction(ARROW_HEAD_PEN_METERS);
+  const headSizeFraction = arrowPreset ? arrowPreset.headSize * headPenFraction : 0;
+  const headWidthFraction = arrowPreset ? arrowPreset.headWidth * headPenFraction : 0;
+
   const arrowFeatures: VelocityFeature[] = [];
   const circleFeatures: VelocityFeature[] = [];
 
@@ -245,15 +263,18 @@ const buildDeckGLLayerWithSymbology = ({
           const { velAvg, orbit } = getVelocity(feature);
           return computeArrowHeading(velAvg, orbit);
         },
+        // Stem length is the data-driven (`vel_rel`) dimension; the shader adds the
+        // minimum bare-stem reserve on top.
         getStemLength: (feature: VelocityFeature): number => computeStemLengthFraction(getVelocity(feature).velRel),
+        // Pen (`rel_len`): stroke thickness, drawn through the stem and both wings.
         getStemThickness: (feature: VelocityFeature): number => arrowPenWidth(feature),
-        // The whole glyph is scaled by the pen width, so the head bars render at
-        // the same thickness as the stem (uniform pen, `rel_len`-driven).
+        // Preset heads keep a fixed size (a single shared wing shape); the pen only
+        // thickens the stroke. The data path still sizes its head from `coh`.
         getHeadSize: arrowPreset
-          ? (feature: VelocityFeature): number => arrowPreset.headSize * arrowPenWidth(feature)
+          ? headSizeFraction
           : (feature: VelocityFeature): number => computeHeadSizeFraction(getVelocity(feature).coh),
         getHeadWidth: arrowPreset
-          ? (feature: VelocityFeature): number => arrowPreset.headWidth * arrowPenWidth(feature)
+          ? headWidthFraction
           : (feature: VelocityFeature): number => computeHeadWidthFraction(getVelocity(feature).coh),
         getRadius: computeArrowRadius() * zoomSizeScale,
         radiusUnits: 'meters',

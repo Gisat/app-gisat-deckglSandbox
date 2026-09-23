@@ -4,39 +4,29 @@ import type { ArrowGlyph } from '../DynamicArrowLayer.shader';
  * Fixed arrow-head presets for evaluating `DynamicArrowLayer` glyphs on the
  * Tabqa Dam LOS features.
  *
- * A preset selects the **head glyph only**. The glyphs are fixed-pen-width
- * drawings traced from the reference SVG, as if drawn with a single pen whose
- * width is the whole-arrow size, so the whole glyph scales as one piece:
- * - pen width (whole-arrow size) ← `rel_len`: scales `headSize`, `headWidth`
- *   and the stem thickness together, so the stem and the head bars always have
- *   the same thickness.
+ * All three shapes are the same stroked open-V arrow — one shared centerline —
+ * so they differ only in their caps (round / butt / vertical; see
+ * `STROKED_ARROW_CAP`). The geometry is driven by the data:
+ * - pen width (stroke thickness) ← `rel_len`: one pen draws the stem and both
+ *   wings, so the head's stroke always equals the stem's.
  * - stem length ← `vel_rel`, plus a minimum that reserves the same visible bare
- *   stem in front of the wings for every glyph (so the presets look equally
- *   long even though their wings sweep back by different amounts).
+ *   stem in front of the wings.
  * - heading ← `vel_avg` + `orbit`; color ← the velocity colormap.
  *
- * `headWidth` / `headSize` are the head's width and length as multiples of the
- * pen width, traced from the reference SVG:
- * - `round-cap` (open V strokes): head width 4.48, head length 2.24
- * - `butt-cap` (square cut):     head width 4.97, head length 3.21
- * - `flush-cap` (flat cut):      head width 3.32, head length 1.92
+ * `headWidth` / `headSize` are the wing span and the along-axis wing length as
+ * multiples of the head's reference pen width (a fixed map-meter size, see
+ * `ARROW_HEAD_PEN_METERS` in the factory), so every feature shares one head
+ * shape. Each wing sits at `ARROW_WING_ANGLE_DEG` to the stem.
  *
- * `headSize`'s along-axis meaning is glyph-specific, since each glyph is traced
- * independently: it is the forward tip offset for `triangle`/`barbed`, the
- * *total* along-axis head extent for `dart`, and the backward arm length for
- * `open`. `DynamicArrowLayer` compensates with per-glyph wing-sweep factors, so
- * do not read `headSize` as a shared "tip distance".
- *
- * One preset is a *thin-edge* variant of another: it reuses the exact same head
- * proportions but drops the default 1px unselected stroke, so the arrow keeps
- * only a smaller soft fringe and the circle points lose their border.
+ * One preset is a *thin-edge* variant of another: it uses the same head but drops
+ * the default 1px unselected stroke, so the arrow keeps only a smaller soft
+ * fringe and the circle points lose their border.
  */
 
 /**
- * Preset-only scale on the pen width. The shared stem-thickness mapping spans
- * 1-5 m; the presets multiply it by this factor so their pen width (and, since
- * the head is a multiple of it, the whole glyph) spans 0.5-2.5 m. The fill head
- * is unaffected.
+ * Preset-only scale on the pen (stroke) width. The shared stem-thickness mapping
+ * spans 1-5 m; the presets multiply it by this factor so their stroke spans
+ * 0.5-2.5 m. The data/fill head is unaffected.
  */
 export const ARROW_SHAPE_PRESET_STROKE_WIDTH_SCALE = 0.5;
 
@@ -46,20 +36,19 @@ export type ArrowShapePresetId = 'round-cap' | 'butt-cap' | 'flush-cap' | 'flush
 /**
  * A fixed arrow-head preset.
  *
- * `headWidth` / `headSize` are the head's width and length as multiples of the
- * pen width (the `rel_len`-driven stem thickness); scaling both by that width
- * keeps the whole glyph, including its bar thickness, drawn with one pen. The
- * glyph itself (angles, barbs, caps) is baked into the shader.
+ * `headWidth` / `headSize` are the wing span and along-axis wing length as
+ * multiples of the head's reference pen width, i.e. a fixed head size in map
+ * meters. The glyph selects the cap treatment baked into the shader.
  */
 export interface ArrowShapePreset {
   id: ArrowShapePresetId;
   /** Human-readable label for the shape-toggle UI. */
   label: string;
-  /** Arrow head glyph rasterized by the shader. */
+  /** Arrow head glyph (cap treatment) rasterized by the shader. */
   glyph: ArrowGlyph;
-  /** Head width as a multiple of the pen width. */
+  /** Wing span as a multiple of the reference head pen width. */
   headWidth: number;
-  /** Head length as a multiple of the pen width. */
+  /** Along-axis wing length as a multiple of the reference head pen width. */
   headSize: number;
   /**
    * When true, drop the default 1px unselected stroke so the arrow renders a
@@ -70,13 +59,22 @@ export interface ArrowShapePreset {
 }
 
 /**
- * Shared head proportions of the Vertical-Cut / Flush-Cap Arrow, reused by its
- * thin-edge variant so the two options cannot drift apart.
+ * Half-angle between the stem and each wing, in degrees — the single style knob
+ * shared by all three arrows.
  */
-const FLUSH_CAP_HEAD = {
-  glyph: 'barbed',
-  headWidth: 3.32,
-  headSize: 1.916
+const ARROW_WING_ANGLE_DEG = 40;
+
+/** Along-axis wing length, as a multiple of the reference head pen width. */
+const ARROW_WING_LENGTH = 2.24;
+
+/**
+ * Shared wing geometry of the three arrows. `headWidth` is derived from the wing
+ * length and angle (`headWidth / 2 = headSize * tan(angle)`), so changing
+ * `ARROW_WING_ANGLE_DEG` keeps every preset consistent.
+ */
+const ARROW_HEAD = {
+  headWidth: 2 * ARROW_WING_LENGTH * Math.tan((ARROW_WING_ANGLE_DEG * Math.PI) / 180),
+  headSize: ARROW_WING_LENGTH
 } as const;
 
 /** The arrow heads available for comparison. */
@@ -85,25 +83,25 @@ export const ARROW_SHAPE_PRESETS: ArrowShapePreset[] = [
     id: 'round-cap',
     label: 'Round-Cap Arrow',
     glyph: 'open',
-    headWidth: 4.48,
-    headSize: 2.24
+    ...ARROW_HEAD
   },
   {
     id: 'butt-cap',
     label: 'Square-Cap / Butt-Cap Arrow',
     glyph: 'dart',
-    headWidth: 4.968,
-    headSize: 3.214
+    ...ARROW_HEAD
   },
   {
     id: 'flush-cap',
     label: 'Vertical-Cut / Flush-Cap Arrow',
-    ...FLUSH_CAP_HEAD
+    glyph: 'barbed',
+    ...ARROW_HEAD
   },
   {
     id: 'flush-cap-thin',
     label: 'Vertical-Cut / Flush-Cap Arrow (Thin Border)',
-    ...FLUSH_CAP_HEAD,
+    glyph: 'barbed',
+    ...ARROW_HEAD,
     thinEdge: true
   }
 ];
