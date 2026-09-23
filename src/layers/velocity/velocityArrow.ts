@@ -15,9 +15,12 @@ import {
  * rasterize the arrow inside that quad.
  *
  * The quad radius is a fixed reference (`ARROW_REFERENCE_RADIUS_METERS`) large
- * enough to hold the longest possible arrow — stem (20 m) + head (13 m) = 33 m.
- * Fractions are `meters / (2 * radius)` because the quad spans `2 * radius` map
- * meters (`p.y = 0.5` maps to `+radius`).
+ * enough to hold the longest possible arrow. `DynamicArrowLayer` adds a minimum
+ * stem that reserves the visible bare stem in front of each glyph's wings, so
+ * the longest arrow (max preset pen width 2.5 m, saturated 20 m stem, round-cap
+ * head and wing sweep) reaches about 32 m; the 52 m reference leaves margin for
+ * the selection stroke. Fractions are `meters / (2 * radius)` because the quad
+ * spans `2 * radius` map meters (`p.y = 0.5` maps to `+radius`).
  */
 
 /**
@@ -25,7 +28,7 @@ import {
  * rasterized into. Must be >= half the longest possible arrow so the tip stays
  * inside the quad edge (`0.5` in shader space).
  */
-export const ARROW_REFERENCE_RADIUS_METERS = 40;
+export const ARROW_REFERENCE_RADIUS_METERS = 52;
 
 /**
  * Converts an absolute meter dimension into a fraction of the point quad radius.

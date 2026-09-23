@@ -2,7 +2,7 @@ import { ScatterplotLayer } from '@deck.gl/layers';
 import type { ScatterplotLayerProps } from '@deck.gl/layers';
 import type { Accessor, DefaultProps } from '@deck.gl/core';
 
-import { getArrowShaderInjections } from './DynamicArrowLayer.shader';
+import { getArrowShaderInjections, type ArrowGlyph } from './DynamicArrowLayer.shader';
 
 /**
  * Props supported by the {@link DynamicArrowLayer}.
@@ -44,6 +44,12 @@ export interface DynamicArrowLayerProps<DataT = any> extends ScatterplotLayerPro
    * the WebGL instanced-attribute limit.
    */
   anchorCentered?: boolean;
+  /**
+   * Arrow head glyph rasterized by the shader: `triangle` (default), `barbed`,
+   * `dart` or `open`. Resolved at shader-compile time — it is not a
+   * per-instance attribute, to stay within the WebGL instanced-attribute limit.
+   */
+  glyph?: ArrowGlyph;
 }
 
 const defaultProps: DefaultProps<DynamicArrowLayerProps> = {
@@ -53,7 +59,8 @@ const defaultProps: DefaultProps<DynamicArrowLayerProps> = {
   getStemThickness: { type: 'accessor', value: 0.05 },
   getHeadSize: { type: 'accessor', value: 0.15 },
   getHeadWidth: { type: 'accessor', value: 0.1 },
-  anchorCentered: false
+  anchorCentered: false,
+  glyph: 'triangle'
 };
 
 /**
@@ -89,7 +96,10 @@ export class DynamicArrowLayer<DataT = any, ExtraPropsT extends object = object>
    */
   getShaders() {
     const shaders = super.getShaders();
-    shaders.inject = getArrowShaderInjections({ anchorCentered: Boolean(this.props.anchorCentered) });
+    shaders.inject = getArrowShaderInjections({
+      anchorCentered: Boolean(this.props.anchorCentered),
+      glyph: this.props.glyph ?? 'triangle'
+    });
     return shaders;
   }
 

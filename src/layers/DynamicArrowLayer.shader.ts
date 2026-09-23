@@ -1,6 +1,6 @@
 /**
- * GLSL injections that rasterize the flat arrow (stem + flared head) inside the
- * ScatterplotLayer point quad using a signed-distance field.
+ * GLSL injections that rasterize a flat arrow glyph inside the ScatterplotLayer
+ * point quad using a signed-distance field.
  *
  * The arrow geometry accessors (`getStemLength`, `getStemThickness`,
  * `getHeadSize`, `getHeadWidth`, `getAngle`) feed per-instance attributes read
@@ -8,6 +8,23 @@
  * geometry values are fractions of the point quad half-side; the fragment
  * shader maps them back to pixels so the rendered arrow matches the on-map
  * meters exactly.
+ *
+ * Four glyph heads are supported and selected at shader-compile time via
+ * {@link ArrowGlyph}:
+ * - `triangle` — rectangle stem + straight triangular head (legacy default).
+ * - `barbed`   — swept-back barbed head (the "standard" SVG arrow).
+ * - `dart`     — forward-flared kite/dart head (the "bold" SVG arrow).
+ * - `open`     — rounded stem + open V head made of two capsule strokes (the
+ *   "open V" SVG arrow).
+ *
+ * Every non-`triangle` glyph is given a minimum stem length that keeps the tail
+ * behind the head "wings", then the data-driven stem length is added on top.
+ * The minimum reserves a shared bare-stem distance in front of the glyph's own
+ * wing sweep, so all presets show the same visible stem from the tail to the
+ * wings even though their wings sweep back by different amounts. Without it a
+ * head that sweeps back further than the stem leaves no visible tail and the
+ * glyph reads as a bare chevron. The minimum is applied in the vertex shader so
+ * the centered-anchor offset uses the same stem length as the fragment geometry.
  *
  * Whether the arrow is centered on its anchor or starts at it is resolved at
  * shader-compile time from a per-layer flag — deliberately NOT a per-instance
@@ -25,11 +42,99 @@
  * here; it must stay in sync with the factory's `SELECTED_FEATURE_LINE_WIDTH`.
  */
 
+/** Identifies the arrow head glyph rasterized by the fragment shader. */
+export type ArrowGlyph = 'triangle' | 'barbed' | 'dart' | 'open';
+
 /**
  * Line width (CSS pixels) applied to selected features. Mirrors the factory
  * `SELECTED_FEATURE_LINE_WIDTH`.
  */
 const SELECTED_FEATURE_LINE_WIDTH = 3;
+
+/**
+ * Head outlines for the solid polygon glyphs, expressed as GLSL vertex
+ * expressions in terms of `thick` (stem half thickness), `headHalfWidth` (w),
+ * `headBaseY` (L) and `vHeadSize` (H).
+ *
+ * Each glyph is a list of full, both-halves simple polygons; the arrow SDF is
+ * the union of those polygons. Along offsets are relative to the stem end
+ * `headBaseY`, positive toward the tip.
+ *
+ * `triangle` and `barbed` are traced as ONE combined polygon that already
+ * includes the stem: unioning a stem rectangle with the head as two separate
+ * shapes leaves a coincident boundary along their seam, where the SDF is 0 and
+ * the stroke logic paints a false internal line. `dart` keeps its two
+ * overlapping quads plus an explicit stem rectangle — its quads genuinely
+ * overlap (no coincident boundary), so no seam line appears.
+ */
+const HEAD_POLYGONS: Record<Exclude<ArrowGlyph, 'open'>, string[][]> = {
+  triangle: [
+    [
+      'vec2(thick, 0.0)',
+      'vec2(thick, headBaseY)',
+      'vec2(headHalfWidth, headBaseY)',
+      'vec2(0.0, headTipY)',
+      'vec2(-headHalfWidth, headBaseY)',
+      'vec2(-thick, headBaseY)',
+      'vec2(-thick, 0.0)'
+    ]
+  ],
+  barbed: [
+    [
+      'vec2(thick, 0.0)',
+      'vec2(thick, headBaseY)',
+      'vec2(headHalfWidth, headBaseY - 0.646 * vHeadSize)',
+      'vec2(headHalfWidth, headBaseY + 0.077 * vHeadSize)',
+      'vec2(0.0, headTipY)',
+      'vec2(-headHalfWidth, headBaseY + 0.077 * vHeadSize)',
+      'vec2(-headHalfWidth, headBaseY - 0.646 * vHeadSize)',
+      'vec2(-thick, headBaseY)',
+      'vec2(-thick, 0.0)'
+    ]
+  ],
+  dart: [
+    [
+      'vec2(-headHalfWidth, headBaseY - 0.567 * vHeadSize)',
+      'vec2(-0.712 * headHalfWidth, headBaseY - 0.784 * vHeadSize)',
+      'vec2(0.144 * headHalfWidth, headBaseY - 0.109 * vHeadSize)',
+      'vec2(0.0, headBaseY + 0.216 * vHeadSize)'
+    ],
+    [
+      'vec2(-0.144 * headHalfWidth, headBaseY - 0.109 * vHeadSize)',
+      'vec2(0.712 * headHalfWidth, headBaseY - 0.784 * vHeadSize)',
+      'vec2(headHalfWidth, headBaseY - 0.567 * vHeadSize)',
+      'vec2(0.0, headBaseY + 0.216 * vHeadSize)'
+    ],
+    [
+      'vec2(-thick, 0.0)',
+      'vec2(thick, 0.0)',
+      'vec2(thick, headBaseY)',
+      'vec2(-thick, headBaseY)'
+    ]
+  ]
+};
+
+/**
+ * Rear-most along-axis extent of each glyph's head "wings" behind the head
+ * base, as a multiple of `vHeadSize`. `triangle` wings sit on the base (0);
+ * `barbed`/`dart` sweep back; the `open` arms sweep back a full head length and
+ * additionally add their capsule cap radius (`+ thick`, handled in the min stem
+ * expression). Used to equalize the *visible* stem across glyphs.
+ */
+const WING_BACK_EXTENT_FACTOR: Record<ArrowGlyph, number> = {
+  triangle: 0,
+  barbed: 0.646,
+  dart: 0.784,
+  open: 1
+};
+
+/**
+ * Visible bare stem kept in front of the wings, in pen widths, for every glyph.
+ * The minimum stem reserves this much beyond the glyph's own wing sweep, so all
+ * presets show the same stem length from the tail to the wings (the head base
+ * itself sits further forward for glyphs whose wings sweep back less).
+ */
+const MIN_BARE_STEM_RATIO = 1;
 
 const ARROW_VS_DECL: string = `
     in float instanceAngles;
@@ -85,9 +190,37 @@ const ARROW_FS_DECL: string = `
       float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
       return length( pa - ba*h );
     }
+
+    // SDF helper: distance to a capsule (a segment thickened by radius r)
+    float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
+      return sdSegment(p, a, b) - r;
+    }
+
+    // Winding-number contributor for one polygon edge (division-free isLeft)
+    float windingEdge(vec2 pt, vec2 a, vec2 b) {
+      if (a.y <= pt.y) {
+        if (b.y > pt.y && (b.x - a.x) * (pt.y - a.y) - (pt.x - a.x) * (b.y - a.y) > 0.0) {
+          return 1.0;
+        }
+      } else {
+        if (b.y <= pt.y && (b.x - a.x) * (pt.y - a.y) - (pt.x - a.x) * (b.y - a.y) < 0.0) {
+          return -1.0;
+        }
+      }
+      return 0.0;
+    }
   `;
 
-const ARROW_FILTER_COLOR: string = `
+/**
+ * Builds the glyph-specific geometry GLSL. The snippet must define a
+ * `signedDist` float (negative inside the arrow, positive outside), operating
+ * on the local point computed by the shared preamble.
+ *
+ * @param glyph - Selected arrow head glyph.
+ * @returns GLSL statements that compute `signedDist`.
+ */
+const buildGeometryGLSL = (glyph: ArrowGlyph): string => {
+  const preamble = `
     // Map vLocalPos (-1.0 to +1.0) down to our -0.5 to +0.5 math range
     vec2 p = vLocalPos * 0.5;
 
@@ -95,48 +228,138 @@ const ARROW_FILTER_COLOR: string = `
     float radAngle = radians(vAngle);
     p = rotate(p, -radAngle);
 
-    // Geometry: the stem is a rectangle anchored at the geographic position
-    // (p.y == 0.0) extending to the head base; the head is a triangle flaring
-    // from the stem tip. Stem and head are independent (like the 3D arrows), so
-    // the head may be longer than the stem. All values are fractions of the
-    // point quad half-side.
-    //
-    // An optional along-axis shift (vAnchorOffset) offsets the whole arrow so
-    // its tail no longer sits on the anchor: with vAnchorOffset = totalLength /
-    // 2 the arrow is centered on the anchor, while 0 keeps the anchor at the
-    // tail.
+    // Per-instance geometry, all fractions of the point quad half-side.
     float thick = vStemThickness * 0.5;
     float headHalfWidth = vHeadWidth * 0.5;
     float headBaseY = vStemLength;
     float headTipY = vStemLength + vHeadSize;
     float y = p.y + vAnchorOffset;
 
-    // Fold X for symmetry (we only need to calculate the right side of the arrow)
-    vec2 p_abs = vec2(abs(p.x), y);
+    // Full local point (the arrow axis is x == 0)
+    vec2 pt = vec2(p.x, y);
+  `;
 
-    // 1. Boolean inside check (defines the fill area)
-    bool inStem = p_abs.x <= thick && y >= 0.0 && y <= headBaseY;
-    float currentHeadWidth = headHalfWidth * (headTipY - y) / max(vHeadSize, 0.0001);
-    // FIX: Changed '>' to '>=' to guarantee no microscopic floating-point gaps at the exact joint
-    bool inHead = y >= headBaseY && y <= headTipY && p_abs.x <= currentHeadWidth;
-    bool isInside = inStem || inHead;
+  if (glyph === 'open') {
+    return `${preamble}
+    // Rounded stem + two capsule strokes forming an open V head that sweeps
+    // back from the tip. headWidth is the full V span, headSize the along-axis
+    // arm length. The stem capsule starts at thick (not 0) so its rounded
+    // tail cap is tangent to the measurement point (y == 0) instead of
+    // overshooting it by half the stroke width. Fold x for the symmetric arms.
+    vec2 pa = vec2(abs(pt.x), pt.y);
+    float sStem = sdCapsule(pa, vec2(0.0, thick), vec2(0.0, headBaseY), thick);
+    float sArm = sdCapsule(pa, vec2(0.0, headBaseY), vec2(headHalfWidth, headBaseY - vHeadSize), thick);
+    float signedDist = min(sStem, sArm);
+  `;
+  }
 
-    // 2. Exact Euclidean distance to the arrow boundary (4 line segments)
-    vec2 v1 = vec2(0.0, 0.0);              // Bottom center (arrow tail)
-    vec2 v2 = vec2(thick, 0.0);            // Bottom right corner
-    vec2 v3 = vec2(thick, headBaseY);      // Inner corner (stem meets head)
-    vec2 v4 = vec2(headHalfWidth, headBaseY); // Outer corner (head overhang)
-    vec2 v5 = vec2(0.0, headTipY);         // Top tip
+  const polygons = HEAD_POLYGONS[glyph];
+  const headBlocks: string[] = [];
+  const headNames: string[] = [];
 
-    float d1 = sdSegment(p_abs, v1, v2); // Bottom base
-    float d2 = sdSegment(p_abs, v2, v3); // Outer stem side
-    float d3 = sdSegment(p_abs, v3, v4); // Head overhang
-    float d4 = sdSegment(p_abs, v4, v5); // Head slope
+  polygons.forEach((vertices, polygonIndex) => {
+    const vertexDecls = vertices
+      .map((vertex, index) => `vec2 g${polygonIndex}_${index} = ${vertex};`)
+      .join('\n    ');
+    const edgeExprs = vertices.map(
+      (_, index) => `sdSegment(pt, g${polygonIndex}_${index}, g${polygonIndex}_${(index + 1) % vertices.length})`
+    );
+    const dHeadExpr = edgeExprs.reduce((acc, edge) => (acc ? `min(${acc}, ${edge})` : edge), '');
+    const wnExpr = vertices
+      .map((_, index) => `windingEdge(pt, g${polygonIndex}_${index}, g${polygonIndex}_${(index + 1) % vertices.length})`)
+      .join(' + ');
 
-    // Minimum distance to the closest boundary line
-    float dist = min(min(d1, d2), min(d3, d4));
+    headBlocks.push(`${vertexDecls}
+    float dHead${polygonIndex} = ${dHeadExpr};
+    float wn${polygonIndex} = ${wnExpr};
+    float sdfHead${polygonIndex} = (wn${polygonIndex} != 0.0) ? -dHead${polygonIndex} : dHead${polygonIndex};`);
+    headNames.push(`sdfHead${polygonIndex}`);
+  });
 
-    // 3. Anti-aliasing and Outward Stroke logic
+  const headUnion = headNames.reduce((acc, name) => (acc ? `min(${acc}, ${name})` : name), '');
+
+  return `${preamble}
+    // Arrow: union of the traced full outline polygons. triangle and barbed
+    // are authored as a single stem+head polygon; the dart unions two
+    // overlapping quads with an explicit stem rectangle. Unioning full
+    // polygons avoids the false SDF boundary (and internal stroke line) that a
+    // separate stem+head split produces along their shared seam.
+    ${headBlocks.join('\n    ')}
+
+    float signedDist = ${headUnion};
+  `;
+};
+
+/**
+ * Builds the arrow GLSL injections for a `DynamicArrowLayer`.
+ *
+ * @param options - Injection options.
+ * @param options.anchorCentered - When true the arrow is centered on the anchor
+ * (tail starts half its total length before the anchor and the head tip ends
+ * half after it). When false the tail stays on the anchor.
+ * @param options.glyph - Arrow head glyph to rasterize. Defaults to `triangle`.
+ * @returns The merged shader injections (vertex + fragment).
+ */
+export const getArrowShaderInjections = ({
+  anchorCentered,
+  glyph = 'triangle'
+}: {
+  anchorCentered: boolean;
+  glyph?: ArrowGlyph;
+}): Record<string, string> => {
+  // Minimum stem length. It reserves a shared bare-stem distance (`MIN_BARE_STEM_RATIO`
+  // pen widths) *in front of the glyph's own wing sweep*, so the visible stem is
+  // the same for every preset even though the head base sits at a different
+  // distance (the wings sweep back by different amounts per glyph). The legacy
+  // `triangle` head keeps the pure data-driven stem.
+  const wingBackExpr =
+    glyph === 'open'
+      ? '(instanceHeadSizes + instanceStemThicknesses * 0.5)'
+      : `${WING_BACK_EXTENT_FACTOR[glyph]} * instanceHeadSizes`;
+  const minStemExpr =
+    glyph === 'triangle'
+      ? '0.0'
+      : `${MIN_BARE_STEM_RATIO.toFixed(1)} * instanceStemThicknesses + ${wingBackExpr}`;
+
+  const vsMainEnd: string = `
+    vAngle = instanceAngles;
+    vStemThickness = instanceStemThicknesses;
+    vHeadSize = instanceHeadSizes;
+    vHeadWidth = instanceHeadWidths;
+    // Keep the tail behind the wings: a stem shorter than the head's backward
+    // sweep leaves no bare stem, so the glyph reads as a bare chevron. Reserve
+    // the shared bare-stem distance, then ADD the data-driven stem length so any
+    // scaling grows the arrow while preserving its shape.
+    float minStemLength = ${minStemExpr};
+    vStemLength = minStemLength + instanceStemLengths;
+    // Centered arrows shift by half their total length so the anchor lands in
+    // the middle of the glyph; tail-anchored arrows keep the anchor at the tail (0).
+    vAnchorOffset = ${anchorCentered ? '(vStemLength + vHeadSize) * 0.5' : '0.0'};
+
+    // Use straight (unpremultiplied) alpha to match deck.gl's SRC_ALPHA / ONE_MINUS_SRC_ALPHA blending
+    vec3 fillRGB = instanceArrowFillColors.rgb;
+    float fillA = instanceArrowFillColors.a * layer.opacity;
+    vArrowFill = vec4(fillRGB, fillA);
+
+    vec3 lineRGB = instanceArrowLineColors.rgb;
+    float lineA = instanceArrowLineColors.a * layer.opacity;
+    vArrowLine = vec4(lineRGB, lineA);
+
+    // Use the base shader's unitPosition (edgePadding * positions) so the SDF
+    // coordinate space matches the actually-rendered quad; the raw positions
+    // attribute ignores the edgePadding antialiasing inflation, which would
+    // scale every arrow dimension by edgePadding and break the meter-for-meter
+    // match with the 3D arrows at low zoom (see deck.gl ScatterplotLayer vertex
+    // shader: edgePadding = (outerRadiusPixels + SMOOTH_EDGE_RADIUS) / outerRadiusPixels).
+    vLocalPos = unitPosition;
+
+    vPixelRatio = project.devicePixelRatio;
+  `;
+
+  const filterColor: string = `
+    ${buildGeometryGLSL(glyph)}
+
+    // Anti-aliasing and Outward Stroke logic
     // dFdx measures per DEVICE pixel, while deck.gl's pixel units (and the
     // circle stroke widths) are CSS pixels. Multiplying by the device pixel
     // ratio (passed from the vertex shader) makes the hardcoded stroke widths
@@ -169,9 +392,6 @@ const ARROW_FILTER_COLOR: string = `
     // line.
     float innerFeather = (isSelected ? 0.15 : 0.5) * pixelSize;
 
-    // Create a true Signed Distance Field: negative inside, positive outside
-    float signedDist = isInside ? -dist : dist;
-
     // Discard pixels far outside the stroke buffer
     if (signedDist > activeStrokeW + outerFeather) {
       discard;
@@ -196,50 +416,10 @@ const ARROW_FILTER_COLOR: string = `
     color.a *= outerAlpha;
   `;
 
-/**
- * Builds the arrow GLSL injections for a `DynamicArrowLayer`.
- *
- * @param options - Injection options.
- * @param options.anchorCentered - When true the arrow is centered on the anchor
- * (tail starts half its total length before the anchor and the head tip ends
- * half after it). When false the tail stays on the anchor.
- * @returns The merged shader injections (vertex + fragment).
- */
-export const getArrowShaderInjections = ({ anchorCentered }: { anchorCentered: boolean }): Record<string, string> => {
-  const vsMainEnd: string = `
-    vAngle = instanceAngles;
-    vStemLength = instanceStemLengths;
-    vStemThickness = instanceStemThicknesses;
-    vHeadSize = instanceHeadSizes;
-    vHeadWidth = instanceHeadWidths;
-    // Centered arrows shift by half their total length so the anchor lands in
-    // the middle of the glyph; tail-anchored arrows keep the anchor at the tail (0).
-    vAnchorOffset = ${anchorCentered ? '(vStemLength + vHeadSize) * 0.5' : '0.0'};
-
-    // Use straight (unpremultiplied) alpha to match deck.gl's SRC_ALPHA / ONE_MINUS_SRC_ALPHA blending
-    vec3 fillRGB = instanceArrowFillColors.rgb;
-    float fillA = instanceArrowFillColors.a * layer.opacity;
-    vArrowFill = vec4(fillRGB, fillA);
-
-    vec3 lineRGB = instanceArrowLineColors.rgb;
-    float lineA = instanceArrowLineColors.a * layer.opacity;
-    vArrowLine = vec4(lineRGB, lineA);
-
-    // Use the base shader's unitPosition (edgePadding * positions) so the SDF
-    // coordinate space matches the actually-rendered quad; the raw positions
-    // attribute ignores the edgePadding antialiasing inflation, which would
-    // scale every arrow dimension by edgePadding and break the meter-for-meter
-    // match with the 3D arrows at low zoom (see deck.gl ScatterplotLayer vertex
-    // shader: edgePadding = (outerRadiusPixels + SMOOTH_EDGE_RADIUS) / outerRadiusPixels).
-    vLocalPos = unitPosition;
-
-    vPixelRatio = project.devicePixelRatio;
-  `;
-
   return {
     'vs:#decl': ARROW_VS_DECL,
     'vs:#main-end': vsMainEnd,
     'fs:#decl': ARROW_FS_DECL,
-    'fs:DECKGL_FILTER_COLOR': ARROW_FILTER_COLOR
+    'fs:DECKGL_FILTER_COLOR': filterColor
   };
 };

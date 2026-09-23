@@ -16,11 +16,20 @@ import {
   computeStemThicknessFraction
 } from '../velocity/velocityArrow';
 import {
+  ARROW_SHAPE_PRESET_STROKE_WIDTH_SCALE,
+  getArrowShapePreset,
+  type ArrowShapePresetId
+} from '../velocity/arrowShapePresets';
+import {
   DEFAULT_FEATURE_FILL_RGBA,
   VELOCITY_COLORMAP,
   VELOCITY_DESCENDING_COLORMAP,
   type RgbaColor
 } from '../velocity/velocityColormap';
+import {
+  NON_SELECTED_FEATURE_LINE_WIDTH,
+  SELECTED_FEATURE_LINE_WIDTH
+} from '../velocity/selection';
 import { computeVelocitySizeZoomScale } from '../velocity/velocityZoom';
 
 /** Point feature as decoded from the LOS GeoJSON. */
@@ -41,11 +50,30 @@ export interface BuildDeckGLLayerWithSymbologyProps {
   dominantOrbit?: 'A' | 'D' | null;
   /** Per-feature selection stroke color (alpha 0 = unselected); drives selection on both sublayers. */
   getLineColor?: Accessor<VelocityFeature, Color>;
+  /**
+   * Per-feature circle border width (CSS px). Defaults to
+   * `SELECTED_FEATURE_LINE_WIDTH` for features whose `getLineColor` alpha is
+   * non-zero, otherwise `NON_SELECTED_FEATURE_LINE_WIDTH` (transparent 1px).
+   * Arrows ignore this (their stroke is fixed in the shader and their quad must
+   * stay uninflated), so it only affects the circle sublayer.
+   */
+  getLineWidth?: Accessor<VelocityFeature, number>;
   updateTriggers?: Record<string, unknown[]>;
+  /**
+   * When set, overrides the data-driven arrow geometry (stem/head dimensions)
+   * with a fixed shape preset so the shapes can be compared on the map. The
+   * orientation always uses the data-driven heading (`computeArrowHeading`).
+   * `null`/undefined keeps the data-driven LOS symbology.
+   */
+  arrowShapePresetId?: ArrowShapePresetId | null;
 }
 
-/** Selected-feature stroke width (CSS px), mirroring the shader's `SELECTED_FEATURE_LINE_WIDTH`. */
-const SELECTED_FEATURE_LINE_WIDTH = 3;
+/**
+ * Visual-emphasis factor on the near-zero / non-dominant-orbit circle radius.
+ * `2` doubles the radius (so the circles read ~2x larger than the arrows, which
+ * are drawn from the meter-sized sphere reference). Set to `1` for 3D parity.
+ */
+const CIRCLE_RADIUS_SCALE = 2;
 
 const TRANSPARENT: RgbaColor = [0, 0, 0, 0];
 
@@ -120,11 +148,32 @@ const buildDeckGLLayerWithSymbology = ({
   pickable = true,
   dominantOrbit = null,
   getLineColor = (() => TRANSPARENT) as unknown as Accessor<VelocityFeature, Color>,
-  updateTriggers
+  getLineWidth,
+  updateTriggers,
+  arrowShapePresetId = null
 }: BuildDeckGLLayerWithSymbologyProps): Layer[] => {
   const zoomSizeScale = computeVelocitySizeZoomScale(zoom);
   const resolveLineColor = getLineColor as unknown as (feature: VelocityFeature) => Color;
+  // Circle border width: a provided accessor, else derived from the selection
+  // color (selected => SELECTED_FEATURE_LINE_WIDTH, else the transparent
+  // NON_SELECTED_FEATURE_LINE_WIDTH). Arrows always keep a 0 line width so their
+  // quad stays uninflated (`unitPosition` geometry).
+  const resolveLineWidth = (getLineWidth ??
+    ((feature: VelocityFeature): number => {
+      const color = resolveLineColor(feature);
+      return color && color[3] > 0 ? SELECTED_FEATURE_LINE_WIDTH : NON_SELECTED_FEATURE_LINE_WIDTH;
+    })) as unknown as (feature: VelocityFeature) => number;
   const mergedUpdateTriggers = { ...updateTriggers, getRadius: [zoomSizeScale] };
+  const arrowPreset = getArrowShapePreset(arrowShapePresetId);
+  // Pen width shared by the stem and the head (fraction of the quad), driven by
+  // `rel_len`. The preset glyphs are fixed-pen-width drawings traced from the
+  // reference SVG, so scaling every head dimension by this same width makes the
+  // head bars exactly as thick as the stem — one pen draws the whole arrow.
+  // Presets scale it down (max 3.5 m instead of the fill head's 5 m); the fill
+  // head keeps the unscaled mapping.
+  const arrowPenScale = arrowPreset ? ARROW_SHAPE_PRESET_STROKE_WIDTH_SCALE : 1;
+  const arrowPenWidth = (feature: VelocityFeature): number =>
+    computeStemThicknessFraction(readVelocity(feature).relLen) * arrowPenScale;
 
   const arrowFeatures: VelocityFeature[] = [];
   const circleFeatures: VelocityFeature[] = [];
@@ -138,15 +187,19 @@ const buildDeckGLLayerWithSymbology = ({
     }
   }
 
-  const layers: Layer[] = [];
+  // Circles are listed first (drawn below); the arrow layers are appended last
+  // so deck.gl draws them on top of the circles.
+  const circleLayers: Layer[] = [];
+  const arrowLayers: Layer[] = [];
 
   if (arrowFeatures.length > 0) {
-    layers.push(
+    arrowLayers.push(
       new DynamicArrowLayer<VelocityFeature>({
-        id: `${id}-arrows`,
+        id: `${id}-arrows-${arrowShapePresetId ?? 'data'}`,
         data: arrowFeatures,
         visible,
         pickable,
+        glyph: arrowPreset ? arrowPreset.glyph : 'triangle',
         getPosition,
         getFillColor: (feature: VelocityFeature): RgbaColor => getFillColor(feature, dominantOrbit),
         getAngle: (feature: VelocityFeature): number => {
@@ -154,10 +207,15 @@ const buildDeckGLLayerWithSymbology = ({
           return computeArrowHeading(velAvg, orbit);
         },
         getStemLength: (feature: VelocityFeature): number => computeStemLengthFraction(readVelocity(feature).velRel),
-        getStemThickness: (feature: VelocityFeature): number =>
-          computeStemThicknessFraction(readVelocity(feature).relLen),
-        getHeadSize: (feature: VelocityFeature): number => computeHeadSizeFraction(readVelocity(feature).coh),
-        getHeadWidth: (feature: VelocityFeature): number => computeHeadWidthFraction(readVelocity(feature).coh),
+        getStemThickness: (feature: VelocityFeature): number => arrowPenWidth(feature),
+        // The whole glyph is scaled by the pen width, so the head bars render at
+        // the same thickness as the stem (uniform pen, `rel_len`-driven).
+        getHeadSize: arrowPreset
+          ? (feature: VelocityFeature): number => arrowPreset.headSize * arrowPenWidth(feature)
+          : (feature: VelocityFeature): number => computeHeadSizeFraction(readVelocity(feature).coh),
+        getHeadWidth: arrowPreset
+          ? (feature: VelocityFeature): number => arrowPreset.headWidth * arrowPenWidth(feature)
+          : (feature: VelocityFeature): number => computeHeadWidthFraction(readVelocity(feature).coh),
         getRadius: computeArrowRadius() * zoomSizeScale,
         radiusUnits: 'meters',
         lineWidthUnits: 'pixels',
@@ -170,7 +228,7 @@ const buildDeckGLLayerWithSymbology = ({
   }
 
   if (circleFeatures.length > 0) {
-    layers.push(
+    circleLayers.push(
       new ScatterplotLayer<VelocityFeature>({
         id: `${id}-circles`,
         data: circleFeatures,
@@ -181,15 +239,12 @@ const buildDeckGLLayerWithSymbology = ({
         getRadius: (feature: VelocityFeature): number => {
           const { orbit } = readVelocity(feature);
           const hidden = isNonDominantOrbit(orbit, dominantOrbit);
-          return (hidden ? SMALL_SPHERE_RADIUS_METERS : SPHERE_RADIUS_METERS) * zoomSizeScale;
+          return (hidden ? SMALL_SPHERE_RADIUS_METERS : SPHERE_RADIUS_METERS) * zoomSizeScale * CIRCLE_RADIUS_SCALE;
         },
         radiusUnits: 'meters',
         lineWidthUnits: 'pixels',
         getLineColor: resolveLineColor,
-        getLineWidth: (feature: VelocityFeature): number => {
-          const color = resolveLineColor(feature);
-          return color && color[3] > 0 ? SELECTED_FEATURE_LINE_WIDTH : 0;
-        },
+        getLineWidth: resolveLineWidth,
         stroked: true,
         filled: true,
         updateTriggers: mergedUpdateTriggers
@@ -197,7 +252,7 @@ const buildDeckGLLayerWithSymbology = ({
     );
   }
 
-  return layers;
+  return [...circleLayers, ...arrowLayers];
 };
 
 export default buildDeckGLLayerWithSymbology;
