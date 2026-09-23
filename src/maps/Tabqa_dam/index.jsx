@@ -110,23 +110,27 @@ const TabqaDam = () => {
     
     const getArrowStemLength = (f) => {
         const rel = getNum(f, ['REL', 'rel', 'vel_rel', 'VEL_REL']);
-        // Wide range: at low REL the head dominates (like the 3D model), at high REL the stem is longer
-        return normalize(rel, 0, 1, 0.4, 0.9);
+        // Fraction of the point quad half-side (0.5 == quad edge): at low REL the
+        // head dominates, at high REL the stem is longer.
+        return normalize(rel, 0, 1, 0.05, 0.25);
     };
     
     const getArrowHeadSize = (f) => {
         const coh = getNum(f, ['COH_MOD', 'coh_mod', 'COH', 'coh']);
-        const head = normalize(coh, 0.4, 1, 0.2, 0.3);
-        const stemLen = getArrowStemLength(f);
-        // Keep a visible stem: the head length (vHeadSize) must stay below the stem length (vStemLength)
-        return Math.min(head, stemLen - 0.15);
+        // Head length as a fraction of the quad half-side.
+        return normalize(coh, 0.4, 1, 0.08, 0.16);
+    };
+    
+    const getArrowHeadWidth = (f) => {
+        // HEAD_WIDTH_RATIO (0.8) x head size, matching the 3D arrowhead silhouette.
+        return getArrowHeadSize(f) * 0.8;
     };
     
     const getArrowStemThickness = (f) => {
         const relLen = getNum(f, ['REL_LEN', 'rel_len']);
-        // Max width equals the max head size (0.3); also clamped per-feature so the stem is never wider than its own head
-        const thickness = normalize(relLen, 0.4, 1, 0.1, 0.3);
-        return Math.min(thickness, getArrowHeadSize(f));
+        // Full stem width; clamped per-feature so the stem is never wider than its own head.
+        const thickness = normalize(relLen, 0.4, 1, 0.0125, 0.0625);
+        return Math.min(thickness, getArrowHeadWidth(f));
     };
     
     const getArrowRadius = (f) => {
@@ -149,10 +153,13 @@ const TabqaDam = () => {
         getStemLength: getArrowStemLength,
         getStemThickness: getArrowStemThickness,
         getHeadSize: getArrowHeadSize,
+        getHeadWidth: getArrowHeadWidth,
         getRadius: getArrowRadius,
-        // 1. Inflate the deck.gl quad geometry so the outward SDF stroke doesn't get clipped by the circular discard mask
-        getLineWidth: 24,
-        // 2. Toggle stroke visibility using the Alpha channel to prevent undefined === undefined bugs
+        // Zero line width: the quad must stay exactly 2 * radius because the SDF
+        // arrow is measured as a fraction of the rendered quad. The visible
+        // selection stroke is hardcoded in the shader.
+        getLineWidth: 0,
+        // Toggle stroke visibility using the Alpha channel to prevent undefined === undefined bugs
         getLineColor: (f) => {
             if (!selectedFeature) return [0, 255, 255, 0];
             const matchesId = f.id !== undefined && f.id === selectedFeature.id;

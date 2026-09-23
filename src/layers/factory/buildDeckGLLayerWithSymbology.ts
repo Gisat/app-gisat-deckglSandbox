@@ -1,7 +1,7 @@
 import {MVTLayer} from '@deck.gl/geo-layers';
 import type {Accessor, Color} from '@deck.gl/core';
 import chroma from 'chroma-js';
-import DynamicArrowLayer from '../DynamicArrowLayer';
+import { DynamicArrowLayer } from '../DynamicArrowLayer';
 
 export interface BuildDeckGLLayerWithSymbologyProps<DataT = any> {
   id: string;
@@ -20,6 +20,8 @@ export interface BuildDeckGLLayerWithSymbologyProps<DataT = any> {
   getStemLength?: Accessor<DataT, number>;
   getStemThickness?: Accessor<DataT, number>;
   getHeadSize?: Accessor<DataT, number>;
+  getHeadWidth?: Accessor<DataT, number>;
+  anchorCentered?: boolean;
   getRadius?: Accessor<DataT, number>;
   updateTriggers?: Record<string, unknown[]>;
 }
@@ -92,7 +94,7 @@ const buildDeckGLLayerWithSymbology = <DataT = any>({
   pickable = true,
   autoHighlight = true,
   highlightColor = [255, 255, 0, 255],
-  getLineWidth = 2,
+  getLineWidth = 0,
   getLineColor = [0, 0, 0, 255],
   radiusUnits = 'pixels',
   getFillColor,
@@ -100,6 +102,8 @@ const buildDeckGLLayerWithSymbology = <DataT = any>({
   getStemLength,
   getStemThickness,
   getHeadSize,
+  getHeadWidth,
+  anchorCentered = false,
   getRadius,
   updateTriggers
 }: BuildDeckGLLayerWithSymbologyProps<DataT>) => {
@@ -127,13 +131,17 @@ const buildDeckGLLayerWithSymbology = <DataT = any>({
         getAngle: getAngle ?? getIconAngle,
         getStemLength:
           getStemLength ??
-          ((f: Feature) => normalize(Math.abs(f.properties.vel_rel ?? 0), 0, 10, 0.2, 0.8)),
+          ((f: Feature) => normalize(Math.abs(f.properties.vel_rel ?? 0), 0, 10, 0.05, 0.25)),
         getStemThickness:
           getStemThickness ??
-          ((f: Feature) => normalize(f.properties.rel_len ?? 0, 0.4, 1, 0.05, 0.2)),
+          ((f: Feature) => normalize(f.properties.rel_len ?? 0, 0.4, 1, 0.0125, 0.0625)),
         getHeadSize:
           getHeadSize ??
-          ((f: Feature) => normalize(f.properties.coh ?? 0, 0.4, 1, 0.15, 0.3)),
+          ((f: Feature) => normalize(f.properties.coh ?? 0, 0.4, 1, 0.08, 0.16)),
+        getHeadWidth:
+          getHeadWidth ??
+          ((f: Feature) => normalize(f.properties.coh ?? 0, 0.4, 1, 0.064, 0.128)),
+        anchorCentered,
         getRadius: getRadius ?? ((f: Feature) => getIconSizeFromAttribute(f.properties.vel_last)),
         radiusUnits,
         pickable,
