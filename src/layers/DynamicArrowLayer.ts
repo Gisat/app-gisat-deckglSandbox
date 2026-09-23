@@ -140,12 +140,12 @@ export class DynamicArrowLayer<DataT = any, ExtraPropsT extends object = object>
       instanceStemLengths: {
         size: 1,
         accessor: 'getStemLength',
-        defaultValue: 0.5
+        defaultValue: 0.3
       },
       instanceStemThicknesses: {
         size: 1,
         accessor: 'getStemThickness',
-        defaultValue: 0.1
+        defaultValue: 0.05
       },
       instanceHeadSizes: {
         size: 1,

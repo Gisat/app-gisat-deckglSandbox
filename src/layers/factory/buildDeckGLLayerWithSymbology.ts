@@ -178,7 +178,14 @@ const buildDeckGLLayerWithSymbology = ({
       const color = resolveLineColor(feature);
       return color && color[3] > 0 ? SELECTED_FEATURE_LINE_WIDTH : NON_SELECTED_FEATURE_LINE_WIDTH;
     })) as unknown as (feature: VelocityFeature) => number;
-  const mergedUpdateTriggers = { ...updateTriggers, getRadius: [zoomSizeScale] };
+  // `dominantOrbit` drives both the fill color and the circle radius, and the
+  // layer ids are stable across changes to it, so both accessors must be forced
+  // to recompute when it changes.
+  const mergedUpdateTriggers = {
+    ...updateTriggers,
+    getFillColor: [...(updateTriggers?.getFillColor ?? []), dominantOrbit],
+    getRadius: [...(updateTriggers?.getRadius ?? []), zoomSizeScale, dominantOrbit]
+  };
   const arrowPreset = getArrowShapePreset(arrowShapePresetId);
 
   // The thin-edge variant drops the unselected border on the arrows (via the
