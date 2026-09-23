@@ -68,10 +68,10 @@ const defaultProps: DefaultProps<DynamicArrowLayerProps> = {
  * flared head), rasterized in the fragment shader with a signed-distance field.
  *
  * The arrow geometry accessors are fractions of the quad half-side, so the
- * rendered arrow matches the on-map meters exactly. The visible stroke is
- * hardcoded in the shader: unselected arrows render a soft transparent edge,
- * selected features render a solid stroke of `SELECTED_FEATURE_LINE_WIDTH` +
- * 1px feather in the selection color. `getLineColor` carries the per-feature
+ * rendered arrow matches the on-map meters exactly. The visible stroke widths
+ * come from `./selectionConstants`: unselected arrows render a soft transparent
+ * edge, selected features render a solid stroke of `SELECTED_FEATURE_LINE_WIDTH`
+ * + 1px feather in the selection color. `getLineColor` carries the per-feature
  * selection border color with alpha `0` for unselected features, which the
  * shader reads to detect selection (`vArrowLine.a > 0`).
  *
@@ -106,9 +106,12 @@ export class DynamicArrowLayer<DataT = any, ExtraPropsT extends object = object>
   /**
    * Registers the per-instance arrow geometry attributes.
    *
-   * Arrow-specific attributes are registered alongside the inherited
-   * ScatterplotLayer attributes (radius, line width, fill/line colors), so the
-   * vertex shader can read all of them per instance.
+   * Only the arrow-specific geometry is registered here. Fill/line colors and
+   * the line width reuse the attributes the base ScatterplotLayer already
+   * registers (`instanceFillColors`, `instanceLineColors`, `instanceLineWidths`)
+   * instead of a second copy of the same colors, which keeps the layer within
+   * the WebGL instanced-attribute budget; the shader forwards them as the
+   * `vArrowFill`/`vArrowLine` varyings.
    */
   initializeState() {
     super.initializeState();
@@ -138,23 +141,6 @@ export class DynamicArrowLayer<DataT = any, ExtraPropsT extends object = object>
         size: 1,
         accessor: 'getHeadWidth',
         defaultValue: 0.1
-      },
-      instanceLineWidths: {
-        size: 1,
-        accessor: 'getLineWidth',
-        defaultValue: 1.5
-      },
-      instanceArrowFillColors: {
-        size: 4,
-        type: 'unorm8',
-        accessor: 'getFillColor',
-        defaultValue: [0, 0, 0, 255]
-      },
-      instanceArrowLineColors: {
-        size: 4,
-        type: 'unorm8',
-        accessor: 'getLineColor',
-        defaultValue: [0, 0, 0, 255]
       }
     });
   }

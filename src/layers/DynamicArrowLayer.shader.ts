@@ -31,25 +31,34 @@
  * attribute, because ScatterplotLayer already sits close to the WebGL
  * instanced-attribute limit.
  *
- * The stroke widths are hardcoded in pixels, expressed in CSS pixels via the
- * device pixel ratio (passed from the vertex shader as a varying, because
- * `dFdx` measures per device pixel and the `project` uniform block is only
- * declared in the vertex shader).
+ * The stroke widths are fixed values taken from the dependency-free
+ * `./selectionConstants` module, expressed in CSS pixels via the device pixel
+ * ratio (passed from the vertex shader as a varying, because `dFdx` measures
+ * per device pixel and the `project` uniform block is only declared in the
+ * vertex shader).
  *
- * Ported from `app-damStabilityInspector/src/lib/layers/factory/DynamicArrowLayer.shader.ts`
- * (which imports the shared selection constant from its own constants module).
- * The sandbox has no shared selection-constants module, so the value is inlined
- * here; it must stay in sync with the factory's `SELECTED_FEATURE_LINE_WIDTH`.
+ * Ported from `app-damStabilityInspector/src/lib/layers/factory/DynamicArrowLayer.shader.ts`.
+ * There the widths come from a shared `@lib/symbologies/constants/selection`
+ * module; the sandbox equivalent is `./selectionConstants`, so the shader and
+ * the symbology accessors share one source of truth.
  */
+
+import {
+  NON_SELECTED_FEATURE_LINE_WIDTH,
+  SELECTED_FEATURE_LINE_WIDTH
+} from './selectionConstants';
 
 /** Identifies the arrow head glyph rasterized by the fragment shader. */
 export type ArrowGlyph = 'triangle' | 'barbed' | 'dart' | 'open';
 
 /**
- * Line width (CSS pixels) applied to selected features. Mirrors the factory
- * `SELECTED_FEATURE_LINE_WIDTH`.
+ * Along-axis backward sweep of each solid glyph's outer head vertices behind
+ * the head base, as a multiple of `vHeadSize`. Shared by the `HEAD_POLYGONS`
+ * vertices and `WING_BACK_EXTENT_FACTOR`, so the traced geometry and the
+ * min-stem reserve can never drift apart.
  */
-const SELECTED_FEATURE_LINE_WIDTH = 3;
+const BARBED_WING_BACK_EXTENT = 0.646;
+const DART_WING_BACK_EXTENT = 0.784;
 
 /**
  * Head outlines for the solid polygon glyphs, expressed as GLSL vertex
@@ -83,11 +92,11 @@ const HEAD_POLYGONS: Record<Exclude<ArrowGlyph, 'open'>, string[][]> = {
     [
       'vec2(thick, 0.0)',
       'vec2(thick, headBaseY)',
-      'vec2(headHalfWidth, headBaseY - 0.646 * vHeadSize)',
+      `vec2(headHalfWidth, headBaseY - ${BARBED_WING_BACK_EXTENT} * vHeadSize)`,
       'vec2(headHalfWidth, headBaseY + 0.077 * vHeadSize)',
       'vec2(0.0, headTipY)',
       'vec2(-headHalfWidth, headBaseY + 0.077 * vHeadSize)',
-      'vec2(-headHalfWidth, headBaseY - 0.646 * vHeadSize)',
+      `vec2(-headHalfWidth, headBaseY - ${BARBED_WING_BACK_EXTENT} * vHeadSize)`,
       'vec2(-thick, headBaseY)',
       'vec2(-thick, 0.0)'
     ]
@@ -95,13 +104,13 @@ const HEAD_POLYGONS: Record<Exclude<ArrowGlyph, 'open'>, string[][]> = {
   dart: [
     [
       'vec2(-headHalfWidth, headBaseY - 0.567 * vHeadSize)',
-      'vec2(-0.712 * headHalfWidth, headBaseY - 0.784 * vHeadSize)',
+      `vec2(-0.712 * headHalfWidth, headBaseY - ${DART_WING_BACK_EXTENT} * vHeadSize)`,
       'vec2(0.144 * headHalfWidth, headBaseY - 0.109 * vHeadSize)',
       'vec2(0.0, headBaseY + 0.216 * vHeadSize)'
     ],
     [
       'vec2(-0.144 * headHalfWidth, headBaseY - 0.109 * vHeadSize)',
-      'vec2(0.712 * headHalfWidth, headBaseY - 0.784 * vHeadSize)',
+      `vec2(0.712 * headHalfWidth, headBaseY - ${DART_WING_BACK_EXTENT} * vHeadSize)`,
       'vec2(headHalfWidth, headBaseY - 0.567 * vHeadSize)',
       'vec2(0.0, headBaseY + 0.216 * vHeadSize)'
     ],
@@ -115,17 +124,18 @@ const HEAD_POLYGONS: Record<Exclude<ArrowGlyph, 'open'>, string[][]> = {
 };
 
 /**
- * Rear-most along-axis extent of each glyph's head "wings" behind the head
- * base, as a multiple of `vHeadSize`. `triangle` wings sit on the base (0);
- * `barbed`/`dart` sweep back; the `open` arms sweep back a full head length and
- * additionally add their capsule cap radius (`+ thick`, handled in the min stem
- * expression). Used to equalize the *visible* stem across glyphs.
+ * Rear-most along-axis extent of each solid glyph's head "wings" behind the
+ * head base, as a multiple of `vHeadSize`. `triangle` wings sit on the base
+ * (0); `barbed`/`dart` sweep back. Used to equalize the *visible* stem across
+ * glyphs. The `open` glyph is not listed: its arms sweep back a full head
+ * length plus their capsule cap radius, handled explicitly by the min-stem
+ * expression. The values reuse the same constants as the `HEAD_POLYGONS`
+ * vertices, so the two cannot drift apart.
  */
-const WING_BACK_EXTENT_FACTOR: Record<ArrowGlyph, number> = {
+const WING_BACK_EXTENT_FACTOR: Record<Exclude<ArrowGlyph, 'open'>, number> = {
   triangle: 0,
-  barbed: 0.646,
-  dart: 0.784,
-  open: 1
+  barbed: BARBED_WING_BACK_EXTENT,
+  dart: DART_WING_BACK_EXTENT
 };
 
 /**
@@ -136,14 +146,22 @@ const WING_BACK_EXTENT_FACTOR: Record<ArrowGlyph, number> = {
  */
 const MIN_BARE_STEM_RATIO = 1;
 
+/**
+ * Renders a JS number as a GLSL float literal without precision loss (an
+ * integer gets a `.0` suffix; anything else is emitted verbatim), unlike
+ * `toFixed`, which would silently round a value such as `0.25` to `0.2`.
+ *
+ * @param value - Numeric literal to emit.
+ * @returns A valid GLSL float literal for `value`.
+ */
+const glslFloat = (value: number): string => (Number.isInteger(value) ? `${value}.0` : `${value}`);
+
 const ARROW_VS_DECL: string = `
     in float instanceAngles;
     in float instanceStemLengths;
     in float instanceStemThicknesses;
     in float instanceHeadSizes;
     in float instanceHeadWidths;
-    in vec4 instanceArrowFillColors;
-    in vec4 instanceArrowLineColors;
 
     out float vAngle;
     out float vStemLength;
@@ -151,6 +169,11 @@ const ARROW_VS_DECL: string = `
     out float vHeadSize;
     out float vHeadWidth;
     out float vAnchorOffset;
+
+    // Colors forwarded from the base ScatterplotLayer attributes. They need
+    // their own varyings because the injection is emitted before the base
+    // shader's own varyings are declared, so the fragment hook cannot see
+    // vFillColor/vLineColor directly.
     out vec4 vArrowFill;
     out vec4 vArrowLine;
 
@@ -232,7 +255,6 @@ const buildGeometryGLSL = (glyph: ArrowGlyph): string => {
     float thick = vStemThickness * 0.5;
     float headHalfWidth = vHeadWidth * 0.5;
     float headBaseY = vStemLength;
-    float headTipY = vStemLength + vHeadSize;
     float y = p.y + vAnchorOffset;
 
     // Full local point (the arrow axis is x == 0)
@@ -278,12 +300,18 @@ const buildGeometryGLSL = (glyph: ArrowGlyph): string => {
 
   const headUnion = headNames.reduce((acc, name) => (acc ? `min(${acc}, ${name})` : name), '');
 
+  // `headTipY` is the along-axis tip for the glyphs whose tip sits at
+  // `headBaseY + headSize` (`triangle`, `barbed`). `dart` places its tip at
+  // `headBaseY + 0.216 * headSize`, so it does not declare the variable.
+  const headTipDecl = glyph === 'dart' ? '' : 'float headTipY = vStemLength + vHeadSize;';
+
   return `${preamble}
     // Arrow: union of the traced full outline polygons. triangle and barbed
     // are authored as a single stem+head polygon; the dart unions two
     // overlapping quads with an explicit stem rectangle. Unioning full
     // polygons avoids the false SDF boundary (and internal stroke line) that a
     // separate stem+head split produces along their shared seam.
+    ${headTipDecl}
     ${headBlocks.join('\n    ')}
 
     float signedDist = ${headUnion};
@@ -319,7 +347,7 @@ export const getArrowShaderInjections = ({
   const minStemExpr =
     glyph === 'triangle'
       ? '0.0'
-      : `${MIN_BARE_STEM_RATIO.toFixed(1)} * instanceStemThicknesses + ${wingBackExpr}`;
+      : `${glslFloat(MIN_BARE_STEM_RATIO)} * instanceStemThicknesses + ${wingBackExpr}`;
 
   const vsMainEnd: string = `
     vAngle = instanceAngles;
@@ -336,14 +364,12 @@ export const getArrowShaderInjections = ({
     // the middle of the glyph; tail-anchored arrows keep the anchor at the tail (0).
     vAnchorOffset = ${anchorCentered ? '(vStemLength + vHeadSize) * 0.5' : '0.0'};
 
-    // Use straight (unpremultiplied) alpha to match deck.gl's SRC_ALPHA / ONE_MINUS_SRC_ALPHA blending
-    vec3 fillRGB = instanceArrowFillColors.rgb;
-    float fillA = instanceArrowFillColors.a * layer.opacity;
-    vArrowFill = vec4(fillRGB, fillA);
-
-    vec3 lineRGB = instanceArrowLineColors.rgb;
-    float lineA = instanceArrowLineColors.a * layer.opacity;
-    vArrowLine = vec4(lineRGB, lineA);
+    // Forward the per-instance colors from the base ScatterplotLayer attributes
+    // (registered by the parent, so no second copy of the same colors is needed).
+    // Use straight (unpremultiplied) alpha to match deck.gl's SRC_ALPHA /
+    // ONE_MINUS_SRC_ALPHA blending.
+    vArrowFill = vec4(instanceFillColors.rgb, instanceFillColors.a * layer.opacity);
+    vArrowLine = vec4(instanceLineColors.rgb, instanceLineColors.a * layer.opacity);
 
     // Use the base shader's unitPosition (edgePadding * positions) so the SDF
     // coordinate space matches the actually-rendered quad; the raw positions
@@ -362,7 +388,7 @@ export const getArrowShaderInjections = ({
     // Anti-aliasing and Outward Stroke logic
     // dFdx measures per DEVICE pixel, while deck.gl's pixel units (and the
     // circle stroke widths) are CSS pixels. Multiplying by the device pixel
-    // ratio (passed from the vertex shader) makes the hardcoded stroke widths
+    // ratio (passed from the vertex shader) makes the fixed stroke widths
     // render at the intended CSS-pixel size on any display (e.g. retina DPR 2),
     // so the arrow's selection stroke matches the circles' 3px ring instead of
     // rendering at half width.
@@ -377,10 +403,12 @@ export const getArrowShaderInjections = ({
     // wider AA gradient (see innerFeather below) that fades the fill to
     // transparent — mirroring the ScatterplotLayer's invisible 1px ring
     // instead of a hard line. Selected features use the shared selection line
-    // width (3px) plus the 1px outer feather, so the SOLID part of the stroke
-    // is exactly 3px — visually matching the crisp 3px selection ring of the
-    // circle points.
-    float activeStrokeW = (isSelected ? (${SELECTED_FEATURE_LINE_WIDTH}.0 + 1.0) : 1.0) * pixelSize;
+    // width plus the 1px outer feather, so the SOLID part of the stroke is
+    // exactly the selection width — visually matching the crisp selection ring
+    // of the circle points.
+    float activeStrokeW = (isSelected
+      ? (${glslFloat(SELECTED_FEATURE_LINE_WIDTH)} + 1.0)
+      : ${glslFloat(NON_SELECTED_FEATURE_LINE_WIDTH)}) * pixelSize;
 
     // Use a standard soft feather for the outer boundary to smooth it against the map background
     float outerFeather = 1.0 * pixelSize;
@@ -410,7 +438,8 @@ export const getArrowShaderInjections = ({
     // sublayer's transparent stroke.
     vec4 finalStrokeColor = isSelected ? vArrowLine : vec4(0.0, 0.0, 0.0, 0.0);
 
-    // Apply the final colors
+    // Apply the final colors. The fill/line colors were forwarded from the base
+    // ScatterplotLayer color attributes in the vertex shader.
     color = mix(finalStrokeColor, vArrowFill, fillMix);
     // Straight alpha: fade only the alpha for coverage, not the RGB
     color.a *= outerAlpha;

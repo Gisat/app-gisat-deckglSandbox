@@ -5,8 +5,8 @@ import type { ArrowGlyph } from '../DynamicArrowLayer.shader';
  * Tabqa Dam LOS features.
  *
  * A preset selects the **head glyph only**. The glyphs are fixed-pen-width
- * drawings traced from the reference SVG, so exactly two dimensions vary, as if
- * drawing the arrow with a single pen whose width is the whole-arrow size:
+ * drawings traced from the reference SVG, as if drawn with a single pen whose
+ * width is the whole-arrow size, so the whole glyph scales as one piece:
  * - pen width (whole-arrow size) ← `rel_len`: scales `headSize`, `headWidth`
  *   and the stem thickness together, so the stem and the head bars always have
  *   the same thickness.
@@ -20,6 +20,12 @@ import type { ArrowGlyph } from '../DynamicArrowLayer.shader';
  * - `round-cap` (open V strokes): head width 4.48, head length 2.24
  * - `butt-cap` (square cut):     head width 4.97, head length 3.21
  * - `flush-cap` (flat cut):      head width 3.32, head length 1.92
+ *
+ * `headSize`'s along-axis meaning is glyph-specific, since each glyph is traced
+ * independently: it is the forward tip offset for `triangle`/`barbed`, the
+ * *total* along-axis head extent for `dart`, and the backward arm length for
+ * `open`. `DynamicArrowLayer` compensates with per-glyph wing-sweep factors, so
+ * do not read `headSize` as a shared "tip distance".
  */
 
 /**

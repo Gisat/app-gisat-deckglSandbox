@@ -25,8 +25,11 @@ import {
 
 /**
  * Fixed reference radius (in map meters) of the point quad the arrow is
- * rasterized into. Must be >= half the longest possible arrow so the tip stays
- * inside the quad edge (`0.5` in shader space).
+ * rasterized into. The tail sits on the anchor (LOS, `anchorCentered: false`),
+ * so the tip lies one full arrow length from the quad centre and the radius
+ * must be at least the longest possible arrow for the tip to stay inside the
+ * quad edge (`p.y = 0.5` maps to `+radius`). A centered arrow would only need
+ * half its length.
  */
 export const ARROW_REFERENCE_RADIUS_METERS = 52;
 

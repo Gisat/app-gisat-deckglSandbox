@@ -27,6 +27,7 @@ import {
   type RgbaColor
 } from '../velocity/velocityColormap';
 import {
+  NON_SELECTED_FEATURE_LINE_COLOR,
   NON_SELECTED_FEATURE_LINE_WIDTH,
   SELECTED_FEATURE_LINE_WIDTH
 } from '../velocity/selection';
@@ -74,8 +75,6 @@ export interface BuildDeckGLLayerWithSymbologyProps {
  * are drawn from the meter-sized sphere reference). Set to `1` for 3D parity.
  */
 const CIRCLE_RADIUS_SCALE = 2;
-
-const TRANSPARENT: RgbaColor = [0, 0, 0, 0];
 
 const readNumber = (feature: VelocityFeature, keys: readonly string[]): number | null => {
   const properties = feature?.properties ?? {};
@@ -130,11 +129,11 @@ const getFillColor = (feature: VelocityFeature, dominantOrbit: 'A' | 'D' | null)
  * values and the non-dominant orbit.
  *
  * The rendering rules mirror `app-damStabilityInspector`'s `velocitySymbology`
- * (fixed 40 m reference radius, `vel_rel` stem, `rel_len` thickness, `coh`
+ * (fixed 52 m reference radius, `vel_rel` stem, `rel_len` thickness, `coh`
  * head, orbit-aware heading, discrete velocity colormap, zoom-adaptive meter
  * band). Selection uses the parent-provided `getLineColor` accessor: arrows
- * render a hardcoded 3 px stroke via the shader, circles use the same color with
- * a 3 px stroke.
+ * render a `SELECTED_FEATURE_LINE_WIDTH` stroke via the shader, circles use the
+ * same color with a `SELECTED_FEATURE_LINE_WIDTH` stroke.
  *
  * Unlike the tiled MVT path, the source is a plain GeoJSON FeatureCollection, so
  * positions come straight from `geometry.coordinates` (lng/lat) and no
@@ -147,7 +146,8 @@ const buildDeckGLLayerWithSymbology = ({
   visible = true,
   pickable = true,
   dominantOrbit = null,
-  getLineColor = (() => TRANSPARENT) as unknown as Accessor<VelocityFeature, Color>,
+  getLineColor = (() =>
+    NON_SELECTED_FEATURE_LINE_COLOR) as unknown as Accessor<VelocityFeature, Color>,
   getLineWidth,
   updateTriggers,
   arrowShapePresetId = null
@@ -165,21 +165,37 @@ const buildDeckGLLayerWithSymbology = ({
     })) as unknown as (feature: VelocityFeature) => number;
   const mergedUpdateTriggers = { ...updateTriggers, getRadius: [zoomSizeScale] };
   const arrowPreset = getArrowShapePreset(arrowShapePresetId);
+
+  // Each feature's symbology attributes are read many times per render (fill,
+  // angle, stem length, stem thickness, head size/width), so parse them once
+  // per feature for this build. The cache is scoped to the call, so replacing
+  // the input features (a new `buildDeckGLLayerWithSymbology` call) always
+  // re-reads them.
+  const velocityAttributes = new WeakMap<VelocityFeature, ReturnType<typeof readVelocity>>();
+  const getVelocity = (feature: VelocityFeature): ReturnType<typeof readVelocity> => {
+    let attributes = velocityAttributes.get(feature);
+    if (!attributes) {
+      attributes = readVelocity(feature);
+      velocityAttributes.set(feature, attributes);
+    }
+    return attributes;
+  };
+
   // Pen width shared by the stem and the head (fraction of the quad), driven by
   // `rel_len`. The preset glyphs are fixed-pen-width drawings traced from the
   // reference SVG, so scaling every head dimension by this same width makes the
   // head bars exactly as thick as the stem — one pen draws the whole arrow.
-  // Presets scale it down (max 3.5 m instead of the fill head's 5 m); the fill
+  // Presets scale it down (max 2.5 m instead of the fill head's 5 m); the fill
   // head keeps the unscaled mapping.
   const arrowPenScale = arrowPreset ? ARROW_SHAPE_PRESET_STROKE_WIDTH_SCALE : 1;
   const arrowPenWidth = (feature: VelocityFeature): number =>
-    computeStemThicknessFraction(readVelocity(feature).relLen) * arrowPenScale;
+    computeStemThicknessFraction(getVelocity(feature).relLen) * arrowPenScale;
 
   const arrowFeatures: VelocityFeature[] = [];
   const circleFeatures: VelocityFeature[] = [];
 
   for (const feature of features ?? []) {
-    const { velAvg, orbit } = readVelocity(feature);
+    const { velAvg, orbit } = getVelocity(feature);
     if (isNonDominantOrbit(orbit, dominantOrbit) || isSphere(velAvg)) {
       circleFeatures.push(feature);
     } else {
@@ -203,23 +219,26 @@ const buildDeckGLLayerWithSymbology = ({
         getPosition,
         getFillColor: (feature: VelocityFeature): RgbaColor => getFillColor(feature, dominantOrbit),
         getAngle: (feature: VelocityFeature): number => {
-          const { velAvg, orbit } = readVelocity(feature);
+          const { velAvg, orbit } = getVelocity(feature);
           return computeArrowHeading(velAvg, orbit);
         },
-        getStemLength: (feature: VelocityFeature): number => computeStemLengthFraction(readVelocity(feature).velRel),
+        getStemLength: (feature: VelocityFeature): number => computeStemLengthFraction(getVelocity(feature).velRel),
         getStemThickness: (feature: VelocityFeature): number => arrowPenWidth(feature),
         // The whole glyph is scaled by the pen width, so the head bars render at
         // the same thickness as the stem (uniform pen, `rel_len`-driven).
         getHeadSize: arrowPreset
           ? (feature: VelocityFeature): number => arrowPreset.headSize * arrowPenWidth(feature)
-          : (feature: VelocityFeature): number => computeHeadSizeFraction(readVelocity(feature).coh),
+          : (feature: VelocityFeature): number => computeHeadSizeFraction(getVelocity(feature).coh),
         getHeadWidth: arrowPreset
           ? (feature: VelocityFeature): number => arrowPreset.headWidth * arrowPenWidth(feature)
-          : (feature: VelocityFeature): number => computeHeadWidthFraction(readVelocity(feature).coh),
+          : (feature: VelocityFeature): number => computeHeadWidthFraction(getVelocity(feature).coh),
         getRadius: computeArrowRadius() * zoomSizeScale,
         radiusUnits: 'meters',
         lineWidthUnits: 'pixels',
-        stroked: true,
+        // The arrow renders its own SDF stroke, so the base ScatterplotLayer
+        // stroke pass is unused: `stroked` stays false and `getLineWidth` stays 0
+        // (a non-zero width would inflate the quad and break the `unitPosition`
+        // meter mapping).
         getLineWidth: 0,
         getLineColor: resolveLineColor,
         updateTriggers: mergedUpdateTriggers
@@ -237,7 +256,7 @@ const buildDeckGLLayerWithSymbology = ({
         getPosition,
         getFillColor: (feature: VelocityFeature): RgbaColor => getFillColor(feature, dominantOrbit),
         getRadius: (feature: VelocityFeature): number => {
-          const { orbit } = readVelocity(feature);
+          const { orbit } = getVelocity(feature);
           const hidden = isNonDominantOrbit(orbit, dominantOrbit);
           return (hidden ? SMALL_SPHERE_RADIUS_METERS : SPHERE_RADIUS_METERS) * zoomSizeScale * CIRCLE_RADIUS_SCALE;
         },
