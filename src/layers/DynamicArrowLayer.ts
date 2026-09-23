@@ -60,7 +60,12 @@ const defaultProps: DefaultProps<DynamicArrowLayerProps> = {
   getHeadSize: { type: 'accessor', value: 0.15 },
   getHeadWidth: { type: 'accessor', value: 0.1 },
   anchorCentered: false,
-  glyph: 'triangle'
+  glyph: 'triangle',
+  // The shader treats a non-zero line alpha as "selected" and paints the
+  // selection stroke, so default the line color to fully transparent. Without
+  // this, a standalone instance (no `getLineColor` accessor) would inherit the
+  // ScatterplotLayer's opaque default and render every arrow as selected.
+  getLineColor: { type: 'accessor', value: [0, 0, 0, 0] }
 };
 
 /**
@@ -73,7 +78,8 @@ const defaultProps: DefaultProps<DynamicArrowLayerProps> = {
  * edge, selected features render a solid stroke of `SELECTED_FEATURE_LINE_WIDTH`
  * + 1px feather in the selection color. `getLineColor` carries the per-feature
  * selection border color with alpha `0` for unselected features, which the
- * shader reads to detect selection (`vArrowLine.a > 0`).
+ * shader reads to detect selection (`vArrowLine.a > 0`); it defaults to
+ * transparent so an unconfigured instance does not render as selected.
  *
  * Mirrors `app-damStabilityInspector/src/lib/layers/factory/DynamicArrowLayer.ts`
  * (deck.gl 9).
