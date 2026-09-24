@@ -6,6 +6,7 @@ import { ScatterplotLayer, BitmapLayer } from '@deck.gl/layers';
 import { useDuckDb } from 'duckdb-wasm-kit';
 import { setupDB } from './db';
 import { scaleLinear } from 'd3-scale';
+import { cartoLightBasemapUrl } from '../basemaps';
 
 import MapHUD from './MapHUD';
 import TimeControl from './TimeControl';
@@ -519,7 +520,7 @@ export default function VirtualTilesMap() {
                         layers={[
                             new TileLayer({
                                 id: 'base-map',
-                                data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                                data: cartoLightBasemapUrl,
                                 minZoom: 0, maxZoom: 19, tileSize: 256,
                                 renderSubLayers: props => {
                                     const { west, south, east, north } = props.tile.bbox;

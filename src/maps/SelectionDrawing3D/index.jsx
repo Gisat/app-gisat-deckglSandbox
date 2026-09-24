@@ -11,6 +11,7 @@ import { CogTerrainLayer, extractTerrainCoordinate } from '@gisatcz/deckgl-geoli
 import chroma from 'chroma-js';
 import { scaleLinear } from 'd3-scale';
 import { calculateProfileData } from '../../components/2DLineProfile';
+import { cartoLightBasemapUrl } from '../basemaps';
 
 const INITIAL_VIEW_STATE = {
   longitude: 14.015511800867504,
@@ -101,7 +102,7 @@ export default function SelectionDrawing3D() {
 
   const baseMapLayer = new TileLayer({
     id: 'tile-layer-selection-drawing',
-    data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+    data: cartoLightBasemapUrl,
     minZoom: 0,
     maxZoom: 19,
     tileSize: 256,

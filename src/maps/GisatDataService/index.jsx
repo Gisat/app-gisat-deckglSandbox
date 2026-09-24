@@ -6,6 +6,7 @@ import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { SphereGeometry } from '@luma.gl/engine';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
 import chroma from 'chroma-js';
+import { cartoLightBasemapUrl } from '../basemaps';
 
 const INITIAL_VIEW_STATE = {
   longitude: 14.015511800867504,
@@ -282,7 +283,7 @@ export default function GisatDataService() {
 
   const baseMapLayer = new TileLayer({
     id: 'tile-layer',
-    data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+    data: cartoLightBasemapUrl,
     minZoom: 0,
     maxZoom: 19,
     tileSize: 256,

@@ -8,6 +8,7 @@ import { HUD } from '../../components/HUD';
 import { PlaybackControls } from '../../components/PlaybackControls';
 import { SelectionControls, DrawingOverlay, TimeSeriesChart, normalizeGeometry, filterPointsByGeometryInBounds } from '../../components/PointSelection';
 import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
+import { cartoLightBasemapUrl } from '../basemaps';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 12, pitch: 0, bearing: 0 };
@@ -155,7 +156,7 @@ function Map2D() {
     const layers = [
         new TileLayer({
             id: 'base-map',
-            data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+            data: cartoLightBasemapUrl,
             minZoom: 0, maxZoom: 19, tileSize: 256,
             renderSubLayers: props => {
                 const { west, south, east, north } = props.tile.bbox;
