@@ -1,3 +1,14 @@
+## [1.7.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.6.0...v1.7.0) (2026-09-24)
+
+### Features
+
+* added apiKey for carto basemap ([49c9b44](https://github.com/Gisat/app-gisat-deckglSandbox/commit/49c9b443c38c42a4ed37cb40e538242a324f2d61))
+* inject Carto API key at runtime ([2612cd6](https://github.com/Gisat/app-gisat-deckglSandbox/commit/2612cd68ae8bd56e63ca46beb8b4875395994583))
+
+### Bug Fixes
+
+* **build:** restore package-lock.json to fix docker-build ([8c2ae0f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8c2ae0f65ad97adf035fc023441753a0ed0f1426)), closes [Menci/vite-plugin-top-level-await#79](https://github.com/Menci/vite-plugin-top-level-await/issues/79)
+
 ## [1.6.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.5.1...v1.6.0) (2026-09-23)
 
 ### Features
