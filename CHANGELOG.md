@@ -1,3 +1,19 @@
+## [1.6.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.5.1...v1.6.0) (2026-09-23)
+
+### Features
+
+* **Tabqa:** add arrow shape presets with unified pen width and hover borders ([4493831](https://github.com/Gisat/app-gisat-deckglSandbox/commit/44938317d5eef302e2c0887f9e2c92b5fdc07a0b)), closes [#ff3c30](https://github.com/Gisat/app-gisat-deckglSandbox/issues/ff3c30)
+* **Tabqa:** add thin-border Vertical-Cut arrow option ([956a30b](https://github.com/Gisat/app-gisat-deckglSandbox/commit/956a30b7c731b0e3067f6ffb9f795896b57ab9af))
+* **Tabqa:** port DynamicArrowLayer from damStabilityInspector factory ([62e9514](https://github.com/Gisat/app-gisat-deckglSandbox/commit/62e95143a73086fcaf81814cd94421f3653e8852))
+* **Tabqa:** port velocity LOS symbology and switch LOS source to GeoJSON ([e1fc9c6](https://github.com/Gisat/app-gisat-deckglSandbox/commit/e1fc9c6bc773b3d13fb3e36c67fb774f9fd32287))
+* **Tabqa:** rework arrow presets as stroked V shapes with fixed heads ([553592e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/553592e4f44c9d73f666954b020df10b973761ce))
+
+### Bug Fixes
+
+* **layers:** default DynamicArrowLayer line color to transparent ([a06ca75](https://github.com/Gisat/app-gisat-deckglSandbox/commit/a06ca75041018097d71d78070c302b7273f5ffe0))
+* **layers:** sync arrow attribute defaults and dominantOrbit update triggers ([790f63a](https://github.com/Gisat/app-gisat-deckglSandbox/commit/790f63a5183ab704fa0e8176e431546ffa886198))
+* **Tabqa:** ignore null feature ids when matching hover and selection ([ecdc8df](https://github.com/Gisat/app-gisat-deckglSandbox/commit/ecdc8df010a224010f7b8ac394ad367988bfaf9e))
+
 ## [1.5.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.5.0...v1.5.1) (2026-09-04)
 
 ### Bug Fixes
