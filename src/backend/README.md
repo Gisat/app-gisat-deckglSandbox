@@ -18,13 +18,13 @@ The backend provides two main API endpoints:
 
 ## requirements
 
-- python 3.8+
+- python 3.10+
 - dependencies (see `requirements.txt`):
   - flask >= 3.0
   - flask-cors >= 4.0
   - gunicorn
   - duckdb == 1.1.3
-  - pyarrow == 18.0.0
+  - pyarrow == 23.0.1
 
 ## installation & setup
 
