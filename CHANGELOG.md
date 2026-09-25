@@ -1,3 +1,9 @@
+## [1.7.2](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.7.1...v1.7.2) (2026-09-25)
+
+### Bug Fixes
+
+* **deps:** remediate Dependabot security alerts ([87185aa](https://github.com/Gisat/app-gisat-deckglSandbox/commit/87185aa048312806d09bb0eaf92a0aa8cec12c64))
+
 ## [1.7.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.7.0...v1.7.1) (2026-09-25)
 
 ### Bug Fixes
