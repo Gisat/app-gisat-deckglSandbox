@@ -220,7 +220,7 @@ const TabqaDam = () => {
                             onChange={() => setArrowShape(null)}
                             style={{ marginRight: 6 }}
                         />
-                        Fill Head (original)
+                        Fill-Head
                     </label>
                     {ARROW_SHAPE_PRESETS.map((preset) => (
                         <label
