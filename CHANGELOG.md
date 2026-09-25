@@ -1,3 +1,9 @@
+## [1.7.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.7.0...v1.7.1) (2026-09-25)
+
+### Bug Fixes
+
+* **Tabqa:** rename Fill Head UI label to Fill-Head ([ab198f6](https://github.com/Gisat/app-gisat-deckglSandbox/commit/ab198f63ed9a0470d5f606c1d6730515759a2c2c))
+
 ## [1.7.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.6.0...v1.7.0) (2026-09-24)
 
 ### Features
