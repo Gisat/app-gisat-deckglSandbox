@@ -16,7 +16,7 @@ import {
  *
  * The quad radius is a fixed reference (`ARROW_REFERENCE_RADIUS_METERS`) large
  * enough to hold the longest possible arrow. `DynamicArrowLayer` adds a minimum
- * stem that reserves the visible bare stem in front of each glyph's wings, so
+ * stem that reserves the visible bare stem in front of each shape's wings, so
  * the longest arrow (max preset pen width 2.5 m, saturated 20 m stem, round-cap
  * head and wing sweep) reaches about 32 m; the 52 m reference leaves margin for
  * the selection stroke. Fractions are `meters / (2 * radius)` because the quad

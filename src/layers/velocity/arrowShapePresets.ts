@@ -1,12 +1,12 @@
-import type { ArrowGlyph } from '../DynamicArrowLayer.shader';
+import type { ArrowShape } from '../DynamicArrowLayer.shader';
 
 /**
- * Fixed arrow-head presets for evaluating `DynamicArrowLayer` glyphs on the
+ * Fixed arrow-shape presets for evaluating `DynamicArrowLayer` shapes on the
  * Tabqa Dam LOS features.
  *
- * All three shapes are the same stroked open-V arrow — one shared centerline —
- * so they differ only in their caps (round / butt / vertical; see
- * `STROKED_ARROW_CAP`). The geometry is driven by the data:
+ * The three distinct presets are the same stroked open-V arrow — one shared
+ * centerline — so they differ only in their shape (`round-cap`, `square-cap`,
+ * `vertical-cut`). The geometry is driven by the data:
  * - pen width (stroke thickness) ← `rel_len`: one pen draws the stem and both
  *   wings, so the head's stroke always equals the stem's.
  * - stem length ← `vel_rel`, plus a minimum that reserves the same visible bare
@@ -31,21 +31,21 @@ import type { ArrowGlyph } from '../DynamicArrowLayer.shader';
 export const ARROW_SHAPE_PRESET_STROKE_WIDTH_SCALE = 0.5;
 
 /** Identifier of a built-in arrow shape preset. */
-export type ArrowShapePresetId = 'round-cap' | 'butt-cap' | 'flush-cap' | 'flush-cap-thin';
+export type ArrowShapePresetId = 'round-cap' | 'square-cap' | 'vertical-cut' | 'vertical-cut-thin';
 
 /**
  * A fixed arrow-head preset.
  *
  * `headWidth` / `headSize` are the wing span and along-axis wing length as
  * multiples of the head's reference pen width, i.e. a fixed head size in map
- * meters. The glyph selects the cap treatment baked into the shader.
+ * meters. The shape selects the geometry baked into the shader.
  */
 export interface ArrowShapePreset {
   id: ArrowShapePresetId;
   /** Human-readable label for the shape-toggle UI. */
   label: string;
-  /** Arrow head glyph (cap treatment) rasterized by the shader. */
-  glyph: ArrowGlyph;
+  /** Arrow shape rasterized by the shader. */
+  shape: ArrowShape;
   /** Wing span as a multiple of the reference head pen width. */
   headWidth: number;
   /** Along-axis wing length as a multiple of the reference head pen width. */
@@ -81,26 +81,26 @@ const ARROW_HEAD = {
 export const ARROW_SHAPE_PRESETS: ArrowShapePreset[] = [
   {
     id: 'round-cap',
-    label: 'Round-Cap Arrow',
-    glyph: 'open',
+    label: 'Round-Cap',
+    shape: 'round-cap',
     ...ARROW_HEAD
   },
   {
-    id: 'butt-cap',
-    label: 'Square-Cap / Butt-Cap Arrow',
-    glyph: 'dart',
+    id: 'square-cap',
+    label: 'Square-Cap',
+    shape: 'square-cap',
     ...ARROW_HEAD
   },
   {
-    id: 'flush-cap',
-    label: 'Vertical-Cut / Flush-Cap Arrow',
-    glyph: 'barbed',
+    id: 'vertical-cut',
+    label: 'Vertical-Cut',
+    shape: 'vertical-cut',
     ...ARROW_HEAD
   },
   {
-    id: 'flush-cap-thin',
-    label: 'Vertical-Cut / Flush-Cap Arrow (Thin Border)',
-    glyph: 'barbed',
+    id: 'vertical-cut-thin',
+    label: 'Vertical-Cut (Thin Border)',
+    shape: 'vertical-cut',
     ...ARROW_HEAD,
     thinEdge: true
   }
