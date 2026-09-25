@@ -223,7 +223,7 @@ const buildDeckGLLayerWithSymbology = ({
   };
 
   // Pen width shared by the stem and the head (fraction of the quad), driven by
-  // `rel_len`. The preset glyphs are fixed-pen-width drawings traced from the
+  // `rel_len`. The preset shapes are fixed-pen-width drawings traced from the
   // reference SVG, so scaling every head dimension by this same width makes the
   // head bars exactly as thick as the stem — one pen draws the whole arrow.
   // Presets scale it down (max 2.5 m instead of the fill head's 5 m); the fill
@@ -258,11 +258,11 @@ const buildDeckGLLayerWithSymbology = ({
   if (arrowFeatures.length > 0) {
     arrowLayers.push(
       new DynamicArrowLayer<VelocityFeature>({
-        id: `${id}-arrows-${arrowShapePresetId ?? 'data'}`,
+        id: `${id}-arrows-${arrowShapePresetId ?? 'fill-head'}`,
         data: arrowFeatures,
         visible,
         pickable,
-        glyph: arrowPreset ? arrowPreset.glyph : 'triangle',
+        shape: arrowPreset ? arrowPreset.shape : 'fill-head',
         thinEdge,
         getPosition,
         getFillColor: (feature: VelocityFeature): RgbaColor => getFillColor(feature, dominantOrbit),

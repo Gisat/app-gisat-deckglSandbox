@@ -2,7 +2,7 @@ import { ScatterplotLayer } from '@deck.gl/layers';
 import type { ScatterplotLayerProps } from '@deck.gl/layers';
 import type { Accessor, DefaultProps } from '@deck.gl/core';
 
-import { getArrowShaderInjections, type ArrowGlyph } from './DynamicArrowLayer.shader';
+import { getArrowShaderInjections, type ArrowShape } from './DynamicArrowLayer.shader';
 
 /**
  * Props supported by the {@link DynamicArrowLayer}.
@@ -45,11 +45,11 @@ export interface DynamicArrowLayerProps<DataT = any> extends ScatterplotLayerPro
    */
   anchorCentered?: boolean;
   /**
-   * Arrow head glyph rasterized by the shader: `triangle` (default), `barbed`,
-   * `dart` or `open`. Resolved at shader-compile time — it is not a per-instance
-   * attribute, to stay within the WebGL instanced-attribute limit.
+   * Arrow shape rasterized by the shader: `fill-head` (default), `round-cap`,
+   * `square-cap` or `vertical-cut`. Resolved at shader-compile time — it is not a
+   * per-instance attribute, to stay within the WebGL instanced-attribute limit.
    */
-  glyph?: ArrowGlyph;
+  shape?: ArrowShape;
   /**
    * When true the unselected arrow drops the default 1px transparent stroke and
    * renders only a smaller soft fringe. Selection and hover strokes are
@@ -67,7 +67,7 @@ const defaultProps: DefaultProps<DynamicArrowLayerProps> = {
   getHeadSize: { type: 'accessor', value: 0.15 },
   getHeadWidth: { type: 'accessor', value: 0.1 },
   anchorCentered: false,
-  glyph: 'triangle',
+  shape: 'fill-head',
   thinEdge: false,
   // The shader treats a non-zero line alpha as "selected" and paints the
   // selection stroke, so default the line color to fully transparent. Without
@@ -112,7 +112,7 @@ export class DynamicArrowLayer<DataT = any, ExtraPropsT extends object = object>
     const shaders = super.getShaders();
     shaders.inject = getArrowShaderInjections({
       anchorCentered: Boolean(this.props.anchorCentered),
-      glyph: this.props.glyph ?? 'triangle',
+      shape: this.props.shape ?? 'fill-head',
       thinEdge: Boolean(this.props.thinEdge)
     });
     return shaders;

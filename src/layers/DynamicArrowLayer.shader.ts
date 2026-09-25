@@ -1,5 +1,5 @@
 /**
- * GLSL injections that rasterize a flat arrow glyph inside the ScatterplotLayer
+ * GLSL injections that rasterize a flat arrow shape inside the ScatterplotLayer
  * point quad using a signed-distance field.
  *
  * The arrow geometry accessors (`getStemLength`, `getStemThickness`,
@@ -9,20 +9,20 @@
  * shader maps them back to pixels so the rendered arrow matches the on-map
  * meters exactly.
  *
- * Glyph shapes are selected at shader-compile time via {@link ArrowGlyph}:
- * - `triangle` — filled rectangle stem + triangular head (the legacy / data
+ * Arrow shapes are selected at shader-compile time via {@link ArrowShape}:
+ * - `fill-head` — filled rectangle stem + triangular head (the legacy / data
  *   path).
- * - `open`, `dart`, `barbed` — one and the same stroked open-V arrow: a stem
- *   plus two barbs drawn with a single pen, so the head's stroke always equals
- *   the stem's. They differ only in their caps, per {@link STROKED_ARROW_CAP}:
- *   round ends and apex (`open`), flat/perpendicular ends with a mitered point
- *   (`dart`), or flat/vertical ends with a mitered point (`barbed`).
+ * - `round-cap`, `square-cap`, `vertical-cut` — one and the same stroked open-V
+ *   arrow: a stem plus two barbs drawn with a single pen, so the head's stroke
+ *   always equals the stem's. They differ only in their cap treatment: round
+ *   ends/apex (`round-cap`), flat/perpendicular ends with a mitered point
+ *   (`square-cap`), or flat/vertical ends with a mitered point (`vertical-cut`).
  *
- * Every stroked glyph is given a minimum stem length that keeps the tail behind
+ * Every stroked shape is given a minimum stem length that keeps the tail behind
  * the head barbs, then the data-driven stem length is added on top. The minimum
- * reserves a shared bare-stem distance in front of the barbs, so all glyphs show
+ * reserves a shared bare-stem distance in front of the barbs, so all shapes show
  * the same visible stem from the tail to the barbs. Without it a head whose barbs
- * sweep back further than the stem leaves no visible tail and the glyph reads as
+ * sweep back further than the stem leaves no visible tail and the shape reads as
  * a bare chevron. The minimum is applied in the vertex shader so the
  * centered-anchor offset uses the same stem length as the fragment geometry.
  *
@@ -49,31 +49,11 @@ import {
   SELECTED_FEATURE_LINE_WIDTH
 } from './selectionConstants';
 
-/** Identifies the arrow head glyph rasterized by the fragment shader. */
-export type ArrowGlyph = 'triangle' | 'barbed' | 'dart' | 'open';
+/** Identifies the arrow shape rasterized by the fragment shader. */
+export type ArrowShape = 'fill-head' | 'round-cap' | 'square-cap' | 'vertical-cut';
 
 /**
- * Cap treatment of a stroked glyph's ends. The three stroked glyphs (`open`,
- * `dart`, `barbed`) share one centerline — a stem plus an open-V head drawn with
- * the same pen, so the head's stroke always equals the stem's — and differ only
- * in their caps:
- * - `round`    — line-cap `round` (capsule ends), rounded apex.
- * - `butt`     — free ends cut flat perpendicular to each segment, apex mitered
- *   to a point.
- * - `vertical` — free ends cut flat parallel to the arrow axis, apex mitered to
- *   a point.
- */
-export type ArrowCap = 'round' | 'butt' | 'vertical';
-
-/** Free-end cap treatment of each stroked glyph. */
-export const STROKED_ARROW_CAP: Record<Exclude<ArrowGlyph, 'triangle'>, ArrowCap> = {
-  open: 'round',
-  dart: 'butt',
-  barbed: 'vertical'
-};
-
-/**
- * Head outline of the filled `triangle` glyph (the data-driven fill head),
+ * Head outline of the filled `fill-head` shape (the data-driven fill head),
  * expressed as GLSL vertex expressions in terms of `thick` (stem half
  * thickness), `headHalfWidth` (w), `headBaseY` (L) and `headTipY`.
  *
@@ -93,10 +73,10 @@ const TRIANGLE_HEAD_POLYGON: string[] = [
 ];
 
 /**
- * Visible bare stem kept in front of the wings, in pen widths, for every glyph.
- * The minimum stem reserves this much beyond the glyph's own wing sweep, so all
+ * Visible bare stem kept in front of the wings, in pen widths, for every shape.
+ * The minimum stem reserves this much beyond the shape's own wing sweep, so all
  * presets show the same stem length from the tail to the wings (the head base
- * itself sits further forward for glyphs whose wings sweep back less).
+ * itself sits further forward for shapes whose wings sweep back less).
  */
 const MIN_BARE_STEM_RATIO = 1;
 
@@ -203,35 +183,34 @@ const ARROW_FS_DECL: string = `
   `;
 
 /**
- * Builds the stroked open-V arrow body for a cap treatment: a stem from the tail
- * to the apex plus one barb (the other is its mirror through `pa`), both stroked
- * with `thick`. Defines `signedDist`.
+ * Builds the stroked open-V arrow body for one of the three stroked shapes: a
+ * stem from the tail to the apex plus one barb (the other is its mirror through
+ * `pa`), both stroked with `thick`. Defines `signedDist`.
  *
- * `round` keeps the capsule's rounded apex; the flat-capped variants (`butt`,
- * `vertical`) add a miter wedge that runs the barbs' outer edges to their
- * intersection, so the tip comes to a point instead of a round cap.
+ * `round-cap` keeps the capsule's rounded apex; the flat-capped shapes
+ * (`square-cap`, `vertical-cut`) add a miter wedge that runs the barbs' outer
+ * edges to their intersection, so the tip comes to a point. `square-cap` cuts
+ * the free ends perpendicular to each segment; `vertical-cut` cuts them parallel
+ * to the arrow axis.
  *
- * @param cap - Free-end cap treatment.
+ * @param shape - Stroked arrow shape.
  * @returns GLSL statements defining `signedDist`.
  */
-const buildStrokedArrowGLSL = (cap: ArrowCap): string => {
-  const stem =
-    cap === 'round'
-      ? 'sdCapsule(pa, vec2(0.0, thick), vec2(0.0, headBaseY), thick)'
-      : 'max(sdCapsule(pa, vec2(0.0, 0.0), vec2(0.0, headBaseY), thick), -pa.y)';
-  const armBase = 'sdCapsule(pa, vec2(0.0, headBaseY), vec2(headHalfWidth, headBaseY - vHeadSize), thick)';
-  const arm =
-    cap === 'round'
-      ? armBase
-      : cap === 'butt'
-        ? `max(${armBase}, dot(pa - vec2(headHalfWidth, headBaseY - vHeadSize), normalize(vec2(headHalfWidth, -vHeadSize))))`
-        : `max(${armBase}, pa.x - headHalfWidth)`;
-
-  if (cap === 'round') {
+const buildStrokedArrowGLSL = (shape: Exclude<ArrowShape, 'fill-head'>): string => {
+  if (shape === 'round-cap') {
+    const stem = 'sdCapsule(pa, vec2(0.0, thick), vec2(0.0, headBaseY), thick)';
+    const arm = 'sdCapsule(pa, vec2(0.0, headBaseY), vec2(headHalfWidth, headBaseY - vHeadSize), thick)';
     return `float sStem = ${stem};
     float sArm = ${arm};
     float signedDist = min(sStem, sArm);`;
   }
+
+  const stem = 'max(sdCapsule(pa, vec2(0.0, 0.0), vec2(0.0, headBaseY), thick), -pa.y)';
+  const armBase = 'sdCapsule(pa, vec2(0.0, headBaseY), vec2(headHalfWidth, headBaseY - vHeadSize), thick)';
+  const arm =
+    shape === 'square-cap'
+      ? `max(${armBase}, dot(pa - vec2(headHalfWidth, headBaseY - vHeadSize), normalize(vec2(headHalfWidth, -vHeadSize))))`
+      : `max(${armBase}, pa.x - headHalfWidth)`;
 
   // Pointed tip: the miter wedge between the two barbs' outer edges. Both edges
   // are tangent to the apex's capsule cap at the barb's outer corner, so the
@@ -251,14 +230,14 @@ const buildStrokedArrowGLSL = (cap: ArrowCap): string => {
 };
 
 /**
- * Builds the glyph-specific geometry GLSL. The snippet must define a
+ * Builds the shape-specific geometry GLSL. The snippet must define a
  * `signedDist` float (negative inside the arrow, positive outside), operating
  * on the local point computed by the shared preamble.
  *
- * @param glyph - Selected arrow head glyph.
+ * @param shape - Selected arrow shape.
  * @returns GLSL statements that compute `signedDist`.
  */
-const buildGeometryGLSL = (glyph: ArrowGlyph): string => {
+const buildGeometryGLSL = (shape: ArrowShape): string => {
   const preamble = `
     // Map vLocalPos (-1.0 to +1.0) down to our -0.5 to +0.5 math range
     vec2 p = vLocalPos * 0.5;
@@ -277,14 +256,14 @@ const buildGeometryGLSL = (glyph: ArrowGlyph): string => {
     vec2 pt = vec2(p.x, y);
   `;
 
-  if (glyph !== 'triangle') {
+  if (shape !== 'fill-head') {
     return `${preamble}
     // Stroked open-V arrow: one pen (thick) draws the stem and both barbs, so
     // the head's stroke always equals the stem's. headWidth is the full V span,
     // headSize the along-axis arm length. Only the cap treatment differs between
-    // the stroked glyphs (see STROKED_ARROW_CAP). Fold x for the symmetric barbs.
+    // the stroked shapes. Fold x for the symmetric barbs.
     vec2 pa = vec2(abs(pt.x), pt.y);
-    ${buildStrokedArrowGLSL(STROKED_ARROW_CAP[glyph])}
+    ${buildStrokedArrowGLSL(shape)}
   `;
   }
 
@@ -316,7 +295,7 @@ const buildGeometryGLSL = (glyph: ArrowGlyph): string => {
  * @param options.anchorCentered - When true the arrow is centered on the anchor
  * (tail starts half its total length before the anchor and the head tip ends
  * half after it). When false the tail stays on the anchor.
- * @param options.glyph - Arrow head glyph to rasterize. Defaults to `triangle`.
+ * @param options.shape - Arrow shape to rasterize. Defaults to `fill-head`.
  * @param options.thinEdge - When true the unselected stroke width drops to 0, so
  * the arrow keeps only a smaller soft fringe instead of the default 1px
  * transparent edge. Selection / hover strokes are unaffected. Defaults to false.
@@ -324,19 +303,19 @@ const buildGeometryGLSL = (glyph: ArrowGlyph): string => {
  */
 export const getArrowShaderInjections = ({
   anchorCentered,
-  glyph = 'triangle',
+  shape = 'fill-head',
   thinEdge = false
 }: {
   anchorCentered: boolean;
-  glyph?: ArrowGlyph;
+  shape?: ArrowShape;
   thinEdge?: boolean;
 }): Record<string, string> => {
-  // Minimum stem length. The stroked glyphs' barbs sweep back a full head length
+  // Minimum stem length. The stroked shapes' barbs sweep back a full head length
   // plus their capsule cap radius, so the reserve keeps the bare stem visible;
-  // the filled `triangle` head keeps the pure data-driven stem.
+  // the filled `fill-head` keeps the pure data-driven stem.
   const wingBackExpr = '(instanceHeadSizes + instanceStemThicknesses * 0.5)';
   const minStemExpr =
-    glyph === 'triangle'
+    shape === 'fill-head'
       ? '0.0'
       : `${glslFloat(MIN_BARE_STEM_RATIO)} * instanceStemThicknesses + ${wingBackExpr}`;
 
@@ -351,13 +330,13 @@ export const getArrowShaderInjections = ({
     vHeadSize = instanceHeadSizes;
     vHeadWidth = instanceHeadWidths;
     // Keep the tail behind the wings: a stem shorter than the head's backward
-    // sweep leaves no bare stem, so the glyph reads as a bare chevron. Reserve
+    // sweep leaves no bare stem, so the shape reads as a bare chevron. Reserve
     // the shared bare-stem distance, then ADD the data-driven (vel_rel) stem
     // length so the arrow grows from the tail while its shape is preserved.
     float minStemLength = ${minStemExpr};
     vStemLength = minStemLength + instanceStemLengths;
     // Centered arrows shift by half their total length so the anchor lands in
-    // the middle of the glyph; tail-anchored arrows keep the anchor at the tail (0).
+    // the middle of the shape; tail-anchored arrows keep the anchor at the tail (0).
     vAnchorOffset = ${anchorCentered ? '(vStemLength + vHeadSize) * 0.5' : '0.0'};
 
     // Forward the per-instance colors from the base ScatterplotLayer attributes
@@ -379,7 +358,7 @@ export const getArrowShaderInjections = ({
   `;
 
   const filterColor: string = `
-    ${buildGeometryGLSL(glyph)}
+    ${buildGeometryGLSL(shape)}
 
     // Anti-aliasing and Outward Stroke logic
     // dFdx measures per DEVICE pixel, while deck.gl's pixel units (and the
