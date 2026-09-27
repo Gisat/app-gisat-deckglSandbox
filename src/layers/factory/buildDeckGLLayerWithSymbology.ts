@@ -168,15 +168,22 @@ const buildDeckGLLayerWithSymbology = ({
   arrowShapePresetId = null
 }: BuildDeckGLLayerWithSymbologyProps): Layer[] => {
   const zoomSizeScale = computeVelocitySizeZoomScale(zoom);
+  const arrowPreset = getArrowShapePreset(arrowShapePresetId);
+  // Every preset keeps the default 1px unselected border unless it opts out with
+  // `showBorder: false`; the opt-out drops the unselected border on the arrows
+  // (via the shader) and on the circles (here). Selection / hover borders are
+  // kept.
+  const showBorder = arrowPreset?.showBorder !== false;
   const baseResolveLineColor = getLineColor as unknown as (feature: VelocityFeature) => Color;
   // A transparent (alpha 0) unselected stroke is still *mixed into the fill* by
-  // both the ScatterplotLayer and the arrow shader. A transparent-black RGB
-  // darkens that mix into a visible ring, so give transparent strokes the
-  // feature's fill RGB instead: the mix then only changes alpha and the edge
-  // fades out with no tint.
+  // the ScatterplotLayer. A transparent-black RGB darkens that mix into a
+  // visible ring — that ring IS the border the circles are meant to keep — so
+  // bordered presets keep the transparent-black stroke untouched. Only the
+  // borderless preset (`showBorder: false`) substitutes the fill RGB at alpha 0,
+  // so its dropped stroke leaves no dark rim either.
   const resolveLineColor = (feature: VelocityFeature): Color => {
     const color = baseResolveLineColor(feature);
-    if (color && color[3] === 0) {
+    if (!showBorder && color && color[3] === 0) {
       const fill = getFillColor(feature, dominantOrbit);
       return [fill[0], fill[1], fill[2], 0];
     }
@@ -200,13 +207,6 @@ const buildDeckGLLayerWithSymbology = ({
     getLineColor: [...(updateTriggers?.getLineColor ?? []), dominantOrbit],
     getRadius: [...(updateTriggers?.getRadius ?? []), zoomSizeScale, dominantOrbit]
   };
-  const arrowPreset = getArrowShapePreset(arrowShapePresetId);
-
-  // Every preset keeps the default 1px unselected border unless it opts out with
-  // `showBorder: false`; the opt-out drops the unselected border on the arrows
-  // (via the shader) and on the circles (here). Selection / hover borders are
-  // kept.
-  const showBorder = arrowPreset?.showBorder !== false;
   // A preset-level outline width paints the colored outline of a selected /
   // hovered feature (arrows via the shader, circles here), overriding the
   // default selection stroke width. Unselected features keep their transparent
