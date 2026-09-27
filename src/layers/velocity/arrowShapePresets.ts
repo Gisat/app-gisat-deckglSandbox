@@ -18,9 +18,19 @@ import type { ArrowShape } from '../DynamicArrowLayer.shader';
  * `ARROW_HEAD_PEN_METERS` in the factory), so every feature shares one head
  * shape. Each wing sits at `ARROW_WING_ANGLE_DEG` to the stem.
  *
- * One preset is a *thin-edge* variant of another: it uses the same head but drops
- * the default 1px unselected stroke, so the arrow keeps only a smaller soft
- * fringe and the circle points lose their border.
+ * Every preset keeps the default 1px unselected arrow border and the shared
+ * 3px selected / hover outline, except the borderless variant
+ * (`showBorder: false`; the shared head is unchanged), which only drops the
+ * unselected border and keeps the same 3px colored outline when a feature is
+ * selected / hovered — the visible outcome of the sibling app's transparent
+ * unselected `getOutlineColor` treatment, on both the arrows and the circle
+ * points.
+ *
+ * The sibling treatment cannot be expressed literally via deck.gl's
+ * ScatterplotLayer stroke: its stroke is centered on the radius (a non-zero
+ * width shrinks the fill) and its transparent line color is mixed into the fill
+ * (a transparent-black stroke darkens a wide ring). Dropping the unselected
+ * stroke reproduces the same look without those artifacts.
  */
 
 /**
@@ -31,7 +41,11 @@ import type { ArrowShape } from '../DynamicArrowLayer.shader';
 export const ARROW_SHAPE_PRESET_STROKE_WIDTH_SCALE = 0.5;
 
 /** Identifier of a built-in arrow shape preset. */
-export type ArrowShapePresetId = 'round-cap' | 'square-cap' | 'vertical-cut' | 'vertical-cut-thin';
+export type ArrowShapePresetId =
+  | 'round-cap'
+  | 'square-cap'
+  | 'vertical-cut'
+  | 'round-cap-transp-noborder';
 
 /**
  * A fixed arrow-head preset.
@@ -51,11 +65,26 @@ export interface ArrowShapePreset {
   /** Along-axis wing length as a multiple of the reference head pen width. */
   headSize: number;
   /**
-   * When true, drop the default 1px unselected stroke so the arrow renders a
-   * smaller soft fringe and the circle points lose their unselected border.
-   * Selection / hover borders are unaffected.
+   * Whether the unselected border is shown (default true): the default 1px
+   * transparent-black arrow stroke, and the circle points' transparent ring. When
+   * false, the unselected stroke is dropped on both sublayers so no border is
+   * visible, while selection / hover borders are unaffected.
    */
-  thinEdge?: boolean;
+  showBorder?: boolean;
+  /**
+   * Fixed outline width (CSS px) painted when a feature is selected / hovered,
+   * on both the arrow and circle sublayers, overriding the default selection
+   * stroke width. Unselected features keep the `showBorder: false` treatment (no
+   * visible stroke), so the colored outline appears only on selection — the
+   * visible outcome of the sibling app's `outlineWidth` + transparent unselected
+   * `getOutlineColor`. Omitted keeps the default selection stroke width.
+   */
+  outlineWidth?: number;
+  /**
+   * Layer opacity (0-1) applied to the preset's whole layer — both the arrow
+   * and circle sublayers. Defaults to 1 when omitted.
+   */
+  opacity?: number;
 }
 
 /**
@@ -98,11 +127,12 @@ export const ARROW_SHAPE_PRESETS: ArrowShapePreset[] = [
     ...ARROW_HEAD
   },
   {
-    id: 'vertical-cut-thin',
-    label: 'Vertical-Cut (Thin Border)',
-    shape: 'vertical-cut',
+    id: 'round-cap-transp-noborder',
+    label: 'Round-Cap Transp No-Border',
+    shape: 'round-cap',
     ...ARROW_HEAD,
-    thinEdge: true
+    showBorder: false,
+    opacity: 0.8
   }
 ];
 

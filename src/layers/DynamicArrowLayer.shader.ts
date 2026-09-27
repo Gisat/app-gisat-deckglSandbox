@@ -35,8 +35,13 @@
  * `./selectionConstants` module, expressed in CSS pixels via the device pixel
  * ratio (passed from the vertex shader as a varying, because `dFdx` measures
  * per device pixel and the `project` uniform block is only declared in the
- * vertex shader). The compile-time `thinEdge` flag sets the unselected width to 0
- * so the arrow renders a smaller soft fringe instead of its default 1px edge.
+ * vertex shader). The compile-time `showBorder` flag (default true) keeps the
+ * default 1px transparent-black unselected stroke; when false the unselected
+ * stroke is dropped (width 0) and its color is switched to the fill's own RGB at
+ * alpha 0, so there is no border and no dark rim. The compile-time
+ * `outlineWidth` overrides the selected / hovered stroke width with one fixed
+ * value, so the colored outline painted on selection is exactly that width; the
+ * unselected stroke is untouched by it.
  *
  * Ported from `app-damStabilityInspector/src/lib/layers/factory/DynamicArrowLayer.shader.ts`.
  * There the widths come from a shared `@lib/symbologies/constants/selection`
@@ -296,19 +301,26 @@ const buildGeometryGLSL = (shape: ArrowShape): string => {
  * (tail starts half its total length before the anchor and the head tip ends
  * half after it). When false the tail stays on the anchor.
  * @param options.shape - Arrow shape to rasterize. Defaults to `fill-head`.
- * @param options.thinEdge - When true the unselected stroke width drops to 0, so
- * the arrow keeps only a smaller soft fringe instead of the default 1px
- * transparent edge. Selection / hover strokes are unaffected. Defaults to false.
+ * @param options.showBorder - When true (default) the unselected arrow keeps its
+ * default 1px transparent-black border. When false the unselected stroke width
+ * drops to 0 and its color becomes the fill RGB at alpha 0, so no border and no
+ * dark rim is drawn. Selection / hover strokes are unaffected.
+ * @param options.outlineWidth - Fixed outline width (CSS px) painted when an
+ * arrow is selected / hovered, overriding the default selection stroke width.
+ * The unselected stroke is untouched, so the outline only appears on selection /
+ * hover. Omit to keep the default selection width.
  * @returns The merged shader injections (vertex + fragment).
  */
 export const getArrowShaderInjections = ({
   anchorCentered,
   shape = 'fill-head',
-  thinEdge = false
+  showBorder = true,
+  outlineWidth
 }: {
   anchorCentered: boolean;
   shape?: ArrowShape;
-  thinEdge?: boolean;
+  showBorder?: boolean;
+  outlineWidth?: number;
 }): Record<string, string> => {
   // Minimum stem length. The stroked shapes' barbs sweep back a full head length
   // plus their capsule cap radius, so the reserve keeps the bare stem visible;
@@ -319,10 +331,19 @@ export const getArrowShaderInjections = ({
       ? '0.0'
       : `${glslFloat(MIN_BARE_STEM_RATIO)} * instanceStemThicknesses + ${wingBackExpr}`;
 
-  // Unselected arrows default to a 1px transparent stroke (a soft fade-to-
-  // transparent edge). `thinEdge` drops it to 0 so the fill meets the stroke
-  // band directly, leaving a smaller fringe. The selected stroke is unchanged.
-  const unselectedStrokeWidth = thinEdge ? 0 : NON_SELECTED_FEATURE_LINE_WIDTH;
+  // Unselected arrows default to a 1px transparent-black stroke — the original
+  // border treatment. `showBorder: false` drops it to 0 and switches the stroke
+  // color to the fill's own RGB at alpha 0 (see below), so nothing is drawn: no
+  // border and no dark rim, mirroring the circle points' invisible stroke. A
+  // preset `outlineWidth` only sets the colored outline width painted on
+  // selection / hover; the unselected stroke is left untouched by it.
+  const unselectedStrokeWidth = showBorder ? NON_SELECTED_FEATURE_LINE_WIDTH : 0;
+  const selectedStrokeWidth = outlineWidth ?? SELECTED_FEATURE_LINE_WIDTH;
+  // Original 1px border is transparent black; without a border, matching the
+  // fill RGB at alpha 0 keeps the anti-aliased edge free of a dark rim.
+  const unselectedStrokeColor = showBorder
+    ? 'vec4(0.0, 0.0, 0.0, 0.0)'
+    : 'vec4(vArrowFill.rgb, 0.0)';
 
   const vsMainEnd: string = `
     vAngle = instanceAngles;
@@ -377,12 +398,13 @@ export const getArrowShaderInjections = ({
     // stroke: a fully transparent-black stroke whose only visible effect is a
     // wider AA gradient (see innerFeather below) that fades the fill to
     // transparent — mirroring the ScatterplotLayer's invisible 1px ring
-    // instead of a hard line. Selected features use the shared selection line
-    // width plus the 1px outer feather, so the SOLID part of the stroke is
-    // exactly the selection width — visually matching the crisp selection ring
-    // of the circle points.
+    // instead of a hard line. Selected features stroke at exactly the
+    // configured selection / outline width: deck.gl's circle stroke of the same
+    // width also yields a (width - 1) px solid band (SMOOTH_EDGE_RADIUS eats
+    // 0.5px on each edge), so the arrow must NOT add an extra feather here or
+    // it renders a 1px wider ring than the circles.
     float activeStrokeW = (isSelected
-      ? (${glslFloat(SELECTED_FEATURE_LINE_WIDTH)} + 1.0)
+      ? ${glslFloat(selectedStrokeWidth)}
       : ${glslFloat(unselectedStrokeWidth)}) * pixelSize;
 
     // Use a standard soft feather for the outer boundary to smooth it against the map background
@@ -406,12 +428,12 @@ export const getArrowShaderInjections = ({
     // 2. Mix the Fill and Line colors using the (un)selected feather width
     float fillMix = 1.0 - smoothstep(-innerFeather, innerFeather, signedDist);
 
-    // Selected features stroke with the selection color. Unselected arrows use
-    // a fully transparent-black stroke — the soft transparent edge is produced
-    // by the widened AA gradient above (mixing toward transparent black lowers
-    // alpha only; it does not darken the fill), exactly like the circle
-    // sublayer's transparent stroke.
-    vec4 finalStrokeColor = isSelected ? vArrowLine : vec4(0.0, 0.0, 0.0, 0.0);
+    // Selected features stroke with the selection color. Unselected arrows keep
+    // their original transparent-black 1px border when showBorder is true;
+    // when it is false the stroke is the fill's own RGB at alpha 0, so the soft
+    // transparent edge only lowers alpha and no dark rim is drawn (mixing toward
+    // transparent BLACK would darken the boundary into a visible ring).
+    vec4 finalStrokeColor = isSelected ? vArrowLine : ${unselectedStrokeColor};
 
     // Apply the final colors. The fill/line colors were forwarded from the base
     // ScatterplotLayer color attributes in the vertex shader.

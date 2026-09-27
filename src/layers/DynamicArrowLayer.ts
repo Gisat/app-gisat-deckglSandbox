@@ -51,12 +51,22 @@ export interface DynamicArrowLayerProps<DataT = any> extends ScatterplotLayerPro
    */
   shape?: ArrowShape;
   /**
-   * When true the unselected arrow drops the default 1px transparent stroke and
-   * renders only a smaller soft fringe. Selection and hover strokes are
-   * unaffected. Resolved at shader-compile time (not a per-instance attribute,
-   * to stay within the WebGL instanced-attribute limit).
+   * When true (default) the unselected arrow keeps its default 1px
+   * transparent-black border. When false the unselected stroke is dropped and
+   * its color becomes the fill RGB at alpha 0, so no border / dark rim is drawn.
+   * Selection and hover strokes are unaffected. Resolved at shader-compile time
+   * (not a per-instance attribute, to stay within the WebGL instanced-attribute
+   * limit).
    */
-  thinEdge?: boolean;
+  showBorder?: boolean;
+  /**
+   * Fixed outline width (CSS px) painted when an arrow is selected / hovered,
+   * overriding the default selection stroke width. The unselected stroke is
+   * untouched, so no border shows on unselected arrows. Resolved at
+   * shader-compile time (not a per-instance attribute, to stay within the
+   * WebGL instanced-attribute limit). Omit to keep the default selection width.
+   */
+  outlineWidth?: number;
 }
 
 const defaultProps: DefaultProps<DynamicArrowLayerProps> = {
@@ -68,7 +78,7 @@ const defaultProps: DefaultProps<DynamicArrowLayerProps> = {
   getHeadWidth: { type: 'accessor', value: 0.1 },
   anchorCentered: false,
   shape: 'fill-head',
-  thinEdge: false,
+  showBorder: true,
   // The shader treats a non-zero line alpha as "selected" and paints the
   // selection stroke, so default the line color to fully transparent. Without
   // this, a standalone instance (no `getLineColor` accessor) would inherit the
@@ -82,9 +92,12 @@ const defaultProps: DefaultProps<DynamicArrowLayerProps> = {
  *
  * The arrow geometry accessors are fractions of the quad half-side, so the
  * rendered arrow matches the on-map meters exactly. The visible stroke widths
- * come from `./selectionConstants`: unselected arrows render a soft transparent
- * edge, selected features render a solid stroke of `SELECTED_FEATURE_LINE_WIDTH`
- * + 1px feather in the selection color. `getLineColor` carries the per-feature
+ * come from `./selectionConstants`: unselected arrows render the default 1px
+ * transparent-black border (unless `showBorder` is false, which drops it),
+ * selected features render a solid stroke of `SELECTED_FEATURE_LINE_WIDTH` (or
+ * the preset `outlineWidth`) in the selection color, matching the circle
+ * points' ring width. `getLineColor`
+ * carries the per-feature
  * selection border color with alpha `0` for unselected features, which the
  * shader reads to detect selection (`vArrowLine.a > 0`); it defaults to
  * transparent so an unconfigured instance does not render as selected.
@@ -113,7 +126,8 @@ export class DynamicArrowLayer<DataT = any, ExtraPropsT extends object = object>
     shaders.inject = getArrowShaderInjections({
       anchorCentered: Boolean(this.props.anchorCentered),
       shape: this.props.shape ?? 'fill-head',
-      thinEdge: Boolean(this.props.thinEdge)
+      showBorder: this.props.showBorder !== false,
+      outlineWidth: this.props.outlineWidth
     });
     return shaders;
   }
