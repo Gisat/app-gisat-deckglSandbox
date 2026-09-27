@@ -1,3 +1,13 @@
+## [1.8.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.7.2...v1.8.0) (2026-09-27)
+
+### Features
+
+* **velocity:** borderless round-cap preset with consistent stroke widths ([fa71b83](https://github.com/Gisat/app-gisat-deckglSandbox/commit/fa71b8349a26ca8293f17c1afc9cadf085ce91bd))
+
+### Bug Fixes
+
+* **velocity:** restore circle borders except for borderless preset ([011f67f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/011f67f7a388d8ac3513c5a1919cd0ad04b4828f))
+
 ## [1.7.2](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.7.1...v1.7.2) (2026-09-25)
 
 ### Bug Fixes
