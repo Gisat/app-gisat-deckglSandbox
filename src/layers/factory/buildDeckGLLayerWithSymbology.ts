@@ -58,7 +58,7 @@ export interface BuildDeckGLLayerWithSymbologyProps {
    * non-zero, otherwise `NON_SELECTED_FEATURE_LINE_WIDTH` (transparent 1px).
    * Arrows ignore this (their stroke is fixed in the shader and their quad must
    * stay uninflated), so it only affects the circle sublayer. When the selected
-   * preset is thin-edge, unselected circles are forced to 0.
+   * preset sets `showBorder: false`, unselected circles are forced to 0.
    */
   getLineWidth?: Accessor<VelocityFeature, number>;
   updateTriggers?: Record<string, unknown[]>;
@@ -66,9 +66,9 @@ export interface BuildDeckGLLayerWithSymbologyProps {
    * When set, overrides the data-driven arrow geometry (stem/head dimensions)
    * with a fixed shape preset so the shapes can be compared on the map. The
    * orientation always uses the data-driven heading (`computeArrowHeading`).
-   * A preset can also be thin-edged, which removes the unselected border from
-   * both the arrows and the circles. `null`/undefined keeps the data-driven LOS
-   * symbology.
+   * A preset can also set `showBorder: false`, which removes the unselected
+   * border from both the arrows and the circles. `null`/undefined keeps the
+   * data-driven LOS symbology.
    */
   arrowShapePresetId?: ArrowShapePresetId | null;
 }
@@ -168,31 +168,73 @@ const buildDeckGLLayerWithSymbology = ({
   arrowShapePresetId = null
 }: BuildDeckGLLayerWithSymbologyProps): Layer[] => {
   const zoomSizeScale = computeVelocitySizeZoomScale(zoom);
-  const resolveLineColor = getLineColor as unknown as (feature: VelocityFeature) => Color;
+  const baseResolveLineColor = getLineColor as unknown as (feature: VelocityFeature) => Color;
+  // A transparent (alpha 0) unselected stroke is still *mixed into the fill* by
+  // both the ScatterplotLayer and the arrow shader. A transparent-black RGB
+  // darkens that mix into a visible ring, so give transparent strokes the
+  // feature's fill RGB instead: the mix then only changes alpha and the edge
+  // fades out with no tint.
+  const resolveLineColor = (feature: VelocityFeature): Color => {
+    const color = baseResolveLineColor(feature);
+    if (color && color[3] === 0) {
+      const fill = getFillColor(feature, dominantOrbit);
+      return [fill[0], fill[1], fill[2], 0];
+    }
+    return color;
+  };
   // Circle border width: a provided accessor, else derived from the selection
   // color (selected => SELECTED_FEATURE_LINE_WIDTH, else the transparent
   // NON_SELECTED_FEATURE_LINE_WIDTH). Arrows always keep a 0 line width so their
   // quad stays uninflated (`unitPosition` geometry).
-  const resolveLineWidth = (getLineWidth ??
+  const baseResolveLineWidth = (getLineWidth ??
     ((feature: VelocityFeature): number => {
       const color = resolveLineColor(feature);
       return color && color[3] > 0 ? SELECTED_FEATURE_LINE_WIDTH : NON_SELECTED_FEATURE_LINE_WIDTH;
     })) as unknown as (feature: VelocityFeature) => number;
-  // `dominantOrbit` drives both the fill color and the circle radius, and the
-  // layer ids are stable across changes to it, so both accessors must be forced
-  // to recompute when it changes.
+  // `dominantOrbit` drives the fill color, the circle radius and (via
+  // `resolveLineColor`) the line color, and the layer ids are stable across
+  // changes to it, so the accessors must be forced to recompute when it changes.
   const mergedUpdateTriggers = {
     ...updateTriggers,
     getFillColor: [...(updateTriggers?.getFillColor ?? []), dominantOrbit],
+    getLineColor: [...(updateTriggers?.getLineColor ?? []), dominantOrbit],
     getRadius: [...(updateTriggers?.getRadius ?? []), zoomSizeScale, dominantOrbit]
   };
   const arrowPreset = getArrowShapePreset(arrowShapePresetId);
 
-  // The thin-edge variant drops the unselected border on the arrows (via the
-  // shader) and on the circles (here). Selection / hover borders are kept.
-  const thinEdge = arrowPreset?.thinEdge === true;
+  // Every preset keeps the default 1px unselected border unless it opts out with
+  // `showBorder: false`; the opt-out drops the unselected border on the arrows
+  // (via the shader) and on the circles (here). Selection / hover borders are
+  // kept.
+  const showBorder = arrowPreset?.showBorder !== false;
+  // A preset-level outline width paints the colored outline of a selected /
+  // hovered feature (arrows via the shader, circles here), overriding the
+  // default selection stroke width. Unselected features keep their transparent
+  // (or borderless) stroke, so the colored outline appears only on selection.
+  const outlineWidth = arrowPreset?.outlineWidth ?? null;
+  // `shape`, `showBorder` and `outlineWidth` are baked into the arrow shader at
+  // compile time, and deck.gl only compiles a layer's shaders when the layer is
+  // created (keyed by id). Include them in the id so changing any of them
+  // recreates the layer — and thus recompiles the shader — instead of silently
+  // reusing an out-of-date program.
+  const arrowShaderKey = arrowPreset
+    ? `${arrowPreset.id}-${arrowPreset.shape}-${showBorder ? 'border' : 'noborder'}-${outlineWidth ?? 'default'}`
+    : 'fill-head';
+  const resolveLineWidth = (
+    outlineWidth != null
+      ? (feature: VelocityFeature): number => {
+          const color = resolveLineColor(feature);
+          return color && color[3] > 0 ? outlineWidth : baseResolveLineWidth(feature);
+        }
+      : baseResolveLineWidth
+  ) as unknown as (feature: VelocityFeature) => number;
+  // Opacity applied to the preset's whole layer (arrows + circles). The arrow
+  // shader multiplies the per-instance fill/line alpha by `layer.opacity`, and
+  // the circle ScatterplotLayer honors the same prop natively; selection
+  // detection keys off the raw alpha, so it is unaffected.
+  const layerOpacity = arrowPreset?.opacity ?? 1;
   const resolveCircleLineWidth = (feature: VelocityFeature): number => {
-    if (thinEdge) {
+    if (!showBorder) {
       const color = resolveLineColor(feature);
       if (!(color && color[3] > 0)) {
         return 0;
@@ -201,10 +243,11 @@ const buildDeckGLLayerWithSymbology = ({
     return resolveLineWidth(feature);
   };
   // The circle layer is not recreated when the preset changes, so its line
-  // widths must also recompute when the thin-edge treatment changes.
+  // widths must also recompute when the border or outline-width treatment
+  // changes.
   const circleUpdateTriggers = {
     ...mergedUpdateTriggers,
-    getLineWidth: [...(mergedUpdateTriggers.getLineWidth ?? []), thinEdge]
+    getLineWidth: [...(mergedUpdateTriggers.getLineWidth ?? []), showBorder, outlineWidth]
   };
 
   // Each feature's symbology attributes are read many times per render (fill,
@@ -258,12 +301,14 @@ const buildDeckGLLayerWithSymbology = ({
   if (arrowFeatures.length > 0) {
     arrowLayers.push(
       new DynamicArrowLayer<VelocityFeature>({
-        id: `${id}-arrows-${arrowShapePresetId ?? 'fill-head'}`,
+        id: `${id}-arrows-${arrowShaderKey}`,
         data: arrowFeatures,
         visible,
         pickable,
+        opacity: layerOpacity,
         shape: arrowPreset ? arrowPreset.shape : 'fill-head',
-        thinEdge,
+        showBorder,
+        outlineWidth: outlineWidth ?? undefined,
         getPosition,
         getFillColor: (feature: VelocityFeature): RgbaColor => getFillColor(feature, dominantOrbit),
         getAngle: (feature: VelocityFeature): number => {
@@ -304,6 +349,7 @@ const buildDeckGLLayerWithSymbology = ({
         data: circleFeatures,
         visible,
         pickable,
+        opacity: layerOpacity,
         getPosition,
         getFillColor: (feature: VelocityFeature): RgbaColor => getFillColor(feature, dominantOrbit),
         getRadius: (feature: VelocityFeature): number => {
