@@ -1,9 +1,12 @@
-import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { TerrainLayer } from '@deck.gl/geo-layers';
-import TiTilerErrorModal from './TiTilerErrorModal';
-import './TiTilerEndpointSwitch.css';
+import TiTilerErrorModal from '../shared/TiTilerErrorModal';
+import { TITILER_ENDPOINTS, ENDPOINT_STORAGE_KEY, getInitialEndpointId } from '../shared/endpoints';
+import { useTileTiming } from '../shared/useTileTiming';
+import { useTileHealth } from '../shared/useTileHealth';
+import '../shared/TiTilerEndpointSwitch.css';
 
 // Misicuni DEM COG (GLO-30 + geoid, EPSG:3857, single float32 band).
 // Served as ON-THE-FLY GRAYSCALE PNG TILES by TiTiler (no colormap) so the
@@ -29,8 +32,8 @@ import './TiTilerEndpointSwitch.css';
 //   rScaler = span / 255,  offset = rescale[0]
 const COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
 
-// Display range in meters (see "Choosing the rescale" below). Must match the
-// `rescale` in `queryParams` AND the decoder constants — change all three.
+// Display range in meters. Must match the `rescale` in `queryParams` AND the
+// decoder constants — change all three.
 const RESCALE_MIN = 0;
 const RESCALE_MAX = 5600;
 
@@ -62,272 +65,63 @@ const INITIAL_VIEW_STATE = {
     maxPitch: 70,
 };
 
-// Same timing constants as the shared TiTilerTileMap (see its JSDoc) so the
-// DEM's measurement behaves identically to the other TiTiler demos. The single
-// knob is reused BOTH as the viewport-settle debounce AND as the quiescence
-// threshold ("all tiles" = no new onTileLoad for this long).
-const TIMING_SETTLE_MS = 800;
-const HEALTH_TIMEOUT_MS = 5000;
-const PROBE_TIMEOUT_MS = 8000;
-const TILE_ERROR_GRACE_MS = 500;
-const HEALTH_CHECK_INTERVAL_MS = 10000;
-
 // deck.gl's TerrainLayer spawns a martini/delatin tesselation worker.
 // workerUrl is intentionally NOT set: loaders.gl auto-resolves the worker
 // bundle from its CDN default (https://unpkg.com/@loaders.gl). A local copy
 // under public/ is only needed if the demo must run fully offline.
-function TerrainDemo() {
+function MisicuniTerrain() {
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
-    const [endpointId, setEndpointId] = useState('plain');
-    const [modal, setModal] = useState(null);
-    const [retrying, setRetrying] = useState(false);
-    // Bumped on endpoint switch / timing-toggle to recreate the TerrainLayer and
-    // force a full tile reload (fresh measurement window).
-    const [terrainLayerKey, setTerrainLayerKey] = useState(0);
-
-    // Timing HUD (opt-in via a toggle, same as the shared demos). Live values
-    // track the current settled-viewport window; `headline` freezes the FIRST
-    // (uncached) load of the session/endpoint.
-    const [timingEnabled, setTimingEnabled] = useState(true);
-    const [ttf, setTtf] = useState(null);
-    const [tta, setTta] = useState(null);
-    const [tileCount, setTileCount] = useState(0);
-    const [headline, setHeadline] = useState(null);
-
-    const suppressedRef = useRef(false);
-    const modalRef = useRef(null);
-    modalRef.current = modal;
-    const errorTimerRef = useRef(null);
-    const pendingErrorRef = useRef(null);
-    const measurementRef = useRef({
-        settleAt: null, firstAt: null, lastAt: null, count: 0, headlineDone: false,
-    });
-    const settleTimerRef = useRef(null);
-    const quiesceTimerRef = useRef(null);
-
-    // Minimal copy of the shared endpoint set (kept local so we don't couple to
-    // TiTilerTileMap's internal constants; mirrors deploy/*/docker-compose.yml).
-    const ENDPOINTS = useMemo(() => ({
-        plain: {
-            label: 'TiTiler (plain)',
-            baseUrl: '/titiler-plain',
-            startCommand: 'docker compose -f deploy/titiler/docker-compose.yml up -d',
-        },
-        caching: {
-            label: 'TiTiler + cache',
-            baseUrl: '/titiler/api/v1/titiler',
-            startCommand: 'docker compose -f deploy/titiler-caching/docker-compose.yml up -d',
-        },
-    }), []);
-    const endpoint = ENDPOINTS[endpointId] || ENDPOINTS.plain;
+    const [endpointId, setEndpointId] = useState(getInitialEndpointId);
+    const endpoint = TITILER_ENDPOINTS[endpointId] || TITILER_ENDPOINTS.plain;
     const { baseUrl, startCommand } = endpoint;
+    // Bumped on endpoint switch / timing-toggle / retry to recreate the TerrainLayer
+    // and force a full tile reload (fresh measurement window).
+    const [terrainLayerKey, setTerrainLayerKey] = useState(0);
 
     const tileUrl = `${baseUrl}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=${encodeURIComponent(COG_URL)}&${queryParams}`;
     const probeTileUrl = `${baseUrl}/cog/tiles/WebMercatorQuad/0/0/0.png?url=${encodeURIComponent(COG_URL)}&${queryParams}`;
     const healthUrl = `${baseUrl}/healthz`;
 
-    const fetchWithTimeout = useCallback((url, ms, options = {}) => {
-        const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), ms);
-        return fetch(url, { signal: ctrl.signal, ...options }).finally(() => clearTimeout(t));
-    }, []);
+    const forceReload = () => setTerrainLayerKey(k => k + 1);
 
-    const isReachable = useCallback(async (url) => {
-        try {
-            await fetchWithTimeout(url, HEALTH_TIMEOUT_MS);
-            return true;
-        } catch {
-            try { await fetchWithTimeout(url, HEALTH_TIMEOUT_MS, { mode: 'no-cors' }); return true; }
-            catch { return false; }
-        }
-    }, [fetchWithTimeout]);
+    const {
+        timingEnabled,
+        ttf,
+        tta,
+        tileCount,
+        headline,
+        handleViewStateChange,
+        handleTileLoad,
+        handleToggleTiming,
+        resetForEndpoint,
+    } = useTileTiming({ setViewState, onForceReload: forceReload });
 
-    // ---- Timing measurement (ported verbatim from TiTilerTileMap) ----
+    const {
+        modal,
+        retrying,
+        handleRetry,
+        handleDismiss,
+        handleTileError,
+        resetForEndpoint: resetHealthForEndpoint,
+    } = useTileHealth({
+        baseUrl,
+        healthUrl,
+        probeTileUrl,
+        onLayerReload: forceReload,
+        name: 'MisicuniTerrain',
+    });
 
-    const resetMeasurement = useCallback(() => {
-        if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
-        if (quiesceTimerRef.current) clearTimeout(quiesceTimerRef.current);
-        settleTimerRef.current = null;
-        quiesceTimerRef.current = null;
-        Object.assign(measurementRef.current, { settleAt: null, firstAt: null, lastAt: null, count: 0 });
-        setTtf(null);
-        setTta(null);
-        setTileCount(0);
-    }, []);
-
-    const startMeasurementNow = useCallback(() => {
-        if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
-        if (quiesceTimerRef.current) clearTimeout(quiesceTimerRef.current);
-        settleTimerRef.current = null;
-        quiesceTimerRef.current = null;
-        const m = measurementRef.current;
-        m.settleAt = performance.now();
-        m.firstAt = null;
-        m.lastAt = null;
-        m.count = 0;
-        m.headlineDone = false;
-        setTtf(null);
-        setTta(null);
-        setTileCount(0);
-        setHeadline(null);
-    }, []);
-
-    const handleViewStateChange = useCallback(({ viewState }) => {
-        setViewState(viewState);
-        if (!timingEnabled) return;
-        if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
-        settleTimerRef.current = setTimeout(() => {
-            settleTimerRef.current = null;
-            const m = measurementRef.current;
-            m.settleAt = performance.now();
-            m.firstAt = null;
-            m.lastAt = null;
-            m.count = 0;
-            setTtf(null);
-            setTta(null);
-            setTileCount(0);
-        }, TIMING_SETTLE_MS);
-    }, [timingEnabled]);
-
-    const handleTileLoad = useCallback(() => {
-        if (!timingEnabled) return;
-        const m = measurementRef.current;
-        if (m.settleAt == null) return;
-        const now = performance.now();
-        if (m.firstAt == null) m.firstAt = now;
-        m.lastAt = now;
-        m.count += 1;
-        setTileCount(m.count);
-        setTtf(m.firstAt - m.settleAt);
-        setTta(m.lastAt - m.settleAt);
-        if (quiesceTimerRef.current) clearTimeout(quiesceTimerRef.current);
-        quiesceTimerRef.current = setTimeout(() => {
-            quiesceTimerRef.current = null;
-            const mm = measurementRef.current;
-            if (!mm.headlineDone && mm.firstAt != null && mm.lastAt != null && mm.count > 0) {
-                mm.headlineDone = true;
-                setHeadline({
-                    ttf: mm.firstAt - mm.settleAt,
-                    tta: mm.lastAt - mm.settleAt,
-                    count: mm.count,
-                });
-            }
-        }, TIMING_SETTLE_MS);
-    }, [timingEnabled]);
-
-    const handleToggleTiming = useCallback(() => {
-        setTimingEnabled(prev => {
-            const next = !prev;
-            if (!next) {
-                resetMeasurement();
-                return next;
-            }
-            setTerrainLayerKey(k => k + 1);
-            startMeasurementNow();
-            return next;
-        });
-    }, [resetMeasurement, startMeasurementNow]);
-
-    const handleEndpointChange = useCallback((nextId) => {
-        if (nextId === endpointId || !ENDPOINTS[nextId]) return;
+    const handleEndpointChange = (nextId) => {
+        if (nextId === endpointId || !TITILER_ENDPOINTS[nextId]) return;
         setEndpointId(nextId);
-        setModal(null);
-        suppressedRef.current = false;
-        setTerrainLayerKey(k => k + 1);
-        startMeasurementNow();
-        setHeadline(null);
-    }, [endpointId, ENDPOINTS, startMeasurementNow]);
-
-    // ---- Error handling (ported from TiTilerTileMap) ----
-
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            const ok = await isReachable(healthUrl);
-            if (!cancelled && !ok) {
-                suppressedRef.current = false;
-                setModal({ kind: 'unreachable', message: `TiTiler is not reachable at ${baseUrl}. Start it with the compose command below, then Retry.` });
-            }
-        })();
-        return () => { cancelled = true; };
-    }, [healthUrl, baseUrl, isReachable]);
-
-    useEffect(() => {
-        const iv = setInterval(async () => {
-            const ok = await isReachable(healthUrl);
-            if (ok) { suppressedRef.current = false; return; }
-            if (suppressedRef.current || modalRef.current) return;
-            setModal({ kind: 'unreachable', message: `TiTiler became unreachable while the map was open (${baseUrl}).` });
-        }, HEALTH_CHECK_INTERVAL_MS);
-        return () => clearInterval(iv);
-    }, [healthUrl, baseUrl, isReachable]);
-
-    useEffect(() => () => {
-        if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-        if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
-        if (quiesceTimerRef.current) clearTimeout(quiesceTimerRef.current);
-    }, []);
-
-    const showModal = useCallback((next) => {
-        setModal(prev => {
-            if (prev && prev.kind === 'unreachable' && next.kind === 'tile-error') return prev;
-            if (prev && prev.kind === next.kind) return { ...prev, ...next };
-            return next;
-        });
-    }, []);
-
-    const handleTileError = useCallback((err) => {
-        if (suppressedRef.current) return;
-        pendingErrorRef.current = err;
-        if (errorTimerRef.current) return;
-        errorTimerRef.current = setTimeout(async () => {
-            errorTimerRef.current = null;
-            const err = pendingErrorRef.current;
-            pendingErrorRef.current = null;
-            if (!err || suppressedRef.current) return;
-
-            let probeOk = false;
-            let detail = '';
-            try {
-                const res = await fetchWithTimeout(probeTileUrl, PROBE_TIMEOUT_MS);
-                probeOk = res.ok;
-                if (!res.ok) {
-                    detail = `HTTP ${res.status}`;
-                    const body = await res.json().catch(() => null);
-                    if (body && body.detail) {
-                        detail += ` — ${typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)}`;
-                    }
-                }
-            } catch {
-                probeOk = false;
-            }
-
-            if (probeOk) {
-                console.warn('[MisicuniTerrain] per-tile error while endpoint is healthy:', err && err.message);
-                return;
-            }
-            showModal({
-                kind: 'tile-error',
-                message: err && err.message ? `Tile loading failed: ${err.message}` : 'Tile loading failed.',
-                detail,
-            });
-        }, TILE_ERROR_GRACE_MS);
-    }, [probeTileUrl, showModal, fetchWithTimeout]);
-
-    const handleDismiss = useCallback(() => { suppressedRef.current = true; setModal(null); }, []);
-    const handleRetry = useCallback(async () => {
-        setRetrying(true);
         try {
-            let ok;
-            if (modal?.kind === 'unreachable') ok = await isReachable(healthUrl);
-            else {
-                try { const r = await fetchWithTimeout(probeTileUrl, PROBE_TIMEOUT_MS); ok = r.ok; }
-                catch { ok = false; }
-            }
-            if (ok) { suppressedRef.current = false; setModal(null); setTerrainLayerKey(k => k + 1); }
-            else showModal({ kind: 'tile-error', message: `Tile endpoint still failing (${baseUrl}).`, detail: '' });
-        } finally { setRetrying(false); }
-    }, [modal, healthUrl, probeTileUrl, baseUrl, isReachable, fetchWithTimeout, showModal]);
+            window.localStorage.setItem(ENDPOINT_STORAGE_KEY, nextId);
+        } catch {
+            /* storage unavailable — in-memory switch only */
+        }
+        resetHealthForEndpoint();
+        resetForEndpoint();
+    };
 
     const layers = [
         new TerrainLayer({
@@ -360,7 +154,7 @@ function TerrainDemo() {
             <div className="titiler-endpoint-switch" role="group" aria-label="TiTiler endpoint">
                 <span className="titiler-endpoint-title">TiTiler endpoint</span>
                 <div className="titiler-endpoint-options">
-                    {Object.entries(ENDPOINTS).map(([id, ep]) => (
+                    {Object.entries(TITILER_ENDPOINTS).map(([id, ep]) => (
                         <button
                             key={id}
                             type="button"
@@ -418,4 +212,4 @@ function TerrainDemo() {
     );
 }
 
-export default TerrainDemo;
+export default MisicuniTerrain;

@@ -19,9 +19,12 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ## Project Structure
 
-- `src/maps/` — Individual map demo apps (see `src/maps/config.js`)
+- `src/maps/` — Individual map demo apps (see `src/maps/config.js`); the `TiTilerDemo/` category is folder-per-demo with shared code under `TiTilerDemo/shared/`
 - `src/layers/` — Custom Deck.GL layers
+- `src/components/` — Shared React components (HUD, playback controls, point selection)
+- `src/backend/` — Flask backend API (DuckDB/GeoParquet serving; see `src/backend/README.md`)
 - `src/App.jsx` — Main app and router
+- `deploy/` — Deployment stacks: `deploy/titiler` (TiTiler + colormap generation, see `deploy/titiler/USAGE.md`) and `deploy/titiler-caching` (nginx + tile encoders, see its `USAGE.md`)
 
 ## Build & Deploy
 

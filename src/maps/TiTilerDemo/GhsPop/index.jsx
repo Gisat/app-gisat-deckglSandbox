@@ -1,4 +1,4 @@
-import TiTilerTileMap from './TiTilerTileMap';
+import TiTilerTileMap from '../shared/TiTilerTileMap';
 
 // GHSL population density 2015 (float32 persons/pixel, EPSG:3857, global).
 const COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_bitmap/GHS_POP_E2015_COGeoN.tif';
@@ -21,7 +21,7 @@ const RESCALE = '0,10';
 // and registered by TiTiler at startup via COLORMAP_DIRECTORY (mounted into both
 // the plain and caching compose stacks). The client references it by the short
 // `colormap_name=ghs_pop_transparent_low`, so the tile query stays small & the
-// nginx tile cache (depoy/titiler-caching, proxy_cache_key = full $args) engages.
+// nginx tile cache (deploy/titiler-caching, proxy_cache_key = full $args) engages.
 //
 // Why server-side and not inline: TiTiler's colormap dependency short-circuits
 // on colormap_name (src/titiler/core/titiler/core/dependencies.py: `if
