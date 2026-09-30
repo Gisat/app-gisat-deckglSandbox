@@ -13,11 +13,13 @@ import Martini from '@mapbox/martini';
 
 // Delatin path omitted for this demo; martini requires a 2^n+1 grid, which the
 // 256px tiles satisfy (257 grid). Kept as the only tesselator here.
+// Internal defaults for the shared mesh builder. Only `meshMaxError` and
+// `bounds` are read; there is deliberately no exported DEFAULT_TERRAIN_OPTIONS
+// (the loaders own their per-loader defaults and pass the relevant fields via
+// terrainOptions).
 const DEFAULT_TERRAIN_OPTIONS = {
-    tesselator: 'martini',
     bounds: undefined,        // [minX, minY, maxX, maxY]; defaults to pixel space
     meshMaxError: 10,
-    skirtHeight: undefined,
 };
 
 // Builds the extended (width+1)*(height+1) martini grid from a flat
@@ -116,5 +118,3 @@ export function buildTerrainMeshFromHeights(heights, width, height, terrainOptio
         attributes,
     };
 }
-
-export { DEFAULT_TERRAIN_OPTIONS };

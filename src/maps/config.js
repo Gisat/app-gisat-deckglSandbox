@@ -24,14 +24,14 @@ import GisatDataService from './GisatDataService/index.jsx';
 import SelectionDrawing3D from './SelectionDrawing3D/index.jsx';
 import ArrowLODStream3D from './ArrowLODStream_3D/Map3D.jsx';
 import ArrowLODStream2D from './ArrowLODStream_2D/Map2D.jsx';
-import NepalSnow from './TiTilerDemo/NepalSnow.jsx';
-import UgandaLUC from './TiTilerDemo/UgandaLUC.jsx';
-import ManilaRGB from './TiTilerDemo/ManilaRGB.jsx';
-import WorldCereal from './TiTilerDemo/WorldCereal.jsx';
-import GhsPop from './TiTilerDemo/GhsPop.jsx';
-import MisicuniTerrain from './TiTilerDemo/MisicuniTerrain.jsx';
-import TerrariumTerrain from './TiTilerDemo/TerrariumTerrain.jsx';
-import Float32Terrain from './TiTilerDemo/Float32Terrain.jsx';
+import NepalSnow from './TiTilerDemo/NepalSnow';
+import UgandaLUC from './TiTilerDemo/UgandaLUC';
+import ManilaRGB from './TiTilerDemo/ManilaRGB';
+import WorldCereal from './TiTilerDemo/WorldCereal';
+import GhsPop from './TiTilerDemo/GhsPop';
+import MisicuniTerrain from './TiTilerDemo/MisicuniTerrain';
+import TerrariumTerrain from './TiTilerDemo/TerrariumTerrain';
+import Float32Terrain from './TiTilerDemo/Float32Terrain';
 
 const mapApps = [
     { category: '3DFLUS', name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },

@@ -3,8 +3,8 @@
 // identical to what the inline `colormap=` ramp used to deliver.
 //
 // Source of truth:
-//   - Nepal snow  + Uganda LUC  ramps: src/maps/TiTilerDemo/colormaps.js (ESM exports)
-//   - WorldCereal sparse ramp:        src/maps/TiTilerDemo/WorldCereal.jsx (inline)
+//   - Nepal snow + Uganda LUC + GHS pop ramps: src/maps/TiTilerDemo/shared/colormaps.js (ESM exports)
+//   - WorldCereal sparse ramp:                  src/maps/TiTilerDemo/WorldCereal.jsx (inline)
 //
 // Run from the repo root:
 //   node deploy/titiler/colormaps/gen-demo-colormaps.mjs
@@ -23,8 +23,8 @@ const root = join(here, '..', '..', '..'); // repo root
 // colormaps.js exports SNOW_COLORMAP / UGANDA_COLORMAP / GHS_POP_COLORMAP as
 // plain JSON-text strings (already unescaped by the JS engine). Parse directly
 // -> {int: [r,g,b]} (RGB, 3 entries), no regex / manual unescape needed.
-const { SNOW_COLORMAP, UGANDA_COLORMAP } = await import(
-  join(root, 'src', 'maps', 'TiTilerDemo', 'colormaps.js')
+const { SNOW_COLORMAP, UGANDA_COLORMAP, GHS_POP_COLORMAP } = await import(
+  join(root, 'src', 'maps', 'TiTilerDemo', 'shared', 'colormaps.js')
 );
 const parse = (txt) => Object.fromEntries(
   Object.entries(JSON.parse(txt)).map(([k, v]) => [Number(k), v])
@@ -62,3 +62,11 @@ write('worldcereal_active', {
   254: [0, 0, 0, 0],
   255: [0, 0, 0, 0],
 });
+
+// ---- GHS population: full 256-entry viridis ramp, lowest 11 bytes transparent ----
+// (matches the intent in GhsPop: clear bytes 0-10 so population below ~0.43/px is
+// hidden, plus nodata -200 which clamps to byte 0 is also transparent). Keep in
+// sync with the RESCALE in GhsPop/index.jsx.
+const ghs = toRgba(parse(GHS_POP_COLORMAP), 255);
+for (let b = 0; b <= 10; b++) ghs[b] = [...ghs[b].slice(0, 3), 0]; // bytes 0-10 transparent
+write('ghs_pop_transparent_low', ghs);

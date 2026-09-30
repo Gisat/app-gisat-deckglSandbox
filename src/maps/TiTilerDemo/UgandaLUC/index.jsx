@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import TiTilerTileMap from './TiTilerTileMap';
+import TiTilerTileMap from '../shared/TiTilerTileMap';
 import './UgandaLUC.css';
 
 // ~98% of the COG's pixels are exactly 0 (the task's noDataValue 0, but the

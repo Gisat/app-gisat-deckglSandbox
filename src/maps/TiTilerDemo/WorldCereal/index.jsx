@@ -1,4 +1,4 @@
-import TiTilerTileMap from './TiTilerTileMap';
+import TiTilerTileMap from '../shared/TiTilerTileMap';
 
 // ESA-WorldCereal active cropland map, 2021 tc-maize-main season (V1.0.0).
 // Single-band uint8 COG, EPSG:3857. Legend (from COG dataset tags):

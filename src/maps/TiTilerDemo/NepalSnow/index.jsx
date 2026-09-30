@@ -1,4 +1,4 @@
-import TiTilerTileMap from './TiTilerTileMap';
+import TiTilerTileMap from '../shared/TiTilerTileMap';
 
 // Nepal Wet Snow 2017-2021 (single-band int16 COG, EPSG:3857)
 const COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_bitmap/WET_SNOW_3857_2017-2021_cog_deflate_in16_zoom16_levels8.tif';

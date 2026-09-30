@@ -66,7 +66,7 @@ via the LUT; you normally want all 256 entries present.
    ```
    (Both routes are `/colorMaps` — capital M. There is no lowercase `/colormaps`
    route; it 404s.)
-4. **Generate from `src/maps/TiTilerDemo/colormaps.js`, never hand-typed**, so
+4. **Generate from `src/maps/TiTilerDemo/shared/colormaps.js` (Nepal/Uganda/GHS) and the inline ramps in the demo files (WorldCereal), never hand-typed**, so
    visuals stay byte-for-byte identical to the client-side ramp (see
    `measure-ghs-cache.sh` history). The GHS file embeds alpha=0 on bytes 0–10
    (population < ~0.43/px and nodata, which clamps to byte 0, transparent) and
@@ -81,8 +81,9 @@ via the LUT; you normally want all 256 entries present.
 | `uganda_blues_transparent` | Uganda LUC: 256-entry blues ramp, byte 0 fully transparent (masked no-data background). Band-independent — serves all 15–24 bands. |
 | `worldcereal_active` | WorldCereal: sparse categorical ramp (0 gray, 100 green, 254/255 transparent); all other bytes transparent black. |
 
-`nepal_snow_viridis`, `uganda_blues_transparent`, and `worldcereal_active` are
-regenerated from demo source by `gen-demo-colormaps.mjs` (run from the repo
-root: `node deploy/titiler/colormaps/gen-demo-colormaps.mjs`) so they stay
+`ghs_pop_transparent_low`, `nepal_snow_viridis`, `uganda_blues_transparent`,
+and `worldcereal_active` are regenerated from demo source by
+`gen-demo-colormaps.mjs` (run from the repo root:
+`node deploy/titiler/colormaps/gen-demo-colormaps.mjs`) so they stay
 byte-for-byte identical to what the inline ramps used to deliver. Regenerate
 any time the client colormaps change.

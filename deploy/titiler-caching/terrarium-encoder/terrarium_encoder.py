@@ -92,7 +92,7 @@ def tile_bounds(z: int, x: int, y: int):
 def terrarium_pack(el: np.ndarray) -> np.ndarray:
     """float32 metres -> (H, W, 3) uint8 Terrarium RGB, clamped to ±CLAMP."""
     el = np.asarray(el, dtype=np.float64)
-    el = np.nan_to_num(el, nan=CLAMP)
+    el = np.nan_to_num(el, nan=0.0, posinf=0.0, neginf=0.0)
     v = np.clip(el, -CLAMP, CLAMP) + CLAMP       # 0 .. 2*CLAMP
     p = v * 256.0
     r = np.floor(p / 65536.0).astype(np.uint8)

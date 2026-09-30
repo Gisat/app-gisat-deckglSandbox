@@ -1,4 +1,4 @@
-import TiTilerTileMap from './TiTilerTileMap';
+import TiTilerTileMap from '../shared/TiTilerTileMap';
 
 // Manila Sentinel-2 RGB composite (uint8 3-band COG, Mercator).
 // True RGB: no params needed — TiTiler serves the RGB bands straight to PNG.
