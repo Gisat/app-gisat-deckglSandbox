@@ -2,59 +2,83 @@ import { useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { TerrainLayer } from '@deck.gl/geo-layers';
-import Float32Loader from '../shared/Float32Loader';
-import TiTilerErrorModal from '../shared/TiTilerErrorModal';
-import { useTileTiming } from '../shared/useTileTiming';
-import { useTileHealth } from '../shared/useTileHealth';
-import '../shared/TiTilerEndpointSwitch.css';
+import TerrariumLoader from '../../TiTilerDemo/shared/TerrariumLoader';
+import TiTilerErrorModal from '../../TiTilerDemo/shared/TiTilerErrorModal';
+import { useTileTiming } from '../../TiTilerDemo/shared/useTileTiming';
+import { useTileHealth } from '../../TiTilerDemo/shared/useTileHealth';
+import '../../TiTilerDemo/shared/TiTilerEndpointSwitch.css';
 
-// Raw float32 terrain demo (bypasses the browser image pipeline).
+// "True Mapzen" Terrarium terrain demo.
 //
-// Elevation source: a sibling tile service
-// (deploy/titiler-caching/float32-encoder) that reads THIS float32 COG
-// directly with rasterio windowed reads and serves each WebMercatorQuad
-// {z}/{x}/{y} tile as a HEADERLESS little-endian IEEE-754 float32 stream
-// (`'<f4'`, row-major north-up, 256x256 -> exactly 256*256*4 = 262,144 bytes).
-// It sits behind the SAME nginx as TiTiler in the caching stack, at
-// /api/v1/float32/, and its tiles are cached there like TiTiler's / Terrarium's.
+// Elevation source: a sibling tile service (deploy/titiler-caching/terrarium-encoder)
+// that reads THIS float32 COG directly with rasterio windowed reads and packs
+// each WebMercatorQuad {z}/{x}/{y} tile in the Mapzen **Terrarium** RGB format
+// (encoded = (elev + CLAMP) * 256; R=high byte, G=middle, B=low). It sits behind
+// the SAME nginx as TiTiler in the caching stack, at /api/v1/terrarium/, and its
+// tiles are cached there like TiTiler's.
 //
-// Why raw float32 instead of Terrarium PNG:
-//   The Terrarium route decodes PNGs through the browser's color-managed image
-//   pipeline (createImageBitmap -> canvas drawImage + getImageData), which on
-//   wide-gamut / color-managed displays shifts R/G/B by ±1 and, with the
-//   Terrarium Red scaler of 256, produces the scattered ±256 m "needles"
-//   (deck.gl issue #10400). The float32 route avoids that entirely: the tile is
-//   a raw binary stream, so `new Float32Array(arrayBuffer)` (Float32Loader) is
-//   a pure-JS view over the bytes — no image APIs, no color management, no
-//   needles. It also removes the Terrarium packing + CLAMP coupling on both
-//   sides.
+// Why this is different from MisicuniTerrain (grayscale):
+//   TiTiler renders a single-band COG as grayscale R=G=B, so a multi-channel
+//   Terrarium decoder would just multiply three equal bytes -> 8-bit (~256
+//   levels). Here the encoder genuinely packs real float resolution into the
+//   RGB channels, so the canonical Terrarium decoder recovers sub-meter
+//   precision: height = R*256 + G + B/256 - CLAMP.
 //
-// Heights are already METRES (the encoder reads a GLO-30 + geoid DEM), so the
-// decoder is the identity: Float32Loader applies no elevationDecoder math
-// (unlike TerrariumTerrain's linear combiner). The encoder fills
-// masked/nodata/out-of-COG pixels with 0.0 server-side (martini cannot handle
-// NaN), so tiles are always finite and the mesh stays flat at sea level
-// outside the DEM footprint.
+// Canonical Mapzen decoder (from loaders.gl TerrainLoader, linear combiner):
+//   height = R*rScaler + G*gScaler + B*bScaler + offset
+//   Terrarium: rScaler=256, gScaler=1, bScaler=1/256, offset=-CLAMP.
+// The encoder clamps elevation to ±CLAMP (canonical Mapzen default 32768 m,
+// set via ENCODER_CLAMP in the caching compose file). The DEM spans 0..5631 m.
+// Keep the encoder CLAMP and this offset from drifting — both are canonical
+// 32768, but the comment's value is what must match ENCODER_CLAMP.
 const COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif';
 
-// No elevationDecoder needed: heights are raw metres. Float32Loader does an
-// identity decode (new Float32Array(arrayBuffer)).
-const ELEVATION_LOADERS = [Float32Loader];
+// Must match ENCODER_CLAMP in deploy/titiler-caching/docker-compose.yml.
+const CLAMP = 32768;
+
+const ELEVATION_DECODER = {
+    rScaler: 256,
+    gScaler: 1,
+    bScaler: 1 / 256,
+    offset: -CLAMP,
+};
+
+// Fix for the "needles" artifact (deck.gl issue #10400).
+//
+// TerrainLayer decodes its elevation PNG through a loaders.gl web worker,
+// which on the browser decodes the tile via createImageBitmap and then
+// extracts pixels with a canvas drawImage + getImageData round-trip. On
+// wide-gamut / color-managed displays (macOS defaults to a wide color
+// profile) that path shifts R/G/B channel values by ±1. The Terrarium Red
+// scaler is 256, so a single ±1 shift in the Red channel becomes a ±256 m
+// vertical spike — the scattered "needles" seen all over the mesh. The raw
+// PNG bytes are clean (verified independently); the corruption is introduced
+// client-side in the color-managed image pipeline, which is why the same
+// file renders clean under file:// (no worker) and spikes over http(s).
+//
+// The fix: drive TerrainLayer with a custom pure-JS loader (TerrariumLoader)
+// via its `loaders` prop, replacing the default TerrainWorkerLoader. That
+// loader decodes each PNG with UPNG (pure JavaScript — no browser image
+// APIs, no color management) and builds the martini mesh on the main thread,
+// returning the same mesh shape TerrainLayer expects. The channel bytes reach
+// the decoder unmodified, at full 24-bit Terrarium precision, with no
+// needles. Downside: mesh tesselation runs on the main thread (fine for a
+// demo).
+const ELEVATION_LOADERS = [TerrariumLoader];
 
 // The encoder is mounted inside the caching stack (same nginx), so there is a
 // single source here: the caching stack's public URL. Tiles are served from
-// /api/v1/float32/{z}/{x}/{y}.f32; health is /api/v1/float32/healthz.
+// /api/v1/terrarium/{z}/{x}/{y}.png; health is /api/v1/terrarium/healthz.
 const SOURCE = {
-    label: 'Raw float32 encoder',
-    baseUrl: '/titiler/api/v1/float32',
+    label: 'Terrarium encoder',
+    baseUrl: '/titiler/api/v1/terrarium',
     startCommand: 'docker compose -f deploy/titiler-caching/docker-compose.yml up -d',
 };
 
 // Misicuni / Cochabamba region (from /cog/info bounds, EPSG:3857 center:
 // lon ≈ -66.49, lat ≈ -17.04). Matches the view used by the Misicuni grayscale
-// and Terrarium demos so the three terrain renders are directly comparable. Cap
-// the zoom at the native detail of the DEM (~30 m GLO-30) — beyond it is
-// upsampling.
+// demo so the two terrain renders are directly comparable. Cap the zoom at the
+// native detail of the DEM (~30 m GLO-30) — beyond it is upsampling.
 const INITIAL_VIEW_STATE = {
     longitude: -66.49,
     latitude: -17.04,
@@ -68,20 +92,18 @@ const INITIAL_VIEW_STATE = {
 // deck.gl's TerrainLayer spawns a martini/delatin tesselation worker.
 // workerUrl is intentionally NOT set: loaders.gl resolves it from its CDN
 // default. A local copy under public/ is only needed to run fully offline.
-// (Float32Loader is worker:false and builds the mesh on the main thread, so
-// the raw bytes never touch a worker or the image pipeline.)
-function Float32Terrain() {
+function TerrariumTerrain() {
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
     // Bumped on timing-toggle / retry to recreate the TerrainLayer and reload tiles.
     const [terrainLayerKey, setTerrainLayerKey] = useState(0);
 
     const { baseUrl, startCommand } = SOURCE;
 
-    const tileUrl = `${baseUrl}/{z}/{x}/{y}.f32`;
+    const tileUrl = `${baseUrl}/{z}/{x}/{y}.png`;
     // Live probe tile: must be a guaranteed in-bounds tile of THIS COG so the
     // probe returns 200 and exonerates a stray tile error. (The encoder rejects
-    // z=0 via Z_MIN=1, and /0/0/0.f32 would 404 and falsely trip the modal.)
-    const probeTileUrl = `${baseUrl}/8/80/140.f32`;
+    // z=0 via Z_MIN=1, and /0/0/0.png would 404 and falsely trip the modal.)
+    const probeTileUrl = `${baseUrl}/8/80/140.png`;
     const healthUrl = `${baseUrl}/healthz`;
 
     const forceReload = () => setTerrainLayerKey(k => k + 1);
@@ -108,17 +130,17 @@ function Float32Terrain() {
         healthUrl,
         probeTileUrl,
         onLayerReload: forceReload,
-        name: 'Float32Terrain',
+        name: 'TerrariumTerrain',
     });
 
     const layers = [
         new TerrainLayer({
             // layerKey forces a fresh layer on timing toggle so tiles reload.
-            id: `float32-terrain-${terrainLayerKey}`,
+            id: `terrarium-terrain-${terrainLayerKey}`,
             elevationData: tileUrl,
             texture: null,
             meshMaxError: 2.5,
-            // No elevationDecoder: Float32Loader decodes raw metres directly.
+            elevationDecoder: ELEVATION_DECODER,
             loaders: ELEVATION_LOADERS,
             minZoom: 0,
             maxZoom: 14,
@@ -139,7 +161,7 @@ function Float32Terrain() {
                 views={new MapView({ repeat: true })}
                 style={{ width: '100vw', height: '100vh' }}
             />
-            <div className="titiler-endpoint-switch" role="group" aria-label="Raw float32 encoder">
+            <div className="titiler-endpoint-switch" role="group" aria-label="Terrarium encoder">
                 <span className="titiler-endpoint-title">Source</span>
                 <div className="titiler-source-static titiler-endpoint-btn titiler-endpoint-btn-active" title={`${baseUrl}\nStart: ${startCommand}`}>
                     {SOURCE.label}
@@ -189,4 +211,4 @@ function Float32Terrain() {
     );
 }
 
-export default Float32Terrain;
+export default TerrariumTerrain;

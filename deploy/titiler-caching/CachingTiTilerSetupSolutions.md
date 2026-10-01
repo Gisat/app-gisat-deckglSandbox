@@ -86,21 +86,20 @@ once and is stored again. Data updates propagate as a wave at T₀+1 h.
 - New `src/maps/TiTilerDemo/TiTilerEndpointSwitch.css` (z-index 900, below the
   error modal's 1000).
 
-## 5. Bug: Uganda/Nepal demos fail through the caching stack, Manila works (nginx 414)
+## 5. Bug: Uganda demo fails through the caching stack, Manila works (nginx 414)
 
 **Symptom:** on the caching endpoint, "Manila RGB" renders fine, but "Uganda
-Multiband" and "Nepal Snow Cover" show the tile-error modal
-("HTTP 414" detail). Same demos work on the plain `:8000` instance.
+Multiband" shows the tile-error modal
+("HTTP 414" detail). Same demo works on the plain `:8000` instance.
 
 **Root cause — nginx request-line limit, not TiTiler:**
-Uganda/Nepal pass their full 256-entry colormap inline as **url-encoded JSON
-in the query string**, producing tile URLs far above nginx's default cap:
+Uganda passes its full 256-entry colormap inline as **url-encoded JSON
+in the query string**, producing a tile URL far above nginx's default cap:
 
 | Case | Tile URL length | nginx default (`large_client_header_buffers 4 8k`: request line ≤ one 8 KB buffer) | Result |
 | --- | --- | --- | --- |
 | Manila RGB (no colormap) | ~200–300 chars | fits | ✅ works |
 | Uganda (colormap alone ≈ 9.0 KB, 257 entries) | **9 242** chars | exceeds | ❌ **414 Request-URI Too Large** |
-| Nepal Snow (encoded colormap ≈ 10.3 KB) | ~10.9 KB | exceeds | ❌ 414 |
 
 nginx rejects the request **before proxying** — TiTiler never sees it, so
 nothing about the caching TiTiler config was wrong. The plain stack has no
@@ -125,7 +124,7 @@ large_client_header_buffers 4 32k;
 Then recreate/restart the nginx container:
 `docker compose -f deploy/titiler-caching/docker-compose.yml up -d`
 (nginx config is baked via bind-mount `./nginx.conf:/etc/nginx/nginx.conf:ro`,
-so a restart/recreate picks it up). Verified working: all three demos render
+so a restart/recreate picks it up). Verified working: both demos render
 through the caching endpoint after the change.
 
 **Diagnosis recipe (for future reference):**
@@ -155,5 +154,5 @@ src/maps/TiTilerDemo/
 ├── TiTilerTileMap.jsx          # endpoint switcher (plain/caching/custom) + localStorage
 ├── TiTilerErrorModal.jsx       # startCommand prop (per selected endpoint)
 ├── TiTilerEndpointSwitch.css   # new — top-right control card
-└── (NepalSnow/UgandaLUC/ManilaRGB unchanged — switch lives in the shared map)
+└── (ManilaRGB/UgandaLUC unchanged — switch lives in the shared map)
 ```

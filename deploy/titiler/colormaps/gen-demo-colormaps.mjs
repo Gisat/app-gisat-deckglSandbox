@@ -3,8 +3,8 @@
 // identical to what the inline `colormap=` ramp used to deliver.
 //
 // Source of truth:
-//   - Nepal snow + Uganda LUC + GHS pop ramps: src/maps/TiTilerDemo/shared/colormaps.js (ESM exports)
-//   - WorldCereal sparse ramp:                  src/maps/TiTilerDemo/WorldCereal.jsx (inline)
+//   - Uganda LUC + GHS pop ramps: src/maps/TiTilerDemo/shared/colormaps.js (ESM exports)
+//   - WorldCereal sparse ramp:     src/maps/TiTilerDemo/WorldCereal.jsx (inline)
 //
 // Run from the repo root:
 //   node deploy/titiler/colormaps/gen-demo-colormaps.mjs
@@ -20,10 +20,10 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url)); // .../deploy/titiler/colormaps
 const root = join(here, '..', '..', '..'); // repo root
 
-// colormaps.js exports SNOW_COLORMAP / UGANDA_COLORMAP / GHS_POP_COLORMAP as
+// colormaps.js exports UGANDA_COLORMAP / GHS_POP_COLORMAP as
 // plain JSON-text strings (already unescaped by the JS engine). Parse directly
 // -> {int: [r,g,b]} (RGB, 3 entries), no regex / manual unescape needed.
-const { SNOW_COLORMAP, UGANDA_COLORMAP, GHS_POP_COLORMAP } = await import(
+const { UGANDA_COLORMAP, GHS_POP_COLORMAP } = await import(
   join(root, 'src', 'maps', 'TiTilerDemo', 'shared', 'colormaps.js')
 );
 const parse = (txt) => Object.fromEntries(
@@ -45,9 +45,6 @@ function write(name, map) {
   writeFileSync(out, JSON.stringify(sorted));
   console.log(`wrote ${out} (${Object.keys(sorted).length} entries)`);
 }
-
-// ---- Nepal snow: full 256-entry viridis-like ramp, no transparency ----
-write('nepal_snow_viridis', toRgba(parse(SNOW_COLORMAP)));
 
 // ---- Uganda LUC: full 256-entry ramp, byte 0 transparent (see UgandaLUC.jsx) ----
 const uganda = toRgba(parse(UGANDA_COLORMAP), 255);

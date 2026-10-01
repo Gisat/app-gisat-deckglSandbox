@@ -1,8 +1,8 @@
 # TiTiler demo container — usage
 
 This directory defines a **local-development TiTiler instance** that serves the
-COG (Cloud Optimized GeoTIFF) tile demos in the `TiTiler DEMO` category of the
-sandbox app (Nepal snow cover, Uganda multiband LUC, Manila RGB).
+COG (Cloud Optimized GeoTIFF) tile demos in the `TiTiler DEMO` and `3d Terrain`
+categories of the sandbox app (Uganda multiband LUC, Manila RGB, …).
 
 ## What it is
 
@@ -65,7 +65,7 @@ curl http://localhost:8000/healthz
 ### 2. Metadata of a COG
 
 ```sh
-COG="https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_bitmap/WET_SNOW_3857_2017-2021_cog_deflate_in16_zoom16_levels8.tif"
+COG="https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_bitmap/cog_UG_hanpp_luc_multiband.tif"
 
 curl "http://localhost:8000/cog/info?url=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))' "$COG")"
 ```
@@ -73,9 +73,11 @@ curl "http://localhost:8000/cog/info?url=$(python3 -c 'import urllib.parse,sys;p
 ### 3. Fetch a single tile as PNG
 
 ```sh
-# Nepal snow: single band, stretched 0..300, viridis-like colormap
-# (tile 6/47/26 = Kathmandu region at zoom 6 — inside the COG bounds)
-TILE="http://localhost:8000/cog/tiles/WebMercatorQuad/6/47/26.png?url=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))' "$COG")&bidx=1&rescale=0,300"
+# Uganda multiband: single band, blues colormap
+# (tile 6/47/26 = Uganda region at zoom 6 — inside the COG bounds)
+COG="https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_bitmap/cog_UG_hanpp_luc_multiband.tif"
+
+TILE="http://localhost:8000/cog/tiles/WebMercatorQuad/6/47/26.png?url=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))' "$COG")&bidx=15&rescale=0,100&colormap_name=uganda_blues_transparent"
 curl -o tile.png "$TILE"
 file tile.png   # -> PNG image data
 ```
@@ -108,12 +110,13 @@ curl "http://localhost:8000/cog/bounds?url=$(python3 -c 'import urllib.parse,sys
 
 | Demo | COG | Params used |
 | --- | --- | --- |
-| Nepal Snow Cover | int16 snow-cover COG (EPSG:3857) | `bidx=1`, `rescale=0,300`, `colormap_name=nepal_snow_viridis` (server-side registered viridis ramp) |
-| Uganda Multiband (LUC) | multiband LUC COG | `bidx=<15..24>` (band slider), per-band `rescale`, `colormap_name=uganda_blues_transparent` (server-side registered, byte 0 transparent for all bands) |
-| Manila RGB | uint8 RGB composite | none (true RGB served directly) |
-| WorldCereal Active Cropland | uint8 single-band class COG | `bidx=1`, `colormap_name=worldcereal_active` (server-side registered categorical: 0=gray not active, 100=green cropland, 254 "No crop"+255 nodata transparent) |
-| GHS Population Density | float32 global population COG | `bidx=1`, `rescale=0,10`, `colormap_name=ghs_pop_transparent_low` (server-side registered RGBA ramp, alpha 0 on bytes 0–10 → nodata −200 & low-density transparent) |
-| Misicuni Terrain (DEM) | float32 single-band DEM, EPSG:3857 (GLO-30 + geoid, Misicuni/Cochabamba) | `bidx=1`, `rescale=0,5600` — **no colormap**: served grayscale, decoded client-side by a native deck.gl `TerrainLayer` |
+| Demo | COG | Params used |
+| --- | --- | --- |
+| Multiband (Uganda) | multiband LUC COG | `bidx=<15..24>` (band slider), per-band `rescale`, `colormap_name=uganda_blues_transparent` (server-side registered, byte 0 transparent for all bands) |
+| RGB (Manila) | uint8 RGB composite | none (true RGB served directly) |
+| Large COG 6GB+ (Active Cropland) | uint8 single-band class COG | `bidx=1`, `colormap_name=worldcereal_active` (server-side registered categorical: 0=gray not active, 100=green cropland, 254 "No crop"+255 nodata transparent) |
+| Large COG 6GB+ (Population Dens.) | float32 global population COG | `bidx=1`, `rescale=0,10`, `colormap_name=ghs_pop_transparent_low` (server-side registered RGBA ramp, alpha 0 on bytes 0–10 → nodata −200 & low-density transparent) |
+| 3D Misicuni 8bit DEM (256 levels) | float32 single-band DEM, EPSG:3857 (GLO-30 + geoid, Misicuni/Cochabamba) | `bidx=1`, `rescale=0,5600` — **no colormap**: served grayscale, decoded client-side by a native deck.gl `TerrainLayer` |
 
 All registered colormaps live in `deploy/titiler/colormaps/` and are referenced by
 short `colormap_name` so tile queries stay small and the nginx tile cache
@@ -134,10 +137,10 @@ The web app hits the tile endpoint from the browser (CORS is opened with
 running, the sandbox shows an error modal reporting the expected endpoint and
 this start command.
 
-### Misicuni Terrain (native TerrainLayer)
+### 3D Misicuni 8bit DEM (native TerrainLayer)
 
-Unlike the other TiTiler demos (flat `BitmapLayer` tiles), Misicuni Terrain
-renders a **3D mesh** via deck.gl's native `TerrainLayer`, fed by TiTiler
+Unlike the other TiTiler demos (flat `BitmapLayer` tiles), 3D Misicuni renders
+a **3D mesh** via deck.gl's native `TerrainLayer`, fed by TiTiler
 **grayscale** PNG tiles of a float32 single-band DEM:
 
 ```
@@ -156,7 +159,7 @@ GET /cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=<COG>&bidx=1&rescale=0,5600
   relief-wide 3D zoom; it steps if you zoom far in. Full-precision terrain
   would need a client-side float COG read (not a TiTiler demo).
 
-See `src/maps/TiTilerDemo/MisicuniTerrain.jsx` for the `RESCALE_MIN`/`RESCALE_MAX`
+See `src/maps/TiTilerDemo/MisicuniTerrain/index.jsx` for the `RESCALE_MIN`/`RESCALE_MAX`
 constants, which must stay in sync with the `rescale` query param and the
 `ELEVATION_DECODER`.
 
