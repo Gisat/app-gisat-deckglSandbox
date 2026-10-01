@@ -7,6 +7,7 @@ import { useDuckDb } from 'duckdb-wasm-kit';
 import { setupDB } from './db';
 import { getTileUrls } from './utils/getTileUrls';
 import { scaleLinear } from 'd3-scale';
+import { cartoLightBasemapUrl } from '../basemaps';
 
 // --- Debounce Hook ---
 function useDebounce(value, delay) {
@@ -500,7 +501,7 @@ function GeoParquetTile() {
 
     // Define Layers
     const baseMapLayer = new TileLayer({
-        id: 'tile-layer', data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+        id: 'tile-layer', data: cartoLightBasemapUrl,
         minZoom: 0, maxZoom: 19, tileSize: 256,
         renderSubLayers: props => {
             const { west, south, east, north } = props.tile.bbox;

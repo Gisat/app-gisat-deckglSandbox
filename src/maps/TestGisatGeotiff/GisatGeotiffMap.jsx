@@ -4,6 +4,7 @@ import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
+import { cartoLightBasemapUrl } from '../basemaps';
 
 function getRawValuesAtUv(info) {
     const uv = info.uv || (info.bitmap && info.bitmap.uv);
@@ -30,7 +31,7 @@ const GisatGeotiffMap = () => {
     const layers = [
         new TileLayer({
             id: 'base-map',
-            data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+            data: cartoLightBasemapUrl,
             minZoom: 0,
             maxZoom: 19,
             tileSize: 256,

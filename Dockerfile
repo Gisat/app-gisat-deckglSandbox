@@ -1,7 +1,7 @@
 # =============================================================================
 # Stage 1 — Build frontend (Vite/React, always built at base /)
 # =============================================================================
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /build
 
@@ -51,6 +51,9 @@ ENV GEOPARQUET_PATH=https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST
 
 # Backend API URL the frontend calls at runtime (web mode only, empty = fallback to localhost:5000)
 ENV BACKEND_API_URL=
+
+# Carto basemap API key injected into the frontend at runtime (web mode only, empty = no key)
+ENV CARTO_API_KEY=
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD []

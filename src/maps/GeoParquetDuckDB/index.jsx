@@ -7,6 +7,7 @@ import { ScatterplotLayer } from '@deck.gl/layers';
 import { BitmapLayer } from '@deck.gl/layers';
 // --- 1. UPDATE THIS IMPORT ---
 import { scaleLinear } from 'd3-scale';
+import { cartoLightBasemapUrl } from '../basemaps';
 
 // A custom hook to delay updates
 function useDebounce(value, delay) {
@@ -58,7 +59,7 @@ function SimpleMap() {
         new TileLayer({
             id: 'tile-layer',
             // --- NEW URL for a light greyscale map ---
-            data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+            data: cartoLightBasemapUrl,
 
             minZoom: 0,
             maxZoom: 19,

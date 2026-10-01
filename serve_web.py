@@ -13,6 +13,7 @@ if VITE_BASE and not VITE_BASE.startswith('/'):
     VITE_BASE = '/' + VITE_BASE
 
 BACKEND_API_URL = os.environ.get('BACKEND_API_URL', '')
+CARTO_API_KEY = os.environ.get('CARTO_API_KEY', '')
 
 
 class SPAHandler(http.server.SimpleHTTPRequestHandler):
@@ -59,6 +60,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         lines = [
             f'window.VITE_BASE = {json.dumps(VITE_BASE)};',
             f'window.BACKEND_API_URL = {json.dumps(BACKEND_API_URL or None)};',
+            f'window.CARTO_API_KEY = {json.dumps(CARTO_API_KEY or None)};',
             '',
         ]
         self.wfile.write('\n'.join(lines).encode())

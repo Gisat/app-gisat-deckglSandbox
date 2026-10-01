@@ -6,6 +6,7 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { PolygonLayer, BitmapLayer } from '@deck.gl/layers';
 import { load } from '@loaders.gl/core';
 import { ArrowLoader } from '@loaders.gl/arrow';
+import { cartoLightBasemapUrl } from '../basemaps';
 
 function useDebounce(value, delay) {
     const [debouncedValue, setDebouncedValue] = useState(value);
@@ -57,7 +58,7 @@ function PolygonMap3D() {
 
     const layers = [
         new TileLayer({
-            id: 'tile-layer', data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+            id: 'tile-layer', data: cartoLightBasemapUrl,
             renderSubLayers: props => {
                 const { west, south, east, north } = props.tile.bbox;
                 return new BitmapLayer(props, { data: null, image: props.data, bounds: [west, south, east, north] });

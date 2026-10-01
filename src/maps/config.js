@@ -19,7 +19,9 @@ import geoParquetVirtualTiles from './GeoParquetVirtualTile/VirtualTilesMap.jsx'
 import MetroDarrows3D from "./MetroD_arrows_3D/index.jsx";
 import devSeedCOG from "./DevSeedCOG/CogMap.jsx";
 import CogTerrainKernel from './CogTerrainKernel';
+import NepalMap from './Nepal';
 import MisicuniDam from './Misicuni_dam/index.jsx';
+import TabqaDam from './Tabqa_dam/index.jsx';
 import GisatDataService from './GisatDataService/index.jsx';
 import SelectionDrawing3D from './SelectionDrawing3D/index.jsx';
 import ArrowLODStream3D from './ArrowLODStream_3D/Map3D.jsx';
@@ -54,6 +56,7 @@ const mapApps = [
     { category: 'GeoParquet', name: 'GeoParquet Tiled', path: '/geoparquet-tiled', component: geoParquetTiled },
     { category: 'GeoParquet', name: 'GeoParquet Virtual Tiles', path: '/geoparquet-virtual-tiles', component: geoParquetVirtualTiles },
     { category: 'Other', name: 'Deck.gl-raster COG', path: '/deck.gl-raster', component: devSeedCOG },
+    { category: 'Other', name: 'Nepal', path: '/nepal', component: NepalMap, description: 'Nepal COP30 terrain COG with satellite imagery overlay' },
     // { name: 'Test Gisat Geotiff', path: '/test-gisat-geotiff', component: GisatGeotiffMap, description: 'Testing Gisat Geotiff rendering' },
     { category: '3DFLUS CCN', name: 'COG Terrain Kernel', path: '/cog-kernel', component: CogTerrainKernel, description: 'Showcase kernel calculation and hover features with deck.gl-geotiff' },
     { category: '3DFLUS CCN', name: 'Gisat Data Service', path: '/gisat-data-service', component: GisatDataService },
@@ -62,6 +65,7 @@ const mapApps = [
     { category: '3DFLUS CCN', name: 'Terrain Interactive Slider', path: '/terrain-interactive-slider', component: MisicuniDam },
     { category: '3DFLUS CCN', name: 'Selection Drawing 3D', path: '/selection-drawing-3d', component: SelectionDrawing3D },
     { category: 'GDA Water', name: 'Misicuni Dam', path: '/misicuni-dam', component: MisicuniDam, description: 'Simple dam presentation map connected to GDA Water group' },
+    { category: 'GDA Water', name: 'Tabqa Dam', path: '/tabqa', component: TabqaDam, description: 'Tabqa Dam, Syria - OSM basemap' },
     { category: 'TiTiler DEMO', name: 'Nepal Snow Cover', path: '/titiler-demo-nepal-snow', component: NepalSnow },
     { category: 'TiTiler DEMO', name: 'Uganda Multiband', path: '/titiler-demo-uganda', component: UgandaLUC },
     { category: 'TiTiler DEMO', name: 'Manila RGB', path: '/titiler-demo-manila', component: ManilaRGB },

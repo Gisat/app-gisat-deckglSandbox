@@ -8,6 +8,7 @@ import { toProj4 } from 'geotiff-geokeys-to-proj4';
 import proj4 from 'proj4';
 import {CogBitmapLayer} from "@gisatcz/deckgl-geolib";
 import chroma from "chroma-js";
+import { cartoLightBasemapUrl } from '../basemaps';
 
 const INITIAL_VIEW_STATE = {
     longitude: 0,
@@ -72,7 +73,7 @@ function CogMap() {
     const layers = [
         new TileLayer({
             id: 'base-map',
-            data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+            data: cartoLightBasemapUrl,
             minZoom: 0,
             maxZoom: 19,
             tileSize: 256,

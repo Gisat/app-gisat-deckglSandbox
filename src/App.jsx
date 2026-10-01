@@ -86,7 +86,7 @@ function App() {
     const basename = window.VITE_BASE && window.VITE_BASE !== '/' ? window.VITE_BASE : '/';
     
     return (
-        <BrowserRouter basename={basename} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <BrowserRouter basename={basename}>
             <AppContent />
         </BrowserRouter>
     );

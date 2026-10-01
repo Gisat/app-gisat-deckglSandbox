@@ -1,3 +1,95 @@
+## [1.8.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.7.2...v1.8.0) (2026-09-27)
+
+### Features
+
+* **velocity:** borderless round-cap preset with consistent stroke widths ([fa71b83](https://github.com/Gisat/app-gisat-deckglSandbox/commit/fa71b8349a26ca8293f17c1afc9cadf085ce91bd))
+
+### Bug Fixes
+
+* **velocity:** restore circle borders except for borderless preset ([011f67f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/011f67f7a388d8ac3513c5a1919cd0ad04b4828f))
+
+## [1.7.2](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.7.1...v1.7.2) (2026-09-25)
+
+### Bug Fixes
+
+* **deps:** remediate Dependabot security alerts ([87185aa](https://github.com/Gisat/app-gisat-deckglSandbox/commit/87185aa048312806d09bb0eaf92a0aa8cec12c64))
+
+## [1.7.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.7.0...v1.7.1) (2026-09-25)
+
+### Bug Fixes
+
+* **Tabqa:** rename Fill Head UI label to Fill-Head ([ab198f6](https://github.com/Gisat/app-gisat-deckglSandbox/commit/ab198f63ed9a0470d5f606c1d6730515759a2c2c))
+
+## [1.7.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.6.0...v1.7.0) (2026-09-24)
+
+### Features
+
+* added apiKey for carto basemap ([49c9b44](https://github.com/Gisat/app-gisat-deckglSandbox/commit/49c9b443c38c42a4ed37cb40e538242a324f2d61))
+* inject Carto API key at runtime ([2612cd6](https://github.com/Gisat/app-gisat-deckglSandbox/commit/2612cd68ae8bd56e63ca46beb8b4875395994583))
+
+### Bug Fixes
+
+* **build:** restore package-lock.json to fix docker-build ([8c2ae0f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8c2ae0f65ad97adf035fc023441753a0ed0f1426)), closes [Menci/vite-plugin-top-level-await#79](https://github.com/Menci/vite-plugin-top-level-await/issues/79)
+
+## [1.6.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.5.1...v1.6.0) (2026-09-23)
+
+### Features
+
+* **Tabqa:** add arrow shape presets with unified pen width and hover borders ([4493831](https://github.com/Gisat/app-gisat-deckglSandbox/commit/44938317d5eef302e2c0887f9e2c92b5fdc07a0b)), closes [#ff3c30](https://github.com/Gisat/app-gisat-deckglSandbox/issues/ff3c30)
+* **Tabqa:** add thin-border Vertical-Cut arrow option ([956a30b](https://github.com/Gisat/app-gisat-deckglSandbox/commit/956a30b7c731b0e3067f6ffb9f795896b57ab9af))
+* **Tabqa:** port DynamicArrowLayer from damStabilityInspector factory ([62e9514](https://github.com/Gisat/app-gisat-deckglSandbox/commit/62e95143a73086fcaf81814cd94421f3653e8852))
+* **Tabqa:** port velocity LOS symbology and switch LOS source to GeoJSON ([e1fc9c6](https://github.com/Gisat/app-gisat-deckglSandbox/commit/e1fc9c6bc773b3d13fb3e36c67fb774f9fd32287))
+* **Tabqa:** rework arrow presets as stroked V shapes with fixed heads ([553592e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/553592e4f44c9d73f666954b020df10b973761ce))
+
+### Bug Fixes
+
+* **layers:** default DynamicArrowLayer line color to transparent ([a06ca75](https://github.com/Gisat/app-gisat-deckglSandbox/commit/a06ca75041018097d71d78070c302b7273f5ffe0))
+* **layers:** sync arrow attribute defaults and dominantOrbit update triggers ([790f63a](https://github.com/Gisat/app-gisat-deckglSandbox/commit/790f63a5183ab704fa0e8176e431546ffa886198))
+* **Tabqa:** ignore null feature ids when matching hover and selection ([ecdc8df](https://github.com/Gisat/app-gisat-deckglSandbox/commit/ecdc8df010a224010f7b8ac394ad367988bfaf9e))
+
+## [1.5.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.5.0...v1.5.1) (2026-09-04)
+
+### Bug Fixes
+
+* **Nepal:** pass zRange to CogBitmapLayer for 3D frustum culling ([1e10877](https://github.com/Gisat/app-gisat-deckglSandbox/commit/1e108771e18aceb04ece91019b3e07322fcd779c))
+
+## [1.5.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.4.0...v1.5.0) (2026-09-03)
+
+### Features
+
+* **Nepal:** add ASC/DSC InSAR spheres clamped to terrain ([64e776c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/64e776cd47fa37fcc66a2d84f5d5e9dc8da15961))
+* **Nepal:** add GISAT logo to the lower-left corner ([d73b39e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d73b39e1fc1effe538a6c90a81ecaf702943043b))
+* **Nepal:** add shaded satellite terrain map from COP30 DEM ([f4b37cc](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f4b37cc1cab9cec555c95dd1d064a788c574e9e2))
+* **Nepal:** add slope and elevation overlays, zRange for glaze ([164f664](https://github.com/Gisat/app-gisat-deckglSandbox/commit/164f664124065003a9f174e149113a97210d5e9e))
+* **Nepal:** add snow cover overlays and stack imagery under relief glaze ([3e632c2](https://github.com/Gisat/app-gisat-deckglSandbox/commit/3e632c21694a6eef64268a18cb426cb9a4f552cf))
+* **Nepal:** add switchable Esri satellite basemap and light map theme ([13ac0a1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/13ac0a10fecf78e1be8502f6d0ca99e9bf181104))
+* **Nepal:** add switchable SWIR overlays and independent layer checkboxes ([3fe8236](https://github.com/Gisat/app-gisat-deckglSandbox/commit/3fe82362e65ed20c078269c6a8d5b56bcd64127e))
+* **Nepal:** render precalculated relief glaze overlay ([cfa35d4](https://github.com/Gisat/app-gisat-deckglSandbox/commit/cfa35d450dfcc908c31c6bea81c40f341c855aa1))
+* **Nepal:** show snow cover 2020 and 2021 bands ([186f7e7](https://github.com/Gisat/app-gisat-deckglSandbox/commit/186f7e7d7e5c1c9f9d807d585237849c2eca415a))
+
+## [1.4.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.3.1...v1.4.0) (2026-08-28)
+
+### Features
+
+* add Raw DEM third visualization option and update COG URLs to bilinear variants ([9043da5](https://github.com/Gisat/app-gisat-deckglSandbox/commit/9043da5c8c2ac1f6b7c5476311c3e8de9bb073bb))
+* add Tabqa Dam map app under GDA Water group with OSM basemap and dual glaze layer toggle ([2afec39](https://github.com/Gisat/app-gisat-deckglSandbox/commit/2afec39ce27c91b08ffe39845fe6323b11435a6f))
+* **Tabqa_dam:** add arrow selection with cyan stroke and pixel-locked sizing ([cc78a61](https://github.com/Gisat/app-gisat-deckglSandbox/commit/cc78a6163472803c3d6153f7c9cab12ab83ba97d))
+* **Tabqa_dam:** add MVT point layer from los_tiles data service ([1e9a3f9](https://github.com/Gisat/app-gisat-deckglSandbox/commit/1e9a3f98b93f3ac13f767454557f31e4d54c0818))
+* **Tabqa_dam:** hybrid radius units with seamless zoom 16 transition ([8b0c15c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8b0c15cc1eafc0658c6047f06f0fff690ac2aede))
+* **Tabqa_dam:** let arrow head dominate stem at low REL like 3D model ([8685134](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8685134d59056cea6f5932823dffe36696448a08))
+* **Tabqa_dam:** make arrow size zoom-adaptive with meters/pixels units ([fba3a1e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/fba3a1e7d15793160fac3a788370540f9c58dc4c))
+* **Tabqa_dam:** render dynamic arrows with SDF shader layer ([b30e823](https://github.com/Gisat/app-gisat-deckglSandbox/commit/b30e823d1215a38f5058f89e40ab576c3c42e8d5))
+
+### Bug Fixes
+
+* **DynamicArrowLayer:** expand quad geometry to prevent clipped SDF tip ([62271b9](https://github.com/Gisat/app-gisat-deckglSandbox/commit/62271b92d3852bbe923d9e8729ddbdde055dd9f2))
+* **DynamicArrowLayer:** fix shader precision and make arrows pixel-sized across zooms ([2fa85d1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/2fa85d1e6d90d98630d0ca7390272f166ba16997))
+* **DynamicArrowLayer:** use straight alpha to match deck.gl blending ([f0a62b6](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f0a62b60c3693105349d69da4a8856132d0aa58a))
+* radio group accessibility and selection opacity threshold ([29af350](https://github.com/Gisat/app-gisat-deckglSandbox/commit/29af350964ebb9d2c3c04ad24b157085f3f0b902))
+* **release:** pin conventional-changelog-conventionalcommits to v9 ([5029024](https://github.com/Gisat/app-gisat-deckglSandbox/commit/5029024e3c86923663edbf7b29795772e87cb92a))
+* **Tabqa_dam:** cap stem thickness at head size so the stem is never wider ([88432e1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/88432e1252d028b350c01aabfae3309891d56c79))
+* **Tabqa_dam:** raise stem bounds to prevent collapse and render arrows above glaze ([8778414](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8778414e65ed9edc6224a26551b40b385a2a43c1))
+
 ## [1.3.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.3.0...v1.3.1) (2026-06-19)
 
 ### Bug Fixes

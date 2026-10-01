@@ -15,6 +15,7 @@ import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
 import { calculateProfileData } from '../../components/2DLineProfile';
+import { cartoLightBasemapUrl } from '../basemaps';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch: 45, bearing: 0 };
@@ -202,7 +203,7 @@ function ArrowLODStream3D() {
     const layers = useMemo(() => [
         new TileLayer({
             id: 'base-map',
-            data: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+            data: cartoLightBasemapUrl,
             minZoom: 0, maxZoom: 19, tileSize: 256,
             renderSubLayers: props => {
                 const { west, south, east, north } = props.tile.bbox;
