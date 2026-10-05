@@ -14,9 +14,11 @@ import './TiTilerEndpointSwitch.css';
  * light base map. Tiles are generated on the fly by TiTiler
  * (/cog/tiles/{z}/{x}/{y}.png?url=...&...).
  *
- * The endpoint switcher (top right) selects the nginx-cached TiTiler
- * (:8001/api/v1/titiler; the only local stack since deploy/titiler was retired);
- * VITE_TITILER_URL adds a custom entry when set.
+ * The endpoint switcher (top right) shows the nginx-cached TiTiler
+ * (:8001/api/v1/titiler; the only local stack since deploy/titiler was retired).
+ * Its base prefix resolves once at runtime (window.TITILER_API_BASE from
+ * serve_web.py -> VITE_TITILER_API_BASE -> VITE_TITILER_URL legacy -> local
+ * default) — see getTiTilerApiBase() in ./endpoints.
  *
  * If TiTiler is unreachable (health probe) or fails systemically (tile errors
  * confirmed by a z0 probe), a modal reports which endpoint is expected to run

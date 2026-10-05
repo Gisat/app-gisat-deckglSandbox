@@ -11,8 +11,9 @@ import './TiTilerErrorModal.css';
  * @param {string} healthUrl       - full /healthz URL
  * @param {string} tileUrlTemplate - tile URL template actually used by the TileLayer
  * @param {string} cogUrl          - COG passed to TiTiler as `url` param
- * @param {string|null} startCommand - docker compose command to start the selected stack
- *                                     (null for custom/deployed endpoints without a local stack)
+ * @param {string|null} startCommand - docker compose command to start the caching
+ *                                     stack (always present for the local stack; null
+ *                                     only if the resolved base points off-stack)
  * @param {string} errorMessage    - human-readable error (may be empty)
  * @param {string} errorDetail     - enriched detail (HTTP status + TiTiler JSON detail)
  */
@@ -60,7 +61,7 @@ function TiTilerErrorModal({
                         <div><span className="label">COG</span><span>{cogUrl}</span></div>
                     </div>
                     <div className="titiler-modal-note">
-                        Base URL is set by the endpoint switcher (top right of the map); a <code>VITE_TITILER_URL</code> override (see <code>.env.example</code>) adds a custom entry. Default is the caching stack (<code>/titiler/api/v1/titiler</code> → nginx :8001), whose base prefix is configurable via <code>TITILER_API_BASE</code> / <code>VITE_TITILER_API_BASE</code>.
+                        The TiTiler base resolves once at runtime — <code>window.TITILER_API_BASE</code> (from the <code>TITILER_API_BASE</code> env of the server running <code>serve_web.py</code>) winning over the build-time <code>VITE_TITILER_API_BASE</code> / legacy <code>VITE_TITILER_URL</code>, else the local default <code>/titiler/api/v1</code> (→ nginx :8001). Keep it HTTPS + same-origin: the app runs under COEP <code>require-corp</code>.
                     </div>
                 </div>
 
@@ -73,7 +74,7 @@ function TiTilerErrorModal({
                         </>
                     ) : (
                         <div className="titiler-modal-note">
-                            This endpoint comes from <code>VITE_TITILER_URL</code> and has no local compose command — start that instance however it is deployed, then press Retry.
+                            The resolved TiTiler base has no local compose command — start that instance however it is deployed, then press Retry.
                         </div>
                     )}
                 </div>
@@ -88,7 +89,7 @@ function TiTilerErrorModal({
                 {isMixedContent && (
                     <div className="titiler-modal-warning">
                         This page is served over HTTPS but the TiTiler endpoint is HTTP — browsers block the mixed-content request.
-                        Point <code>VITE_TITILER_URL</code> at an HTTPS TiTiler instance or serve the sandbox over HTTP.
+                        Point <code>TITILER_API_BASE</code> / <code>VITE_TITILER_API_BASE</code> at an HTTPS TiTiler instance or serve the sandbox over HTTP.
                     </div>
                 )}
 
