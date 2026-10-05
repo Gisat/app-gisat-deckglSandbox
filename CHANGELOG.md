@@ -1,3 +1,9 @@
+## [1.9.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.9.0...v1.9.1) (2026-10-05)
+
+### Bug Fixes
+
+* **deckgl-raster:** patch luma Texture static field to fix prod crash ([e2dedbc](https://github.com/Gisat/app-gisat-deckglSandbox/commit/e2dedbc74552a79ed9cbecb8c80c159beb5cf83c))
+
 ## [1.9.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.8.0...v1.9.0) (2026-10-05)
 
 ### Features
