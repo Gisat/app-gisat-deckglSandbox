@@ -8,14 +8,35 @@
 // only local stack since deploy/titiler (plain uvicorn :8000) was retired. The
 // startCommand is shown by the error modal so it always tells you which
 // stack to start for the currently selected endpoint.
+const DEFAULT_TITILER_API_BASE = '/titiler/api/v1';
+
+// Runtime-resolved base prefix of the TiTiler caching stack's API (one nginx
+// serves titiler / float32 / terrarium under this prefix). Resolution order
+// mirrors basemaps.js: injected runtime window global (serve_web.py, from
+// TITILER_API_BASE env) -> Vite build-time env -> bundled local default.
+// Same-origin default keeps the COEP-safe proxy working in local dev; set
+// TITILER_API_BASE (or VITE_TITILER_API_BASE) to redeploy the app on other
+// infrastructure without rebuilding.
+function getTiTilerApiBase() {
+    return (
+        (typeof window !== 'undefined' && window.TITILER_API_BASE) ||
+        import.meta.env.VITE_TITILER_API_BASE ||
+        DEFAULT_TITILER_API_BASE
+    );
+}
+
 const DEFAULT_TITILER_ENDPOINTS = {
     caching: {
         label: 'TiTiler + cache',
         // '/titiler/api/v1/titiler/...' -> http://localhost:8001/api/v1/titiler/...
-        baseUrl: '/titiler/api/v1/titiler',
+        // (base resolved at runtime via getTiTilerApiBase())
+        baseUrl: null, // filled in below from getTiTilerApiBase()
         startCommand: 'docker compose -f deploy/titiler-caching/docker-compose.yml up -d',
     },
 };
+// Fill the caching endpoint's baseUrl at module init so every consumer sees the
+// same resolved runtime prefix (local default, VITE override, or injected global).
+DEFAULT_TITILER_ENDPOINTS.caching.baseUrl = `${getTiTilerApiBase()}/titiler`;
 
 // Optional override for a deployed/custom instance (see .env.example):
 // VITE_TITILER_URL=https://your-deployed-titiler.example
@@ -97,6 +118,7 @@ export {
     TITILER_ENDPOINTS,
     ENDPOINT_STORAGE_KEY,
     getInitialEndpointId,
+    getTiTilerApiBase,
     HEALTH_TIMEOUT_MS,
     PROBE_TIMEOUT_MS,
     TILE_ERROR_GRACE_MS,

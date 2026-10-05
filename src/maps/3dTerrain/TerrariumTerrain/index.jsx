@@ -6,6 +6,7 @@ import TerrariumLoader from '../../TiTilerDemo/shared/TerrariumLoader';
 import TiTilerErrorModal from '../../TiTilerDemo/shared/TiTilerErrorModal';
 import { useTileTiming } from '../../TiTilerDemo/shared/useTileTiming';
 import { useTileHealth } from '../../TiTilerDemo/shared/useTileHealth';
+import { getTiTilerApiBase } from '../../TiTilerDemo/shared/endpoints';
 import '../../TiTilerDemo/shared/TiTilerEndpointSwitch.css';
 
 // "True Mapzen" Terrarium terrain demo.
@@ -67,11 +68,13 @@ const ELEVATION_DECODER = {
 const ELEVATION_LOADERS = [TerrariumLoader];
 
 // The encoder is mounted inside the caching stack (same nginx), so there is a
-// single source here: the caching stack's public URL. Tiles are served from
-// /api/v1/terrarium/{z}/{x}/{y}.png; health is /api/v1/terrarium/healthz.
+// single source here: the caching stack's public URL, whose base prefix is
+// runtime-configurable (getTiTilerApiBase: window.TITILER_API_BASE ->
+// VITE_TITILER_API_BASE -> '/titiler/api/v1'). Tiles are served from
+// {base}/terrarium/{z}/{x}/{y}.png; health is {base}/terrarium/healthz.
 const SOURCE = {
     label: 'Terrarium encoder',
-    baseUrl: '/titiler/api/v1/terrarium',
+    baseUrl: `${getTiTilerApiBase()}/terrarium`,
     startCommand: 'docker compose -f deploy/titiler-caching/docker-compose.yml up -d',
 };
 

@@ -60,7 +60,7 @@ function TiTilerErrorModal({
                         <div><span className="label">COG</span><span>{cogUrl}</span></div>
                     </div>
                     <div className="titiler-modal-note">
-                        Base URL is set by the endpoint switcher (top right of the map); a <code>VITE_TITILER_URL</code> override (see <code>.env.example</code>) adds a custom entry. Default is the caching stack (<code>/titiler/api/v1/titiler</code> → nginx :8001).
+                        Base URL is set by the endpoint switcher (top right of the map); a <code>VITE_TITILER_URL</code> override (see <code>.env.example</code>) adds a custom entry. Default is the caching stack (<code>/titiler/api/v1/titiler</code> → nginx :8001), whose base prefix is configurable via <code>TITILER_API_BASE</code> / <code>VITE_TITILER_API_BASE</code>.
                     </div>
                 </div>
 

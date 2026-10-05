@@ -14,6 +14,12 @@ if VITE_BASE and not VITE_BASE.startswith('/'):
 
 BACKEND_API_URL = os.environ.get('BACKEND_API_URL', '')
 CARTO_API_KEY = os.environ.get('CARTO_API_KEY', '')
+# Base prefix of the TiTiler caching stack's API, served same-origin behind this
+# app's host (nginx exposes /api/v1/titiler, /api/v1/float32, /api/v1/terrarium
+# under one prefix). Set this to the deployment's prefix, e.g.
+# TITILER_API_BASE=/titiler/api/v1 (relative, same-origin) or an absolute HTTPS
+# URL. Default '' leaves the client's bundled default (local /titiler/api/v1).
+TITILER_API_BASE = os.environ.get('TITILER_API_BASE', '')
 
 
 class SPAHandler(http.server.SimpleHTTPRequestHandler):
@@ -61,6 +67,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             f'window.VITE_BASE = {json.dumps(VITE_BASE)};',
             f'window.BACKEND_API_URL = {json.dumps(BACKEND_API_URL or None)};',
             f'window.CARTO_API_KEY = {json.dumps(CARTO_API_KEY or None)};',
+            f'window.TITILER_API_BASE = {json.dumps(TITILER_API_BASE or None)};',
             '',
         ]
         self.wfile.write('\n'.join(lines).encode())
