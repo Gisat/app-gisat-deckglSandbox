@@ -17,6 +17,14 @@ export default defineConfig({
     // to prevent "global is not defined" errors in the thrift library
     global: 'globalThis',
   },
+  optimizeDeps: {
+    // This package ships a Web Worker via `new Worker(new URL('./worker.js',
+    // import.meta.url))`. Vite's dep pre-bundling rewrites `import.meta.url`
+    // into `.vite/deps/` where the worker file does not exist, so the decoder
+    // worker fails to load and tiles never decode. Excluding it serves the
+    // worker from source so Vite transforms it correctly.
+    exclude: ['@developmentseed/geotiff'],
+  },
   server: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
@@ -24,6 +32,8 @@ export default defineConfig({
     },
   },
   worker: {
+    // The geotiff decoder worker is an ES module; Vite's default IIFE worker
+    // output is not supported for code-splitting builds.
     format: 'es',
   },
   base: '/',
