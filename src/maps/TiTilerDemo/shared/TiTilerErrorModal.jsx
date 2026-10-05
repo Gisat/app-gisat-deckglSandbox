@@ -4,7 +4,7 @@ import './TiTilerErrorModal.css';
  * Modal reporting which TiTiler endpoint is expected to run when it is
  * unreachable or returns tile errors. The endpoint + startup instructions
  * are provided by the caller and mirror the selected deployment
- * (deploy/titiler/docker-compose.yml or deploy/titiler-caching/docker-compose.yml).
+ * (deploy/titiler-caching/docker-compose.yml).
  *
  * @param {string} kind            - 'unreachable' (health probe failed) | 'tile-error' (tile requests failed)
  * @param {string} baseUrl         - resolved TiTiler base URL of the selected endpoint
@@ -60,7 +60,7 @@ function TiTilerErrorModal({
                         <div><span className="label">COG</span><span>{cogUrl}</span></div>
                     </div>
                     <div className="titiler-modal-note">
-                        Base URL is set by the endpoint switcher (top right of the map); a <code>VITE_TITILER_URL</code> override (see <code>.env.example</code>) adds a custom entry. Default is <code>http://localhost:8000</code> (plain TiTiler).
+                        Base URL is set by the endpoint switcher (top right of the map); a <code>VITE_TITILER_URL</code> override (see <code>.env.example</code>) adds a custom entry. Default is the caching stack (<code>/titiler/api/v1/titiler</code> → nginx :8001).
                     </div>
                 </div>
 

@@ -1,10 +1,12 @@
 # Server-side registered colormaps (TiTiler)
 
-This directory is mounted into **both** TiTiler stacks as `COLORMAP_DIRECTORY`
-(`/colormaps`), scanned by rio-tiler at **startup**:
+This directory is mounted into the caching TiTiler stack as
+`COLORMAP_DIRECTORY` (`/colormaps`), scanned by rio-tiler at **startup**:
 
-- `deploy/titiler/docker-compose.yml` → `./colormaps:/colormaps:ro`
-- `deploy/titiler-caching/docker-compose.yml` → `../titiler/colormaps:/colormaps:ro`
+- `deploy/titiler-caching/docker-compose.yml` → `./colormaps:/colormaps:ro`
+
+(The former plain stack `deploy/titiler/` was retired 2026-10-05; it used to
+mount this directory too, which is why it lived one level up.)
 
 Every `.json` (or `.npy`) file here registers a colormap referenced in tile URLs
 by the short `colormap_name=<file-stem>`. Because the client only sends the
@@ -53,16 +55,15 @@ via the LUT; you normally want all 256 entries present.
 1. **File stem = `colormap_name`.** `ghs_pop_transparent_low.json` →
    `colormap_name=ghs_pop_transparent_low`. Keep names lowercase, `_`-separated.
 2. **`COLORMAP_DIRECTORY` is scanned at startup only.** After adding or editing
-   a colormap, restart **both** stacks or tiles 400 with "Invalid colormap name":
+   a colormap, restart the caching stack or tiles 400 with "Invalid colormap name":
    ```bash
-   docker compose -f deploy/titiler/docker-compose.yml up -d --force-recreate
    docker compose -f deploy/titiler-caching/docker-compose.yml up -d --force-recreate
    ```
 3. **Verify registration:**
    ```bash
-   curl -s http://localhost:8000/colorMaps | grep -o <your-name>
+   curl -s http://localhost:8001/api/v1/titiler/colorMaps | grep -o <your-name>
    # or fetch the definition
-   curl -s http://localhost:8000/colorMaps/<your-name>
+   curl -s http://localhost:8001/api/v1/titiler/colorMaps/<your-name>
    ```
    (Both routes are `/colorMaps` — capital M. There is no lowercase `/colormaps`
    route; it 404s.)
@@ -83,6 +84,6 @@ via the LUT; you normally want all 256 entries present.
 `ghs_pop_transparent_low`, `uganda_blues_transparent`,
 and `worldcereal_active` are regenerated from demo source by
 `gen-demo-colormaps.mjs` (run from the repo root:
-`node deploy/titiler/colormaps/gen-demo-colormaps.mjs`) so they stay
+`node deploy/titiler-caching/colormaps/gen-demo-colormaps.mjs`) so they stay
 byte-for-byte identical to what the inline ramps used to deliver. Regenerate
 any time the client colormaps change.

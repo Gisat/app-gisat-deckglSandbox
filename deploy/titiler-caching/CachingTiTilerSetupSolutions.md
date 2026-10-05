@@ -3,6 +3,12 @@
 **Date:** 2026-09-02 · **Component:** `deploy/titiler-caching/` (nginx :8001 → TiTiler :8081, disk proxy-cache)
 **Repo:** `app-gisat-deckglSandbox` (sandbox web app + local TiTiler deploys)
 
+> **Update 2026-10-05:** the plain stack `deploy/titiler/` was retired —
+> `deploy/titiler-caching/` is the only TiTiler stack and colormaps moved to
+> `deploy/titiler-caching/colormaps/`. References to "plain"/`:8000` below are
+> historical; the PLAIN baseline in the measure scripts is now optional
+> (`PLAIN_BASE`, skipped when unreachable).
+
 Session summary of the questions raised while setting up the caching TiTiler
 stack and comparing it with the plain one — what was asked, what the actual
 answer/solution was, and where it landed. Companion docs in this directory:

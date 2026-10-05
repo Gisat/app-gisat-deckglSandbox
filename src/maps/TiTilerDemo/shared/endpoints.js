@@ -1,22 +1,14 @@
 // TiTiler endpoint definitions + shared constants/helpers for the TiTiler DEMO
-// category. One source of truth for the two local stacks and the custom
+// category. One source of truth for the local caching stack and the custom
 // override (VITE_TITILER_URL), so the endpoint switcher and the error modal
 // always agree on which stack to start.
 
-// Selectable TiTiler endpoints. 'plain' mirrors deploy/titiler/docker-compose.yml
-// (uvicorn directly on :8000); 'caching' mirrors deploy/titiler-caching/docker-compose.yml
-// (nginx :8001 -> TiTiler :8081, URL prefix /api/v1/titiler stripped by nginx).
-// The startCommand is shown by the error modal so it always tells you which
+// Selectable TiTiler endpoints. 'caching' mirrors deploy/titiler-caching/docker-compose.yml
+// (nginx :8001 -> TiTiler :8081, URL prefix /api/v1/titiler stripped by nginx); it is the
+// only local stack since deploy/titiler (plain uvicorn :8000) was retired. The
+// startCommand is shown by the error modal so it always tells you which
 // stack to start for the currently selected endpoint.
 const DEFAULT_TITILER_ENDPOINTS = {
-    plain: {
-        label: 'TiTiler (plain)',
-        // Same-origin Vite proxy path (vite.config.js server.proxy): the page is
-        // served under COEP require-corp, which blocks direct cross-origin fetches
-        // to localhost:8000. '/titiler-plain/...' -> http://localhost:8000/...
-        baseUrl: '/titiler-plain',
-        startCommand: 'docker compose -f deploy/titiler/docker-compose.yml up -d',
-    },
     caching: {
         label: 'TiTiler + cache',
         // '/titiler/api/v1/titiler/...' -> http://localhost:8001/api/v1/titiler/...
@@ -46,14 +38,16 @@ const ENDPOINT_STORAGE_KEY = 'titiler-demo-endpoint';
 
 function getInitialEndpointId() {
     // Remember the last choice across demos/reloads (comparison workflow);
-    // fall back to the VITE_TITILER_URL override when configured, else plain.
+    // fall back to the VITE_TITILER_URL override when configured, else caching.
+    // A stale stored id (e.g. 'plain' after its retirement) is ignored here and
+    // components fall back to 'caching'.
     try {
         const stored = window.localStorage.getItem(ENDPOINT_STORAGE_KEY);
         if (stored && TITILER_ENDPOINTS[stored]) return stored;
     } catch {
         /* storage unavailable (e.g. private mode) — use defaults */
     }
-    if (!CUSTOM_TITILER_URL) return 'plain';
+    if (!CUSTOM_TITILER_URL) return 'caching';
     const match = Object.keys(DEFAULT_TITILER_ENDPOINTS)
         .find(id => DEFAULT_TITILER_ENDPOINTS[id].baseUrl === CUSTOM_TITILER_URL);
     return match || 'custom';

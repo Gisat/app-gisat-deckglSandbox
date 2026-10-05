@@ -7,17 +7,16 @@
 //   - WorldCereal sparse ramp:     src/maps/TiTilerDemo/WorldCereal.jsx (inline)
 //
 // Run from the repo root:
-//   node deploy/titiler/colormaps/gen-demo-colormaps.mjs
+//   node deploy/titiler-caching/colormaps/gen-demo-colormaps.mjs
 //
-// After (re)generating, restart BOTH TiTiler stacks so COLORMAP_DIRECTORY is
-// re-scanned at startup (it is read at startup only):
-//   docker compose -f deploy/titiler/docker-compose.yml up -d --force-recreate
+// After (re)generating, restart the TiTiler caching stack so COLORMAP_DIRECTORY
+// is re-scanned at startup (it is read at startup only):
 //   docker compose -f deploy/titiler-caching/docker-compose.yml up -d --force-recreate
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const here = dirname(fileURLToPath(import.meta.url)); // .../deploy/titiler/colormaps
+const here = dirname(fileURLToPath(import.meta.url)); // .../deploy/titiler-caching/colormaps
 const root = join(here, '..', '..', '..'); // repo root
 
 // colormaps.js exports UGANDA_COLORMAP / GHS_POP_COLORMAP as

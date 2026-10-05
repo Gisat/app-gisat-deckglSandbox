@@ -72,7 +72,7 @@ const INITIAL_VIEW_STATE = {
 function MisicuniTerrain() {
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
     const [endpointId, setEndpointId] = useState(getInitialEndpointId);
-    const endpoint = TITILER_ENDPOINTS[endpointId] || TITILER_ENDPOINTS.plain;
+    const endpoint = TITILER_ENDPOINTS[endpointId] || TITILER_ENDPOINTS.caching;
     const { baseUrl, startCommand } = endpoint;
     // Bumped on endpoint switch / timing-toggle / retry to recreate the TerrainLayer
     // and force a full tile reload (fresh measurement window).
