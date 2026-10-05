@@ -122,7 +122,7 @@ function Float32Terrain() {
             loaders: ELEVATION_LOADERS,
             minZoom: 0,
             maxZoom: 14,
-            tileSize: 256,
+            tileSize: 512,  // matches the float32 encoder's TILE_SIZE (server + loader)
             color: [255, 255, 255],
             onTileLoad: handleTileLoad,
             onTileError: handleTileError,

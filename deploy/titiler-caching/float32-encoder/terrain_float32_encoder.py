@@ -61,7 +61,7 @@ COG_URL = os.environ.get(
 HALF = 20037508.342789244
 WORLD = 2.0 * HALF
 
-TILE_SIZE = 256                     # pixels per tile edge
+TILE_SIZE = 512                     # pixels per tile edge
 Z_MIN = int(os.environ.get("ENCODER_Z_MIN", "1"))
 # Cap at the COG's native detail (~30 m GLO-30). Beyond it is upsampling with
 # no added precision. Matches the cap used by MisicuniTerrain.jsx.

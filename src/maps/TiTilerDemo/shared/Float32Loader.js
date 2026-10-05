@@ -4,8 +4,9 @@ import { buildTerrainMeshFromHeights } from './terrainMeshCore';
 //
 // This is the client side of the raw float32 encoder
 // (deploy/titiler-caching/float32-encoder). The encoder serves HEADERLESS
-// little-endian IEEE-754 float32 elevation tiles, 256x256, row-major north-up
-// (256*256*4 = 262,144 bytes exactly). Heights are in METRES already — so
+// little-endian IEEE-754 float32 elevation tiles, NxN, row-major north-up
+// (N*N*4 bytes exactly; N is derived from the byte count, so the loader adapts
+// to 256 or 512 tiles). Heights are in METRES already — so
 // unlike TerrariumLoader there is NO elevationDecoder math: the byte stream is
 // a Float32Array of heights directly.
 //
@@ -48,9 +49,11 @@ export const Float32Loader = {
     },
     parse: async (arrayBuffer, options) => {
         // new Float32Array defaults to little-endian on every sane platform
-        // and is exactly the wire contract ('<f4'): 65536 values.
+        // and is exactly the wire contract ('<f4'). Side is derived from the
+        // value count so the loader adapts to whatever tile size the encoder
+        // serves (256x256 => 65536 values, 512x512 => 262144 values).
         const heights = new Float32Array(arrayBuffer);
-        const side = 256; // tiles are 256x256; 256*256 = 65536 == heights.length
+        const side = Math.round(Math.sqrt(heights.length));
         const terrainOptions = { ...DEFAULT_TERRAIN_OPTIONS, ...(options && options.terrain) };
         return buildTerrainMeshFromHeights(heights, side, side, terrainOptions);
     },
