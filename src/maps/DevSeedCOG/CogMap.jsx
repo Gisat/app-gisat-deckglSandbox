@@ -62,6 +62,22 @@ const SetAlpha1 = {
 
 const toFloat32 = (values) => (values instanceof Float32Array ? values : Float32Array.from(values));
 
+function toRgba8(data, width, height) {
+    const pixelCount = width * height;
+    if (data.length === pixelCount * 4) return data;
+    if (data.length !== pixelCount * 3) {
+        throw new Error(`Expected 3 or 4 samples per pixel, got ${data.length / pixelCount}`);
+    }
+    const rgba = new Uint8Array(pixelCount * 4);
+    for (let i = 0; i < pixelCount; i++) {
+        rgba[i * 4] = data[i * 3];
+        rgba[i * 4 + 1] = data[i * 3 + 1];
+        rgba[i * 4 + 2] = data[i * 3 + 2];
+        rgba[i * 4 + 3] = 255;
+    }
+    return rgba;
+}
+
 async function getTileArray(image, { x, y, signal, pool }) {
     const tile = await image.fetchTile(x, y, { signal, pool, boundless: false });
     const { array } = tile;
@@ -83,7 +99,14 @@ function createNearestTexture(device, data, format, width, height, convert) {
 
 async function precoloredGetTileData(image, options) {
     const { data, width, height } = await getTileArray(image, options);
-    const texture = createNearestTexture(options.device, data, 'rgba8unorm', width, height);
+    const texture = createNearestTexture(
+        options.device,
+        data,
+        'rgba8unorm',
+        width,
+        height,
+        (values) => toRgba8(values, width, height),
+    );
     return { texture, width, height };
 }
 
@@ -124,7 +147,7 @@ const panelStyle = {
     boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
 };
 
-const panelTitleStyle = { marginBottom: 8, fontWeight: 'bold' };
+const panelTitleStyle = { display: 'block', marginBottom: 8, fontWeight: 'bold' };
 
 const checkboxLabelStyle = { display: 'block', marginBottom: 4, cursor: 'pointer' };
 
@@ -170,8 +193,12 @@ function CogMap() {
     }, []);
 
     useEffect(() => {
-        if (!device || !colormapImage) return;
-        setColormapTexture(createColormapTexture(device, colormapImage));
+        if (!device || !colormapImage) return undefined;
+        const texture = createColormapTexture(device, colormapImage);
+        setColormapTexture(texture);
+        return () => {
+            texture.destroy();
+        };
     }, [device, colormapImage]);
 
     const colormappedRenderTile = useCallback(({ texture }) => {
@@ -293,8 +320,9 @@ function CogMap() {
                         </label>
                     </div>
                     <div style={panelStyle}>
-                        <div style={panelTitleStyle}>Colormap</div>
+                        <label htmlFor="colormap-select" style={panelTitleStyle}>Colormap</label>
                         <select
+                            id="colormap-select"
                             value={colormapName}
                             onChange={(e) => setColormapName(e.target.value)}
                             style={{ width: '100%', padding: 4 }}

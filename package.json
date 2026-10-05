@@ -20,6 +20,7 @@
     "@deck.gl/react": "^9.4.0",
     "@deck.gl/widgets": "^9.4.0",
     "@developmentseed/deck.gl-geotiff": "^0.8.1",
+    "@developmentseed/deck.gl-raster": "^0.8.1",
     "@duckdb/duckdb-wasm": "^1.29.0",
     "@geoarrow/deck.gl-layers": "^0.3.1",
     "@gisatcz/deckgl-geolib": "2.7.0-dev.2",
