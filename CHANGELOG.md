@@ -1,3 +1,21 @@
+## [1.9.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.9.0...v1.9.1) (2026-10-05)
+
+### Bug Fixes
+
+* **deckgl-raster:** patch luma Texture static field to fix prod crash ([e2dedbc](https://github.com/Gisat/app-gisat-deckglSandbox/commit/e2dedbc74552a79ed9cbecb8c80c159beb5cf83c))
+
+## [1.9.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.8.0...v1.9.0) (2026-10-05)
+
+### Features
+
+* **deckgl-raster:** add runtime-colormapped COG layer ([0682176](https://github.com/Gisat/app-gisat-deckglSandbox/commit/06821760c3f6699c9905f6b68a137f796401395f))
+* **deckgl-raster:** upgrade @developmentseed/deck.gl-geotiff to 0.8.1 ([f806c99](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f806c998157c20a07ce11cbe01c2ab90f3570ef9))
+
+### Bug Fixes
+
+* **deckgl-raster:** address Copilot review feedback ([8b9b280](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8b9b280367735203a90aed49b98e27081d201c1a))
+* **deps:** restore peer deps in package-lock so npm ci passes ([8fb5fbb](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8fb5fbbc814dd23a8bffcd86183316ce2ebb889b))
+
 ## [1.8.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.7.2...v1.8.0) (2026-09-27)
 
 ### Features
