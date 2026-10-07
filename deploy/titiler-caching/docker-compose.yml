@@ -1,0 +1,116 @@
+services:
+  titiler:
+    image: ghcr.io/developmentseed/titiler:latest
+    command: >-
+      uvicorn titiler.application.main:app
+      --host 0.0.0.0 --port 8081 --workers 2
+      --proxy-headers --forwarded-allow-ips='*'
+      --root-path=/api/v1/titiler
+    volumes:
+      # local COGs (remote https:// / s3:// URLs work without any mount)
+      - ./data:/data:ro
+      # Server-side registered colormaps (COLORMAP_DIRECTORY, scanned at startup).
+      # Lives with the plain stack (../titiler/colormaps) so both instances register
+      # the same colormap_name. The GHS transparent-low ramp keeps the tile query
+      # short -> nginx tile cache (proxy_cache_key = full $args) engages.
+      - ../titiler/colormaps:/colormaps:ro
+    environment:
+      - COLORMAP_DIRECTORY=/colormaps
+      # GDAL/VSI: fast COG reads
+      - CPL_TMPDIR=/tmp
+      - GDAL_CACHEMAX=75%
+      - GDAL_INGESTED_BYTES_AT_OPEN=32768
+      - GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_VERSION=2
+      - PYTHONWARNINGS=ignore
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      # Cache-Control sent to clients AND the max-age nginx honours for storage.
+      # 3600 = 1h. Raise it if your COGs change rarely.
+      - TITILER_API_CACHECONTROL=public, max-age=3600
+      - TITILER_API_TELEMETRY_ENABLED=False
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # Terrarium elevation-tile encoder (Mapzen-style): a SIBLING tile producer
+  # to TiTiler that reads the same public float32 COG directly via rasterio /
+  # vsicurl/ and packs {z}/{x}/{y}.png in Terrarium RGB (no host port — reached
+  # only through nginx at /api/v1/terrarium/).
+  terrarium:
+    build:
+      context: ./terrarium-encoder
+    container_name: titiler-terrarium
+    expose:
+      - "8000"                       # internal only; nothing maps to a host port
+    environment:
+      - ENCODER_COG_URL=https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif
+      - ENCODER_CLAMP=32768
+      # GDAL /vsicurl/ tuning mirrors the titiler service in this stack
+      - CPL_TMPDIR=/tmp
+      - GDAL_CACHEMAX=75%
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_VERSION=2
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  # Raw float32 elevation-tile encoder: a SIBLING tile producer to TiTiler and
+  # the terrarium encoder that reads the same public float32 COG directly via
+  # rasterio /vsicurl/ and serves {z}/{x}/{y}.f32 as a HEADERLESS little-endian
+  # float32 stream (256*256*4 = 262,144 bytes, row-major north-up, heights in
+  # metres, NaN/masked filled with 0.0). No host port — reached only through
+  # nginx at /api/v1/float32/. No PIL: there is no image pipeline; this is
+  # what lets the client bypass the color-managed PNG path entirely.
+  float32:
+    build:
+      context: ./float32-encoder
+    container_name: titiler-float32
+    expose:
+      - "8000"                       # internal only; nothing maps to a host port
+    environment:
+      - ENCODER_COG_URL=https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif
+      # GDAL /vsicurl/ tuning mirrors the titiler/terrarium services in this stack
+      - CPL_TMPDIR=/tmp
+      - GDAL_CACHEMAX=75%
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_VERSION=2
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8001:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      # persistent tile cache across container restarts
+      - tile-cache:/var/cache/nginx
+    depends_on:
+      titiler:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  tile-cache:

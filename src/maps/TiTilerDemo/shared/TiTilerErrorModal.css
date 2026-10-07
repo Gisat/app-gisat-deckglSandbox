@@ -1,0 +1,195 @@
+/* TiTiler error modal (TiTiler DEMO) — light theme matching the app's UI */
+
+.titiler-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background-color: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.titiler-modal-card {
+    width: 560px;
+    max-width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.titiler-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.titiler-modal-title {
+    font-weight: 600;
+    font-size: 16px;
+    color: #333;
+}
+
+.titiler-modal-close {
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+    color: #666;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.titiler-modal-close:hover {
+    background-color: #f0f0f0;
+    color: #333;
+}
+
+.titiler-modal-intro {
+    font-size: 13px;
+    color: #555;
+    margin: 0;
+    line-height: 1.5;
+}
+
+.titiler-modal-section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #888;
+    margin: 0 0 6px;
+}
+
+.titiler-modal-endpoint {
+    background-color: #f7f8fa;
+    border: 1px solid #e5e8ec;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 12px;
+    color: #2c3e50;
+    word-break: break-all;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.titiler-modal-endpoint > div {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+}
+
+.titiler-modal-endpoint .label {
+    color: #888;
+    flex-shrink: 0;
+    min-width: 90px;
+}
+
+.titiler-modal-command {
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 12px;
+    word-break: break-all;
+    margin: 0;
+}
+
+.titiler-modal-note {
+    font-size: 12px;
+    color: #666;
+    margin-top: 6px;
+    line-height: 1.5;
+}
+
+.titiler-modal-note code {
+    font-family: 'Roboto Mono', monospace;
+    font-size: 11px;
+    background-color: #f0f2f4;
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: #2c3e50;
+}
+
+.titiler-modal-error {
+    background-color: #fdf3f3;
+    border: 1px solid #f2d4d4;
+    color: #a33;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.titiler-modal-error-detail {
+    margin-top: 4px;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 11px;
+}
+
+.titiler-modal-warning {
+    background-color: #fff8e6;
+    border: 1px solid #f0e0b8;
+    color: #8a6d1a;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.titiler-modal-warning code {
+    font-family: 'Roboto Mono', monospace;
+    font-size: 11px;
+}
+
+.titiler-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.titiler-modal-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.titiler-modal-btn-primary {
+    background-color: #2c3e50;
+    color: #fff;
+}
+
+.titiler-modal-btn-primary:hover:not(:disabled) {
+    background-color: #1f2d3a;
+}
+
+.titiler-modal-btn-secondary {
+    background-color: #eef1f4;
+    color: #333;
+}
+
+.titiler-modal-btn-secondary:hover:not(:disabled) {
+    background-color: #e0e5ea;
+}
+
+.titiler-modal-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}

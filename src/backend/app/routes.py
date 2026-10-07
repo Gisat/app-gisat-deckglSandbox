@@ -1,19 +1,39 @@
 
 from flask import Blueprint, request, jsonify, send_file
-from .db import Database
+from .db import db
 import io
-import json
 import pyarrow as pa
 import traceback
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 
+# Column names that may be interpolated into SQL from request args. The
+# frontend only ever sends this set (see the ArrowLODTileLayer columnMap in
+# src/layers/ArrowLODTileLayer.js + the DuckDB demo maps). Anything else is
+# rejected rather than interpolated, so request args can never inject raw SQL.
+ALLOWED_COLUMNS = {
+    'latitude', 'longitude', 'height', 'size', 'color',
+    'mean_velocity', 'displacements', 'dates', 'y', 'x',
+    'mean_velocity_std', 'los_up', 'los_east', 'los_north',
+    'rmse', 'acceleration', 'seasonality', 'pid', 'tier_id', 'tile_x', 'tile_y',
+}
+
+
+def _safe_column(value, default):
+    """Return `value` if it is a known data column, else `default`.
+
+    Guards against SQL injection / invalid identifiers from request args by
+    only ever emitting allowlisted names into the SELECT list.
+    """
+    return value if value in ALLOWED_COLUMNS else default
+
+
 @bp.route('/dates', methods=['GET'])
 def get_dates():
     try:
-        db = Database()  # Uses GEOPARQUET_PATH from environment only
+        conn = db.get_conn()  # shared module-level DuckDB connection
         query = "SELECT dates FROM egms_data LIMIT 1"
-        dates_list_objects = db.get_conn().execute(query).fetchone()[0]
+        dates_list_objects = conn.execute(query).fetchone()[0]
         dates_list_strings = [d.strftime('%Y-%m-%d') for d in dates_list_objects]
         return jsonify(dates_list_strings)
     except Exception as e:
@@ -22,20 +42,19 @@ def get_dates():
 @bp.route('/data', methods=['GET'])
 def get_data():
     try:
-        db = Database()  # Uses GEOPARQUET_PATH from environment only
+        conn = db.get_conn()  # shared module-level DuckDB connection
         tile_x = request.args.get('tile_x', type=int)
         tile_y = request.args.get('tile_y', type=int)
         date_index = request.args.get('date_index', type=int, default=0)
         mode = request.args.get('mode', type=str, default='static')
         target_tier = request.args.get('tier', type=int, default=0)
         is_3d = request.args.get('is3D') == 'true'
-        latitude_col = request.args.get('latitude_col', 'y')
-        longitude_col = request.args.get('longitude_col', 'x')
-        height_col = request.args.get('height_col', 'height')
-        size_col = request.args.get('size_col', 'mean_velocity')
-        color_col = request.args.get('color_col', 'color')
-        dates_col = request.args.get('dates_col', 'dates')
-        displacements_col = request.args.get('displacements_col', 'displacements')
+        # Allowlist column names so request args can never inject raw SQL.
+        latitude_col = _safe_column(request.args.get('latitude_col', 'y'), 'y')
+        longitude_col = _safe_column(request.args.get('longitude_col', 'x'), 'x')
+        height_col = _safe_column(request.args.get('height_col', 'height'), 'height')
+        size_col = _safe_column(request.args.get('size_col', 'mean_velocity'), 'mean_velocity')
+        displacements_col = _safe_column(request.args.get('displacements_col', 'displacements'), 'displacements')
 
         db_index = date_index + 1
 
@@ -67,7 +86,7 @@ def get_data():
             """
             final_params = [tile_x, tile_y, target_tier]
 
-        arrow_table = db.get_conn().execute(query, final_params).fetch_arrow_table()
+        arrow_table = conn.execute(query, final_params).fetch_arrow_table()
 
         output_buffer = io.BytesIO()
         with pa.ipc.RecordBatchStreamWriter(output_buffer, arrow_table.schema) as writer:
@@ -128,10 +147,10 @@ def select_by_geometry():
         geometry = body.get('geometry')
         metrics = body.get('metrics', [])
         zoom = body.get('zoom', 12)
-        latitude_col = body.get('latitude_col', 'y')
-        longitude_col = body.get('longitude_col', 'x')
+        latitude_col = _safe_column(body.get('latitude_col', 'y'), 'y')
+        longitude_col = _safe_column(body.get('longitude_col', 'x'), 'x')
 
-        db = Database()
+        conn = db.get_conn()  # shared module-level DuckDB connection
 
         # Validate requested metrics against a safelist of allowed columns
         allowed_metrics = [
@@ -158,7 +177,7 @@ def select_by_geometry():
         if point_ids and len(point_ids) > 0:
             placeholders = ','.join(['?' for _ in point_ids])
             query = f"SELECT {select_cols} FROM egms_data WHERE pid IN ({placeholders})"
-            result = db.get_conn().execute(query, point_ids).fetchall()
+            result = conn.execute(query, point_ids).fetchall()
 
         # **LEGACY**: Query by geometry
         elif geometry:

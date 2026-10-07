@@ -14,11 +14,11 @@ def create_app():
     from . import routes
     app.register_blueprint(routes.bp)
 
-    # Initialize Database Singleton within app context
-    # This ensures the database connection is created when the app starts.
-    with app.app_context():
-        from . import db
-        db.Database()
+    # Importing the db module eagerly opens the shared DuckDB connection
+    # (db.py builds the module-level singleton Database() at import time, which
+    # reads the geoparquet once and reuses it for every request — no per-request
+    # reloads). This explicit import also surfaces a bad GEOPARQUET_PATH early.
+    from . import db  # noqa: F401
 
     return app
 
