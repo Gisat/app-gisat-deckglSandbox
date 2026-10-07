@@ -24,7 +24,7 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 - `src/components/` — Shared React components (HUD, playback controls, point selection)
 - `src/backend/` — Flask backend API (DuckDB/GeoParquet serving; see `src/backend/README.md`)
 - `src/App.jsx` — Main app and router
-- `deploy/` — Deployment stacks: `deploy/titiler` (TiTiler + colormap generation, see `deploy/titiler/USAGE.md`) and `deploy/titiler-caching` (nginx + tile encoders, see its `USAGE.md`)
+- `deploy/` — Deployment stacks: `deploy/titiler-combined` (recommended: one TiTiler served directly and via nginx cache; see its `USAGE.md`), `deploy/titiler` (plain TiTiler + colormap generation) and `deploy/titiler-caching` (nginx + tile encoders)
 
 ## Build & Deploy
 
