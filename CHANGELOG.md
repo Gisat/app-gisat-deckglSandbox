@@ -1,3 +1,29 @@
+## [1.10.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.9.1...v1.10.0) (2026-10-07)
+
+### Features
+
+* complete TiTiler DEMO review items (P0 [#2](https://github.com/Gisat/app-gisat-deckglSandbox/issues/2)/[#3](https://github.com/Gisat/app-gisat-deckglSandbox/issues/3), P1 [#6](https://github.com/Gisat/app-gisat-deckglSandbox/issues/6), P2 [#7](https://github.com/Gisat/app-gisat-deckglSandbox/issues/7)-9) ([4365f0e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/4365f0ea3db5a4e077df1f3af4ecc773a550cc77)), closes [#7-9](https://github.com/Gisat/app-gisat-deckglSandbox/issues/7-9) [#1](https://github.com/Gisat/app-gisat-deckglSandbox/issues/1) [#8](https://github.com/Gisat/app-gisat-deckglSandbox/issues/8) [#9](https://github.com/Gisat/app-gisat-deckglSandbox/issues/9)
+* TiTiler DEMO category — serve COG tiles via TiTiler (Nepal snow, Uganda multiband, Manila RGB) ([1a71fd7](https://github.com/Gisat/app-gisat-deckglSandbox/commit/1a71fd74f53053522a13950f0983842d4cbebcff))
+* **titiler-caching:** add per-dataset tile-cache latency benchmarks ([9549a82](https://github.com/Gisat/app-gisat-deckglSandbox/commit/9549a82a7510593d8ae89b92e118adb97fb58b7f))
+* **titiler-caching:** add raw float32 elevation-tile encoder demo ([623b3f7](https://github.com/Gisat/app-gisat-deckglSandbox/commit/623b3f797f3d875f74e9a39b5919e0e28e1fc6c8)), closes [#10400](https://github.com/Gisat/app-gisat-deckglSandbox/issues/10400)
+* **titiler-caching:** add Terrarium elevation-tile encoder ([81c9bbe](https://github.com/Gisat/app-gisat-deckglSandbox/commit/81c9bbe6a2a21abee1369f3aa7069b916508ba3e))
+* **titiler-combined:** add single-TiTiler deploy stack and production nginx example ([3857b8f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/3857b8f63adfa285dc336817169528dbe471f802))
+* **titiler-demo:** add Terrarium Terrain demo (native TerrainLayer) ([c0720c3](https://github.com/Gisat/app-gisat-deckglSandbox/commit/c0720c393c8acc906c956e4b5ff82e80e32fc7cb))
+* **titiler-demo:** add WorldCereal active cropland & GHS population density demos ([33f8694](https://github.com/Gisat/app-gisat-deckglSandbox/commit/33f8694d78b729da2cb81ca2d00bd8ef1d6e92d6))
+* **titiler-demo:** Misicuni DEM as native deck.gl TerrainLayer from TiTiler grayscale tiles ([746aa56](https://github.com/Gisat/app-gisat-deckglSandbox/commit/746aa562dafaaa36820ee1cb7242016151f97082))
+* **titiler-demo:** modal reporting expected TiTiler endpoint on errors ([686a29f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/686a29f311b4f134a409ebebae081c82d97eafb2))
+* **titiler-demo:** TiTiler endpoint switcher + nginx-cached stack ([cd380d1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/cd380d144feb2de106b4eed5081ace2d8f5641fd))
+* **titiler-demo:** Uganda band slider — per-request COG band switching ([67b62dd](https://github.com/Gisat/app-gisat-deckglSandbox/commit/67b62dd6116f0d5631cd3df48ed86dc43c343591))
+
+### Bug Fixes
+
+* **titiler-caching:** remove dead $no_cache conditional in encoder blocks (P2 [#9](https://github.com/Gisat/app-gisat-deckglSandbox/issues/9)) ([4496237](https://github.com/Gisat/app-gisat-deckglSandbox/commit/4496237a3f0d71fbc453f51b222f6d881a7b6b92))
+* **titiler-demo:** make the nginx tile cache engage reliably ([630bee9](https://github.com/Gisat/app-gisat-deckglSandbox/commit/630bee99c4b9ade826b1da214c5243f317f39f57))
+* **titiler-demo:** narrow Vite proxy to /titiler/api to fix hard-reload 404 ([484766a](https://github.com/Gisat/app-gisat-deckglSandbox/commit/484766aee1a0902bd2c52a411fdd88053530f3c2))
+* **titiler-demo:** proxy TiTiler through the Vite dev server (COEP) ([70cb497](https://github.com/Gisat/app-gisat-deckglSandbox/commit/70cb4970a4aea32e426286a16b52cec11c710cd8))
+* **titiler-demo:** server-side transparent-low colormap via COLORMAP_DIRECTORY ([aca8843](https://github.com/Gisat/app-gisat-deckglSandbox/commit/aca8843017159f6de9049e09dfe1cc1fbf2daca9))
+* **titiler-demo:** transparent no-data background on all Uganda bands ([d741338](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d741338f328c253e502802a1252c605701743e40))
+
 ## [1.9.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.9.0...v1.9.1) (2026-10-05)
 
 ### Bug Fixes
