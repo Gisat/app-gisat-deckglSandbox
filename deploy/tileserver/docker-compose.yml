@@ -1,0 +1,72 @@
+# Tileserver-RS demo stack — STAC discovery + mosaic compositing + caching.
+#
+# Image: BUILT FROM ../tileserver-rs (branch feat/identity-raster-cache, which
+#        adds identity raster-tile caching to the global [cache]) — the published
+#        ghcr.io/vinayakkulkarni/tileserver-rs does NOT yet cache plain PNG
+#        raster tiles, and "caching utilized" is part of the demo motivation.
+#        The Dockerfile there includes the `stac` feature (implies raster/GDAL).
+#        NOTE: the repo has uninitialized submodules — the build checks them
+#        out itself (submodules: recursive is in .github; plain `docker build`
+#        needs the maplibre-native vendor only for mbgl — see USAGE.md
+#        "Building the image" if the build fails on it).
+#
+# Sources (see config.toml):
+#   worldcereal      — same COG as the TiTiler WorldCereal demo, discrete
+#                      server-side colormap (public WorldCereal STAC API is dead)
+#   sentinel2-mosaic — Earth Search STAC, dynamic per-tile /search + mosaic
+#
+# Start:   docker compose -f deploy/tileserver/docker-compose.yml up -d --build
+# Health:  curl http://localhost:8080/health
+# Tiles:   http://localhost:8080/data/worldcereal/{z}/{x}/{y}.png
+#          http://localhost:8080/data/sentinel2-mosaic/{z}/{x}/{y}.png
+#
+# The sandbox app reaches it same-origin via the Vite dev-server proxy
+# '/tileserver' -> http://localhost:8080 (COEP-safe; see vite.config.js).
+
+services:
+  tileserver:
+    # Build from the local tileserver-rs checkout (with the cache patch) so the
+    # demo exercises the full feature set. Resolved relative to THIS compose
+    # file (deploy/tileserver/): ../../../tileserver-rs = the sibling repo
+    # DynamicServerSideTiles/tileserver-rs (checkout must be on the
+    # feat/identity-raster-cache branch).
+    build:
+      context: ../../../tileserver-rs
+      args:
+        FEATURES: "frontend stac"
+    image: tileserver-rs-demo:local
+    container_name: tileserver-rs-demo
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+      # GDAL /vsicurl/ tuning for the remote COG + Earth Search STAC assets.
+      # From the verified analysis in DynamicServerSideTiles/TITILER_VS_TILESERVER_RS.md §5.
+      - GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
+      - CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.TIF,.tiff
+      - CPL_VSIL_CURL_CACHE_SIZE=536870912
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=5000000
+      - GDAL_CACHEMAX=200
+      - GDAL_BAND_BLOCK_CACHE=HASHSET
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_VERSION=2
+      # Do NOT set GDAL_INGESTED_BYTES_AT_OPEN here: the COG path re-opens per
+      # overview level, so ingest-at-open = a full-file download per tile.
+    # Default CMD from the image: ./tileserver-rs --config /app/config.toml
+    # (entrypoint boots Xvfb for headless GL, then exec "$@").
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"

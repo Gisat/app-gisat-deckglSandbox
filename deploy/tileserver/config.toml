@@ -1,0 +1,111 @@
+# ============================================================================
+# tileserver-rs configuration — Tileserver-RS demo sources
+#
+# Motivation: demonstrate STAC discovery, mosaicing, and in-process caching.
+#
+# Two sources:
+#   1. worldcereal      — the SAME COG the TiTiler WorldCereal demo uses,
+#                         served by tileserver-rs with a server-side discrete
+#                         colormap (faithful "alternative" to the TiTiler demo).
+#                         Served as a plain `cog` source because the public
+#                         WorldCereal STAC API is DEAD: stac.worldcereal.org is
+#                         NXDOMAIN (authoritative, checked 2026-10-13 via DoH),
+#                         hub.esa-worldcereal.org is a web SPA, rdm.* /
+#                         worldcerealstac.zcu.cz do not resolve.
+#   2. sentinel2-mosaic — TRUE STAC demo: Earth Search (element84) Sentinel-2
+#                         L2A, dynamic per-tile /search + mosaic compositing.
+#
+# Tiles:    /data/{source-id}/{z}/{x}/{y}.png
+# TileJSON: /data/{source-id}.json
+# ============================================================================
+
+[server]
+host = "0.0.0.0"
+port = 8080
+cors_origins = ["*"]
+
+[telemetry]
+enabled = false
+
+# ---------------------------------------------------------------------------
+# Global raster defaults (the `stac` feature implies `raster`/GDAL).
+# ---------------------------------------------------------------------------
+[raster]
+default_resampling = "bilinear"
+tile_size = 256
+
+# ---------------------------------------------------------------------------
+# In-process byte-weighted tile cache (moka). With the identity-raster-cache
+# patch (../tileserver-rs, branch feat/identity-raster-cache — built into the
+# compose image), this cache serves canonical /data/{id}/{z}/{x}/{y}.png
+# requests for BOTH sources below. Without the patch (published ghcr.io
+# image), only Accept-Encoding re-encode variants are cached.
+#
+# ttl_seconds trades freshness vs cost: dynamic STAC tiles freeze for the TTL.
+# ---------------------------------------------------------------------------
+[cache]
+enabled = true
+max_size_mb = 512
+ttl_seconds = 3600
+
+# ---------------------------------------------------------------------------
+# Source 1: WorldCereal Active Cropland (same COG as the TiTiler demo)
+#
+# Single-band uint8, EPSG:3857, native zoom 14. Legend (from COG tags):
+#   0 = not active, 100 = active cropland, 254 = "No crop", 255 = nodata.
+# The discrete colormap mirrors deploy/titiler/colormaps/worldcereal_active.json
+# (0 gray #cfcfcf, 100 green #1a9641, 254/255 transparent) so both demos look
+# identical. `nearest` resampling is mandatory for categorical data
+# (interpolating class ids produces nonsense colors).
+#
+# tileserver-rs applies [sources.colormap] only when band_count == 1 —
+# satisfied here (single band).
+# ---------------------------------------------------------------------------
+[[sources]]
+id = "worldcereal"
+type = "cog"
+path = "https://gisat-data.eu-central-1.linodeobjects.com/WorldCereal_GST-10/project/demo/merged_cog.tif"
+name = "WorldCereal Active Cropland 2021 (tc-maize-main)"
+attribution = "ESA WorldCereal 2021 tc-maize-main V1.0.0"
+resampling = "nearest"
+minzoom = 0
+maxzoom = 14
+
+[sources.colormap]
+map_type = "discrete"
+nodata_color = "#00000000"
+entries = [
+  { value = 0.0,   color = "#cfcfcf" },   # not active — gray (matches TiTiler demo)
+  { value = 100.0, color = "#1a9641" },   # active cropland — green
+  { value = 254.0, color = "#00000000" }, # "No crop" — transparent
+  { value = 255.0, color = "#00000000" }, # nodata — transparent
+]
+
+# ---------------------------------------------------------------------------
+# Source 2: Sentinel-2 L2A via Earth Search STAC — dynamic mosaic
+#
+# dynamic = true: EVERY tile request triggers a STAC POST /search with the
+# tile's WGS-84 bbox. max_items = 5: up to 5 intersecting items are rendered
+# concurrently and composited (Phase 3 mosaic); a single intersecting item
+# renders directly (Phase 2). pixel_selection = "first": first opaque pixel
+# wins, short-circuits (lowest latency). Other options: lowest_cloud_cover,
+# most_recent, mean, median, stdev — see
+# ../tileserver-rs/apps/docs/content/4.guides/15.stac.md.
+#
+# stac_bbox anchors the source bounds exposed to clients (TileJSON); per-tile
+# search still uses the actual tile bbox. Region: South Sudan / East Africa.
+# asset_role = "visual": the true-color 3-band JPEG asset (verified live on
+# Earth Search items) — renders as RGB, no colormap (colormap requires 1 band).
+# ---------------------------------------------------------------------------
+[[sources]]
+id = "sentinel2-mosaic"
+type = "stac"
+path = "https://earth-search.aws.element84.com/v1"
+collection = "sentinel-2-l2a"
+asset_role = "visual"
+dynamic = true
+max_items = 5
+pixel_selection = "first"
+stac_bbox = [26.0, 4.5, 27.0, 5.5]
+minzoom = 0
+maxzoom = 14
