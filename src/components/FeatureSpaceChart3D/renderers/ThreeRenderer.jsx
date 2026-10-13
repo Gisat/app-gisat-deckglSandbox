@@ -107,9 +107,13 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
         camera={{ position: [3, 2.4, 3], fov: 45, near: 0.1, far: 100 }}
         dpr={[1, 2]}
         gl={{ alpha: true, antialias: true }}
+        // r3f defaults to ACES Filmic tone mapping, which shifts hue/saturation
+        // of every colour and would make these points disagree with the map,
+        // deck.gl and Plotly (none of which tone-map). `flat` disables it.
+        flat
       >
-        <ambientLight intensity={0.85} />
-        <directionalLight position={[5, 8, 6]} intensity={1.15} />
+        <ambientLight intensity={0.45} />
+        <directionalLight position={[5, 8, 6]} intensity={0.55} />
         <Axes domains={domains} axes={axes} />
         {markerStyle === 'billboard' ? (
           <BillboardPoints data={data} hovered={hovered} onPick={handlePick} />
@@ -163,6 +167,11 @@ function BillboardPoints({ data, hovered, onPick }) {
             float alpha = 1.0 - smoothstep(0.5 - edge, 0.5, d);
             if (alpha <= 0.0) discard;
             gl_FragColor = vec4(vColor, alpha);
+            // aColor is stored in linear space (THREE.Color converts the sRGB
+            // hex on assignment), so run the same output transform the built-in
+            // materials use or the discs render too dark/oversaturated.
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
           }
         `,
       }),
