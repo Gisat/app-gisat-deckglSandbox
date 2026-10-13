@@ -1,0 +1,146 @@
+# TiTiler DEMO — single-TiTiler deployment.
+#
+# ONE TiTiler instance, reachable two ways:
+#   DIRECT (uncached)   http://localhost:8000                          -> titiler:8000
+#   CACHED  (nginx)     http://localhost:8001/api/v1/titiler/...       -> nginx:8001 -> titiler:8000
+# It is literally the same container in both cases; nginx is a proxy in
+# front of it, not a second renderer. This replaces running deploy/titiler and
+# deploy/titiler-caching together (which started two TiTiler containers).
+#
+# Also includes the two sibling elevation encoders (terrarium, float32) so the
+# whole "TiTiler DEMO" category works. They are NOT TiTiler instances: they read
+# the DEM COG directly and are reached only through nginx.
+#
+# Start:   docker compose -f deploy/titiler-combined/docker-compose.yml up -d --build
+# Health:  curl http://localhost:8000/healthz                       # direct
+#          curl http://localhost:8001/healthz                       # via nginx
+#          curl http://localhost:8001/api/v1/terrarium/healthz      # encoder
+#          curl http://localhost:8001/api/v1/float32/healthz        # encoder
+#
+# See USAGE.md for the full guide (endpoints, caching, app wiring).
+
+services:
+  # ---- the single TiTiler ----
+  titiler:
+    image: ghcr.io/developmentseed/titiler:latest
+    container_name: titiler-combined
+    restart: unless-stopped
+    # Published directly for UNCACHED/plain access. nginx (below) proxies to
+    # the SAME service over the compose network — no second TiTiler.
+    ports:
+      - "8000:8000"
+    command: >-
+      uvicorn titiler.application.main:app
+      --host 0.0.0.0 --port 8000 --workers 2
+      --proxy-headers --forwarded-allow-ips=*
+    volumes:
+      # Server-side registered colormaps (COLORMAP_DIRECTORY, scanned at startup).
+      # Reused from the canonical colormap dir so the demo queries stay short and
+      # cacheable. Restart this service after editing any colormap.
+      - ../titiler/colormaps:/colormaps:ro
+      # Optional local COGs; remote https:// / s3:// URLs need no mount.
+      - ./data:/data:ro
+    environment:
+      - COLORMAP_DIRECTORY=/colormaps
+      # Browser may hit it cross-origin in dev; the app proxy is same-origin anyway.
+      - TITILER_API_CORS_ORIGIN=*
+      # Cache-Control sent to clients AND the max-age nginx honours for storage.
+      - TITILER_API_CACHECONTROL=public, max-age=3600
+      # GDAL /vsicurl/ tuning for the remote public COGs.
+      - CPL_TMPDIR=/tmp
+      - GDAL_CACHEMAX=75%
+      - GDAL_INGESTED_BYTES_AT_OPEN=32768
+      - GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_VERSION=2
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      - PYTHONWARNINGS=ignore
+      - TITILER_API_TELEMETRY_ENABLED=False
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ---- Mapzen Terrarium RGB elevation-tile encoder (sibling, not TiTiler) ----
+  terrarium:
+    build:
+      context: ../titiler-caching/terrarium-encoder
+    image: titiler-terrarium-encoder
+    container_name: titiler-combined-terrarium
+    expose:
+      - "8000"                       # internal only; reached through nginx
+    environment:
+      - ENCODER_COG_URL=https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif
+      - ENCODER_CLAMP=32768
+      - CPL_TMPDIR=/tmp
+      - GDAL_CACHEMAX=75%
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_VERSION=2
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  # ---- raw headerless little-endian float32 elevation-tile encoder (sibling) ----
+  float32:
+    build:
+      context: ../titiler-caching/float32-encoder
+    image: titiler-float32-encoder
+    container_name: titiler-combined-float32
+    expose:
+      - "8000"                       # internal only; reached through nginx
+    environment:
+      - ENCODER_COG_URL=https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_UTM19N_geodetic_points_CL_MS_MR_GST_merge_update_cog_bilinear.tif
+      - CPL_TMPDIR=/tmp
+      - GDAL_CACHEMAX=75%
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_VERSION=2
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  # ---- nginx: ONLY host-exposed caching entry point ----
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: titiler-combined-nginx
+    ports:
+      - "8001:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - tile-cache:/var/cache/nginx
+    # nginx resolves upstreams by name at STARTUP, so wait for all three
+    # upstreams before it starts (avoids "host not found in upstream" crashes).
+    depends_on:
+      titiler:
+        condition: service_healthy
+      terrarium:
+        condition: service_healthy
+      float32:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  # persistent tile cache across restarts (`down -v` to clear it)
+  tile-cache:
