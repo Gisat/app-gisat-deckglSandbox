@@ -5,7 +5,7 @@ renderers were built behind one switcher (`renderer="plotly" | "deckgl" | "three
 sharing the same data, axis, preset, colour and hover state.
 
 - **Module:** `src/components/FeatureSpaceChart3D/`
-- **Mounted in:** `src/maps/SelectionDrawing3D/index.jsx` (toggle button, docked right panel)
+- **Mounted in:** `src/maps/FeatureScatterChart3D/index.jsx` (toggle button, docked right panel)
 - **Presets:** Kinematic, Topographic, Custom (free X/Y/Z/color/size)
 - **Data:** GeoJSON features from `applySelection` (`feature.properties.*`)
 

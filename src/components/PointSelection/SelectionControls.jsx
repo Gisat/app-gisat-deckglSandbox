@@ -15,6 +15,7 @@
  * @param {Function} props.onBufferChange - Called with new buffer distance
  * @param {boolean} props.showLineProfileChart - Whether the 2D line profile chart is shown
  * @param {Function} props.onShowLineProfileChartChange - Called with new checkbox value
+ * @param {boolean} props.showLineProfileToggle - Whether to render the "2D Profile" checkbox (default: true)
  * @param {string} props.top - Top position (default: '130px')
  * @param {string} props.left - Left position (default: '10px')
  */
@@ -29,6 +30,7 @@ export function SelectionControls({
     onBufferChange,
     showLineProfileChart,
     onShowLineProfileChartChange,
+    showLineProfileToggle = true,
     top = '130px',
     left = '10px'
 }) {
@@ -88,18 +90,20 @@ export function SelectionControls({
                         <label style={{ fontSize: '11px', fontWeight: '500' }}>
                             Buffer: {bufferDistance}m
                         </label>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <input
-                                type="checkbox"
-                                id="showLineProfileCheckbox"
-                                checked={showLineProfileChart}
-                                onChange={(e) => onShowLineProfileChartChange(e.target.checked)}
-                                style={{ cursor: 'pointer', width: '14px', height: '14px' }}
-                            />
-                            <label htmlFor="showLineProfileCheckbox" style={{ cursor: 'pointer', fontSize: '11px', userSelect: 'none', whiteSpace: 'nowrap' }}>
-                                2D Profile
-                            </label>
-                        </div>
+                        {showLineProfileToggle && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <input
+                                    type="checkbox"
+                                    id="showLineProfileCheckbox"
+                                    checked={showLineProfileChart}
+                                    onChange={(e) => onShowLineProfileChartChange(e.target.checked)}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px' }}
+                                />
+                                <label htmlFor="showLineProfileCheckbox" style={{ cursor: 'pointer', fontSize: '11px', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                                    2D Profile
+                                </label>
+                            </div>
+                        )}
                     </div>
                     {/* Buffer Distance Slider */}
                     <input
