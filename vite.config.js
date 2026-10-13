@@ -103,6 +103,21 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/titiler/, ''),
       },
+      // tileserver-rs stack (Tileserver-RS DEMO): '/tileserver-api/data/...'
+      // -> http://localhost:8080/data/...
+      //
+      // WHY '/tileserver-api' AND NOT '/tileserver': the SPA has app routes
+      // that begin with '/tileserver' (/tileserver-worldcereal,
+      // /tileserver-sentinel2-mosaic) — the exact collision documented above
+      // for '/titiler'. A bare '/tileserver' prefix would make Vite proxy
+      // those app routes to the tile server on hard reload. All real stack
+      // URLs live under /tileserver-api, so the narrow prefix kills the
+      // collision.
+      '/tileserver-api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/tileserver-api/, ''),
+      },
     },
   },
   worker: {
