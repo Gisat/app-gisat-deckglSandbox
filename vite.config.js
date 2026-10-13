@@ -1,7 +1,14 @@
-import { defineConfig } from 'vite'
+import { defineConfig, logger } from 'vite'
 import react from '@vitejs/plugin-react'
 import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
+
+// @developmentseed/affine and @developmentseed/geotiff publish sourcemaps whose
+// `sources` point at .ts files that are stripped from the npm tarball; Vite's
+// dev server logs noisy "points to missing source files" warnings on every
+// startup. The packages work fine — the maps are just incomplete. Filter only
+// those exact warnings so the terminal stays clean.
+const quietMissingSourcemapSources = ['@developmentseed/affine', '@developmentseed/geotiff'];
 
 // luma.gl's Texture class has `static defaultProps = { usage: Texture.SAMPLE |
 // Texture.RENDER | Texture.COPY_DST }`, i.e. it references the class from within
@@ -64,6 +71,18 @@ export default defineConfig({
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+    customLogger: {
+      ...logger,
+      warn(msg, options) {
+        if (
+          msg.includes('points to missing source files') &&
+          quietMissingSourcemapSources.some((p) => msg.includes(p))
+        ) {
+          return; // @developmentseed packages publish incomplete sourcemaps
+        }
+        logger.warn(msg, options);
+      },
     },
     // Proxy the caching TiTiler stack through the same-origin Vite dev server.
     // The page is served under COEP require-corp, which blocks cross-origin
