@@ -38,6 +38,8 @@
     "@mapbox/martini": "^0.2.0",
     "@nivo/line": "^0.99.0",
     "@nivo/scatterplot": "^0.99.0",
+    "@react-three/drei": "^9.122.0",
+    "@react-three/fiber": "^8.18.0",
     "@turf/boolean-point-in-polygon": "^7.3.5",
     "@turf/buffer": "^7.3.5",
     "@turf/circle": "^7.3.5",
@@ -53,11 +55,14 @@
     "geotiff": "^3.0.0",
     "geotiff-geokeys-to-proj4": "^2024.4.13",
     "parquet-wasm": "^0.6.1",
+    "plotly.js-dist-min": "^4.1.2",
     "proj4": "^2.20.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-map-gl": "^7.1.9",
+    "react-plotly.js": "^4.1.0",
     "react-router-dom": "^7.18.4",
+    "three": "^0.169.0",
     "upng-js": "^2.1.0"
   },
   "devDependencies": {

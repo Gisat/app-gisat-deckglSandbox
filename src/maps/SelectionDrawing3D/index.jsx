@@ -7,6 +7,7 @@ import { SphereGeometry } from '@luma.gl/engine';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
 import { SelectionAnalysisPanel, pointInPolygon, normalizeGeometry } from '../../components/PointSelection';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
+import { FeatureSpaceChart } from '../../components/FeatureSpaceChart3D';
 import { CogTerrainLayer, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
 import chroma from 'chroma-js';
 import { scaleLinear } from 'd3-scale';
@@ -49,6 +50,7 @@ export default function SelectionDrawing3D() {
   const [allFeatures, setAllFeatures] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [drawnLineCoords, setDrawnLineCoords] = useState(null);
+  const [showFeatureSpace, setShowFeatureSpace] = useState(false);
 
   const mapContainerRef = useRef(null);
   const deckGLRef = useRef(null);
@@ -342,6 +344,35 @@ export default function SelectionDrawing3D() {
         viewState={viewState}
         onPointHover={setHoveredPointId}
       />
+
+      <button
+        onClick={() => setShowFeatureSpace(v => !v)}
+        style={{
+          position: 'absolute',
+          top: '10px',
+          right: showFeatureSpace ? 'calc(min(45%, 720px) + 10px)' : '10px',
+          background: showFeatureSpace ? '#0066cc' : 'rgba(255, 255, 255, 0.95)',
+          color: showFeatureSpace ? '#fff' : '#333',
+          border: '1px solid #ccc',
+          borderRadius: '6px',
+          padding: '6px 12px',
+          cursor: 'pointer',
+          fontSize: '12px',
+          fontFamily: 'system-ui, sans-serif',
+          fontWeight: 600,
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+          zIndex: 1200,
+        }}
+      >
+        {showFeatureSpace ? 'Hide 3D feature space' : '3D feature space'}
+      </button>
+
+      {showFeatureSpace && (
+        <FeatureSpaceChart
+          featureCollection={selectedFeatures}
+          onPointHover={setHoveredPointId}
+        />
+      )}
     </div>
   );
 }
