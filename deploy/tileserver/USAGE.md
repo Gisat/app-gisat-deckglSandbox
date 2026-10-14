@@ -87,9 +87,13 @@ file /tmp/s2.png   # -> PNG image data (true-color visual imagery)
 ### 4. Demonstrate the cache (timing)
 
 ```sh
-TILE="http://localhost:8080/data/sentinel2-mosaic/8/147/124.png"
+# Use a tile section 3 did NOT fetch, so req 1 is genuinely cold (STAC
+# search + up to 5 concurrent COG renders + composite + PNG encode = seconds).
+# Re-timing the section-3 tile would make req 1 a warm cache hit (sub-ms
+# noise) — the classic confound. Pick an in-bounds neighbor, e.g. 8/147/125.
+TILE="http://localhost:8080/data/sentinel2-mosaic/8/147/125.png"
 for i in 1 2 3; do curl -s -o /dev/null -w "req $i: %{time_total}s\n" "$TILE"; done
-# req 1: seconds (STAC search + remote COG reads + warp + PNG)
+# req 1: seconds (cold render)
 # req 2/3: milliseconds (in-process cache hit)
 ```
 

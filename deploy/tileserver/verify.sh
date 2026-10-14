@@ -41,14 +41,20 @@ check "sentinel2-mosaic tile z8/147/124 is PNG" \
     "curl -sf --max-time 120 -o /tmp/tsr_s2.png '$BASE/data/sentinel2-mosaic/8/147/124.png' && file /tmp/tsr_s2.png | grep -q 'PNG image data'"
 
 # 5. Cache demonstration: repeat request must be much faster (identity cache).
-#    Compares 2nd vs 1st request time on the SAME tile; requires the
-#    feat/identity-raster-cache build.
-T="$BASE/data/sentinel2-mosaic/8/147/124.png"
+#    Uses a tile step 4 did NOT request (8/147/125 — same z8 row, x+1, also
+#    in-bounds) so req1 is GENUINELY COLD. Timing the step-4 tile instead was
+#    the old confound: it was already warm, both timings landed in sub-ms
+#    noise (~0.0017 s) and the PASS/FAIL flipped between runs on a healthy
+#    stack. With a cold first request, req1 = seconds (STAC search + up to 5
+#    concurrent COG renders + composite), req2 = milliseconds (cache hit).
+#    The cold-floor guard (req1 must be > 1 s) makes the verdict decisive: if
+#    the identity-raster-cache patch is missing, req2 re-renders and is ~req1.
+T="$BASE/data/sentinel2-mosaic/8/147/125.png"
 T1=$(curl -sf -o /dev/null -w '%{time_total}' --max-time 120 "$T" 2>/dev/null || echo 0)
 T2=$(curl -sf -o /dev/null -w '%{time_total}' --max-time 120 "$T" 2>/dev/null || echo 0)
-echo "     cache timing: req1=${T1}s req2=${T2}s (req2 should be much faster)"
-if awk "BEGIN{exit !($T2 < $T1)}"; then
-    echo "PASS  repeat request faster (in-process cache working)"
+echo "     cache timing: req1=${T1}s (cold) req2=${T2}s (repeat, should be much faster)"
+if awk "BEGIN{exit !($T1 > 1 && $T2 < $T1)}"; then
+    echo "PASS  cold tile rendered then served from in-process cache (${T1}s -> ${T2}s)"
     PASS=$((PASS+1))
 else
     echo "FAIL  repeat request not faster — cache patch missing? (published image does not cache identity PNG tiles)"
