@@ -25,15 +25,33 @@ jobs:
       - run: npm ci
       - run: npm run lint
 
+  # Smoke-build every image the release workflow publishes: the app plus the
+  # two titiler-caching tile encoders. Mirrors the matrix in release.yml (same
+  # contexts and per-image GHA cache scopes) but loads each image locally
+  # instead of pushing.
   docker-build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: app
+            context: .
+            cache_scope: base
+          - name: terrarium-encoder
+            context: deploy/titiler-caching/terrarium-encoder
+            cache_scope: terrarium-encoder
+          - name: float32-encoder
+            context: deploy/titiler-caching/float32-encoder
+            cache_scope: float32-encoder
+    name: docker-build / ${{ matrix.name }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ matrix.context }}
           load: true
-          tags: app:test
-          cache-from: type=gha,scope=base
-          cache-to: type=gha,scope=base,mode=max
+          tags: ${{ matrix.name }}:test
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}
+          cache-to: type=gha,scope=${{ matrix.cache_scope }},mode=max

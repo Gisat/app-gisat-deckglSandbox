@@ -55,13 +55,13 @@ repo, and avoid GHCR nested-path package-linking ambiguity. `<owner>/<repo>` is
 | File | Change |
 |------|--------|
 | `.github/workflows/release.yml` | Split into `release` + matrixed `docker` job; publish app + 2 encoder images |
+| `.github/workflows/pr-checks.yml` | `docker-build` job matrixed over the same 3 images (app + 2 encoders); smoke-builds them (`load: true`, no push) |
 | `plans/publish-encoder-images.md` | This plan |
 
 ## Out of Scope (possible follow-ups)
 
 - Pointing the compose files at the published encoder images (they still build
   from source locally).
-- Adding encoder image builds to `pr-checks.yml` as PR validation.
 
 ## Verification
 
