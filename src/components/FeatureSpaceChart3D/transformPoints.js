@@ -50,8 +50,8 @@ function toNumber(v) {
   return null;
 }
 
-/** Numeric attribute keys carried on every normalized point. */
-const NUMERIC_KEYS = Object.keys(ATTRIBUTES);
+/** Numeric attribute keys carried on every normalized point (excludes lon/lat). */
+const NUMERIC_KEYS = Object.keys(ATTRIBUTES).filter((key) => !ATTRIBUTES[key].coordinate);
 
 /**
  * Transform a single GeoJSON feature into a normalized point.

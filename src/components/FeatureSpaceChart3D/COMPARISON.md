@@ -218,19 +218,37 @@ views, selected with an `Attribute | Trend` toggle:
     default blue→yellow→red ramp over the fixed `[-3, 3]` domain (with a matching
     legend in the panel; values outside are clamped). N points → dense fan;
     thinning is out of scope.
-- **Attribute**: X = distance along the line (fixed); **Y** and **Z (up)** are
-  single-select attribute pickers over `PROFILE_AXIS_KEYS`. Defaults: `Y = H`
-  (elevation), `Z = VEL_REL` (see caveat). A translucent `z ± std`
-  **uncertainty ribbon** is drawn on **Z** only, and only when the chosen Z
-  attribute declares a paired `stdKey` (e.g. `VEL_REL → VEL_SD`, `H → H_SD`). The
-  Z domain is widened to cover the full band.
+- **Attribute**: has an `Attributes | Lon/Lat` basis switch.
+  - **Lon/Lat** (default): X = **longitude**, Y = **latitude** on one equal ground
+    scale (so the transect keeps its true shape), Z = the selected attribute (default
+    `H`). All three renderers plot the same cube-normalised positions, so Plotly
+    shows the identical cube scene as deck.gl/three (no separate aspect ratio). The
+    curve connects its samples in **along-line order** (not by longitude), so the
+    polyline traces the drawn selection line rather than zig-zagging a north–south
+    transect.
+  - **Attributes**: X = distance along the line (fixed); **Y** and **Z (up)** are
+    single-select attribute pickers over `PROFILE_AXIS_KEYS`. Defaults `Y = H`
+    (elevation), `Z = VEL_REL` (see caveat).
+  A translucent `z ± std` **uncertainty ribbon** is drawn on **Z** only, and only
+  when the chosen Z attribute declares a paired `stdKey` (e.g. `VEL_REL → VEL_SD`,
+  `H → H_SD`). The Z domain is widened to cover the full band.
 
 The former multi-series fan (`SERIES_DEFS` + per-series checkboxes) is gone, as is
 the low-value **Geo path** view (`dimMode`). The app passes a single ordered
 `profileSamples` list; the chart derives the curves client-side via
 `buildProfileFrame`, whose frame is now
-`{ view, yKey, zKey, titles, domains, curves:[ { key, label, color, stdKey, samples } ] }`.
+`{ view, basis, yKey, zKey, titles, domains, axisDomains, curves:[ { key, label, color, stdKey, samples } ] }`
+(`domains` are the cube-normalisation ranges and `axisDomains` the displayed tick
+ranges).
 
+- **Sampling (line mode):** the app builds the samples by **perpendicular projection**
+  of the dataset points onto the drawn line (`sampleLineSelection` /
+  `projectPointToLine`), not by a turf corridor. A point is kept only when its
+  perpendicular foot lands *inside* a segment and is within the buffer, so the band
+  has **flat ends** (no rounded end-caps); the kept point is **reflected onto the
+  line** — each sample's `lon`/`lat` is the **foot**, so the **Lon/Lat** basis draws the
+  points on the drawn line. Samples also carry their perpendicular `offset` (m, shown
+  in every tooltip) alongside `distance` (the X in the Attributes basis).
 - **Frame contract:** one curve for `attributes`; up to four for `trend/windows`
   and `trend/windows-plain` (one per window; `stdKey` set only for `windows`);
   one per point for `trend/points` (`stdKey: null`). Renderers iterate

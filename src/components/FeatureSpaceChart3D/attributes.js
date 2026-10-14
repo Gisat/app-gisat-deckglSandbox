@@ -21,6 +21,7 @@
  * @property {boolean} [std]    this attribute is itself an uncertainty field
  * @property {boolean} [derived]
  * @property {boolean} [unitless]
+ * @property {boolean} [coordinate]  geometry-derived lon/lat (profile axes only)
  */
 
 /** @type {Record<string, AttributeMeta>} */
@@ -51,6 +52,11 @@ export const ATTRIBUTES = {
   ACCEL: { key: 'ACCEL', label: 'Acceleration', short: 'ACCEL', unit: 'mm/yr\u00b2', decimals: 2 },
   SEASONAL: { key: 'SEASONAL', label: 'Seasonal amplitude', short: 'SEASONAL', unit: 'mm', decimals: 2 },
   VACC: { key: 'VACC', label: 'Velocity accuracy class', short: 'VACC', unit: '', decimals: 0, unitless: true },
+  // Geometry-derived coordinates (not feature properties). Offered as profile
+  // Y/Z attributes so a line profile can be read against real lon/lat; excluded
+  // from the scatter axes/color/size pickers (see SCATTER_KEYS below).
+  lon: { key: 'lon', label: 'Longitude', short: 'lon', unit: '\u00b0', decimals: 5, coordinate: true },
+  lat: { key: 'lat', label: 'Latitude', short: 'lat', unit: '\u00b0', decimals: 5, coordinate: true },
 };
 
 /**
@@ -59,30 +65,46 @@ export const ATTRIBUTES = {
  */
 export const ATTRIBUTE_KEYS = Object.keys(ATTRIBUTES);
 
+/** Attribute keys usable in the scatter x/y/z/color/size pickers (no lon/lat). */
+const SCATTER_KEYS = ATTRIBUTE_KEYS.filter((key) => !ATTRIBUTES[key].coordinate);
+
 /** Keys usable as a chart axis. */
-export const AXIS_KEYS = ATTRIBUTE_KEYS;
+export const AXIS_KEYS = SCATTER_KEYS;
 
 /** Keys usable as the color channel. */
-export const COLOR_KEYS = ATTRIBUTE_KEYS;
+export const COLOR_KEYS = SCATTER_KEYS;
 
 /** Keys usable as the size channel. */
-export const SIZE_KEYS = ATTRIBUTE_KEYS;
+export const SIZE_KEYS = SCATTER_KEYS;
 
 /**
  * Keys usable as a profile Y/Z axis: every attribute except the uncertainty
- * (`std`) fields, which only make sense as a paired band.
+ * (`std`) fields (only meaningful as a paired band) and the geometry-derived
+ * `lon`/`lat` coordinates (reached via the Lon/Lat basis, not this picker).
  */
-export const PROFILE_AXIS_KEYS = ATTRIBUTE_KEYS.filter((key) => !ATTRIBUTES[key].std);
+export const PROFILE_AXIS_KEYS = ATTRIBUTE_KEYS.filter(
+  (key) => !ATTRIBUTES[key].std && !ATTRIBUTES[key].coordinate,
+);
 
 /**
- * Default profile axes: X is always distance along the line.
+ * Default profile axes. The Attributes basis keeps X = distance along the line;
+ * the Lon/Lat basis replaces X/Y with real lon/lat. Z defaults to `VEL_REL` (LOS/
+ * relative velocity, mm/yr) as the best available proxy. Its band uses the paired
+ * `VEL_SD`, whose ownership is unconfirmed — treat the ribbon as indicative (see
+ * the profile plan, Open Q1).
  *
- * NOTE: the Tabqa dataset has no true vertical (up) displacement-rate field, so
- * Z defaults to `VEL_REL` (LOS/relative velocity, mm/yr) as the best available
- * proxy. Its band uses the paired `VEL_SD`, whose ownership is unconfirmed —
- * treat the ribbon as indicative (see the profile plan, Open Q1).
+ * `zPlan` is the Lon/Lat basis Z default (height, `H`); `basis` the initial basis
+ * (Lon/Lat, so the panel opens on the geographic view).
  */
-export const PROFILE_DEFAULTS = { y: 'H', z: 'VEL_REL' };
+export const PROFILE_DEFAULTS = { y: 'H', z: 'VEL_REL', zPlan: 'H', basis: 'plan' };
+
+/**
+ * Attribute-view bases:
+ *  - `along`: X = distance along the drawn line (m), Y/Z = attribute pickers.
+ *  - `plan`:  X = longitude, Y = latitude (equal ground scale), Z = attribute
+ *    picker (default `H`), so the profile reads as a 3D plan view.
+ */
+export const PROFILE_BASES = ['along', 'plan'];
 
 /**
  * Trend windows: cumulative trend displacement over 90/180/365/730 days, in

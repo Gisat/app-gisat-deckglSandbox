@@ -80,8 +80,21 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
     }];
   }, [points, axes, colorScale, colorDomain, sizeDomain, sizeRange, frame]);
 
-  const layout = useMemo(
-    () => ({
+  const layout = useMemo(() => {
+    const plan = frame?.basis === 'plan' && frame?.view === 'attributes';
+    // The Plan basis plots the same normalised cube positions deck.gl/three use,
+    // so it needs a fixed [-1,1] cube box with raw-value tick labels (rather than
+    // Plotly's auto-ranged axes) to look identical to the other renderers.
+    const planAxis = (slot) => ({
+      ...axisStyleText(frame.titles[slot]),
+      range: [-1, 1],
+      tickvals: [-1, 1],
+      ticktext: [
+        formatTick(frame.axisDomains[slot][0]),
+        formatTick(frame.axisDomains[slot][1]),
+      ],
+    });
+    return {
       autosize: true,
       margin: { l: 0, r: 0, t: 6, b: 0 },
       paper_bgcolor: 'rgba(0,0,0,0)',
@@ -91,24 +104,25 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
       scene: {
         bgcolor: 'rgba(0,0,0,0)',
         aspectmode: 'cube',
-        xaxis: frame ? axisStyleText(frame.titles.x) : axisStyle(axes.x),
+        xaxis: frame ? (plan ? planAxis('x') : axisStyleText(frame.titles.x)) : axisStyle(axes.x),
         yaxis: frame
-          ? frame.yTicks
-            ? {
-                ...axisStyleText(frame.titles.y),
-                tickvals: frame.yTicks.map((t) => t.value),
-                ticktext: frame.yTicks.map((t) => t.label),
-              }
-            : axisStyleText(frame.titles.y)
+          ? plan
+            ? planAxis('y')
+            : frame.yTicks
+              ? {
+                  ...axisStyleText(frame.titles.y),
+                  tickvals: frame.yTicks.map((t) => t.value),
+                  ticktext: frame.yTicks.map((t) => t.label),
+                }
+              : axisStyleText(frame.titles.y)
           : axisStyle(axes.y),
-        zaxis: frame ? axisStyleText(frame.titles.z) : axisStyle(axes.z),
+        zaxis: frame ? (plan ? planAxis('z') : axisStyleText(frame.titles.z)) : axisStyle(axes.z),
         // Canonical default view (matches three.js / deck.gl): Z up, camera at
         // azimuth 45deg / elevation 30deg.
         camera: { eye: { x: 1.47, y: 1.47, z: 1.2 }, up: { x: 0, y: 0, z: 1 } },
       },
-    }),
-    [axes.x, axes.y, axes.z, frame],
-  );
+    };
+  }, [axes.x, axes.y, axes.z, frame]);
 
   const config = useMemo(
     () => ({
@@ -145,6 +159,11 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
 
 /** One `scatter3d` line per curve plus a `mesh3d` Z ribbon for each banded curve. */
 function buildProfileTraces(frame) {
+  // The Plan basis plots the cube-normalised positions (not raw lon/lat) so it
+  // shares the exact cube geometry deck.gl/three show; every other view plots
+  // raw values with real axes.
+  const plan = frame.basis === 'plan' && frame.view === 'attributes';
+  const coordsOf = (p) => (plan ? p.position : [p.raw.x, p.raw.y, p.raw.z]);
   const traces = [];
 
   for (const curve of frame.curves) {
@@ -164,10 +183,16 @@ function buildProfileTraces(frame) {
         const j = [];
         const k = [];
         banded.forEach((smp) => {
-          x.push(smp.raw.x, smp.raw.x);
-          y.push(smp.raw.y, smp.raw.y);
-          // Band lives on Z: lo/hi are `z ∓ std`.
-          z.push(smp.raw.lo, smp.raw.hi);
+          if (plan) {
+            x.push(smp.ribbon.lo[0], smp.ribbon.hi[0]);
+            y.push(smp.ribbon.lo[1], smp.ribbon.hi[1]);
+            z.push(smp.ribbon.lo[2], smp.ribbon.hi[2]);
+          } else {
+            x.push(smp.raw.x, smp.raw.x);
+            y.push(smp.raw.y, smp.raw.y);
+            // Band lives on Z: lo/hi are `z ∓ std`.
+            z.push(smp.raw.lo, smp.raw.hi);
+          }
         });
         for (let a = 0; a < banded.length - 1; a++) {
           const b0 = 2 * a;
@@ -214,13 +239,14 @@ function buildProfileTraces(frame) {
     const lineColor = curve.colored
       ? displacementColor(meanDisplacementT(frame.colorDomain, samples))
       : curve.color;
+    const coords = samples.map(coordsOf);
     traces.push({
       type: 'scatter3d',
       mode: 'lines+markers',
       name: curve.label,
-      x: samples.map((p) => p.raw.x),
-      y: samples.map((p) => p.raw.y),
-      z: samples.map((p) => p.raw.z),
+      x: coords.map((c) => c[0]),
+      y: coords.map((c) => c[1]),
+      z: coords.map((c) => c[2]),
       customdata: hover.customdata,
       line: { color: lineColor, width: curve.colored ? 2 : 3 },
       marker,
@@ -294,13 +320,15 @@ function curveHover(frame, curve, samples) {
         formatTick(p.raw.z),
         std == null ? '\u2014' : formatTick(std),
         formatTick(p.sample?.distance),
+        formatTick(p.sample?.offset),
       ];
     }),
     hovertemplate:
       '<b>id: %{customdata[0]}</b><br>'
       + `${yAttr.label}: %{customdata[1]}${yUnit}<br>`
       + `${zAttr.label}: %{customdata[2]}${zUnit}${curve.stdKey ? ` \u00b1 %{customdata[3]}${zUnit}` : ''}<br>`
-      + 'distance: %{customdata[4]} m'
+      + 'distance: %{customdata[4]} m<br>'
+      + 'offset: %{customdata[5]} m'
       + '<extra></extra>',
   };
 }

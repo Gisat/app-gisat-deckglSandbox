@@ -509,8 +509,8 @@ function ProfileAxes({ frame }) {
       ['z', [-tick, -tick, -c], [-tick, -tick, c]],
     ];
     for (const [slot, minPos, maxPos] of ticks) {
-      list.push({ position: toThree(minPos), text: formatTick(frame.domains[slot][0]), color: '#6e6e6e' });
-      list.push({ position: toThree(maxPos), text: formatTick(frame.domains[slot][1]), color: '#6e6e6e' });
+      list.push({ position: toThree(minPos), text: formatTick(frame.axisDomains[slot][0]), color: '#6e6e6e' });
+      list.push({ position: toThree(maxPos), text: formatTick(frame.axisDomains[slot][1]), color: '#6e6e6e' });
     }
     if (frame.yTicks) {
       // Trend: label each Y band with its window instead of the -1..1 endpoints.
@@ -518,8 +518,8 @@ function ProfileAxes({ frame }) {
         list.push({ position: toThree([-tick, t.value, -tick]), text: t.label, color: '#6e6e6e' });
       }
     } else {
-      list.push({ position: toThree([-tick, -c, -tick]), text: formatTick(frame.domains.y[0]), color: '#6e6e6e' });
-      list.push({ position: toThree([-tick, c, -tick]), text: formatTick(frame.domains.y[1]), color: '#6e6e6e' });
+      list.push({ position: toThree([-tick, -c, -tick]), text: formatTick(frame.axisDomains.y[0]), color: '#6e6e6e' });
+      list.push({ position: toThree([-tick, c, -tick]), text: formatTick(frame.axisDomains.y[1]), color: '#6e6e6e' });
     }
     return list;
   }, [frame]);

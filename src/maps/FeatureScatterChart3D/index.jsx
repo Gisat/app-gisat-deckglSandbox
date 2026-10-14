@@ -6,7 +6,7 @@ import { BitmapLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
 import { SelectionControls, DrawingOverlay, pointInPolygon, normalizeGeometry } from '../../components/PointSelection';
 import { FeatureSpaceChart } from '../../components/FeatureSpaceChart3D';
-import { buildProfileSamples } from '../../components/2DLineProfile';
+import { buildProfileSamples, sampleLineSelection } from '../../components/2DLineProfile';
 import chroma from 'chroma-js';
 import { scaleLinear } from 'd3-scale';
 
@@ -200,11 +200,17 @@ export default function FeatureScatterChart3D() {
     }
   });
 
-  const applySelection = useCallback((geometry) => {
-    const selected = allFeatures.filter(feature => {
-      const [lon, lat] = feature.geometry?.coordinates || [0, 0];
-      return pointInPolygon([lon, lat], geometry);
-    });
+  // `geometry` is the normalised polygon for circle/polygon modes. Line mode
+  // instead uses a perpendicular projection of `lineCoords` (flat-ended: a point
+  // is kept only when its perpendicular foot lands inside the line and within
+  // the buffer), so no turf corridor is involved.
+  const applySelection = useCallback((geometry, mode, lineCoords) => {
+    const selected = mode === 'line'
+      ? sampleLineSelection(allFeatures, lineCoords, bufferDistance).map(r => r.feature)
+      : allFeatures.filter(feature => {
+          const [lon, lat] = feature.geometry?.coordinates || [0, 0];
+          return pointInPolygon([lon, lat], geometry);
+        });
 
     const result = selected.map(f => ({
       id: getPointId(f) ?? `${f.geometry?.coordinates?.[0]}_${f.geometry?.coordinates?.[1]}`,
@@ -228,7 +234,7 @@ export default function FeatureScatterChart3D() {
         };
       })
     });
-  }, [allFeatures]);
+  }, [allFeatures, bufferDistance]);
 
   const handleGeometryComplete = (geometry, mode, coords) => {
     if (!geometry) return;
@@ -239,11 +245,11 @@ export default function FeatureScatterChart3D() {
     if (mode === 'line') {
       const geoCoords = coords.map(c => c.geo || c);
       setDrawnLineCoords(geoCoords);
+      applySelection(geometry, 'line', geoCoords);
     } else {
       setDrawnLineCoords(null);
+      applySelection(geometry, mode, null);
     }
-
-    applySelection(geometry);
   };
 
   // SelectionControls owns no state of its own (unlike SelectionAnalysisPanel),
@@ -276,17 +282,13 @@ export default function FeatureScatterChart3D() {
     setIsDrawing(false);
   };
 
-  // Recompute the line corridor and re-select when the buffer distance changes,
-  // and again once the GeoJSON arrives: a line completed before the fetch
-  // resolves would otherwise select from the still-empty `allFeatures` and its
-  // corridor would stay empty until the buffer changed.
+  // Re-run the line projection when the buffer distance changes, and again once
+  // the GeoJSON arrives: a line completed before the fetch resolves would
+  // otherwise select from the still-empty `allFeatures` and stay empty until the
+  // buffer changed.
   useEffect(() => {
     if (selectionMode !== 'line' || !drawnLineCoords || drawnLineCoords.length < 2) return;
-    const newGeometry = normalizeGeometry('line', drawnLineCoords, bufferDistance);
-    if (newGeometry) {
-      setDrawnGeometry(newGeometry);
-      applySelection(newGeometry);
-    }
+    applySelection(null, 'line', drawnLineCoords);
   }, [bufferDistance, drawnLineCoords, selectionMode, applySelection]);
 
   // Ordered single-curve profile samples for the 3D chart (app-owned; the chart

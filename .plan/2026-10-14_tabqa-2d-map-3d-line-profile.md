@@ -205,6 +205,24 @@ These changed the plan's letter (not its intent); recorded so the plan matches t
 - **New pure module.** `profileGeometry.js` (`buildProfileFrame`, `formatTick`, `hexToRgba`) plus
   `ProfileTooltip.jsx` were added to share the profile frame/geometry and hover tooltip across the
   three renderers.
+- **Line sampling = perpendicular projection (flat ends).** Line mode no longer turf-buffers the
+  polyline and tests `pointInPolygon`. `sampleLineSelection` projects every point onto the drawn
+  line (`projectPointToLine`), keeps it only when its perpendicular foot lands *inside* a segment
+  (`within`, from the unclamped `t`) and the offset is `<= bufferDistance`, and reflects the point
+  onto the line — the foot becomes the sample's `lon`/`lat`. Ends are therefore **flat** (a point
+  past either end is dropped, not snapped to the endpoint), and the selection is an exact
+  perpendicular band rather than a rounded corridor. The buffer-change effect now re-runs the
+  projection directly (no `normalizeGeometry('line', …)` for selection; circle/polygon still use it).
+  `buildProfileSamples` records each sample's `offset` (metres) in addition to `distance`, and the
+  Lon/Lat basis now shows the reflected feet sitting on the drawn line (the Lon/Lat basis is also the
+  Attribute-view default now). The attribute curve connects
+  its samples in along-line (`distance`) order in both bases, so the polyline in the Lon/Lat basis
+  traces the drawn line instead of zig-zagging when the transect is not east–west.
+  `projectPointOntoLine` was
+  refactored to delegate to `projectPointToLine(...).distance`, so `calculateProfileData` (Nivo 2D;
+  `ArrowLODStream_2D/3D`, `SelectionDrawing3D`, `Misicuni_dam`) is byte-for-byte unchanged.
+  `projectPointToLine` and `sampleLineSelection` are re-exported from `2DLineProfile/index.js`;
+  the deck.gl/three `ProfileTooltip` and the Plotly attribute `hovertemplate` gained an `offset` row.
 
 ### Open question 1 — `VEL_SD` pairing (investigated, still needs the data owner)
 Analysed the actual `Tabqua_LOS_selected.geojson` (934 features, 488 keys):

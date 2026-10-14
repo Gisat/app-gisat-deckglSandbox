@@ -107,31 +107,66 @@ function bandY(i, count, cube) {
 }
 
 /**
- * Attribute view: a single curve of `yKey` over distance with `zKey` up, plus a
- * `z ± std` band on Z when `zKey` declares a paired `stdKey`.
+ * Attribute view: one curve. `along` basis: X = distance along the line,
+ * Y = `yKey`, Z = `zKey`. `plan` basis: X = longitude, Y = latitude on an equal
+ * ground scale, Z = `zKey`. A `z ± std` band is added when `zKey` declares a
+ * paired `stdKey` and that sample's std is finite.
  */
-function attributeCurves(yKey, zKey, samples) {
+function attributeCurves(yKey, zKey, samples, basis) {
   const stdKey = ATTRIBUTES[zKey]?.stdKey ?? null;
+  const plan = basis === 'plan';
+
   const rows = [];
   for (const s of samples) {
-    const x = s.distance;
-    const y = s[yKey];
     const z = s[zKey];
-    if (!isNum(x) || !isNum(y) || !isNum(z)) continue;
+    if (!isNum(z)) continue;
+    if (plan) {
+      if (!isNum(s.lon) || !isNum(s.lat)) continue;
+    } else if (!isNum(s.distance) || !isNum(s[yKey])) {
+      continue;
+    }
     // A missing standard deviation stays "unknown": mark the row unbanded so no
     // ribbon is drawn rather than asserting a zero-width (zero-uncertainty) band.
     const std = stdKey && isNum(s[stdKey]) ? Math.abs(s[stdKey]) : null;
     rows.push({
       s,
-      x,
-      y,
       z,
       lo: std != null ? z - std : z,
       hi: std != null ? z + std : z,
       banded: std != null,
+      // `x`/`y` are the cube-normalisation coordinates (`xRaw`/`yRaw` are the
+      // values the axes are labelled with: distance/attribute, or real lon/lat).
+      ...(plan
+        ? { x: 0, y: 0, xRaw: s.lon, yRaw: s.lat }
+        : { x: s.distance, y: s[yKey], xRaw: s.distance, yRaw: s[yKey] }),
     });
   }
-  rows.sort((a, b) => a.x - b.x);
+
+  if (plan && rows.length > 0) {
+    // Equal ground scale: longitude degrees shrink by cos(lat), and both axes
+    // share one symmetric half-extent so the plan keeps its true aspect instead
+    // of being stretched into a square.
+    const lat0 = rows.reduce((a, r) => a + r.yRaw, 0) / rows.length;
+    const kx = Math.cos((lat0 * Math.PI) / 180);
+    const gx = rows.map((r) => r.xRaw * kx);
+    const gy = rows.map((r) => r.yRaw);
+    const cx = (Math.min(...gx) + Math.max(...gx)) / 2;
+    const cy = (Math.min(...gy) + Math.max(...gy)) / 2;
+    for (let i = 0; i < rows.length; i++) {
+      rows[i].x = gx[i] - cx;
+      rows[i].y = gy[i] - cy;
+    }
+  }
+
+  // Connect the samples in along-line order in both bases: `distance` grows
+  // monotonically along the drawn line, so the polyline traces it. Sorting the
+  // Plan basis by its display X (longitude) would scramble a transect that runs
+  // mostly north-south into a zig-zag instead of following the line.
+  rows.sort((a, b) => {
+    const da = isNum(a.s.distance) ? a.s.distance : a.x;
+    const db = isNum(b.s.distance) ? b.s.distance : b.x;
+    return da - db;
+  });
   return [{ key: 'profile', label: 'Profile', color: PROFILE_COLOR, stdKey, rows }];
 }
 
@@ -225,14 +260,16 @@ function pointCurves(samples, cube) {
 /**
  * Build the render-ready profile frame (one or more curves).
  *
- * @param {{view?:'attributes'|'trend', yKey?:string, zKey?:string,
- *   trendLines?:'windows'|'windows-plain'|'points', samples?:Array<any>}} profile
+ * @param {{view?:'attributes'|'trend', basis?:'along'|'plan', yKey?:string,
+ *   zKey?:string, trendLines?:'windows'|'windows-plain'|'points',
+ *   samples?:Array<any>}} profile
  * @param {number} [cube] half-extent of the normalised cube
  * @returns {{
  *   view:'attributes'|'trend', shape:'windows'|'windows-plain'|'points'|null,
- *   yKey:string|null, zKey:string|null,
+ *   basis:'along'|'plan', yKey:string|null, zKey:string|null,
  *   titles:{x:string,y:string,z:string},
  *   domains:{x:[number,number],y:[number,number],z:[number,number]},
+ *   axisDomains:{x:[number,number],y:[number,number],z:[number,number]},
  *   colorDomain:[number,number]|null,
  *   yTicks:Array<{value:number,label:string}>|null,
  *   curves:Array<{ key:string, label:string, color:string, stdKey:string|null,
@@ -251,18 +288,24 @@ export function buildProfileFrame(profile, cube = 1) {
   const yKey = profile?.yKey ?? 'H';
   const zKey = profile?.zKey ?? 'VEL_REL';
   const trendLines = profile?.trendLines;
+  const basis = profile?.basis === 'plan' ? 'plan' : 'along';
+  const isPlan = view === 'attributes' && basis === 'plan';
 
   const rawCurves =
     view === 'trend'
       ? trendLines === 'points'
         ? pointCurves(samples, cube)
         : windowCurves(samples, cube, trendLines === 'windows')
-      : attributeCurves(yKey, zKey, samples);
+      : attributeCurves(yKey, zKey, samples, basis);
 
   let xMin = Infinity;
   let xMax = -Infinity;
   let yMin = Infinity;
   let yMax = -Infinity;
+  let xRawMin = Infinity;
+  let xRawMax = -Infinity;
+  let yRawMin = Infinity;
+  let yRawMax = -Infinity;
   let zMin = Infinity;
   let zMax = -Infinity;
 
@@ -272,17 +315,44 @@ export function buildProfileFrame(profile, cube = 1) {
       if (r.x > xMax) xMax = r.x;
       if (r.y < yMin) yMin = r.y;
       if (r.y > yMax) yMax = r.y;
+      const xr = r.xRaw ?? r.x;
+      const yr = r.yRaw ?? r.y;
+      if (xr < xRawMin) xRawMin = xr;
+      if (xr > xRawMax) xRawMax = xr;
+      if (yr < yRawMin) yRawMin = yr;
+      if (yr > yRawMax) yRawMax = yr;
       // Z domain must cover the full band, else normalisation clamps the ribbon.
       if (r.lo < zMin) zMin = r.lo;
       if (r.hi > zMax) zMax = r.hi;
     }
   }
 
-  const xd = resolveDomain(xMin, xMax);
-  // Trend Y is an ordered categorical axis: pin the domain to the band range so
-  // the bands keep fixed, even spacing regardless of which windows are present.
-  const yd = view === 'trend' ? [-cube, cube] : resolveDomain(yMin, yMax);
+  let xd;
+  let yd;
+  if (isPlan) {
+    // One shared, symmetric half-extent for X and Y keeps the ground aspect.
+    // The plan rows are already centred, so this only picks the larger half.
+    const half = Math.max(Math.abs(xMin), Math.abs(xMax), Math.abs(yMin), Math.abs(yMax)) || 1e-9;
+    xd = [-half, half];
+    yd = [-half, half];
+  } else if (view === 'trend') {
+    xd = resolveDomain(xMin, xMax);
+    // Trend Y is an ordered categorical axis: pin the domain to the band range so
+    // the bands keep fixed, even spacing regardless of which windows are present.
+    yd = [-cube, cube];
+  } else {
+    xd = resolveDomain(xMin, xMax);
+    yd = resolveDomain(yMin, yMax);
+  }
   const zd = resolveDomain(zMin, zMax);
+
+  // Display tick domains (what the axes are labelled with): distance/attribute,
+  // or real lon/lat in the Plan basis.
+  const axisDomains = {
+    x: resolveDomain(xRawMin, xRawMax),
+    y: resolveDomain(yRawMin, yRawMax),
+    z: zd,
+  };
 
   // The Trend ▸ points shape colours each point by its own displacement; every
   // other curve keeps its fixed colour. The colour domain is pinned to the map's
@@ -311,7 +381,7 @@ export function buildProfileFrame(profile, cube = 1) {
         id: r.s.id,
         position: [xn, yn, zn],
         ribbon,
-        raw: { x: r.x, y: r.y, z: r.z, lo: r.lo, hi: r.hi },
+        raw: { x: r.xRaw ?? r.x, y: r.yRaw ?? r.y, z: r.z, lo: r.lo, hi: r.hi },
         color: colorByDisplacement ? displacementColor(zt) : null,
         windowKey: r.windowKey ?? null,
         windowLabel: r.windowLabel ?? null,
@@ -323,7 +393,9 @@ export function buildProfileFrame(profile, cube = 1) {
   const titles =
     view === 'trend'
       ? { x: 'Distance along profile [m]', y: 'Trend window', z: 'Trend displacement [mm]' }
-      : { x: 'Distance along profile [m]', y: axisTitle(yKey), z: axisTitle(zKey) };
+      : isPlan
+        ? { x: 'Longitude [\u00b0]', y: 'Latitude [\u00b0]', z: axisTitle(zKey) }
+        : { x: 'Distance along profile [m]', y: axisTitle(yKey), z: axisTitle(zKey) };
 
   // Trend Y is categorical: label each band position with its window, else the
   // numeric -1..1 band coordinate is meaningless.
@@ -338,10 +410,12 @@ export function buildProfileFrame(profile, cube = 1) {
   return {
     view,
     shape: view === 'trend' ? (trendLines ?? 'windows') : null,
-    yKey: view === 'attributes' ? yKey : null,
+    basis,
+    yKey: view === 'attributes' ? (isPlan ? 'lat' : yKey) : null,
     zKey: view === 'attributes' ? zKey : null,
     titles,
     domains: { x: xd, y: yd, z: zd },
+    axisDomains,
     colorDomain: colorByDisplacement ? [...DISPLACEMENT_DOMAIN] : null,
     yTicks,
     curves,

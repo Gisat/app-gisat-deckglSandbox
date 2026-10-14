@@ -41,6 +41,7 @@ export function ProfileTooltip({ sample, curve, frame }) {
       `${formatTick(sample.raw.z)}${zUnit}${std != null ? ` \u00b1 ${formatTick(std)}${zUnit}` : ''}`,
     ]);
     rows.push(['distance', `${formatTick(sample.sample?.distance)} m`]);
+    rows.push(['offset', `${formatTick(sample.sample?.offset)} m`]);
   }
 
   return (
