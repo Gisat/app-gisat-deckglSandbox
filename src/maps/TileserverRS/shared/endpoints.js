@@ -10,7 +10,7 @@
 // (COEP-safe, same pattern as the TiTiler stacks), so baseUrl is a path.
 //
 // WHY '/tileserver-api' AND NOT '/tileserver': the SPA has app routes that
-// begin with '/tileserver' (/tileserver-sentinel2-mosaic). A bare
+// begin with '/tileserver' (/tileserver-manila-rgb). A bare
 // '/tileserver' proxy prefix would
 // make Vite proxy those routes to the tile server on hard reload — the exact
 // collision documented for '/titiler' in vite.config.js. '/tileserver-api'

@@ -1,18 +1,28 @@
 # ============================================================================
 # tileserver-rs configuration — Tileserver-RS demo sources
 #
-# Motivation: demonstrate STAC discovery, mosaicing, and in-process caching.
+# Motivation: demonstrate server-side COG rendering + in-process caching.
 #
 # One source:
-#   sentinel2-mosaic — TRUE STAC demo: Earth Search (element84) Sentinel-2
-#                      L2A, dynamic per-tile /search + mosaic compositing.
+#   manila-rgb — the SAME true-color RGB COG the TiTiler "Manila RGB" demo
+#                uses (Manila Sentinel-2 composite, uint8 3-band, EPSG:3857,
+#                DEFLATE COG), served by tileserver-rs instead of TiTiler.
+#                Proven healthy; a faithful apples-to-apples demo.
 #
-# NOTE 2026-10-14: the former `worldcereal` COG source was removed entirely.
-# It failed at startup registration — GDAL 'GDALOpenEx' returned a NULL
-# pointer ("Failure writing output to destination") — and the public
-# WorldCereal STAC API is dead (stac.worldcereal.org NXDOMAIN), so there was
-# no path to a healthy WorldCereal source here. The TiTiler WorldCereal demo
-# (deploy/titiler) is unaffected.
+# HISTORY 2026-10-14 (this demo was previously STAC-based, both entries
+# removed):
+#   - sentinel2-mosaic (Earth Search STAC, dynamic per-tile /search + mosaic):
+#     removed — the STAC configuration test case failed. Low-zoom tiles were
+#     mostly black because the top-5 newest scenes around the region are
+#     89-99 % cloud and `pixel_selection = "first"` picks by STAC rank, not
+#     cloud cover, so canvas pixels came from cloudy/nodata items. Only at
+#     high zoom (small bbox) did a low-cloud scene enter the result set and
+#     the tiles converge to real imagery. A STAC demo is not worth keeping
+#     until a reliable, low-cloud, overlapping-scene data source is available.
+#   - worldcereal (same COG as the TiTiler WorldCereal demo + discrete
+#     colormap): removed earlier — failed at startup registration (GDAL
+#     'GDALOpenEx' returned NULL, "Failure writing output to destination").
+#     The public WorldCereal STAC API is dead (stac.worldcereal.org NXDOMAIN).
 #
 # Tiles:    /data/{source-id}/{z}/{x}/{y}.png
 # TileJSON: /data/{source-id}.json
@@ -27,7 +37,7 @@ cors_origins = ["*"]
 enabled = false
 
 # ---------------------------------------------------------------------------
-# Global raster defaults (the `stac` feature implies `raster`/GDAL).
+# Global raster defaults.
 # ---------------------------------------------------------------------------
 [raster]
 default_resampling = "bilinear"
@@ -39,8 +49,6 @@ tile_size = 256
 # compose image), this cache serves canonical /data/{id}/{z}/{x}/{y}.png
 # requests for the source below. Without the patch (published ghcr.io
 # image), only Accept-Encoding re-encode variants are cached.
-#
-# ttl_seconds trades freshness vs cost: dynamic STAC tiles freeze for the TTL.
 # ---------------------------------------------------------------------------
 [cache]
 enabled = true
@@ -48,30 +56,25 @@ max_size_mb = 512
 ttl_seconds = 3600
 
 # ---------------------------------------------------------------------------
-# Source: Sentinel-2 L2A via Earth Search STAC — dynamic mosaic
+# Source: Manila Sentinel-2 RGB composite (uint8 3-band COG, EPSG:3857)
 #
-# dynamic = true: EVERY tile request triggers a STAC POST /search with the
-# tile's WGS-84 bbox. max_items = 5: up to 5 intersecting items are rendered
-# concurrently and composited (Phase 3 mosaic); a single intersecting item
-# renders directly (Phase 2). pixel_selection = "first": first opaque pixel
-# wins, short-circuits (lowest latency). Other options: lowest_cloud_cover,
-# most_recent, mean, median, stdev — see
-# ../tileserver-rs/apps/docs/content/4.guides/15.stac.md.
+# The SAME COG the TiTiler "Manila RGB" demo renders
+# (src/maps/TiTilerDemo/ManilaRGB/index.jsx). True RGB — no colormap
+# (colormap applies only when band_count == 1; this is 3 bands, so RGB tiles
+# are served straight). Native resolution ≈ zoom 14-15 (10 m Sentinel-2);
+# bilinear is the sensible default for imagery.
 #
-# stac_bbox anchors the source bounds exposed to clients (TileJSON); per-tile
-# search still uses the actual tile bbox. Region: South Sudan / East Africa.
-# asset_role = "visual": the true-color 3-band JPEG asset (verified live on
-# Earth Search items) — renders as RGB, no colormap (colormap requires 1 band).
+# Bounds (from TiTiler /cog/info, EPSG:3857): lon 118.13-123.75,
+# lat 11.13-16.58 — Luzon-wide composite. maxzoom 15 keeps the demo honest:
+# beyond native res tiles are upsampled and the TiTiler demo does not zoom
+# further either (its TileLayer maxZoom = 16).
 # ---------------------------------------------------------------------------
 [[sources]]
-id = "sentinel2-mosaic"
-type = "stac"
-path = "https://earth-search.aws.element84.com/v1"
-collection = "sentinel-2-l2a"
-asset_role = "visual"
-dynamic = true
-max_items = 5
-pixel_selection = "first"
-stac_bbox = [26.0, 4.5, 27.0, 5.5]
+id = "manila-rgb"
+type = "cog"
+path = "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_bitmap/Manila_S2_Composite_2020022_Mercator_RGB_COG_DEFLATE.tif"
+name = "Manila Sentinel-2 RGB Composite"
+attribution = "Sentinel-2 composite (Gisat demo data)"
+resampling = "bilinear"
 minzoom = 0
-maxzoom = 14
+maxzoom = 15

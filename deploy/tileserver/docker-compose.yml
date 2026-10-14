@@ -1,4 +1,4 @@
-# Tileserver-RS demo stack — STAC discovery + mosaic compositing + caching.
+# Tileserver-RS demo stack — server-side COG rendering + in-process caching.
 #
 # Image: BUILT FROM ../tileserver-rs (branch feat/identity-raster-cache, which
 #        adds identity raster-tile caching to the global [cache]) — the published
@@ -10,17 +10,20 @@
 #        needs the maplibre-native vendor only for mbgl — see USAGE.md
 #        "Building the image" if the build fails on it).
 #
-# Sources (see config.toml):
-#   sentinel2-mosaic — Earth Search STAC, dynamic per-tile /search + mosaic
+# Source (see config.toml):
+#   manila-rgb — the same true-color RGB COG as the TiTiler Manila demo
 #
 # Start:   docker compose -f deploy/tileserver/docker-compose.yml up -d --build
 # Health:  curl http://localhost:8080/health
-# Tiles:   http://localhost:8080/data/sentinel2-mosaic/{z}/{x}/{y}.png
+# Tiles:   http://localhost:8080/data/manila-rgb/{z}/{x}/{y}.png
 #
-# NOTE 2026-10-14: the former `worldcereal` COG source was removed from
-# config.toml — it failed at startup registration (GDAL GDALOpenEx returned
-# NULL, "Failure writing output to destination") and the WorldCereal STAC API
-# is dead, so the demo now ships Sentinel-2 only.
+# HISTORY 2026-10-14: the STAC-based demo was retired.
+#   - sentinel2-mosaic (Earth Search STAC dynamic /search + mosaic) was
+#     removed — the STAC configuration test case failed (low-zoom tiles mostly
+#     black: `pixel_selection = "first"` picks the newest scenes which are
+#     89-99 % cloud in this region). Replaced by a plain, proven COG.
+#   - worldcereal COG was removed earlier — failed at startup registration
+#     (GDAL GDALOpenEx returned NULL) and the WorldCereal STAC API is dead.
 #
 # The sandbox app reaches it same-origin via the Vite dev-server proxy
 # '/tileserver' -> http://localhost:8080 (COEP-safe; see vite.config.js).
@@ -45,7 +48,7 @@ services:
       - ./config.toml:/app/config.toml:ro
     environment:
       - RUST_LOG=${RUST_LOG:-info}
-      # GDAL /vsicurl/ tuning for the remote COG + Earth Search STAC assets.
+      # GDAL /vsicurl/ tuning for the remote Manila COG.
       # From the verified analysis in DynamicServerSideTiles/TITILER_VS_TILESERVER_RS.md §5.
       - GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
       - CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.TIF,.tiff
