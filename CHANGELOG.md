@@ -1,3 +1,9 @@
+## [1.11.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.10.0...v1.11.0) (2026-10-14)
+
+### Features
+
+* **release:** publish titiler encoder images to GHCR ([259d79e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/259d79e5c4e28a578458b9745e01e8880c33e568))
+
 ## [1.10.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.9.1...v1.10.0) (2026-10-07)
 
 ### Features
