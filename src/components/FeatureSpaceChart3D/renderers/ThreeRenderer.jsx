@@ -112,8 +112,13 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
         // deck.gl and Plotly (none of which tone-map). `flat` disables it.
         flat
       >
-        <ambientLight intensity={0.45} />
-        <directionalLight position={[5, 8, 6]} intensity={0.55} />
+        {/* three.js (r155+) scales diffuse by BRDF_Lambert = albedo / PI, and a
+            light uniform is just color * intensity, so effective reflectance is
+            intensity / PI. Intensities are chosen as target * PI to mirror the
+            map's deck.gl sphere material (ambient 0.35, diffuse 0.6 gives about
+            0.35 unlit / 0.95 fully lit). */}
+        <ambientLight intensity={1.1} />
+        <directionalLight position={[5, 8, 6]} intensity={1.9} />
         <Axes domains={domains} axes={axes} />
         {markerStyle === 'billboard' ? (
           <BillboardPoints data={data} hovered={hovered} onPick={handlePick} />
