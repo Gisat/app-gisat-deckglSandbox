@@ -17,29 +17,31 @@
  * @property {string} short
  * @property {string} unit
  * @property {number} decimals
+ * @property {string} [stdKey]  paired uncertainty field (used as the Z ribbon band)
+ * @property {boolean} [std]    this attribute is itself an uncertainty field
  * @property {boolean} [derived]
  * @property {boolean} [unitless]
  */
 
 /** @type {Record<string, AttributeMeta>} */
 export const ATTRIBUTES = {
-  VEL_REL: { key: 'VEL_REL', label: 'Relative velocity', short: 'VEL_REL', unit: 'mm/yr', decimals: 2 },
-  VEL_LAST: { key: 'VEL_LAST', label: 'Last-epoch velocity', short: 'VEL_LAST', unit: 'mm/yr', decimals: 2 },
-  LT_365: { key: 'LT_365', label: 'Trend (last 365 days)', short: 'LT_365', unit: 'mm/yr', decimals: 2 },
+  VEL_REL: { key: 'VEL_REL', label: 'Relative velocity', short: 'VEL_REL', unit: 'mm/yr', decimals: 2, stdKey: 'VEL_SD' },
+  VEL_LAST: { key: 'VEL_LAST', label: 'Last-epoch velocity', short: 'VEL_LAST', unit: 'mm/yr', decimals: 2, stdKey: 'SVEL_LAST' },
+  LT_365: { key: 'LT_365', label: 'Trend (last 365 days)', short: 'LT_365', unit: 'mm/yr', decimals: 2, stdKey: 'LTS_365' },
   VEL_AVG: { key: 'VEL_AVG', label: 'Average velocity', short: 'VEL_AVG', unit: 'mm/yr', decimals: 2 },
-  VEL_SD: { key: 'VEL_SD', label: 'Velocity std. dev.', short: 'VEL_SD', unit: 'mm/yr', decimals: 2 },
-  SVEL_LAST: { key: 'SVEL_LAST', label: 'Last-epoch velocity std. dev.', short: 'SVEL_LAST', unit: 'mm/yr', decimals: 2 },
-  LTS_365: { key: 'LTS_365', label: 'Trend 365 d std. dev.', short: 'LTS_365', unit: 'mm/yr', decimals: 2 },
-  TD_90: { key: 'TD_90', label: 'Trend displacement (90 d)', short: 'TD_90', unit: 'mm', decimals: 2 },
-  TD_180: { key: 'TD_180', label: 'Trend displacement (180 d)', short: 'TD_180', unit: 'mm', decimals: 2 },
-  TD_365: { key: 'TD_365', label: 'Trend displacement (365 d)', short: 'TD_365', unit: 'mm', decimals: 2 },
-  TD_730: { key: 'TD_730', label: 'Trend displacement (730 d)', short: 'TD_730', unit: 'mm', decimals: 2 },
-  STD_90: { key: 'STD_90', label: 'Trend disp. std. dev. (90 d)', short: 'STD_90', unit: 'mm', decimals: 2 },
-  STD_180: { key: 'STD_180', label: 'Trend disp. std. dev. (180 d)', short: 'STD_180', unit: 'mm', decimals: 2 },
-  STD_365: { key: 'STD_365', label: 'Trend disp. std. dev. (365 d)', short: 'STD_365', unit: 'mm', decimals: 2 },
-  STD_730: { key: 'STD_730', label: 'Trend disp. std. dev. (730 d)', short: 'STD_730', unit: 'mm', decimals: 2 },
-  H: { key: 'H', label: 'Measured height (H)', short: 'H', unit: 'm', decimals: 1 },
-  H_SD: { key: 'H_SD', label: 'Height std. dev. (H_SD)', short: 'H_SD', unit: 'm', decimals: 2 },
+  VEL_SD: { key: 'VEL_SD', label: 'Velocity std. dev.', short: 'VEL_SD', unit: 'mm/yr', decimals: 2, std: true },
+  SVEL_LAST: { key: 'SVEL_LAST', label: 'Last-epoch velocity std. dev.', short: 'SVEL_LAST', unit: 'mm/yr', decimals: 2, std: true },
+  LTS_365: { key: 'LTS_365', label: 'Trend 365 d std. dev.', short: 'LTS_365', unit: 'mm/yr', decimals: 2, std: true },
+  TD_90: { key: 'TD_90', label: 'Trend displacement (90 d)', short: 'TD_90', unit: 'mm', decimals: 2, stdKey: 'STD_90' },
+  TD_180: { key: 'TD_180', label: 'Trend displacement (180 d)', short: 'TD_180', unit: 'mm', decimals: 2, stdKey: 'STD_180' },
+  TD_365: { key: 'TD_365', label: 'Trend displacement (365 d)', short: 'TD_365', unit: 'mm', decimals: 2, stdKey: 'STD_365' },
+  TD_730: { key: 'TD_730', label: 'Trend displacement (730 d)', short: 'TD_730', unit: 'mm', decimals: 2, stdKey: 'STD_730' },
+  STD_90: { key: 'STD_90', label: 'Trend disp. std. dev. (90 d)', short: 'STD_90', unit: 'mm', decimals: 2, std: true },
+  STD_180: { key: 'STD_180', label: 'Trend disp. std. dev. (180 d)', short: 'STD_180', unit: 'mm', decimals: 2, std: true },
+  STD_365: { key: 'STD_365', label: 'Trend disp. std. dev. (365 d)', short: 'STD_365', unit: 'mm', decimals: 2, std: true },
+  STD_730: { key: 'STD_730', label: 'Trend disp. std. dev. (730 d)', short: 'STD_730', unit: 'mm', decimals: 2, std: true },
+  H: { key: 'H', label: 'Measured height (H)', short: 'H', unit: 'm', decimals: 1, stdKey: 'H_SD' },
+  H_SD: { key: 'H_SD', label: 'Height std. dev. (H_SD)', short: 'H_SD', unit: 'm', decimals: 2, std: true },
   H_REF: { key: 'H_REF', label: 'Reference height (H_REF)', short: 'H_REF', unit: 'm', decimals: 2 },
   COH: { key: 'COH', label: 'Coherence', short: 'COH', unit: '', decimals: 2, unitless: true },
   COH_MOD: { key: 'COH_MOD', label: 'Coherence (modelled)', short: 'COH_MOD', unit: '', decimals: 2, unitless: true },
@@ -65,6 +67,53 @@ export const COLOR_KEYS = ATTRIBUTE_KEYS;
 
 /** Keys usable as the size channel. */
 export const SIZE_KEYS = ATTRIBUTE_KEYS;
+
+/**
+ * Keys usable as a profile Y/Z axis: every attribute except the uncertainty
+ * (`std`) fields, which only make sense as a paired band.
+ */
+export const PROFILE_AXIS_KEYS = ATTRIBUTE_KEYS.filter((key) => !ATTRIBUTES[key].std);
+
+/**
+ * Default profile axes: X is always distance along the line.
+ *
+ * NOTE: the Tabqa dataset has no true vertical (up) displacement-rate field, so
+ * Z defaults to `VEL_REL` (LOS/relative velocity, mm/yr) as the best available
+ * proxy. Its band uses the paired `VEL_SD`, whose ownership is unconfirmed —
+ * treat the ribbon as indicative (see the profile plan, Open Q1).
+ */
+export const PROFILE_DEFAULTS = { y: 'H', z: 'VEL_REL' };
+
+/**
+ * Trend windows: cumulative trend displacement over 90/180/365/730 days, in
+ * ascending window order with a light->dark sequential colour ramp so a line's
+ * window reads at a glance. Each window's uncertainty field is its paired
+ * `STD_*`; streams are cumulative windows ending "now", so the axis is ordered
+ * categorical, not a linear time scale.
+ */
+export const TREND_WINDOWS = [
+  { key: 'TD_90', stdKey: 'STD_90', days: 90, color: '#c6dbef' },
+  { key: 'TD_180', stdKey: 'STD_180', days: 180, color: '#6baed6' },
+  { key: 'TD_365', stdKey: 'STD_365', days: 365, color: '#2171b5' },
+  { key: 'TD_730', stdKey: 'STD_730', days: 730, color: '#08306b' },
+];
+
+/** Profile views: the attribute explorer (shipped) and the trend view (new). */
+export const PROFILE_VIEWS = ['attributes', 'trend'];
+
+/** Default profile view. */
+export const PROFILE_VIEW_DEFAULT = 'trend';
+
+/** Default trend shape: one line per window (`windows`) vs one per point (`points`). */
+export const TREND_LINES_DEFAULT = 'windows';
+
+/**
+ * Human-readable label for a trend window, e.g. `90 d`.
+ * @param {number} days
+ */
+export function trendWindowLabel(days) {
+  return `${days} d`;
+}
 
 /**
  * @typedef {Object} PresetAxes

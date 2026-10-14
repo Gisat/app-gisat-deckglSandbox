@@ -115,59 +115,47 @@ function toNumber(v) {
 }
 
 /**
- * Build ordered 3D line-profile series from the selected points.
+ * Build a single ordered list of line-profile samples from the selected points.
  *
- * Each returned series carries its ordered samples along the drawn line, ready
- * for the 3D chart renderers (distance / lon / lat / elevation + value & std).
- * Samples without a finite value are dropped; series left with no samples are
- * omitted entirely. This is the multi-series analogue of `calculateProfileData`
- * (which stays untouched for the Nivo 2D chart).
+ * Each sample carries its position along the drawn line and every numeric
+ * property on the feature (keyed verbatim, e.g. `H`, `VEL_REL`), so the 3D chart
+ * can switch its Y/Z axes client-side without another data pass. Samples are
+ * sorted by distance along the line. This replaces the former multi-series
+ * `buildProfileSeries`; `calculateProfileData` (the Nivo 2D chart) is untouched.
  *
  * @param {object} selectedFeatures - GeoJSON FeatureCollection of selected points.
  * @param {number[][]} lineCoords - Array of [lon, lat] points defining the line.
- * @param {Array<{key:string,stdKey?:string,label:string,color:string,unit?:string}>} seriesDefs
- * @returns {Array<{key:string,label:string,color:string,unit:string,samples:Array<{
- *   id: string|number|null, distance:number, lon:number, lat:number,
- *   height:number|null, value:number, std:number|null }>}>}
+ * @returns {Array<{ id: string|number|null, distance:number, lon:number, lat:number,
+ *   [key: string]: number|string|null }>}
  */
-export function buildProfileSeries(selectedFeatures, lineCoords, seriesDefs = []) {
+export function buildProfileSamples(selectedFeatures, lineCoords) {
     if (!selectedFeatures || !selectedFeatures.features || !lineCoords || lineCoords.length < 2) {
         return [];
     }
 
-    const samplesByKey = new Map(seriesDefs.map((def) => [def.key, []]));
+    const samples = [];
 
     selectedFeatures.features.forEach((feature) => {
         const pointCoords = feature.geometry?.coordinates;
         if (!Array.isArray(pointCoords) || pointCoords.length < 2) return;
 
         const props = feature.properties || {};
-        const distance = projectPointOntoLine(pointCoords, lineCoords);
-        const id = props.point_id ?? feature.id ?? null;
-        const height = toNumber(props.H);
 
-        seriesDefs.forEach((def) => {
-            const value = toNumber(props[def.key]);
-            if (value == null) return;
-            samplesByKey.get(def.key).push({
-                id,
-                distance,
-                lon: pointCoords[0],
-                lat: pointCoords[1],
-                height,
-                value,
-                std: def.stdKey ? toNumber(props[def.stdKey]) : null,
-            });
-        });
+        /** @type {Record<string, number|string|null>} */
+        const sample = {
+            id: props.point_id ?? feature.id ?? null,
+            distance: projectPointOntoLine(pointCoords, lineCoords),
+            lon: pointCoords[0],
+            lat: pointCoords[1],
+        };
+
+        for (const [key, value] of Object.entries(props)) {
+            const num = toNumber(value);
+            if (num != null) sample[key] = num;
+        }
+
+        samples.push(sample);
     });
 
-    return seriesDefs
-        .map((def) => ({
-            key: def.key,
-            label: def.label,
-            color: def.color,
-            unit: def.unit || '',
-            samples: (samplesByKey.get(def.key) || []).sort((a, b) => a.distance - b.distance),
-        }))
-        .filter((series) => series.samples.length > 0);
+    return samples.sort((a, b) => a.distance - b.distance);
 }

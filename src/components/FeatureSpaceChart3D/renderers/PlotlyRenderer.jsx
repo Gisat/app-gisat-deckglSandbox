@@ -7,9 +7,10 @@
  *
  * Two modes:
  *  - scatter: the feature-space cloud (see KNOWN LIMITATION below).
- *  - profile: multi-series line profile (`scatter3d` lines+markers) plus a
- *    translucent `mesh3d` uncertainty ribbon in `along` mode. Plotly has real
- *    axes, so profile values are plotted in raw units.
+ *  - profile: one `scatter3d` line per `frame.curves` entry, plus a translucent
+ *    `mesh3d` uncertainty ribbon on Z for each banded curve (attribute view and
+ *    trend windows only). Plotly has real axes, so profile values are plotted in
+ *    raw units.
  *
  * KNOWN LIMITATION (headline comparison finding):
  *   Plotly's `scatter3d` marker has NO per-point size. `marker.size` is a single
@@ -22,9 +23,9 @@
 import { useMemo } from 'react';
 import Plotly from 'plotly.js-dist-min';
 import createPlotlyComponent from 'react-plotly.js/factory';
-import { axisTitle } from '../attributes';
+import { axisTitle, getAttribute } from '../attributes';
 import { buildPlotlyColorscale, sizeForValue } from '../colorScale';
-import { buildProfileFrame, formatTick } from '../profileGeometry';
+import { buildProfileFrame, DISPLACEMENT_COLORSCALE, displacementColor, formatTick } from '../profileGeometry';
 
 const Plot = createPlotlyComponent(Plotly);
 
@@ -39,7 +40,7 @@ const SIZE_BINS = 5;
  * @param {[number, number]} props.colorDomain
  * @param {[number, number]} props.sizeDomain
  * @param {[number, number]} props.sizeRange
- * @param {{mode:'along'|'geo',series:Array<any>}} [props.profile]
+ * @param {{view:'attributes'|'trend', yKey:string, zKey:string, trendLines:string, samples:Array<any>}} [props.profile]
  * @param {(id: string|null) => void} props.onHover
  */
 export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDomain, sizeRange, profile, onHover }) {
@@ -106,9 +107,19 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
         bgcolor: 'rgba(0,0,0,0)',
         aspectmode: 'cube',
         xaxis: frame ? axisStyleText(frame.titles.x) : axisStyle(axes.x),
-        yaxis: frame ? axisStyleText(frame.titles.y) : axisStyle(axes.y),
+        yaxis: frame
+          ? frame.yTicks
+            ? {
+                ...axisStyleText(frame.titles.y),
+                tickvals: frame.yTicks.map((t) => t.value),
+                ticktext: frame.yTicks.map((t) => t.label),
+              }
+            : axisStyleText(frame.titles.y)
+          : axisStyle(axes.y),
         zaxis: frame ? axisStyleText(frame.titles.z) : axisStyle(axes.z),
-        camera: { eye: { x: 1.5, y: 1.5, z: 1.1 } },
+        // Canonical default view (matches three.js / deck.gl): Z up, camera at
+        // azimuth 45deg / elevation 30deg.
+        camera: { eye: { x: 1.47, y: 1.47, z: 1.2 }, up: { x: 0, y: 0, z: 1 } },
       },
     }),
     [axes.x, axes.y, axes.z, frame],
@@ -125,7 +136,7 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
   );
 
   const revision = frame
-    ? frame.series.reduce((acc, s) => acc + s.samples.length, 0) + frame.series.length
+    ? frame.curves.reduce((n, c) => n + c.samples.length, 0)
     : points.length;
 
   return (
@@ -147,24 +158,27 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
   );
 }
 
-/** Multi-series profile traces: mesh3d ribbons (along mode) + scatter3d lines. */
+/** One `scatter3d` line per curve plus a `mesh3d` Z ribbon for each banded curve. */
 function buildProfileTraces(frame) {
   const traces = [];
 
-  if (frame.along) {
-    for (const s of frame.series) {
-      const n = s.samples.length;
-      if (n < 2) continue;
+  for (const curve of frame.curves) {
+    const samples = curve.samples;
+    const n = samples.length;
+    if (n < 2) continue;
+
+    if (curve.stdKey) {
       const x = [];
       const y = [];
       const z = [];
       const i = [];
       const j = [];
       const k = [];
-      s.samples.forEach((smp) => {
+      samples.forEach((smp) => {
         x.push(smp.raw.x, smp.raw.x);
-        y.push(smp.raw.lo, smp.raw.hi);
-        z.push(smp.raw.z, smp.raw.z);
+        y.push(smp.raw.y, smp.raw.y);
+        // Band lives on Z: lo/hi are `z ∓ std`.
+        z.push(smp.raw.lo, smp.raw.hi);
       });
       for (let a = 0; a < n - 1; a++) {
         const b0 = 2 * a;
@@ -183,37 +197,122 @@ function buildProfileTraces(frame) {
         i,
         j,
         k,
-        name: `${s.label} band`,
-        color: s.color,
+        name: `${curve.label} band`,
+        color: curve.color,
         opacity: 0.22,
         flatshading: false,
         hoverinfo: 'skip',
         showscale: false,
       });
     }
-  }
 
-  for (const s of frame.series) {
+    const hover = curveHover(frame, curve, samples);
+    // Point/station curves colour their markers by displacement. `scatter3d`
+    // cannot gradient a line, so the line takes the station's mean displacement
+    // colour (thin) and the markers carry the full ramp.
+    const marker = curve.colored
+      ? {
+          color: samples.map((p) => p.raw.z),
+          colorscale: DISPLACEMENT_COLORSCALE,
+          cmin: frame.colorDomain[0],
+          cmax: frame.colorDomain[1],
+          size: 3,
+          line: { width: 0 },
+          showscale: false,
+        }
+      : { color: curve.color, size: 3, line: { width: 0 } };
+    const lineColor = curve.colored
+      ? displacementColor(meanDisplacementT(frame.colorDomain, samples))
+      : curve.color;
     traces.push({
       type: 'scatter3d',
       mode: 'lines+markers',
-      name: s.label,
-      x: s.samples.map((p) => p.raw.x),
-      y: s.samples.map((p) => p.raw.y),
-      z: s.samples.map((p) => p.raw.z),
-      customdata: s.samples.map((p) => [p.id, formatTick(p.sample?.value), p.sample?.std == null ? '\u2014' : formatTick(p.sample.std)]),
-      line: { color: s.color, width: 3 },
-      marker: { color: s.color, size: 3, line: { width: 0 } },
-      hovertemplate:
-        `<b>${s.label}</b><br>`
-        + 'id: %{customdata[0]}<br>'
-        + `value: %{customdata[1]}${s.unit ? ` ${s.unit}` : ''}<br>`
-        + `std: %{customdata[2]}${s.unit ? ` ${s.unit}` : ''}`
-        + '<extra></extra>',
+      name: curve.label,
+      x: samples.map((p) => p.raw.x),
+      y: samples.map((p) => p.raw.y),
+      z: samples.map((p) => p.raw.z),
+      customdata: hover.customdata,
+      line: { color: lineColor, width: curve.colored ? 2 : 3 },
+      marker,
+      hovertemplate: hover.hovertemplate,
     });
   }
 
   return traces;
+}
+
+/** Mean normalised displacement (t in [0,1]) of a station, for its line colour. */
+function meanDisplacementT([cLo, cHi], samples) {
+  if (samples.length === 0 || cHi === cLo) return 0.5;
+  let sum = 0;
+  for (const p of samples) {
+    sum += Math.max(0, Math.min(1, (p.raw.z - cLo) / (cHi - cLo)));
+  }
+  return sum / samples.length;
+}
+
+/** Per-view `customdata` (id first, so `onHover` reads `customdata[0]`) + template. */
+function curveHover(frame, curve, samples) {
+  if (frame.view === 'trend') {
+    const unit = getAttribute(samples[0].windowKey ?? curve.key)?.unit ?? '';
+    const u = unit ? ` ${unit}` : '';
+    if (curve.stdKey) {
+      return {
+        customdata: samples.map((p) => {
+          const std = p.sample?.[curve.stdKey];
+          return [
+            p.id,
+            formatTick(p.raw.z),
+            std == null ? '\u2014' : formatTick(std),
+            formatTick(p.sample?.distance),
+          ];
+        }),
+        hovertemplate:
+          `<b>${curve.label}</b><br>`
+          + `displacement: %{customdata[1]}${u} \u00b1 %{customdata[2]}${u}<br>`
+          + 'distance: %{customdata[3]} m<br>'
+          + 'id: %{customdata[0]}'
+          + '<extra></extra>',
+      };
+    }
+    return {
+      customdata: samples.map((p) => [
+        p.id,
+        p.windowLabel ?? '\u2014',
+        formatTick(p.raw.z),
+        formatTick(p.sample?.distance),
+      ]),
+      hovertemplate:
+        `<b>${curve.label}</b><br>`
+        + 'window: %{customdata[1]}<br>'
+        + `displacement: %{customdata[2]}${u}<br>`
+        + 'distance: %{customdata[3]} m'
+        + '<extra></extra>',
+    };
+  }
+
+  const yAttr = getAttribute(frame.yKey);
+  const zAttr = getAttribute(frame.zKey);
+  const yUnit = yAttr.unit ? ` ${yAttr.unit}` : '';
+  const zUnit = zAttr.unit ? ` ${zAttr.unit}` : '';
+  return {
+    customdata: samples.map((p) => {
+      const std = curve.stdKey ? p.sample?.[curve.stdKey] : null;
+      return [
+        p.id,
+        formatTick(p.raw.y),
+        formatTick(p.raw.z),
+        std == null ? '\u2014' : formatTick(std),
+        formatTick(p.sample?.distance),
+      ];
+    }),
+    hovertemplate:
+      '<b>id: %{customdata[0]}</b><br>'
+      + `${yAttr.label}: %{customdata[1]}${yUnit}<br>`
+      + `${zAttr.label}: %{customdata[2]}${zUnit}${curve.stdKey ? ` \u00b1 %{customdata[3]}${zUnit}` : ''}<br>`
+      + 'distance: %{customdata[4]} m'
+      + '<extra></extra>',
+  };
 }
 
 function axisStyle(key) {

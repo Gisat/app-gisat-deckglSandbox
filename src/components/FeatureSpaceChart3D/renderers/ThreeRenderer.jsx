@@ -5,8 +5,9 @@
  * Two modes:
  *  - scatter: points as a single InstancedMesh (per-instance colour and scale)
  *    with r3f raycast picking via `event.instanceId`.
- *  - profile: per-series centre lines, a translucent ribbon (`along` mode) and
- *    per-sample points, all unlit/flat so colours match the map and deck.gl.
+ *  - profile: one line per `frame.curves` entry, a translucent `z ± std` ribbon
+ *    per banded curve (attribute view and trend windows only) and per-sample
+ *    points, all unlit/flat so the colour matches the map and deck.gl.
  *
  * KNOWN LIMITATION: there are no built-in labelled axes in three.js. Axis titles
  * and tick labels are rendered with drei's <Html> placing DOM over the WebGL
@@ -29,8 +30,12 @@ import { ProfileTooltip } from '../ProfileTooltip';
 const CUBE = 1;
 const AXIS_COLORS = { x: '#d62728', y: '#2ca02c', z: '#1f77b4' };
 
-/** Chart space [x, y, z] -> three.js space with chart Z vertical. */
-const toThree = ([x, y, z]) => [x, z, y];
+/**
+ * Chart space [x, y, z] -> three.js space with chart Z vertical. A proper
+ * rotation (det = +1) — `[x, z, -y]` — so the scene is not mirrored relative to
+ * deck.gl/Plotly (a plain `[x, z, y]` swap is a reflection and renders flipped).
+ */
+const toThree = ([x, y, z]) => [x, z, -y];
 
 function buildCubeGeometry() {
   const c = CUBE;
@@ -72,11 +77,11 @@ function buildAxisGeometry() {
 
 /** Ribbon triangle strip between the lo/hi edges of an ordered sample list. */
 function buildRibbonGeometry(samples) {
-  const n = samples.length;
+  const banded = samples.filter((s) => s.ribbon);
+  const n = banded.length;
   if (n < 2) return null;
   const positions = new Float32Array(n * 2 * 3);
-  samples.forEach((s, i) => {
-    if (!s.ribbon) return;
+  banded.forEach((s, i) => {
     positions.set(toThree(s.ribbon.lo), i * 6);
     positions.set(toThree(s.ribbon.hi), i * 6 + 3);
   });
@@ -102,7 +107,7 @@ function buildRibbonGeometry(samples) {
  * @param {[number, number]} props.sizeDomain
  * @param {[number, number]} props.sizeRange
  * @param {'billboard'|'sphere'} props.markerStyle
- * @param {{mode:'along'|'geo',series:Array<any>}} [props.profile]
+ * @param {{view:'attributes'|'trend', yKey:string, zKey:string, trendLines:string, samples:Array<any>}} [props.profile]
  * @param {(id: string|null) => void} props.onHover
  */
 export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover }) {
@@ -130,24 +135,23 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
 
   const profileData = useMemo(() => {
     if (!frame) return [];
-    return frame.series.flatMap((s) =>
-      s.samples.map((p) => ({
-        point: { id: p.id },
-        position: toThree(p.position),
-        hex: s.color,
-        radius: 4,
-        worldRadius: 0.03,
-        seriesLabel: s.label,
-        color: s.color,
-        unit: s.unit,
-        value: p.sample?.value ?? null,
-        std: p.sample?.std ?? null,
-        distance: p.sample?.distance ?? null,
-        lon: p.sample?.lon ?? null,
-        lat: p.sample?.lat ?? null,
-        height: p.sample?.height ?? null,
-      })),
-    );
+    // Trend ▸ points (every curve displacement-coloured) uses smaller marks.
+    const pointsMode = frame.curves.some((c) => c.colored);
+    const out = [];
+    for (const curve of frame.curves) {
+      for (const p of curve.samples) {
+        out.push({
+          point: { id: p.id },
+          position: toThree(p.position),
+          hex: p.color ?? curve.color,
+          radius: pointsMode ? 3 : 4,
+          worldRadius: pointsMode ? 0.017 : 0.03,
+          frameSample: p,
+          curve,
+        });
+      }
+    }
+    return out;
   }, [frame]);
 
   const data = frame ? profileData : scatterData;
@@ -160,7 +164,10 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
   return (
     <div style={{ position: 'absolute', inset: 0 }} onMouseLeave={() => handlePick(null)}>
       <Canvas
-        camera={{ position: [3, 2.4, 3], fov: 45, near: 0.1, far: 100 }}
+        // Canonical default view (matches deck.gl / Plotly): chart Z (displacement)
+        // up, camera at azimuth 45deg / elevation 30deg over the [-1,1] cube. This
+        // is the chart-space eye (3, 3, 2.45) mapped through `toThree`.
+        camera={{ position: [3, 2.45, -3], fov: 45, near: 0.1, far: 100 }}
         dpr={[1, 2]}
         gl={{ alpha: true, antialias: true }}
         // r3f defaults to ACES Filmic tone mapping, which shifts hue/saturation
@@ -176,8 +183,8 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
         <ambientLight intensity={1.1} />
         <directionalLight position={[5, 8, 6]} intensity={1.9} />
         {frame ? <ProfileAxes frame={frame} /> : <Axes domains={domains} axes={axes} />}
-        {frame && <ProfileLines series={frame.series} />}
-        {frame && frame.along && <ProfileRibbons series={frame.series} />}
+        {frame && <ProfileLines curves={frame.curves} />}
+        {frame && <ProfileRibbons curves={frame.curves} />}
         {markerStyle === 'billboard' ? (
           <BillboardPoints data={data} hovered={hovered} onPick={handlePick} />
         ) : (
@@ -187,7 +194,7 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
           <Html position={data[hovered].position} style={{ pointerEvents: 'none' }} zIndexRange={[4, 0]}>
             <div style={{ transform: 'translate(10px, 10px)' }}>
               {frame ? (
-                <ProfileTooltip sample={data[hovered]} />
+                <ProfileTooltip sample={data[hovered].frameSample} curve={data[hovered].curve} frame={frame} />
               ) : (
                 <PointTooltip point={data[hovered].point} axes={axes} />
               )}
@@ -200,44 +207,76 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
   );
 }
 
-/** Per-series centre polylines (chart-space positions already normalised). */
-function ProfileLines({ series }) {
-  return series.map((s) => {
-    const positions = new Float32Array(s.samples.length * 3);
-    s.samples.forEach((p, i) => positions.set(toThree(p.position), i * 3));
-    return (
-      <line key={s.key}>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[positions, 3]} />
-        </bufferGeometry>
-        <lineBasicMaterial color={s.color} />
-      </line>
-    );
-  });
+/** One profile polyline per curve (chart-space positions already normalised). */
+function ProfileLines({ curves }) {
+  return (
+    <group>
+      {curves.map((curve) => (
+        <ProfileLine key={curve.key} curve={curve} />
+      ))}
+    </group>
+  );
 }
 
-/** Translucent uncertainty ribbons (along mode only), unlit to match the map. */
-function ProfileRibbons({ series }) {
-  const built = useMemo(
-    () =>
-      series
-        .map((s) => {
-          const geometry = buildRibbonGeometry(s.samples);
-          return geometry ? { key: s.key, color: s.color, geometry } : null;
-        })
-        .filter(Boolean),
-    [series],
+function ProfileLine({ curve }) {
+  const { positions, colors } = useMemo(() => {
+    const n = curve.samples.length;
+    const pos = new Float32Array(n * 3);
+    const col = curve.colored ? new Float32Array(n * 3) : null;
+    const c = new THREE.Color();
+    curve.samples.forEach((p, i) => {
+      pos.set(toThree(p.position), i * 3);
+      if (col) {
+        c.set(p.color ?? curve.color);
+        col.set([c.r, c.g, c.b], i * 3);
+      }
+    });
+    return { positions: pos, colors: col };
+  }, [curve]);
+
+  if (curve.samples.length < 2) return null;
+
+  return (
+    <line>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        {colors && <bufferAttribute attach="attributes-color" args={[colors, 3]} />}
+      </bufferGeometry>
+      {colors ? (
+        <lineBasicMaterial vertexColors />
+      ) : (
+        <lineBasicMaterial color={curve.color} />
+      )}
+    </line>
   );
+}
+
+/** Translucent uncertainty ribbon per banded curve, unlit to match the map. */
+function ProfileRibbons({ curves }) {
+  const banded = useMemo(() => curves.filter((c) => c.stdKey), [curves]);
+  return (
+    <group>
+      {banded.map((curve) => (
+        <ProfileRibbon key={curve.key} curve={curve} />
+      ))}
+    </group>
+  );
+}
+
+function ProfileRibbon({ curve }) {
+  const geometry = useMemo(() => buildRibbonGeometry(curve.samples), [curve]);
 
   useEffect(() => () => {
-    built.forEach((b) => b.geometry.dispose());
-  }, [built]);
+    if (geometry) geometry.dispose();
+  }, [geometry]);
 
-  return built.map((b) => (
-    <mesh key={b.key} geometry={b.geometry}>
-      <meshBasicMaterial color={b.color} transparent opacity={0.22} depthWrite={false} side={THREE.DoubleSide} />
+  if (!geometry) return null;
+
+  return (
+    <mesh geometry={geometry}>
+      <meshBasicMaterial color={curve.color} transparent opacity={0.22} depthWrite={false} side={THREE.DoubleSide} />
     </mesh>
-  ));
+  );
 }
 
 /**
@@ -467,12 +506,20 @@ function ProfileAxes({ frame }) {
     ];
     const ticks = [
       ['x', [-c, -tick, -tick], [c, -tick, -tick]],
-      ['y', [-tick, -c, -tick], [-tick, c, -tick]],
       ['z', [-tick, -tick, -c], [-tick, -tick, c]],
     ];
     for (const [slot, minPos, maxPos] of ticks) {
       list.push({ position: toThree(minPos), text: formatTick(frame.domains[slot][0]), color: '#6e6e6e' });
       list.push({ position: toThree(maxPos), text: formatTick(frame.domains[slot][1]), color: '#6e6e6e' });
+    }
+    if (frame.yTicks) {
+      // Trend: label each Y band with its window instead of the -1..1 endpoints.
+      for (const t of frame.yTicks) {
+        list.push({ position: toThree([-tick, t.value, -tick]), text: t.label, color: '#6e6e6e' });
+      }
+    } else {
+      list.push({ position: toThree([-tick, -c, -tick]), text: formatTick(frame.domains.y[0]), color: '#6e6e6e' });
+      list.push({ position: toThree([-tick, c, -tick]), text: formatTick(frame.domains.y[1]), color: '#6e6e6e' });
     }
     return list;
   }, [frame]);

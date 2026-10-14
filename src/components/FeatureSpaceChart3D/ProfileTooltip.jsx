@@ -1,18 +1,48 @@
+import { formatValue, getAttribute } from './attributes';
 import { formatTick } from './profileGeometry';
 
 /**
  * Presentational hover tooltip for the 3D line-profile mode, shared by the
  * deck.gl and three.js renderers. Plotly uses its own hovertemplate.
  *
- * @param {{ sample: {
- *   id: string|number|null, seriesLabel: string, color: string, unit?: string,
- *   value: number|null, std: number|null, distance: number|null,
- *   height: number|null, lon?: number|null, lat?: number|null,
- * } | null }} props
+ * @param {{ sample: any, curve: any, frame: any }} props
  */
-export function ProfileTooltip({ sample }) {
-  if (!sample) return null;
-  const unit = sample.unit ? ` ${sample.unit}` : '';
+export function ProfileTooltip({ sample, curve, frame }) {
+  if (!sample || !frame || !curve) return null;
+
+  const rows = [];
+  let header;
+
+  if (frame.view === 'trend') {
+    header = curve.label;
+    const unit = getAttribute(sample.windowKey ?? curve.key)?.unit ?? '';
+    const unitText = unit ? ` ${unit}` : '';
+    const std = curve.stdKey ? sample.sample?.[curve.stdKey] : null;
+
+    if (!curve.stdKey) {
+      // Stations: each vertex belongs to a different trend window.
+      rows.push(['window', sample.windowLabel ?? '\u2014']);
+    }
+    rows.push([
+      'displacement',
+      `${formatTick(sample.raw.z)}${unitText}${std != null ? ` \u00b1 ${formatTick(std)}${unitText}` : ''}`,
+    ]);
+    rows.push(['distance', `${formatTick(sample.sample?.distance)} m`]);
+    if (curve.stdKey) rows.push(['id', sample.id ?? '\u2014']);
+  } else {
+    header = sample.id ?? '\u2014';
+    const zKey = frame.zKey;
+    const zUnit = getAttribute(zKey).unit ? ` ${getAttribute(zKey).unit}` : '';
+    const std = curve.stdKey ? sample.sample?.[curve.stdKey] : null;
+
+    rows.push([getAttribute(frame.yKey).label, formatValue(frame.yKey, sample.raw.y)]);
+    rows.push([
+      getAttribute(zKey).label,
+      `${formatTick(sample.raw.z)}${zUnit}${std != null ? ` \u00b1 ${formatTick(std)}${zUnit}` : ''}`,
+    ]);
+    rows.push(['distance', `${formatTick(sample.sample?.distance)} m`]);
+  }
+
   return (
     <div
       style={{
@@ -30,34 +60,17 @@ export function ProfileTooltip({ sample }) {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, marginBottom: '4px' }}>
-        <span
-          style={{
-            display: 'inline-block',
-            width: '9px',
-            height: '9px',
-            borderRadius: '50%',
-            background: sample.color,
-          }}
-        />
-        {sample.seriesLabel}
+        {sample.color && (
+          <span style={{ width: '9px', height: '9px', borderRadius: '2px', background: sample.color, flex: 'none' }} />
+        )}
+        <span>{header}</span>
       </div>
-      <div style={{ color: '#666', marginBottom: '6px' }}>id: {sample.id ?? '\u2014'}</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
-        <span style={{ color: '#666' }}>value</span>
-        <span>
-          {formatTick(sample.value)}
-          {unit}
-          {sample.std != null ? ` \u00b1 ${formatTick(sample.std)}${unit}` : ''}
-        </span>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
-        <span style={{ color: '#666' }}>distance</span>
-        <span>{formatTick(sample.distance)} m</span>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
-        <span style={{ color: '#666' }}>elevation</span>
-        <span>{formatTick(sample.height)} m</span>
-      </div>
+      {rows.map(([label, value]) => (
+        <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+          <span style={{ color: '#666' }}>{label}</span>
+          <span>{value}</span>
+        </div>
+      ))}
     </div>
   );
 }

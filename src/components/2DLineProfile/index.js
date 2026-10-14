@@ -1,2 +1,2 @@
 export { LineProfileChart } from './LineProfileChart';
-export { calculateProfileData, buildProfileSeries } from './projectionUtils';
+export { calculateProfileData, buildProfileSamples } from './projectionUtils';

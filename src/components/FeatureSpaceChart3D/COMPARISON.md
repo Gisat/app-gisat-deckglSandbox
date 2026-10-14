@@ -202,6 +202,56 @@ selections), spheres carry depth/shading but cost more per point. `IconLayer`
 
 ---
 
+## 3D line-profile mode
+
+The panel's `Scatter | 3D line profile` toggle swaps the point cloud for a 3D
+profile over the drawn line selection (all three renderers). The profile has two
+views, selected with an `Attribute | Trend` toggle:
+
+- **Trend** (default): X = distance (fixed); **Y = trend window** (an *ordered
+  categorical* axis, evenly spaced bands) and **Z (up) = trend displacement**
+  (`TD_*`, mm). Two shapes via a `windows | points` toggle:
+  - **windows**: up to four lines, one per `TREND_WINDOWS` entry (`90/180/365/730 d`),
+    in a light→dark sequential ramp, each carrying its paired `STD_*` band on Z.
+  - **points**: one line per selected point, stepping across the window bands,
+    no bands. Each point is **coloured by its displacement** using the map's
+    default blue→yellow→red ramp over the fixed `[-3, 3]` map colour domain
+    (with a matching legend in the panel; values outside are clamped). N points →
+    dense fan; thinning is out of scope.
+- **Attribute**: X = distance along the line (fixed); **Y** and **Z (up)** are
+  single-select attribute pickers over `PROFILE_AXIS_KEYS`. Defaults: `Y = H`
+  (elevation), `Z = VEL_REL` (see caveat). A translucent `z ± std`
+  **uncertainty ribbon** is drawn on **Z** only, and only when the chosen Z
+  attribute declares a paired `stdKey` (e.g. `VEL_REL → VEL_SD`, `H → H_SD`). The
+  Z domain is widened to cover the full band.
+
+The former multi-series fan (`SERIES_DEFS` + per-series checkboxes) is gone, as is
+the low-value **Geo path** view (`dimMode`). The app passes a single ordered
+`profileSamples` list; the chart derives the curves client-side via
+`buildProfileFrame`, whose frame is now
+`{ view, yKey, zKey, titles, domains, curves:[ { key, label, color, stdKey, samples } ] }`.
+
+- **Frame contract:** one curve for `attributes`; up to four for `trend/windows`
+  (one per window, `stdKey` set); one per point for `trend/points`
+  (`stdKey: null`). Renderers iterate `frame.curves`; ribbons are gated on
+  `curve.stdKey`. Missing values drop per line (a curve connects only its finite
+  samples and needs ≥ 2 to render).
+- **Caveat:** the dataset has no true vertical-rate field, so the Attribute Z
+  default is the LOS/relative velocity proxy; its band is indicative until the
+  `VEL_SD` pairing is confirmed.
+- **Renderer parity (units):** Plotly plots raw units on real axes; deck.gl and
+  three.js normalise each axis into the equal `[-1,1]` cube, so mixed Y/Z units
+  look distorted there by design. Three/deck.gl label only the domain endpoints;
+  Plotly is the only renderer with real ticks and units. In the trend view the
+  window axis is a synthetic band coordinate in every renderer, labelled with the
+  window names (`90 d` … `730 d`) rather than a numeric range.
+- **Displacement colour (points):** three.js interpolates the line colour per
+  vertex and deck.gl colours each segment; Plotly's `scatter3d` line cannot
+  gradient, so there each station's (thin) line takes its mean-displacement
+  colour while the markers carry the full ramp.
+
+---
+
 ## Recommendation
 
 **Winner: deck.gl (`OrbitView`).**

@@ -7,12 +7,17 @@ import {
   DEFAULT_PRESET,
   PRESET_KEYS,
   PRESETS,
+  PROFILE_AXIS_KEYS,
+  PROFILE_DEFAULTS,
+  PROFILE_VIEW_DEFAULT,
+  TREND_LINES_DEFAULT,
   SIZE_KEYS,
   formatValue,
   resolveAxes,
 } from './attributes';
 import { activeFieldsFor, transformPoints } from './transformPoints';
 import { SIZE_PIXEL_RANGE, buildColorScale, getColorDomain, getSizeDomain } from './colorScale';
+import { DISPLACEMENT_DOMAIN, DISPLACEMENT_RAMP } from './profileGeometry';
 
 const PlotlyRenderer = lazy(() => import('./renderers/PlotlyRenderer'));
 const DeckGLRenderer = lazy(() => import('./renderers/DeckGLRenderer'));
@@ -30,21 +35,20 @@ const RENDERER_COMPONENTS = {
   three: ThreeRenderer,
 };
 
-/** Series shown by default in the 3D line-profile mode. */
-const DEFAULT_SERIES_KEYS = ['VEL_REL', 'VEL_LAST', 'LT_365'];
-
 /**
  * 3D feature-space chart with two mutually exclusive modes:
  *  - `scatter`: the feature-space point cloud (default).
- *  - `profile`: a 3D line profile (multi-series lines + uncertainty ribbons).
+ *  - `profile`: 3D line profile over the drawn line selection, in one of two
+ *    views — `Attribute` (X = distance, selectable Y/Z, Z band) or `Trend`
+ *    (X = distance, Y = trend window, Z = displacement; windows or points).
  *
  * Portable module: consumes a GeoJSON FeatureCollection, a precomputed profile
- * series list and a hover callback only. It intentionally imports nothing from
+ * sample list and a hover callback only. It intentionally imports nothing from
  * src/maps/*.
  *
  * @param {Object} props
  * @param {any} props.featureCollection  GeoJSON FeatureCollection of selected points
- * @param {Array<any>} [props.profileSeries]  precomputed line-profile series (app-owned)
+ * @param {Array<any>} [props.profileSamples]  precomputed ordered line samples (app-owned)
  * @param {boolean} [props.showProfile]  expose the 3D line-profile mode (only when a line is drawn)
  * @param {(id: string|null) => void} [props.onPointHover]  map-link hover callback
  * @param {'plotly'|'deckgl'|'three'} [props.defaultRenderer]
@@ -52,7 +56,7 @@ const DEFAULT_SERIES_KEYS = ['VEL_REL', 'VEL_LAST', 'LT_365'];
  */
 export function FeatureSpaceChart({
   featureCollection,
-  profileSeries = [],
+  profileSamples = [],
   showProfile = false,
   onPointHover,
   defaultRenderer = 'plotly',
@@ -64,9 +68,10 @@ export function FeatureSpaceChart({
   const [markerStyle, setMarkerStyle] = useState('sphere');
 
   const [mode, setMode] = useState('scatter');
-  const [dimMode, setDimMode] = useState('along');
-  const [seriesKeys, setSeriesKeys] = useState(DEFAULT_SERIES_KEYS);
-  const [activeSeriesKey, setActiveSeriesKey] = useState(DEFAULT_SERIES_KEYS[0]);
+  const [profileView, setProfileView] = useState(PROFILE_VIEW_DEFAULT);
+  const [trendLines, setTrendLines] = useState(TREND_LINES_DEFAULT);
+  const [yKey, setYKey] = useState(PROFILE_DEFAULTS.y);
+  const [zKey, setZKey] = useState(PROFILE_DEFAULTS.z);
 
   const axes = useMemo(() => resolveAxes(presetKey, customAxes), [presetKey, customAxes]);
   const activeFields = useMemo(() => activeFieldsFor(axes), [axes]);
@@ -80,36 +85,19 @@ export function FeatureSpaceChart({
   const colorScale = useMemo(() => buildColorScale(axes.color, colorDomain), [axes.color, colorDomain]);
   const sizeDomain = useMemo(() => getSizeDomain(axes.size, points), [axes.size, points]);
 
-  const checkedSeries = useMemo(
-    () => profileSeries.filter((s) => seriesKeys.includes(s.key)),
-    [profileSeries, seriesKeys],
-  );
-
-  const effectiveActiveKey = checkedSeries.some((s) => s.key === activeSeriesKey)
-    ? activeSeriesKey
-    : (checkedSeries[0]?.key ?? null);
-
-  const rendererSeries = useMemo(
-    () => (dimMode === 'geo' ? checkedSeries.filter((s) => s.key === effectiveActiveKey) : checkedSeries),
-    [dimMode, checkedSeries, effectiveActiveKey],
-  );
-
   // The profile mode only exists while the line tool is in use; otherwise the
   // panel falls back to scatter even if `mode` state was left on 'profile'.
   const activeMode = showProfile ? mode : 'scatter';
 
   const profile = useMemo(
     () =>
-      activeMode === 'profile' && rendererSeries.length > 0
-        ? { mode: dimMode, activeSeriesKey: effectiveActiveKey, series: rendererSeries }
+      activeMode === 'profile' && profileSamples.length > 0
+        ? { view: profileView, yKey, zKey, trendLines, samples: profileSamples }
         : null,
-    [activeMode, dimMode, rendererSeries, effectiveActiveKey],
+    [activeMode, profileView, trendLines, yKey, zKey, profileSamples],
   );
 
-  const profileSampleCount = useMemo(
-    () => rendererSeries.reduce((acc, s) => acc + s.samples.length, 0),
-    [rendererSeries],
-  );
+  const profileSampleCount = profileSamples.length;
 
   const handleHover = useCallback(
     (id) => {
@@ -121,10 +109,6 @@ export function FeatureSpaceChart({
   const setAxis = (slot, key) => {
     setPresetKey('custom');
     setCustomAxes((prev) => ({ ...prev, [slot]: key }));
-  };
-
-  const toggleSeries = (key) => {
-    setSeriesKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
   };
 
   const Renderer = RENDERER_COMPONENTS[renderer];
@@ -265,47 +249,86 @@ export function FeatureSpaceChart({
             display: 'flex',
             flexWrap: 'wrap',
             gap: '8px',
-            alignItems: 'center',
+            alignItems: 'flex-end',
             padding: '8px 12px',
             borderBottom: '1px solid #eee',
             background: '#fafafa',
           }}
         >
-          <span style={{ fontSize: '10px', color: '#666', textTransform: 'uppercase' }}>Series</span>
-          {profileSeries.map((s) => (
-            <label key={s.key} style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={seriesKeys.includes(s.key)}
-                onChange={() => toggleSeries(s.key)}
-                style={{ cursor: 'pointer', width: '13px', height: '13px' }}
-              />
-              <span style={{ display: 'inline-block', width: '9px', height: '9px', borderRadius: '50%', background: s.color }} />
-              <span style={{ fontSize: '11px' }}>{s.label}</span>
-            </label>
-          ))}
-          <div style={{ display: 'flex', gap: '3px', marginLeft: 'auto' }} title="Profile dimensions">
-            <button onClick={() => setDimMode('along')} style={buttonStyle(dimMode === 'along')}>
-              Along line
+          <div style={{ display: 'flex', gap: '3px' }} title="Profile view">
+            <button onClick={() => setProfileView('attributes')} style={buttonStyle(profileView === 'attributes')}>
+              Attribute
             </button>
-            <button onClick={() => setDimMode('geo')} style={buttonStyle(dimMode === 'geo')}>
-              Geo path
+            <button onClick={() => setProfileView('trend')} style={buttonStyle(profileView === 'trend')}>
+              Trend
             </button>
           </div>
-          {dimMode === 'geo' && checkedSeries.length > 0 && (
-            <select
-              value={effectiveActiveKey ?? ''}
-              onChange={(e) => setActiveSeriesKey(e.target.value)}
-              style={selectStyle}
-              title="Active series (geo path)"
-            >
-              {checkedSeries.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+          {profileView === 'attributes' ? (
+            <>
+              <label style={axisPickerStyle}>
+                <span style={axisPickerLabel}>Y axis</span>
+                <select value={yKey} onChange={(e) => setYKey(e.target.value)} style={selectStyle}>
+                  {PROFILE_AXIS_KEYS.map((key) => (
+                    <option key={key} value={key}>
+                      {ATTRIBUTES[key].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={axisPickerStyle}>
+                <span style={axisPickerLabel}>Z axis (up)</span>
+                <select
+                  value={zKey}
+                  onChange={(e) => setZKey(e.target.value)}
+                  style={selectStyle}
+                  title={ATTRIBUTES[zKey]?.stdKey ? `Band: ${ATTRIBUTES[zKey].stdKey} (indicative)` : 'No uncertainty band for this attribute'}
+                >
+                  {PROFILE_AXIS_KEYS.map((key) => (
+                    <option key={key} value={key}>
+                      {ATTRIBUTES[key].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: '3px', marginLeft: 'auto' }} title="Trend shape">
+                <button onClick={() => setTrendLines('windows')} style={buttonStyle(trendLines === 'windows')}>
+                  windows
+                </button>
+                <button onClick={() => setTrendLines('points')} style={buttonStyle(trendLines === 'points')}>
+                  points
+                </button>
+              </div>
+              {trendLines === 'points' && (
+                <div style={{ display: 'flex', flexBasis: '100%', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '10px', color: '#666' }}>displacement</span>
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: '80px',
+                      height: '8px',
+                      borderRadius: '4px',
+                      background: `linear-gradient(to right, ${DISPLACEMENT_RAMP.join(', ')})`,
+                    }}
+                  />
+                  <span style={{ fontSize: '10px', color: '#666' }}>
+                    {`${formatValue('TD_365', DISPLACEMENT_DOMAIN[0])} \u2013 ${formatValue('TD_365', DISPLACEMENT_DOMAIN[1])}`}
+                  </span>
+                </div>
+              )}
+            </>
           )}
+          <span style={{ flexBasis: '100%', fontSize: '10px', color: '#999' }}>
+            {profileView === 'trend'
+              ? 'Trend windows are overlapping cumulative windows; the axis is ordered, not linear time.'
+              : zKey === 'VEL_REL'
+                ? 'Z defaults to relative velocity (mm/yr) \u2014 this dataset has no true vertical-rate field; the band is indicative.'
+                : ATTRIBUTES[zKey]?.stdKey
+                  ? `Z band: ${ATTRIBUTES[zKey].stdKey}.`
+                  : 'No uncertainty band for this attribute.'}
+          </span>
         </div>
       )}
 
@@ -347,10 +370,8 @@ export function FeatureSpaceChart({
 
       <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
         {activeMode === 'profile' ? (
-          profileSeries.length === 0 ? (
-            <ProfileEmptyState reason="no-line" />
-          ) : checkedSeries.length === 0 ? (
-            <ProfileEmptyState reason="no-series" />
+          profileSamples.length === 0 ? (
+            <ProfileEmptyState />
           ) : (
             <Suspense fallback={<LoadingState renderer={renderer} />}>
               <Renderer {...rendererProps} profile={profile} />
@@ -412,16 +433,12 @@ function EmptyState({ total, skipped }) {
   );
 }
 
-function ProfileEmptyState({ reason }) {
+function ProfileEmptyState() {
   return (
     <div style={centeredState}>
-      <div style={{ fontWeight: 600, marginBottom: '6px', color: '#666' }}>
-        {reason === 'no-series' ? 'No series selected' : 'No line profile yet'}
-      </div>
+      <div style={{ fontWeight: 600, marginBottom: '6px', color: '#666' }}>No line profile yet</div>
       <div style={{ color: '#999', fontSize: '11px', textAlign: 'center', maxWidth: '260px' }}>
-        {reason === 'no-series'
-          ? 'Select at least one series to plot.'
-          : 'Draw a line selection on the map to see the profile.'}
+        Draw a line selection on the map to see the profile.
       </div>
     </div>
   );
@@ -463,6 +480,18 @@ const selectStyle = {
   color: '#333',
   fontSize: '11px',
   cursor: 'pointer',
+};
+
+const axisPickerStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '2px',
+};
+
+const axisPickerLabel = {
+  fontSize: '10px',
+  color: '#666',
+  textTransform: 'uppercase',
 };
 
 export default FeatureSpaceChart;

@@ -4,8 +4,9 @@
  * Uses OrbitView (OrthographicView cannot rotate). Two modes:
  *  - scatter: points as shaded spheres (SimpleMeshLayer + luma.gl SphereGeometry)
  *    or billboarded discs (ScatterplotLayer), matching the map's marker style.
- *  - profile: multi-series centre lines (`PathLayer`), a translucent uncertainty
- *    ribbon (`PolygonLayer` quads, along mode only) and per-sample points.
+ *  - profile: one line per `frame.curves` entry (`PathLayer`), a translucent
+ *    `z ± std` uncertainty ribbon per banded curve (`PolygonLayer` quads, not in
+ *    trend points) and per-sample points.
  *
  * A hand-built cube/axis overlay is needed because deck.gl ships no axes, grid
  * or ticks. Axis labels are TextLayer instances: deck.gl generates the SDF font
@@ -97,12 +98,21 @@ function profileLabels(frame) {
   ];
   const ticks = [
     ['x', [-c, -off - 0.05, -off - 0.05], [c, -off - 0.05, -off - 0.05]],
-    ['y', [-off - 0.05, -c, -off - 0.05], [-off - 0.05, c, -off - 0.05]],
     ['z', [-off - 0.05, -off - 0.05, -c], [-off - 0.05, -off - 0.05, c]],
   ];
   for (const [slot, minPos, maxPos] of ticks) {
     out.push({ position: minPos, text: formatTick(frame.domains[slot][0]), color: [110, 110, 110] });
     out.push({ position: maxPos, text: formatTick(frame.domains[slot][1]), color: [110, 110, 110] });
+  }
+  if (frame.yTicks) {
+    // Trend: label each Y band with its window instead of the -1..1 endpoints.
+    const t = off + 0.05;
+    for (const tick of frame.yTicks) {
+      out.push({ position: [-t, tick.value, -t], text: tick.label, color: [110, 110, 110] });
+    }
+  } else {
+    out.push({ position: [-off - 0.05, -c, -off - 0.05], text: formatTick(frame.domains.y[0]), color: [110, 110, 110] });
+    out.push({ position: [-off - 0.05, c, -off - 0.05], text: formatTick(frame.domains.y[1]), color: [110, 110, 110] });
   }
   return out;
 }
@@ -115,7 +125,7 @@ function profileLabels(frame) {
  * @param {[number, number]} props.sizeDomain
  * @param {[number, number]} props.sizeRange
  * @param {'billboard'|'sphere'} props.markerStyle
- * @param {{mode:'along'|'geo',series:Array<any>}} [props.profile]
+ * @param {{view:'attributes'|'trend', yKey:string, zKey:string, trendLines:string, samples:Array<any>}} [props.profile]
  * @param {(id: string|null) => void} props.onHover
  */
 export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover }) {
@@ -170,39 +180,53 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
   const profileLayers = useMemo(() => {
     if (!frame) return null;
 
-    const lines = frame.series.map((s) => ({
-      key: s.key,
-      path: s.samples.map((p) => p.position),
-      color: hexToRgba(s.color, 255),
-    }));
+    // Trend ▸ points (every curve displacement-coloured) uses thinner lines and
+    // smaller marks; the other profile views keep their current weight.
+    const pointsMode = frame.curves.some((c) => c.colored);
 
-    const ribbons = frame.along
-      ? frame.series.flatMap((s) => {
-          const segs = [];
-          for (let i = 0; i < s.samples.length - 1; i++) {
-            const a = s.samples[i].ribbon;
-            const b = s.samples[i + 1].ribbon;
-            if (!a || !b) continue;
-            segs.push({ key: `${s.key}-${i}`, polygon: [a.lo, b.lo, b.hi, a.hi], fillColor: hexToRgba(s.color, 55) });
-          }
-          return segs;
-        })
-      : [];
+    // Uniform-coloured curves use a PathLayer; displacement-coloured point
+    // curves are split into per-segment lines so each segment shows its colour.
+    const linePaths = [];
+    const lineSegments = [];
+    for (const c of frame.curves) {
+      if (c.colored) {
+        for (let i = 0; i < c.samples.length - 1; i++) {
+          const a = c.samples[i];
+          const b = c.samples[i + 1];
+          lineSegments.push({
+            source: a.position,
+            target: b.position,
+            color: hexToRgba(a.color ?? c.color, 255),
+          });
+        }
+      } else {
+        linePaths.push({
+          path: c.samples.map((p) => p.position),
+          color: hexToRgba(c.color, 255),
+        });
+      }
+    }
 
-    const pointData = frame.series.flatMap((s) =>
-      s.samples.map((p) => ({
+    const ribbons = frame.curves.flatMap((c) => {
+      if (!c.stdKey) return [];
+      return c.samples.slice(0, -1).flatMap((a, i) => {
+        const b = c.samples[i + 1];
+        if (!a.ribbon || !b.ribbon) return [];
+        return [{
+          key: `${c.key}-ribbon-${i}`,
+          polygon: [a.ribbon.lo, b.ribbon.lo, b.ribbon.hi, a.ribbon.hi],
+          fillColor: hexToRgba(c.color, 55),
+        }];
+      });
+    });
+
+    const pointData = frame.curves.flatMap((c) =>
+      c.samples.map((p) => ({
         id: p.id,
         position: p.position,
-        fillColor: hexToRgba(s.color, 255),
-        seriesLabel: s.label,
-        color: s.color,
-        unit: s.unit,
-        value: p.sample?.value ?? null,
-        std: p.sample?.std ?? null,
-        distance: p.sample?.distance ?? null,
-        lon: p.sample?.lon ?? null,
-        lat: p.sample?.lat ?? null,
-        height: p.sample?.height ?? null,
+        fillColor: hexToRgba(p.color ?? c.color, 255),
+        frameSample: p,
+        curve: c,
       })),
     );
 
@@ -220,26 +244,42 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
         }),
       );
     }
-    out.push(
-      new PathLayer({
-        id: 'profile-lines',
-        data: lines,
-        getPath: (d) => d.path,
-        getColor: (d) => d.color,
-        widthUnits: 'pixels',
-        getWidth: 2,
-        jointRounded: true,
-        capRounded: true,
-        pickable: false,
-      }),
-    );
+    if (linePaths.length > 0) {
+      out.push(
+        new PathLayer({
+          id: 'profile-lines',
+          data: linePaths,
+          getPath: (d) => d.path,
+          getColor: (d) => d.color,
+          widthUnits: 'pixels',
+          getWidth: 2,
+          jointRounded: true,
+          capRounded: true,
+          pickable: false,
+        }),
+      );
+    }
+    if (lineSegments.length > 0) {
+      out.push(
+        new LineLayer({
+          id: 'profile-line-segments',
+          data: lineSegments,
+          getSourcePosition: (d) => d.source,
+          getTargetPosition: (d) => d.target,
+          getColor: (d) => d.color,
+          widthUnits: 'pixels',
+          getWidth: 1,
+          pickable: false,
+        }),
+      );
+    }
     if (markerStyle === 'billboard') {
       out.push(
         new ScatterplotLayer({
           id: 'profile-points',
           data: pointData,
           getPosition: (d) => d.position,
-          getRadius: 4,
+          getRadius: pointsMode ? 3 : 4,
           radiusUnits: 'pixels',
           radiusMinPixels: 2,
           radiusMaxPixels: 12,
@@ -258,7 +298,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           mesh: sphereGeometry,
           getPosition: (d) => d.position,
           getColor: (d) => d.fillColor,
-          getScale: [0.03, 0.03, 0.03],
+          getScale: pointsMode ? [0.02, 0.02, 0.02] : [0.03, 0.03, 0.03],
           material: { ambient: 0.35, diffuse: 0.6, shininess: 0, specularColor: [0, 0, 0] },
           pickable: true,
           autoHighlight: true,
@@ -341,8 +381,11 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
         views={view}
         initialViewState={{
           target: [0, 0, 0],
+          // Canonical default view (matches three.js / Plotly): Z up, camera at
+          // azimuth 45deg / elevation 30deg. OrbitView puts the camera at
+          // [-d cosX sinOrbit, -d cosX cosOrbit, d sinX], so 30/225 -> (+, +, +).
           rotationX: 30,
-          rotationOrbit: -30,
+          rotationOrbit: 225,
           zoom: 7.5,
           minZoom: 4,
           maxZoom: 12,
@@ -362,7 +405,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
       />
       {tooltip && (
         <div style={{ position: 'absolute', left: tooltip.x + 14, top: tooltip.y + 14, zIndex: 5 }}>
-          {frame ? <ProfileTooltip sample={tooltip.object} /> : <PointTooltip point={tooltip.object} axes={axes} />}
+          {frame ? <ProfileTooltip sample={tooltip.object.frameSample} curve={tooltip.object.curve} frame={frame} /> : <PointTooltip point={tooltip.object} axes={axes} />}
         </div>
       )}
     </div>

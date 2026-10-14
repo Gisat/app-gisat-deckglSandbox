@@ -6,7 +6,7 @@ import { BitmapLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
 import { SelectionControls, DrawingOverlay, pointInPolygon, normalizeGeometry } from '../../components/PointSelection';
 import { FeatureSpaceChart } from '../../components/FeatureSpaceChart3D';
-import { buildProfileSeries } from '../../components/2DLineProfile';
+import { buildProfileSamples } from '../../components/2DLineProfile';
 import chroma from 'chroma-js';
 import { scaleLinear } from 'd3-scale';
 
@@ -31,20 +31,6 @@ const sizeScale = scaleLinear([0, 5], [3, 8]).clamp(true);
 
 /** Flat 2D map view (no rotation); avoids a new MapView per render. */
 const mapView = new MapView({ repeat: true });
-
-/**
- * Line-profile series offered in the 3D chart, with their uncertainty bands.
- * The first three are on by default in the panel.
- */
-const SERIES_DEFS = [
-  { key: 'VEL_REL', stdKey: 'VEL_SD', label: 'VEL_REL', color: '#2ca02c', unit: 'mm/yr' },
-  { key: 'VEL_LAST', stdKey: 'SVEL_LAST', label: 'VEL_LAST', color: '#d62728', unit: 'mm/yr' },
-  { key: 'LT_365', stdKey: 'LTS_365', label: 'LT_365', color: '#17becf', unit: 'mm/yr' },
-  { key: 'TD_90', stdKey: 'STD_90', label: 'TD_90', color: '#9467bd', unit: 'mm' },
-  { key: 'TD_180', stdKey: 'STD_180', label: 'TD_180', color: '#8c564b', unit: 'mm' },
-  { key: 'TD_365', stdKey: 'STD_365', label: 'TD_365', color: '#e377c2', unit: 'mm' },
-  { key: 'TD_730', stdKey: 'STD_730', label: 'TD_730', color: '#7f7f7f', unit: 'mm' },
-];
 
 // Helper to consistently get a point's ID (Tabqa: ID, fallback fid).
 const getPointId = (feature) => {
@@ -281,10 +267,11 @@ export default function FeatureScatterChart3D() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bufferDistance]);
 
-  // Ordered multi-series profile for the 3D chart (app-owned; the chart module
-  // stays portable and only consumes the prepared series).
-  const profileSeries = useMemo(
-    () => buildProfileSeries(selectedFeatures, drawnLineCoords, SERIES_DEFS),
+  // Ordered single-curve profile samples for the 3D chart (app-owned; the chart
+  // module stays portable and only consumes the prepared samples, then lets the
+  // user switch the Y/Z axes client-side).
+  const profileSamples = useMemo(
+    () => buildProfileSamples(selectedFeatures, drawnLineCoords),
     [selectedFeatures, drawnLineCoords],
   );
 
@@ -380,7 +367,7 @@ export default function FeatureScatterChart3D() {
       {showFeatureSpace && (
         <FeatureSpaceChart
           featureCollection={selectedFeatures}
-          profileSeries={profileSeries}
+          profileSamples={profileSamples}
           showProfile={showProfile}
           onPointHover={setHoveredPointId}
         />
