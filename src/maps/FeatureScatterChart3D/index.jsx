@@ -51,7 +51,7 @@ export default function FeatureScatterChart3D() {
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
   const [selectionMode, setSelectionMode] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [bufferDistance, setBufferDistance] = useState(50);
+  const [bufferDistance, setBufferDistance] = useState(20);
   const [drawnGeometry, setDrawnGeometry] = useState(null);
   const [selectedPoints, setSelectedPoints] = useState([]);
   const [selectedFeatures, setSelectedFeatures] = useState(null);

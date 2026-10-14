@@ -88,8 +88,9 @@ export const PROFILE_DEFAULTS = { y: 'H', z: 'VEL_REL' };
  * Trend windows: cumulative trend displacement over 90/180/365/730 days, in
  * ascending window order with a light->dark sequential colour ramp so a line's
  * window reads at a glance. Each window's uncertainty field is its paired
- * `STD_*`; streams are cumulative windows ending "now", so the axis is ordered
- * categorical, not a linear time scale.
+ * `STD_*`; these are cumulative windows ending "now", so the axis is ordered
+ * categorical, not a linear time scale. (The `points` shape instead colours by
+ * displacement — see `DISPLACEMENT_RAMP`.)
  */
 export const TREND_WINDOWS = [
   { key: 'TD_90', stdKey: 'STD_90', days: 90, color: '#c6dbef' },
@@ -104,7 +105,14 @@ export const PROFILE_VIEWS = ['attributes', 'trend'];
 /** Default profile view. */
 export const PROFILE_VIEW_DEFAULT = 'trend';
 
-/** Default trend shape: one line per window (`windows`) vs one per point (`points`). */
+/**
+ * Trend shapes: `windows` (one line per window, with its `STD_*` band),
+ * `windows-plain` (same, band omitted so the Z range matches `points`) and
+ * `points` (one displacement-coloured line per selected point).
+ */
+export const TREND_SHAPES = ['windows', 'windows-plain', 'points'];
+
+/** Default trend shape. */
 export const TREND_LINES_DEFAULT = 'windows';
 
 /**

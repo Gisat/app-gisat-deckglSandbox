@@ -180,9 +180,9 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
   const profileLayers = useMemo(() => {
     if (!frame) return null;
 
-    // Trend ▸ points (every curve displacement-coloured) uses thinner lines and
-    // smaller marks; the other profile views keep their current weight.
-    const pointsMode = frame.curves.some((c) => c.colored);
+    // Trend ▸ points uses thinner lines and smaller marks; the other profile
+    // views keep their current weight.
+    const pointsMode = frame.shape === 'points';
 
     // Uniform-coloured curves use a PathLayer; displacement-coloured point
     // curves are split into per-segment lines so each segment shows its colour.

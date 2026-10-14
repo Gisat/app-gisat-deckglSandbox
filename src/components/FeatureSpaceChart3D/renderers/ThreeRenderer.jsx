@@ -135,8 +135,8 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
 
   const profileData = useMemo(() => {
     if (!frame) return [];
-    // Trend ▸ points (every curve displacement-coloured) uses smaller marks.
-    const pointsMode = frame.curves.some((c) => c.colored);
+    // Trend ▸ points uses smaller marks; the other profile views keep their size.
+    const pointsMode = frame.shape === 'points';
     const out = [];
     for (const curve of frame.curves) {
       for (const p of curve.samples) {

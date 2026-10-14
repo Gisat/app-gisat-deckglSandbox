@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ATTRIBUTES,
   AXIS_KEYS,
@@ -67,11 +67,17 @@ export function FeatureSpaceChart({
   const [customAxes, setCustomAxes] = useState(DEFAULT_CUSTOM_AXES);
   const [markerStyle, setMarkerStyle] = useState('sphere');
 
-  const [mode, setMode] = useState('scatter');
+  const [mode, setMode] = useState(showProfile ? 'profile' : 'scatter');
   const [profileView, setProfileView] = useState(PROFILE_VIEW_DEFAULT);
   const [trendLines, setTrendLines] = useState(TREND_LINES_DEFAULT);
   const [yKey, setYKey] = useState(PROFILE_DEFAULTS.y);
   const [zKey, setZKey] = useState(PROFILE_DEFAULTS.z);
+
+  // Default to the 3D line profile whenever the line tool is active (or a line
+  // has been drawn); the user can still switch back to scatter.
+  useEffect(() => {
+    if (showProfile) setMode('profile');
+  }, [showProfile]);
 
   const axes = useMemo(() => resolveAxes(presetKey, customAxes), [presetKey, customAxes]);
   const activeFields = useMemo(() => activeFieldsFor(axes), [axes]);
@@ -294,7 +300,18 @@ export function FeatureSpaceChart({
           ) : (
             <>
               <div style={{ display: 'flex', gap: '3px', marginLeft: 'auto' }} title="Trend shape">
-                <button onClick={() => setTrendLines('windows')} style={buttonStyle(trendLines === 'windows')}>
+                <button
+                  onClick={() => setTrendLines('windows')}
+                  style={buttonStyle(trendLines === 'windows')}
+                  title="One line per window, with its ±1σ band"
+                >
+                  windows ±σ
+                </button>
+                <button
+                  onClick={() => setTrendLines('windows-plain')}
+                  style={buttonStyle(trendLines === 'windows-plain')}
+                  title="One line per window, no band (same Z scale as points)"
+                >
                   windows
                 </button>
                 <button onClick={() => setTrendLines('points')} style={buttonStyle(trendLines === 'points')}>
@@ -329,6 +346,11 @@ export function FeatureSpaceChart({
                   ? `Z band: ${ATTRIBUTES[zKey].stdKey}.`
                   : 'No uncertainty band for this attribute.'}
           </span>
+          {profileView === 'trend' && trendLines === 'windows' && (
+            <span style={{ flexBasis: '100%', fontSize: '10px', color: '#999' }}>
+              {'The shaded band is the \u00b11\u03c3 uncertainty of each window\u2019s trend displacement; it widens for longer windows because a longer accumulation carries more error.'}
+            </span>
+          )}
         </div>
       )}
 

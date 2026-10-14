@@ -15,6 +15,8 @@
  * - `trend` / `windows`: one curve per `TREND_WINDOWS` entry. X = distance,
  *   Y = the window's evenly spaced band, Z = that window's `TD_*`, with a
  *   `TD ± STD` band on Z when the paired `STD_*` is finite.
+ * - `trend` / `windows-plain`: same as `windows` but with the uncertainty band
+ *   omitted, so its Z range matches the `points` shape.
  * - `trend` / `points`: one curve per point, stepping across the window bands
  *   (Y) against that point's `TD_*` (Z); no ribbon.
  */
@@ -133,10 +135,11 @@ function attributeCurves(yKey, zKey, samples) {
 
 /**
  * Trend / windows: one curve per trend window at an even Y band, carrying that
- * window's `TD_*` on Z and its `STD_*` band when present. A curve needs ≥ 2
- * finite samples.
+ * window's `TD_*` on Z and (when `withStd`) its `STD_*` band. A curve needs ≥ 2
+ * finite samples. Without `withStd` the band is omitted, so the curve's Z range
+ * (and thus the frame's Z domain) matches the points shape.
  */
-function windowCurves(samples, cube) {
+function windowCurves(samples, cube, withStd) {
   const count = TREND_WINDOWS.length;
   const curves = [];
   TREND_WINDOWS.forEach((w, i) => {
@@ -146,7 +149,7 @@ function windowCurves(samples, cube) {
       const x = s.distance;
       const z = s[w.key];
       if (!isNum(x) || !isNum(z)) continue;
-      const std = isNum(s[w.stdKey]) ? Math.abs(s[w.stdKey]) : null;
+      const std = withStd && isNum(s[w.stdKey]) ? Math.abs(s[w.stdKey]) : null;
       rows.push({
         s,
         x,
@@ -165,7 +168,7 @@ function windowCurves(samples, cube) {
         key: w.key,
         label: trendWindowLabel(w.days),
         color: w.color,
-        stdKey: w.stdKey,
+        stdKey: withStd ? w.stdKey : null,
         rows,
       });
     }
@@ -221,10 +224,11 @@ function pointCurves(samples, cube) {
  * Build the render-ready profile frame (one or more curves).
  *
  * @param {{view?:'attributes'|'trend', yKey?:string, zKey?:string,
- *   trendLines?:'windows'|'points', samples?:Array<any>}} profile
+ *   trendLines?:'windows'|'windows-plain'|'points', samples?:Array<any>}} profile
  * @param {number} [cube] half-extent of the normalised cube
  * @returns {{
- *   view:'attributes'|'trend', yKey:string|null, zKey:string|null,
+ *   view:'attributes'|'trend', shape:'windows'|'windows-plain'|'points'|null,
+ *   yKey:string|null, zKey:string|null,
  *   titles:{x:string,y:string,z:string},
  *   domains:{x:[number,number],y:[number,number],z:[number,number]},
  *   colorDomain:[number,number]|null,
@@ -244,12 +248,13 @@ export function buildProfileFrame(profile, cube = 1) {
   const samples = profile?.samples ?? [];
   const yKey = profile?.yKey ?? 'H';
   const zKey = profile?.zKey ?? 'VEL_REL';
+  const trendLines = profile?.trendLines;
 
   const rawCurves =
     view === 'trend'
-      ? profile?.trendLines === 'points'
+      ? trendLines === 'points'
         ? pointCurves(samples, cube)
-        : windowCurves(samples, cube)
+        : windowCurves(samples, cube, trendLines === 'windows')
       : attributeCurves(yKey, zKey, samples);
 
   let xMin = Infinity;
@@ -277,10 +282,10 @@ export function buildProfileFrame(profile, cube = 1) {
   const yd = view === 'trend' ? [-cube, cube] : resolveDomain(yMin, yMax);
   const zd = resolveDomain(zMin, zMax);
 
-  // Trend points are coloured by their own displacement; every other curve
-  // keeps its fixed colour. The colour domain is pinned to the map's [-3, 3]
-  // (not the data range), so point colours stay comparable across selections.
-  const colorByDisplacement = view === 'trend' && profile?.trendLines === 'points';
+  // The Trend ▸ points shape colours each point by its own displacement; every
+  // other curve keeps its fixed colour. The colour domain is pinned to the map's
+  // [-3, 3] (not the data range), so point colours stay comparable.
+  const colorByDisplacement = view === 'trend' && trendLines === 'points';
   const [cLo, cHi] = DISPLACEMENT_DOMAIN;
 
   const curves = rawCurves.map((c) => ({
@@ -330,6 +335,7 @@ export function buildProfileFrame(profile, cube = 1) {
 
   return {
     view,
+    shape: view === 'trend' ? (trendLines ?? 'windows') : null,
     yKey: view === 'attributes' ? yKey : null,
     zKey: view === 'attributes' ? zKey : null,
     titles,
