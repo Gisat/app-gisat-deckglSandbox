@@ -155,19 +155,38 @@ export default function FeatureScatterChart3D() {
     radiusMinPixels: 1,
     radiusMaxPixels: 20,
     billboard: true,
-    stroked: false,
-    getFillColor: (d) => {
+    // Selection/hover is shown as a border only, so the fill keeps encoding
+    // VEL_REL through the colour scale.
+    stroked: true,
+    lineWidthUnits: 'pixels',
+    getLineColor: (d) => {
       const pointId = getPointId(d);
 
       if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
-        return [255, 0, 0, 255]; // Bright red for hovered
+        return [255, 0, 0, 255]; // red border for hovered
       }
 
       if (isPointSelected(d)) {
-        return [66, 212, 244, 255]; // cyan for selected
+        return [66, 212, 244, 255]; // cyan border for selected
       }
 
-      if (selectedIdsSet.size > 0) {
+      return [0, 0, 0, 0];
+    },
+    getLineWidth: (d) => {
+      const pointId = getPointId(d);
+
+      if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
+        return 2;
+      }
+
+      if (isPointSelected(d)) {
+        return 2;
+      }
+
+      return 0;
+    },
+    getFillColor: (d) => {
+      if (selectedIdsSet.size > 0 && !isPointSelected(d)) {
         return [200, 200, 200, 100]; // grey for dimmed
       }
 
@@ -175,7 +194,9 @@ export default function FeatureScatterChart3D() {
     },
     updateTriggers: {
       getFillColor: [selectedPoints, hoveredPointId],
-      getRadius: [selectedPoints]
+      getRadius: [selectedPoints],
+      getLineColor: [selectedPoints, hoveredPointId],
+      getLineWidth: [selectedPoints, hoveredPointId]
     }
   });
 
