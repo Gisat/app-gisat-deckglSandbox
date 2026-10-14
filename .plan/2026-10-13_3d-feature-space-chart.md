@@ -24,9 +24,9 @@ their known limitations, ending in a recommendation.
    `SelectionDrawing3D` and leave shared components untouched (keeps it portable).
 3. Input is GeoJSON features (props under `feature.properties`), not an `InsarPoint[]` with top-level keys.
 4. Plotly is **not installed**; Nivo (`@nivo/scatterplot`, `@nivo/line`) is used but has **no 3D**.
-5. **Plotly `scatter3d` cannot size markers per point** (`marker.size` is one number per trace; no
-   per-point array/`sizeref`). The requested "size = coh" channel is impossible in Plotly; we must
-   fall back to per-trace binning or opacity. This is a headline comparison finding.
+5. **Plotly `scatter3d` supports per-point sizing** via a numeric `marker.size` array, so the
+   requested "size = coh" channel maps one-to-one. Plotly's real limitation is its flat billboard
+   marker: there is no sphere symbol, unlike deck.gl's `SimpleMeshLayer` / three.js instancing.
 6. **deck.gl `OrthographicView` cannot rotate** (2D orthographic only). Use **`OrbitView`** for a
    rotatable 3D scatter. Both are exported from `@deck.gl/core` (verified).
 7. Drop the "Radar Acquisition Geometry" preset: `inc_ang`/`az_ang` are constant per stack, so the
@@ -39,9 +39,9 @@ their known limitations, ending in a recommendation.
 - **Presets**: (A) *Kinematic* — X=`vel_rel`, Y=`vel_last`, Z=`h_struct`, color=`vel_rel`, size=`coh`;
   (B) *Topographic* — X=`h_dtm`, Y=`h_struct`, Z=`vel_rel`, color=`vel_rel`, size=`coh`; plus **Custom**
   free X/Y/Z/color/size pickers. `h_struct` is derived as `(h ?? 0) - (h_dtm ?? 0)`.
-- **Color**: when color=`vel_rel`, reuse the map's chroma scale and fixed domain `[-5,5]` so chart
+- **Color**: when color=`vel_rel`, reuse the map's chroma scale and fixed domain `[-3,3]` so chart
   colors match map markers; other attributes get a fixed/auto domain with a sensible palette.
-- **Size**: `coh` mapped to a pixel-radius range over fixed domain `[0,1]` (Plotly honors it only via binned traces/opacity).
+- **Size**: `coh` mapped to a pixel-radius range over fixed domain `[0,1]`.
 - **Presentation**: toggleable docked overlay panel (right side, ~45% width) with header:
   title + point-count badge + collapse + renderer switcher + preset select + collapsible Custom pickers.
 - **Map link**: hover-only. Reuse `onPointHover` → `hoveredPointId`; tooltip shows `id_global`,
@@ -86,8 +86,8 @@ Normalized point (all renderers consume the same array):
 - Load the two heavyweight libs via `React.lazy` + `Suspense` so they don't bloat the initial bundle.
 
 ## Known limitations to validate (fill COMPARISON.md with observed results)
-- **Plotly**: no per-point marker size (encode coh via binned traces or opacity); ~3MB min bundle;
-  WebGL scatter3d slows on large selections; axes/ticks/labels free.
+- **Plotly**: per-point marker size via a numeric `marker.size` array; flat billboard markers (no
+  sphere symbol); ~3MB min bundle; WebGL scatter3d slows on large selections; axes/ticks/labels free.
 - **deck.gl**: no built-in axes/grid/ticks → manual cube + `TextLayer` labels (font atlas); must use
   `OrbitView` (OrthographicView can't rotate); GPU-fast, scales best; per-point radius natively.
 - **three.js/r3f**: no built-in labeled axes (`axesHelper` has no labels) → manual + drei `<Text>`;
@@ -112,7 +112,7 @@ Record limitations honestly (both strengths and the "fear of too many points").
 2. `transformPoints.js` + `attributes.js` + `colorScale.js` (pure, unit-testable).
 3. `FeatureSpaceChart.jsx` shell: state, header, preset/custom UI, empty state, renderer switcher
    with lazy-loaded renderers.
-4. `PlotlyRenderer.jsx` (document the size limitation in-code).
+4. `PlotlyRenderer.jsx` (document the flat billboard-marker limitation in-code).
 5. `DeckGLRenderer.jsx` using `OrbitView`.
 6. `ThreeRenderer.jsx` using r3f + drei.
 7. Wire toggle + panel into `SelectionDrawing3D/index.jsx` (props only).
@@ -123,7 +123,7 @@ Record limitations honestly (both strengths and the "fear of too many points").
 - Manual on `/selection-drawing-3d`: draw a polygon/line/circle selection → chart appears; each
   renderer renders; presets + Custom switch axes; hovering a chart point highlights it on the map
   and clears on unhover; window resize keeps the canvas sized; empty selection shows the empty
-  state; Plotly's missing size channel is demonstrated.
+  state; each renderer's marker style (billboard vs shaded sphere) is demonstrated.
 
 ## Out of scope
 - Click-to-select / fly-to from chart to map.

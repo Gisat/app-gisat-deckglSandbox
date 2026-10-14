@@ -18,7 +18,8 @@ The flag that disabled the profile (`showLineProfileToggle={false}`) is replaced
 2. **Map = 2D** (flat): OSM basemap + relief "glaze" `CogBitmapLayer` copied from
    `Tabqa_dam`; pitch 0, no rotate. Remove the Czech `CogTerrainLayer`/DEM and 3D drawing.
 3. **Charts stay 3D.** One docked panel with a header toggle: `Scatter | 3D line profile`.
-   Default mode = **Scatter**. Panel still opens by default (`showFeatureSpace=true`).
+   Default mode = **Scatter**, auto-switching to the profile while the line tool is active.
+   Panel still opens by default (`showFeatureSpace=true`).
 4. Dataset = `Tabqua_LOS_selected.geojson` (Tabqa, Syria).
 5. **3D line profile** reuses the existing three renderers (Plotly / deck.gl / three) and
    their switcher. Three dimensions, selectable mode:
@@ -140,7 +141,8 @@ Keys stay **UPPERCASE** to match the dataset. No `h_dtm` / `h_struct` (drop the 
 - Ribbon rendering is new geometry in all three engines; Plotly `mesh3d`, deck.gl
   `PolygonLayer` and a three `BufferGeometry` strip must each be built from the ordered samples.
 - Ribbons can occlude points in orbit; keep them translucent and ideally depth-sorted.
-- Plotly's `scatter3d` still cannot size markers per point (scatter mode) — pre-existing.
+- Plotly's `scatter3d` marker is a flat billboard — no sphere symbol (scatter mode); per-point
+  sizing is supported via a numeric `marker.size` array.
 - This is a **breaking data swap**: the scatter's attributes/presets change; any other
   consumer of `FeatureSpaceChart3D` (only `FeatureScatterChart3D`) must be updated together.
 - The dataset is `*_selected` (a subset); selection drawing still applies over it.
@@ -149,7 +151,7 @@ Keys stay **UPPERCASE** to match the dataset. No `h_dtm` / `h_struct` (drop the 
 - `npm run lint` (`--max-warnings 0`) and `npm run build` pass.
 - `/3d-feature-scatter-chart`: OSM + glaze (no Czech terrain); points on the Tabqa dam;
   draw polygon/circle/line (2D) → selection works.
-- Panel header toggles Scatter ↔ 3D line profile (default Scatter).
+- Panel header toggles Scatter ↔ 3D line profile (defaults to Scatter; auto-opens the profile while the line tool is active).
 - Profile: draw a line → three series render as rings/segments; toggle series on/off;
   ribbons toggle with their series; `Along line` vs `Geo path` switches axes; geo mode shows
   one active series with no ribbon; hover highlights the map point and clears on unhover.
@@ -190,8 +192,10 @@ These changed the plan's letter (not its intent); recorded so the plan matches t
 - **`3D line profile` mode is gated.** New `showProfile` prop on `FeatureSpaceChart`; the
   `Scatter | 3D line profile` toggle renders only while the line tool is in use
   (`selectionMode === 'line' || drawnLineCoords.length >= 2`), else the panel falls back to Scatter.
+  While the line tool is active the panel auto-switches its mode state to `'profile'` (the user can
+  still toggle back to Scatter), so `Scatter` is the default only outside a line selection.
 - **Line buffer range.** `SelectionControls` gained optional `bufferMin`/`bufferMax`/`bufferStep`
-  (defaults 10/500/10 keep other maps unchanged). This app uses **10–200 m** with default **50 m**.
+  (defaults 10/500/10 keep other maps unchanged). This app uses **10–200 m** with default **20 m**.
 - **Initial view.** `INITIAL_VIEW_STATE` is flat (`pitch 0`) at **zoom 16** over the dam
   (coords as set in the app), not the plan's `{38.5667, 35.8722, zoom 13}`.
 - **Selection fix.** `getPointId` is ID-first (`ID ?? fid`). The map highlight set must use **string**

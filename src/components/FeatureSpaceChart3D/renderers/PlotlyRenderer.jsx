@@ -6,18 +6,17 @@
  * FeatureSpaceChart).
  *
  * Two modes:
- *  - scatter: the feature-space cloud (see KNOWN LIMITATION below).
+ *  - scatter: the feature-space cloud. `scatter3d.marker.size` accepts a numeric
+ *    array, so the size channel is honoured per point.
  *  - profile: one `scatter3d` line per `frame.curves` entry, plus a translucent
  *    `mesh3d` uncertainty ribbon on Z for each banded curve (attribute view and
  *    trend windows only). Plotly has real axes, so profile values are plotted in
  *    raw units.
  *
- * KNOWN LIMITATION (headline comparison finding):
- *   Plotly's `scatter3d` marker has NO per-point size. `marker.size` is a single
- *   number per trace (no data array, no sizemode/sizeref like 2D scatter). The
- *   `size = COH` channel is therefore approximated by binning points into a few
- *   traces, each with a constant marker size, plus a per-point opacity ramp.
- *   This is the only renderer that cannot honour the size channel natively.
+ * KNOWN LIMITATION:
+ *   Plotly's `scatter3d` markers are flat billboards — there is no sphere marker
+ *   geometry — so this renderer cannot match the shaded spheres the deck.gl and
+ *   three.js renderers draw for the `sphere` marker style.
  */
 
 import { useMemo } from 'react';
@@ -28,9 +27,6 @@ import { buildPlotlyColorscale, sizeForValue } from '../colorScale';
 import { buildProfileFrame, DISPLACEMENT_COLORSCALE, displacementColor, formatTick } from '../profileGeometry';
 
 const Plot = createPlotlyComponent(Plotly);
-
-/** Number of coherence bins used to fake per-point sizing. */
-const SIZE_BINS = 5;
 
 /**
  * @param {Object} props
@@ -49,50 +45,39 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
   const traces = useMemo(() => {
     if (frame) return buildProfileTraces(frame);
 
-    const bins = Array.from({ length: SIZE_BINS }, () => []);
-    for (const p of points) {
-      const t = sizeForValue(p[axes.size], sizeDomain, [0, 1]);
-      const idx = Math.min(SIZE_BINS - 1, Math.floor(t * SIZE_BINS));
-      bins[idx].push(p);
-    }
-
     const colorscale = buildPlotlyColorscale(colorScale, colorDomain);
 
-    return bins
-      .map((binPoints, binIndex) => {
-        if (binPoints.length === 0) return null;
-        const sizeT = (binIndex + 0.5) / SIZE_BINS;
-        const markerSize = sizeRange[0] + sizeT * (sizeRange[1] - sizeRange[0]);
-        return {
-          type: 'scatter3d',
-          mode: 'markers',
-          name: `size bin ${binIndex + 1}`,
-          x: binPoints.map((p) => p[axes.x]),
-          y: binPoints.map((p) => p[axes.y]),
-          z: binPoints.map((p) => p[axes.z]),
-          customdata: binPoints.map((p) => [p.id, p.idOrig, p[axes.x], p[axes.y], p[axes.z], p.COH]),
-          marker: {
-            size: markerSize,
-            // Per-point colour maps values through a colorscale; scatter3d
-            // marker.color does not accept raw hex-string arrays.
-            color: binPoints.map((p) => p[axes.color]),
-            colorscale,
-            cmin: colorDomain[0],
-            cmax: colorDomain[1],
-            opacity: 0.55 + sizeT * 0.45,
-            line: { width: 0 },
-          },
-          hovertemplate:
-            '<b>%{customdata[0]}</b><br>'
-            + 'fid: %{customdata[1]}<br>'
-            + `${axisTitle(axes.x)}: %{customdata[2]}<br>`
-            + `${axisTitle(axes.y)}: %{customdata[3]}<br>`
-            + `${axisTitle(axes.z)}: %{customdata[4]}<br>`
-            + 'coherence: %{customdata[5]}'
-            + '<extra></extra>',
-        };
-      })
-      .filter(Boolean);
+    // `scatter3d.marker.size` accepts a numeric array, so the size channel maps
+    // one-to-one (no binning). Plotly's real limitation is the flat billboard
+    // marker, not per-point sizing.
+    return [{
+      type: 'scatter3d',
+      mode: 'markers',
+      name: 'points',
+      x: points.map((p) => p[axes.x]),
+      y: points.map((p) => p[axes.y]),
+      z: points.map((p) => p[axes.z]),
+      customdata: points.map((p) => [p.id, p.idOrig, p[axes.x], p[axes.y], p[axes.z], p.COH]),
+      marker: {
+        size: points.map((p) => sizeForValue(p[axes.size], sizeDomain, sizeRange)),
+        // Per-point colour maps values through a colorscale; scatter3d
+        // marker.color does not accept raw hex-string arrays.
+        color: points.map((p) => p[axes.color]),
+        colorscale,
+        cmin: colorDomain[0],
+        cmax: colorDomain[1],
+        opacity: 0.85,
+        line: { width: 0 },
+      },
+      hovertemplate:
+        '<b>%{customdata[0]}</b><br>'
+        + 'fid: %{customdata[1]}<br>'
+        + `${axisTitle(axes.x)}: %{customdata[2]}<br>`
+        + `${axisTitle(axes.y)}: %{customdata[3]}<br>`
+        + `${axisTitle(axes.z)}: %{customdata[4]}<br>`
+        + 'coherence: %{customdata[5]}'
+        + '<extra></extra>',
+    }];
   }, [points, axes, colorScale, colorDomain, sizeDomain, sizeRange, frame]);
 
   const layout = useMemo(
@@ -168,42 +153,47 @@ function buildProfileTraces(frame) {
     if (n < 2) continue;
 
     if (curve.stdKey) {
-      const x = [];
-      const y = [];
-      const z = [];
-      const i = [];
-      const j = [];
-      const k = [];
-      samples.forEach((smp) => {
-        x.push(smp.raw.x, smp.raw.x);
-        y.push(smp.raw.y, smp.raw.y);
-        // Band lives on Z: lo/hi are `z ∓ std`.
-        z.push(smp.raw.lo, smp.raw.hi);
-      });
-      for (let a = 0; a < n - 1; a++) {
-        const b0 = 2 * a;
-        const t0 = 2 * a + 1;
-        const b1 = 2 * a + 2;
-        const t1 = 2 * a + 3;
-        i.push(b0, b0);
-        j.push(t0, t1);
-        k.push(t1, b1);
+      // Only finite-σ samples define the band; a missing std means "unknown",
+      // so those samples drop out rather than producing a zero-width flap.
+      const banded = samples.filter((smp) => smp.ribbon);
+      if (banded.length >= 2) {
+        const x = [];
+        const y = [];
+        const z = [];
+        const i = [];
+        const j = [];
+        const k = [];
+        banded.forEach((smp) => {
+          x.push(smp.raw.x, smp.raw.x);
+          y.push(smp.raw.y, smp.raw.y);
+          // Band lives on Z: lo/hi are `z ∓ std`.
+          z.push(smp.raw.lo, smp.raw.hi);
+        });
+        for (let a = 0; a < banded.length - 1; a++) {
+          const b0 = 2 * a;
+          const t0 = 2 * a + 1;
+          const b1 = 2 * a + 2;
+          const t1 = 2 * a + 3;
+          i.push(b0, b0);
+          j.push(t0, t1);
+          k.push(t1, b1);
+        }
+        traces.push({
+          type: 'mesh3d',
+          x,
+          y,
+          z,
+          i,
+          j,
+          k,
+          name: `${curve.label} band`,
+          color: curve.color,
+          opacity: 0.22,
+          flatshading: false,
+          hoverinfo: 'skip',
+          showscale: false,
+        });
       }
-      traces.push({
-        type: 'mesh3d',
-        x,
-        y,
-        z,
-        i,
-        j,
-        k,
-        name: `${curve.label} band`,
-        color: curve.color,
-        opacity: 0.22,
-        flatshading: false,
-        hoverinfo: 'skip',
-        showscale: false,
-      });
     }
 
     const hover = curveHover(frame, curve, samples);

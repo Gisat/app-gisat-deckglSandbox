@@ -276,7 +276,10 @@ export default function FeatureScatterChart3D() {
     setIsDrawing(false);
   };
 
-  // Recompute the line corridor and re-select when buffer distance changes after a line is drawn
+  // Recompute the line corridor and re-select when the buffer distance changes,
+  // and again once the GeoJSON arrives: a line completed before the fetch
+  // resolves would otherwise select from the still-empty `allFeatures` and its
+  // corridor would stay empty until the buffer changed.
   useEffect(() => {
     if (selectionMode !== 'line' || !drawnLineCoords || drawnLineCoords.length < 2) return;
     const newGeometry = normalizeGeometry('line', drawnLineCoords, bufferDistance);
@@ -284,9 +287,7 @@ export default function FeatureScatterChart3D() {
       setDrawnGeometry(newGeometry);
       applySelection(newGeometry);
     }
-  // Only re-run when buffer changes; mode/coords are handled by handleGeometryComplete
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bufferDistance]);
+  }, [bufferDistance, drawnLineCoords, selectionMode, applySelection]);
 
   // Ordered single-curve profile samples for the 3D chart (app-owned; the chart
   // module stays portable and only consumes the prepared samples, then lets the

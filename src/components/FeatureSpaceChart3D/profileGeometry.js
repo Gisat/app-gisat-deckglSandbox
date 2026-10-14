@@ -118,15 +118,17 @@ function attributeCurves(yKey, zKey, samples) {
     const y = s[yKey];
     const z = s[zKey];
     if (!isNum(x) || !isNum(y) || !isNum(z)) continue;
-    const std = stdKey && isNum(s[stdKey]) ? Math.abs(s[stdKey]) : 0;
+    // A missing standard deviation stays "unknown": mark the row unbanded so no
+    // ribbon is drawn rather than asserting a zero-width (zero-uncertainty) band.
+    const std = stdKey && isNum(s[stdKey]) ? Math.abs(s[stdKey]) : null;
     rows.push({
       s,
       x,
       y,
       z,
-      lo: stdKey ? z - std : z,
-      hi: stdKey ? z + std : z,
-      banded: stdKey != null,
+      lo: std != null ? z - std : z,
+      hi: std != null ? z + std : z,
+      banded: std != null,
     });
   }
   rows.sort((a, b) => a.x - b.x);

@@ -24,7 +24,7 @@ const DeckGLRenderer = lazy(() => import('./renderers/DeckGLRenderer'));
 const ThreeRenderer = lazy(() => import('./renderers/ThreeRenderer'));
 
 const RENDERERS = [
-  { key: 'plotly', label: 'Plotly', note: 'no per-point size' },
+  { key: 'plotly', label: 'Plotly', note: 'billboard markers' },
   { key: 'deckgl', label: 'deck.gl', note: 'OrbitView' },
   { key: 'three', label: 'three.js', note: 'r3f + drei' },
 ];

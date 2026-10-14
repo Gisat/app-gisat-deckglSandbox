@@ -19,7 +19,7 @@ sharing the same data, axis, preset, colour and hover state.
 
 | Criterion | Plotly | deck.gl (OrbitView) | three.js / r3f |
 |---|---|---|---|
-| Per-point **size** (`coh`) | **No** — binned into 5 traces + opacity [C] | Yes — `ScatterplotLayer` radius (circles) or `SimpleMeshLayer` `getScale` (spheres) [C] | Yes — per-point `gl_PointSize` (circles) or instance scale (spheres) [C] |
+| Per-point **size** (`coh`) | Yes — numeric `marker.size` array [C] | Yes — `ScatterplotLayer` radius (circles) or `SimpleMeshLayer` `getScale` (spheres) [C] | Yes — per-point `gl_PointSize` (circles) or instance scale (spheres) [C] |
 | Marker primitive | Billboard 2D sprite (circle/square/…) [C] | **Toggle:** billboard disc (`ScatterplotLayer`) **or** shaded sphere (`SimpleMeshLayer`) [C] | **Toggle:** `Points` + shader (circles) **or** sphere `InstancedMesh` [C] |
 | Billboard circles (always face camera) | **Yes** — every `scatter3d` marker is a billboard [C] | Yes — `ScatterplotLayer` (or `IconLayer` for textured sprites) [C] | Yes — `THREE.Points` + custom `ShaderMaterial` [C] |
 | Shaded 3D spheres | **No** built-in symbol; only via a merged `mesh3d` hack [C] | Yes — `SimpleMeshLayer` + `SphereGeometry` [C] | Yes — per-instance sphere [C] |
@@ -65,14 +65,11 @@ Plotly adds ~7 MB (min) on demand; choosing three.js adds ~1.1 MB (min) on deman
 - Fastest to implement; the tooltip (`hovertemplate`) needs no DOM overlay.
 - Colour mapping via a sampled colorscale reproduces the map's `vel_rel` scale exactly [M].
 
-**Limitations (headline finding)**
-- `scatter3d` **cannot size markers per point**. `marker.size` is one number per
-  trace (no array, no `sizemode`/`sizeref` as in 2D `scatter`). The `size = coh`
-  channel is faked with **5 binned traces + an opacity ramp** — visually coarse and
-  the tooltip still reports the true `coh`.
+**Limitations**
+- Markers are flat billboards: `scatter3d` has no sphere marker, so it cannot match
+  the shaded spheres deck.gl/three.js draw for the `spheres` marker style.
 - ~7 MB min bundle; WebGL `scatter3d` is expected to slow noticeably on large
   selections (single canvas, per-frame scene graph) [E].
-- Never demonstrated the requested size channel honestly — only approximated.
 
 **Can Plotly draw spheres?** No — `scatter3d` has no sphere marker (its symbols are
 flat 2D sprites). The only workaround is to hand-generate a sphere and merge *every*
@@ -124,8 +121,8 @@ to a point. Viable as a hack, not as the primary approach.
 ## Cross-cutting findings
 
 - **Colour parity:** when the colour channel is `vel_rel`, all three reuse
-  `chroma.scale([[65,182,196],[254,254,191],[215,25,28]]).domain([-5,5])`; the
-  node smoke test confirms `(-5, 0, 5) → [65,182,196] / [254,254,191] / [215,25,28]` [M].
+  `chroma.scale([[65,182,196],[254,254,191],[215,25,28]]).domain([-3,3])`; the
+  node smoke test confirms `(-3, 0, 3) → [65,182,196] / [254,254,191] / [215,25,28]` [M].
 - **Null handling:** points missing a value for any **active** axis/color/size field
   are dropped and counted in the header badge (`N skipped`) — `vel_last` and
   `h_dtm` are the common offenders in the sample data [M].
@@ -274,8 +271,8 @@ Rationale, weighted for the porting goal:
 **Runner-up: three.js/r3f** — pick it if the port values visual polish/staging or
 needs richer custom marks, and can absorb a ~1.1 MB chunk plus the label-font work.
 
-**Do not port Plotly** for this feature: the missing per-point size channel is a hard
-requirement, and a ~7 MB chunk for an approximation is not justifiable.
+**Do not port Plotly** for this feature: its flat billboard markers cannot carry the
+shaded-sphere look the chart needs, and a ~7 MB chunk is not justifiable.
 
 ### What still needs a manual browser pass
 
