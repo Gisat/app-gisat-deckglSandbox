@@ -2,8 +2,11 @@
 /**
  * three.js renderer (react-three-fiber + drei) for the 3D feature-space chart.
  *
- * Points are a single InstancedMesh (one draw call, per-instance colour and
- * scale) with r3f raycast picking via `event.instanceId`.
+ * Two modes:
+ *  - scatter: points as a single InstancedMesh (per-instance colour and scale)
+ *    with r3f raycast picking via `event.instanceId`.
+ *  - profile: per-series centre lines, a translucent ribbon (`along` mode) and
+ *    per-sample points, all unlit/flat so colours match the map and deck.gl.
  *
  * KNOWN LIMITATION: there are no built-in labelled axes in three.js. Axis titles
  * and tick labels are rendered with drei's <Html> placing DOM over the WebGL
@@ -19,7 +22,9 @@ import * as THREE from 'three';
 import { axisTitle, formatValue } from '../attributes';
 import { colorToHex, sizeForValue } from '../colorScale';
 import { computeAxisDomains, projectToCube } from '../transformPoints';
+import { buildProfileFrame, formatTick } from '../profileGeometry';
 import { PointTooltip } from '../PointTooltip';
+import { ProfileTooltip } from '../ProfileTooltip';
 
 const CUBE = 1;
 const AXIS_COLORS = { x: '#d62728', y: '#2ca02c', z: '#1f77b4' };
@@ -65,6 +70,30 @@ function buildAxisGeometry() {
   return { positions, colors };
 }
 
+/** Ribbon triangle strip between the lo/hi edges of an ordered sample list. */
+function buildRibbonGeometry(samples) {
+  const n = samples.length;
+  if (n < 2) return null;
+  const positions = new Float32Array(n * 2 * 3);
+  samples.forEach((s, i) => {
+    if (!s.ribbon) return;
+    positions.set(toThree(s.ribbon.lo), i * 6);
+    positions.set(toThree(s.ribbon.hi), i * 6 + 3);
+  });
+  const indices = [];
+  for (let a = 0; a < n - 1; a++) {
+    const b0 = 2 * a;
+    const t0 = 2 * a + 1;
+    const b1 = 2 * a + 2;
+    const t1 = 2 * a + 3;
+    indices.push(b0, t0, t1, b0, t1, b1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  g.setIndex(indices);
+  return g;
+}
+
 /**
  * @param {Object} props
  * @param {Array<import('../transformPoints').FeatureSpacePoint>} props.points
@@ -73,13 +102,16 @@ function buildAxisGeometry() {
  * @param {[number, number]} props.sizeDomain
  * @param {[number, number]} props.sizeRange
  * @param {'billboard'|'sphere'} props.markerStyle
+ * @param {{mode:'along'|'geo',series:Array<any>}} [props.profile]
  * @param {(id: string|null) => void} props.onHover
  */
-export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, onHover }) {
+export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover }) {
   const domains = useMemo(() => computeAxisDomains(points, axes), [points, axes]);
   const [hovered, setHovered] = useState(null);
 
-  const data = useMemo(
+  const frame = useMemo(() => (profile ? buildProfileFrame(profile, CUBE) : null), [profile]);
+
+  const scatterData = useMemo(
     () =>
       points.map((p) => {
         const radius = sizeForValue(p[axes.size], sizeDomain, sizeRange);
@@ -96,9 +128,33 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
     [points, axes, domains, colorScale, sizeDomain, sizeRange],
   );
 
+  const profileData = useMemo(() => {
+    if (!frame) return [];
+    return frame.series.flatMap((s) =>
+      s.samples.map((p) => ({
+        point: { id: p.id },
+        position: toThree(p.position),
+        hex: s.color,
+        radius: 4,
+        worldRadius: 0.03,
+        seriesLabel: s.label,
+        color: s.color,
+        unit: s.unit,
+        value: p.sample?.value ?? null,
+        std: p.sample?.std ?? null,
+        distance: p.sample?.distance ?? null,
+        lon: p.sample?.lon ?? null,
+        lat: p.sample?.lat ?? null,
+        height: p.sample?.height ?? null,
+      })),
+    );
+  }, [frame]);
+
+  const data = frame ? profileData : scatterData;
+
   const handlePick = (index) => {
     setHovered(index);
-    onHover(index == null ? null : data[index].point.id);
+    onHover(index == null ? null : data[index]?.point?.id ?? null);
   };
 
   return (
@@ -119,7 +175,9 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
             0.35 unlit / 0.95 fully lit). */}
         <ambientLight intensity={1.1} />
         <directionalLight position={[5, 8, 6]} intensity={1.9} />
-        <Axes domains={domains} axes={axes} />
+        {frame ? <ProfileAxes frame={frame} /> : <Axes domains={domains} axes={axes} />}
+        {frame && <ProfileLines series={frame.series} />}
+        {frame && frame.along && <ProfileRibbons series={frame.series} />}
         {markerStyle === 'billboard' ? (
           <BillboardPoints data={data} hovered={hovered} onPick={handlePick} />
         ) : (
@@ -128,7 +186,11 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
         {hovered != null && data[hovered] && (
           <Html position={data[hovered].position} style={{ pointerEvents: 'none' }} zIndexRange={[4, 0]}>
             <div style={{ transform: 'translate(10px, 10px)' }}>
-              <PointTooltip point={data[hovered].point} axes={axes} />
+              {frame ? (
+                <ProfileTooltip sample={data[hovered]} />
+              ) : (
+                <PointTooltip point={data[hovered].point} axes={axes} />
+              )}
             </div>
           </Html>
         )}
@@ -136,6 +198,46 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
       </Canvas>
     </div>
   );
+}
+
+/** Per-series centre polylines (chart-space positions already normalised). */
+function ProfileLines({ series }) {
+  return series.map((s) => {
+    const positions = new Float32Array(s.samples.length * 3);
+    s.samples.forEach((p, i) => positions.set(toThree(p.position), i * 3));
+    return (
+      <line key={s.key}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        </bufferGeometry>
+        <lineBasicMaterial color={s.color} />
+      </line>
+    );
+  });
+}
+
+/** Translucent uncertainty ribbons (along mode only), unlit to match the map. */
+function ProfileRibbons({ series }) {
+  const built = useMemo(
+    () =>
+      series
+        .map((s) => {
+          const geometry = buildRibbonGeometry(s.samples);
+          return geometry ? { key: s.key, color: s.color, geometry } : null;
+        })
+        .filter(Boolean),
+    [series],
+  );
+
+  useEffect(() => () => {
+    built.forEach((b) => b.geometry.dispose());
+  }, [built]);
+
+  return built.map((b) => (
+    <mesh key={b.key} geometry={b.geometry}>
+      <meshBasicMaterial color={b.color} transparent opacity={0.22} depthWrite={false} side={THREE.DoubleSide} />
+    </mesh>
+  ));
 }
 
 /**
@@ -292,11 +394,12 @@ function Points({ data, hovered, onPick }) {
   );
 }
 
-function Axes({ domains, axes }) {
+function Axes({ domains, axes, labels: labelsProp }) {
   const cube = useMemo(() => buildCubeGeometry(), []);
   const axis = useMemo(() => buildAxisGeometry(), []);
 
   const labels = useMemo(() => {
+    if (labelsProp) return labelsProp;
     const c = CUBE;
     const off = c + 0.14;
     const tick = off + 0.05;
@@ -315,7 +418,7 @@ function Axes({ domains, axes }) {
       list.push({ position: toThree(maxPos), text: formatValue(axes[slot], domains[slot].max), color: '#6e6e6e' });
     }
     return list;
-  }, [axes, domains]);
+  }, [axes, domains, labelsProp]);
 
   return (
     <group>
@@ -349,6 +452,32 @@ function Axes({ domains, axes }) {
       ))}
     </group>
   );
+}
+
+/** Cube + shafts + profile axis titles/ticks (raw units) via drei <Html>. */
+function ProfileAxes({ frame }) {
+  const labels = useMemo(() => {
+    const c = CUBE;
+    const off = c + 0.14;
+    const tick = off + 0.05;
+    const list = [
+      { position: toThree([0, -off, -off]), text: frame.titles.x, color: AXIS_COLORS.x },
+      { position: toThree([-off, 0, -off]), text: frame.titles.y, color: AXIS_COLORS.y },
+      { position: toThree([-off, -off, 0]), text: frame.titles.z, color: AXIS_COLORS.z },
+    ];
+    const ticks = [
+      ['x', [-c, -tick, -tick], [c, -tick, -tick]],
+      ['y', [-tick, -c, -tick], [-tick, c, -tick]],
+      ['z', [-tick, -tick, -c], [-tick, -tick, c]],
+    ];
+    for (const [slot, minPos, maxPos] of ticks) {
+      list.push({ position: toThree(minPos), text: formatTick(frame.domains[slot][0]), color: '#6e6e6e' });
+      list.push({ position: toThree(maxPos), text: formatTick(frame.domains[slot][1]), color: '#6e6e6e' });
+    }
+    return list;
+  }, [frame]);
+
+  return <Axes labels={labels} />;
 }
 
 export default ThreeRenderer;

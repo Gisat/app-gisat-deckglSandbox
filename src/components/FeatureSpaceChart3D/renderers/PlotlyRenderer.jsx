@@ -5,10 +5,16 @@
  * only once (the heavy `plotly.js-dist-min` bundle stays behind the lazy() in
  * FeatureSpaceChart).
  *
+ * Two modes:
+ *  - scatter: the feature-space cloud (see KNOWN LIMITATION below).
+ *  - profile: multi-series line profile (`scatter3d` lines+markers) plus a
+ *    translucent `mesh3d` uncertainty ribbon in `along` mode. Plotly has real
+ *    axes, so profile values are plotted in raw units.
+ *
  * KNOWN LIMITATION (headline comparison finding):
  *   Plotly's `scatter3d` marker has NO per-point size. `marker.size` is a single
  *   number per trace (no data array, no sizemode/sizeref like 2D scatter). The
- *   `size = coh` channel is therefore approximated by binning points into a few
+ *   `size = COH` channel is therefore approximated by binning points into a few
  *   traces, each with a constant marker size, plus a per-point opacity ramp.
  *   This is the only renderer that cannot honour the size channel natively.
  */
@@ -18,6 +24,7 @@ import Plotly from 'plotly.js-dist-min';
 import createPlotlyComponent from 'react-plotly.js/factory';
 import { axisTitle } from '../attributes';
 import { buildPlotlyColorscale, sizeForValue } from '../colorScale';
+import { buildProfileFrame, formatTick } from '../profileGeometry';
 
 const Plot = createPlotlyComponent(Plotly);
 
@@ -32,10 +39,15 @@ const SIZE_BINS = 5;
  * @param {[number, number]} props.colorDomain
  * @param {[number, number]} props.sizeDomain
  * @param {[number, number]} props.sizeRange
+ * @param {{mode:'along'|'geo',series:Array<any>}} [props.profile]
  * @param {(id: string|null) => void} props.onHover
  */
-export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDomain, sizeRange, onHover }) {
+export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDomain, sizeRange, profile, onHover }) {
+  const frame = useMemo(() => (profile ? buildProfileFrame(profile) : null), [profile]);
+
   const traces = useMemo(() => {
+    if (frame) return buildProfileTraces(frame);
+
     const bins = Array.from({ length: SIZE_BINS }, () => []);
     for (const p of points) {
       const t = sizeForValue(p[axes.size], sizeDomain, [0, 1]);
@@ -57,7 +69,7 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
           x: binPoints.map((p) => p[axes.x]),
           y: binPoints.map((p) => p[axes.y]),
           z: binPoints.map((p) => p[axes.z]),
-          customdata: binPoints.map((p) => [p.id, p.idOrig, p[axes.x], p[axes.y], p[axes.z], p.coh]),
+          customdata: binPoints.map((p) => [p.id, p.idOrig, p[axes.x], p[axes.y], p[axes.z], p.COH]),
           marker: {
             size: markerSize,
             // Per-point colour maps values through a colorscale; scatter3d
@@ -71,7 +83,7 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
           },
           hovertemplate:
             '<b>%{customdata[0]}</b><br>'
-            + 'id_orig: %{customdata[1]}<br>'
+            + 'fid: %{customdata[1]}<br>'
             + `${axisTitle(axes.x)}: %{customdata[2]}<br>`
             + `${axisTitle(axes.y)}: %{customdata[3]}<br>`
             + `${axisTitle(axes.z)}: %{customdata[4]}<br>`
@@ -80,7 +92,7 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
         };
       })
       .filter(Boolean);
-  }, [points, axes, colorScale, colorDomain, sizeDomain, sizeRange]);
+  }, [points, axes, colorScale, colorDomain, sizeDomain, sizeRange, frame]);
 
   const layout = useMemo(
     () => ({
@@ -93,13 +105,13 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
       scene: {
         bgcolor: 'rgba(0,0,0,0)',
         aspectmode: 'cube',
-        xaxis: axisStyle(axes.x),
-        yaxis: axisStyle(axes.y),
-        zaxis: axisStyle(axes.z),
+        xaxis: frame ? axisStyleText(frame.titles.x) : axisStyle(axes.x),
+        yaxis: frame ? axisStyleText(frame.titles.y) : axisStyle(axes.y),
+        zaxis: frame ? axisStyleText(frame.titles.z) : axisStyle(axes.z),
         camera: { eye: { x: 1.5, y: 1.5, z: 1.1 } },
       },
     }),
-    [axes.x, axes.y, axes.z],
+    [axes.x, axes.y, axes.z, frame],
   );
 
   const config = useMemo(
@@ -112,13 +124,17 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
     [],
   );
 
+  const revision = frame
+    ? frame.series.reduce((acc, s) => acc + s.samples.length, 0) + frame.series.length
+    : points.length;
+
   return (
     <div style={{ position: 'absolute', inset: 0 }} onMouseLeave={() => onHover(null)}>
       <Plot
         data={traces}
         layout={layout}
         config={config}
-        revision={points.length}
+        revision={revision}
         onHover={(e) => {
           const id = e?.points?.[0]?.customdata?.[0];
           if (id != null) onHover(String(id));
@@ -131,9 +147,88 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
   );
 }
 
+/** Multi-series profile traces: mesh3d ribbons (along mode) + scatter3d lines. */
+function buildProfileTraces(frame) {
+  const traces = [];
+
+  if (frame.along) {
+    for (const s of frame.series) {
+      const n = s.samples.length;
+      if (n < 2) continue;
+      const x = [];
+      const y = [];
+      const z = [];
+      const i = [];
+      const j = [];
+      const k = [];
+      s.samples.forEach((smp) => {
+        x.push(smp.raw.x, smp.raw.x);
+        y.push(smp.raw.lo, smp.raw.hi);
+        z.push(smp.raw.z, smp.raw.z);
+      });
+      for (let a = 0; a < n - 1; a++) {
+        const b0 = 2 * a;
+        const t0 = 2 * a + 1;
+        const b1 = 2 * a + 2;
+        const t1 = 2 * a + 3;
+        i.push(b0, b0);
+        j.push(t0, t1);
+        k.push(t1, b1);
+      }
+      traces.push({
+        type: 'mesh3d',
+        x,
+        y,
+        z,
+        i,
+        j,
+        k,
+        name: `${s.label} band`,
+        color: s.color,
+        opacity: 0.22,
+        flatshading: false,
+        hoverinfo: 'skip',
+        showscale: false,
+      });
+    }
+  }
+
+  for (const s of frame.series) {
+    traces.push({
+      type: 'scatter3d',
+      mode: 'lines+markers',
+      name: s.label,
+      x: s.samples.map((p) => p.raw.x),
+      y: s.samples.map((p) => p.raw.y),
+      z: s.samples.map((p) => p.raw.z),
+      customdata: s.samples.map((p) => [p.id, formatTick(p.sample?.value), p.sample?.std == null ? '\u2014' : formatTick(p.sample.std)]),
+      line: { color: s.color, width: 3 },
+      marker: { color: s.color, size: 3, line: { width: 0 } },
+      hovertemplate:
+        `<b>${s.label}</b><br>`
+        + 'id: %{customdata[0]}<br>'
+        + `value: %{customdata[1]}${s.unit ? ` ${s.unit}` : ''}<br>`
+        + `std: %{customdata[2]}${s.unit ? ` ${s.unit}` : ''}`
+        + '<extra></extra>',
+    });
+  }
+
+  return traces;
+}
+
 function axisStyle(key) {
   return {
     title: { text: axisTitle(key) },
+    gridcolor: '#eee',
+    zerolinecolor: '#ddd',
+    color: '#555',
+    tickfont: { size: 9 },
+  };
+}
+
+function axisStyleText(title) {
+  return {
+    title: { text: title },
     gridcolor: '#eee',
     zerolinecolor: '#ddd',
     color: '#555',

@@ -26,7 +26,7 @@ export function PointTooltip({ point, axes }) {
     >
       <div style={{ fontWeight: 600, marginBottom: '4px' }}>{point.id ?? 'unknown id'}</div>
       <div style={{ color: '#666', marginBottom: '6px' }}>
-        id_orig: {point.idOrig ?? '\u2014'}
+        fid: {point.idOrig ?? '\u2014'}
       </div>
       {['x', 'y', 'z'].map((axis) => (
         <div key={axis} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
@@ -36,7 +36,7 @@ export function PointTooltip({ point, axes }) {
       ))}
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginTop: '4px', borderTop: '1px solid #eee', paddingTop: '4px' }}>
         <span style={{ color: '#666' }}>coherence</span>
-        <span>{formatValue('coh', point.coh)}</span>
+        <span>{formatValue('COH', point.COH)}</span>
       </div>
     </div>
   );

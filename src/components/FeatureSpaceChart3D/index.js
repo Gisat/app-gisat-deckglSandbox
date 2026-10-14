@@ -7,6 +7,7 @@
 
 export { FeatureSpaceChart } from './FeatureSpaceChart';
 export { PointTooltip } from './PointTooltip';
+export { ProfileTooltip } from './ProfileTooltip';
 
 export {
   ATTRIBUTES,

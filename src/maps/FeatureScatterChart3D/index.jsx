@@ -1,47 +1,71 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { DeckGL } from '@deck.gl/react';
+import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
-import { BitmapLayer } from '@deck.gl/layers';
-import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
-import { SphereGeometry } from '@luma.gl/engine';
-import { COORDINATE_SYSTEM } from '@deck.gl/core';
+import { BitmapLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
 import { SelectionControls, DrawingOverlay, pointInPolygon, normalizeGeometry } from '../../components/PointSelection';
-import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 import { FeatureSpaceChart } from '../../components/FeatureSpaceChart3D';
-import { CogTerrainLayer, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
+import { buildProfileSeries } from '../../components/2DLineProfile';
 import chroma from 'chroma-js';
 import { scaleLinear } from 'd3-scale';
-import { cartoLightBasemapUrl } from '../basemaps';
 
 const INITIAL_VIEW_STATE = {
-  longitude: 14.015511800867504,
-  latitude: 50.571906640192161,
-  zoom: 14.5,
-  pitch: 50,
+  longitude: 38.561713,
+  latitude:   35.860611,
+  zoom: 16,
+  pitch: 0,
   bearing: 0,
 };
 
+// Tabqa (Syria) pre-calculated relief "glaze" DEM, copied from the Tabqa dam map.
+const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_z4_bilinear_cog.tif';
+const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/Tabqua_LOS_selected.geojson';
+
 const colorScale = chroma
   .scale([[65, 182, 196], [254, 254, 191], [215, 25, 28]])
-  .domain([-5, 5]);
+  .domain([-3, 3]);
 
-const sphereGeometry = new SphereGeometry();
-const sizeScale = scaleLinear([0, 5], [2, 7]).clamp(true);
+// Per-point scatter radius (pixels) from |VEL_REL|.
+const sizeScale = scaleLinear([0, 5], [3, 8]).clamp(true);
 
-// Data URL
-const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/trim_d8_ASC_upd3_psd_los_4326_height_mesh_v3.json';
+/** Flat 2D map view (no rotation); avoids a new MapView per render. */
+const mapView = new MapView({ repeat: true });
 
-// Helper to consistently get a point's ID
+/**
+ * Line-profile series offered in the 3D chart, with their uncertainty bands.
+ * The first three are on by default in the panel.
+ */
+const SERIES_DEFS = [
+  { key: 'VEL_REL', stdKey: 'VEL_SD', label: 'VEL_REL', color: '#2ca02c', unit: 'mm/yr' },
+  { key: 'VEL_LAST', stdKey: 'SVEL_LAST', label: 'VEL_LAST', color: '#d62728', unit: 'mm/yr' },
+  { key: 'LT_365', stdKey: 'LTS_365', label: 'LT_365', color: '#17becf', unit: 'mm/yr' },
+  { key: 'TD_90', stdKey: 'STD_90', label: 'TD_90', color: '#9467bd', unit: 'mm' },
+  { key: 'TD_180', stdKey: 'STD_180', label: 'TD_180', color: '#8c564b', unit: 'mm' },
+  { key: 'TD_365', stdKey: 'STD_365', label: 'TD_365', color: '#e377c2', unit: 'mm' },
+  { key: 'TD_730', stdKey: 'STD_730', label: 'TD_730', color: '#7f7f7f', unit: 'mm' },
+];
+
+// Helper to consistently get a point's ID (Tabqa: ID, fallback fid).
 const getPointId = (feature) => {
-    if (!feature || !feature.properties) return null;
-    return feature.properties.id_global ?? feature.properties.id_orig;
+  if (!feature) return null;
+  const p = feature.properties;
+  if (p) {
+    const id = p.ID ?? p.fid;
+    if (id !== undefined && id !== null) return id;
+  }
+  if (feature.id !== undefined && feature.id !== null) return feature.id;
+  if (feature.geometry?.coordinates?.length >= 2) {
+    return `${feature.geometry.coordinates[0]}_${feature.geometry.coordinates[1]}`;
+  }
+  return null;
 };
 
 export default function FeatureScatterChart3D() {
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
   const [selectionMode, setSelectionMode] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [bufferDistance, setBufferDistance] = useState(100);
+  const [bufferDistance, setBufferDistance] = useState(50);
   const [drawnGeometry, setDrawnGeometry] = useState(null);
   const [selectedPoints, setSelectedPoints] = useState([]);
   const [selectedFeatures, setSelectedFeatures] = useState(null);
@@ -53,12 +77,6 @@ export default function FeatureScatterChart3D() {
   const [showFeatureSpace, setShowFeatureSpace] = useState(true);
 
   const mapContainerRef = useRef(null);
-  const deckGLRef = useRef(null);
-
-  // Set DeckGL instance for terrain picking utilities
-  useEffect(() => {
-    if (deckGLRef.current) setDeckGLInstance(deckGLRef.current);
-  }, []);
 
   // Handle double-click to finish drawing
   useEffect(() => {
@@ -67,7 +85,7 @@ export default function FeatureScatterChart3D() {
         setIsDrawing(false);
       }
     };
-    
+
     const container = mapContainerRef.current;
     if (container) {
       container.addEventListener('dblclick', handleDblClick);
@@ -100,11 +118,12 @@ export default function FeatureScatterChart3D() {
     loadData();
   }, []);
 
-  const selectedIdsSet = new Set(selectedPoints.map(p => p.id));
+  // String keys: Tabqa `ID`s are numeric, and lookups use String(pointId).
+  const selectedIdsSet = new Set(selectedPoints.map(p => String(p.id)));
 
   const baseMapLayer = new TileLayer({
-    id: 'tile-layer-selection-drawing',
-    data: cartoLightBasemapUrl,
+    id: 'osm-basemap',
+    data: 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
     minZoom: 0,
     maxZoom: 19,
     tileSize: 256,
@@ -118,22 +137,17 @@ export default function FeatureScatterChart3D() {
     },
   });
 
-  const terrainLayer = new CogTerrainLayer({
-    id: 'terrain-layer',
-    elevationData: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/LITC52_53_4g_5m_4326_cog_nodata.tif',
-    minZoom: 12,
-    maxZoom: 14,
+  const precalculatedGlaze = new CogBitmapLayer({
+    id: 'glaze-precalculated',
+    rasterData: PRECALCULATED_GLAZE_URL,
     isTiled: true,
-    useChannel: null,
-    tileSize: 256,
-    operation: 'terrain+draw',
-    pickable: '3d',
-    visible: true,
-    terrainOptions: {
-      useSwissRelief: true,
+    opacity: 0.2,
+    cogBitmapOptions: {
+      type: 'image',
       useHeatMap: true,
-      colorScale: [[200, 200, 200], [180, 180, 180]],
-      type: 'terrain',
+      colorScaleValueRange: [0, 255],
+      colorScale: ['#283250', '#283250'],
+      useDataForOpacity: true,
     },
   });
 
@@ -142,38 +156,40 @@ export default function FeatureScatterChart3D() {
     return pointId ? selectedIdsSet.has(String(pointId)) : false;
   };
 
-  const meshLayer = new SimpleMeshLayer({
-    id: 'mesh-3d-selection-drawing',
+  const pointLayer = new ScatterplotLayer({
+    id: 'points-2d',
     data: allFeatures,
-    mesh: sphereGeometry,
-    coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
     pickable: true,
-    getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], d.properties.h_dtm || 0],
-    getColor: (d) => {
+    getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1]],
+    getRadius: (d) => {
+      const size = sizeScale(Math.abs(d.properties?.VEL_REL || 0));
+      return isPointSelected(d) ? size * 1.3 : size;
+    },
+    radiusUnits: 'pixels',
+    radiusMinPixels: 1,
+    radiusMaxPixels: 20,
+    billboard: true,
+    stroked: false,
+    getFillColor: (d) => {
       const pointId = getPointId(d);
-      
+
       if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
         return [255, 0, 0, 255]; // Bright red for hovered
       }
-      
+
       if (isPointSelected(d)) {
         return [66, 212, 244, 255]; // cyan for selected
       }
-      
+
       if (selectedIdsSet.size > 0) {
         return [200, 200, 200, 100]; // grey for dimmed
       }
-      
-      return [...colorScale(d.properties?.vel_rel || 0).rgb(), 255];
-    },
-    getScale: (d) => {
-      const size = sizeScale(Math.abs(d.properties?.vel_rel || 0));
-      const isSelected = isPointSelected(d);
-      return [isSelected ? size * 1.3 : size, isSelected ? size * 1.3 : size, isSelected ? size * 1.3 : size];
+
+      return [...colorScale(d.properties?.VEL_REL || 0).rgb(), 255];
     },
     updateTriggers: {
-      getColor: [selectedPoints, hoveredPointId],
-      getScale: [selectedPoints]
+      getFillColor: [selectedPoints, hoveredPointId],
+      getRadius: [selectedPoints]
     }
   });
 
@@ -188,7 +204,6 @@ export default function FeatureScatterChart3D() {
       properties: f.properties
     }));
 
-    console.log('Selected points:', result);
     setSelectedPoints(result);
 
     setSelectedFeatures({
@@ -201,7 +216,6 @@ export default function FeatureScatterChart3D() {
           geometry: f.geometry,
           properties: {
             ...f.properties,
-            mean_velocity: f.properties?.vel_rel ?? f.properties?.mean_velocity ?? null,
             point_id: pointId,
           }
         };
@@ -267,54 +281,30 @@ export default function FeatureScatterChart3D() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bufferDistance]);
 
-  const layers = [baseMapLayer, terrainLayer, meshLayer];
+  // Ordered multi-series profile for the 3D chart (app-owned; the chart module
+  // stays portable and only consumes the prepared series).
+  const profileSeries = useMemo(
+    () => buildProfileSeries(selectedFeatures, drawnLineCoords, SERIES_DEFS),
+    [selectedFeatures, drawnLineCoords],
+  );
+
+  // The 3D line-profile mode is only offered while the line tool is in use (or
+  // once a line selection has been drawn).
+  const showProfile = selectionMode === 'line'
+    || (Array.isArray(drawnLineCoords) && drawnLineCoords.length >= 2);
+
+  const layers = [
+    baseMapLayer,
+    precalculatedGlaze,
+    pointLayer,
+  ];
 
   return (
     <div ref={mapContainerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
       <DeckGL
-        ref={deckGLRef}
         initialViewState={INITIAL_VIEW_STATE}
         onViewStateChange={({ viewState }) => setViewState(viewState)}
         getCursor={() => isDrawing ? 'crosshair' : 'grab'}
-        onClick={(info) => {
-          if (isDrawing && selectionMode) {
-            // Try to resolve terrain coordinate even when clicking on other layers (click-through)
-            const tryUseTerrainPick = async () => {
-              // If clicked directly on terrain layer, use extractTerrainCoordinate
-              if (info.layer?.id === 'terrain-layer' && info.coordinate) {
-                const coord = extractTerrainCoordinate(info);
-                if (coord) {
-                  window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
-                    detail: { geo: [coord.longitude, coord.latitude], screenPos: [info.x, info.y], elevation: coord.elevation }
-                  }));
-                  return;
-                }
-              }
-
-              // Otherwise, try explicit pick on the terrain layer via DeckGL instance
-              const deck = deckGLRef.current;
-              if (deck && typeof deck.pickObject === 'function') {
-                const pick = deck.pickObject({ x: info.x, y: info.y, layerIds: ['terrain-layer'], radius: 1 });
-                if (pick?.coordinate) {
-                  const coord = extractTerrainCoordinate(pick);
-                  if (coord) {
-                    window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
-                      detail: { geo: [coord.longitude, coord.latitude], screenPos: [info.x, info.y], elevation: coord.elevation }
-                    }));
-                    return;
-                  }
-                }
-              }
-
-              // Fallback to basic coordinate
-              window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
-                detail: { geo: [info.coordinate?.[0], info.coordinate?.[1]], screenPos: [info.x, info.y], elevation: info.coordinate?.[2] }
-              }));
-            };
-
-            tryUseTerrainPick();
-          }
-        }}
         onDoubleClick={(info) => {
           if (isDrawing) {
             // Prevent zoom on double-click during drawing
@@ -330,6 +320,7 @@ export default function FeatureScatterChart3D() {
           dragRotate: !isDrawing,
           doubleClickZoom: !isDrawing,
         }}
+        views={mapView}
         layers={layers}
         className="deckgl-map"
       />
@@ -347,6 +338,8 @@ export default function FeatureScatterChart3D() {
         onModeChange={handleModeChange}
         bufferDistance={bufferDistance}
         onBufferChange={setBufferDistance}
+        bufferMin={10}
+        bufferMax={200}
         selectedCount={selectedPoints.length}
         onClear={handleClear}
         showLineProfileToggle={false}
@@ -359,7 +352,7 @@ export default function FeatureScatterChart3D() {
         isDrawing={isDrawing}
         onGeometryComplete={handleGeometryCompleteInternal}
         bufferDistance={bufferDistance}
-        is3D={true}
+        is3D={false}
       />
 
       <button
@@ -387,6 +380,8 @@ export default function FeatureScatterChart3D() {
       {showFeatureSpace && (
         <FeatureSpaceChart
           featureCollection={selectedFeatures}
+          profileSeries={profileSeries}
+          showProfile={showProfile}
           onPointHover={setHoveredPointId}
         />
       )}

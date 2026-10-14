@@ -9,18 +9,35 @@ import { ATTRIBUTES } from './attributes';
 
 /**
  * @typedef {Object} FeatureSpacePoint
- * @property {string} id            id_global (fallback id_orig / feature.id)
- * @property {string|number|null} idOrig
+ * @property {string} id            ID (fallback fid / feature.id)
+ * @property {string|number|null} idOrig  fid
  * @property {[number, number]|null} coords  [lon, lat]
- * @property {number|null} vel_rel
- * @property {number|null} vel_last
- * @property {number|null} coh
- * @property {number|null} inc_ang
+ * @property {number|null} VEL_REL
+ * @property {number|null} VEL_LAST
+ * @property {number|null} LT_365
+ * @property {number|null} VEL_AVG
+ * @property {number|null} VEL_SD
+ * @property {number|null} SVEL_LAST
+ * @property {number|null} LTS_365
+ * @property {number|null} TD_90
+ * @property {number|null} TD_180
+ * @property {number|null} TD_365
+ * @property {number|null} TD_730
+ * @property {number|null} STD_90
+ * @property {number|null} STD_180
+ * @property {number|null} STD_365
+ * @property {number|null} STD_730
+ * @property {number|null} H
+ * @property {number|null} H_SD
+ * @property {number|null} H_REF
+ * @property {number|null} COH
+ * @property {number|null} COH_MOD
+ * @property {number|null} INC_ANG
  * @property {number|null} az_ang
- * @property {number|null} h
- * @property {number|null} h_dtm
- * @property {number|null} rel_len
- * @property {number} h_struct       derived as (h ?? 0) - (h_dtm ?? 0)
+ * @property {number|null} REL_LEN
+ * @property {number|null} ACCEL
+ * @property {number|null} SEASONAL
+ * @property {number|null} VACC
  */
 
 /** @param {unknown} v */
@@ -34,7 +51,7 @@ function toNumber(v) {
 }
 
 /** Numeric attribute keys carried on every normalized point. */
-const NUMERIC_KEYS = Object.keys(ATTRIBUTES).filter((k) => k !== 'h_struct');
+const NUMERIC_KEYS = Object.keys(ATTRIBUTES);
 
 /**
  * Transform a single GeoJSON feature into a normalized point.
@@ -51,14 +68,11 @@ export function transformFeature(feature) {
   const values = {};
   for (const key of NUMERIC_KEYS) values[key] = toNumber(p[key]);
 
-  // Plan-locked derivation. h_struct stays defined even when one side is null.
-  values.h_struct = (values.h ?? 0) - (values.h_dtm ?? 0);
-
-  const id = p.id_global ?? p.id_orig ?? (feature && feature.id) ?? null;
+  const id = p.ID ?? p.fid ?? (feature && feature.id) ?? null;
 
   return {
     id: id == null ? null : String(id),
-    idOrig: p.id_orig ?? null,
+    idOrig: p.fid ?? null,
     coords,
     ...values,
   };
