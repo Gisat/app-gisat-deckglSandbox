@@ -107,8 +107,8 @@ export default defineConfig({
       // -> http://localhost:8080/data/...
       //
       // WHY '/tileserver-api' AND NOT '/tileserver': the SPA has app routes
-      // that begin with '/tileserver' (/tileserver-worldcereal,
-      // /tileserver-sentinel2-mosaic) — the exact collision documented above
+      // that begin with '/tileserver' (/tileserver-sentinel2-mosaic) — the
+      // exact collision documented above
       // for '/titiler'. A bare '/tileserver' prefix would make Vite proxy
       // those app routes to the tile server on hard reload. All real stack
       // URLs live under /tileserver-api, so the narrow prefix kills the

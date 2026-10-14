@@ -13,25 +13,24 @@ demonstrate **STAC discovery, mosaicing, and in-process caching**.
   which upstream `main` does not have (there, only Accept-Encoding re-encode
   variants are cached). The `stac` feature (implies `raster`/GDAL) is enabled
   in the build args.
-- **Two sources** (see `config.toml`):
-  - `worldcereal` — the **same COG** as the TiTiler WorldCereal demo
-    (`WorldCereal_GST-10/project/demo/merged_cog.tif`), served with a
-    server-side **discrete colormap** identical to
-    `deploy/titiler/colormaps/worldcereal_active.json` (0 = gray, 100 = green,
-    254/255 = transparent). A plain `cog` source because the public WorldCereal
-    STAC API is **dead** (`stac.worldcereal.org` NXDOMAIN, checked 2026-10-13;
-    `hub.esa-worldcereal.org` is a web SPA, not STAC).
+- **One source** (see `config.toml`):
   - `sentinel2-mosaic` — a **true STAC source**: Earth Search Sentinel-2 L2A
     (`sentinel-2-l2a`, `visual` asset), `dynamic = true` + `max_items = 5` →
     every tile triggers a STAC `POST /search` with the tile's WGS-84 bbox and
     up to 5 intersecting items are rendered concurrently and **composited**
     (mosaic; `pixel_selection = "first"`).
+
+  > **Removed 2026-10-14:** the former `worldcereal` COG source is gone from
+  > this stack. It failed at startup registration (GDAL `GDALOpenEx` returned a
+  > NULL pointer — "Failure writing output to destination") and the public
+  > WorldCereal STAC API is dead, so there was no healthy path for it here. The
+  > TiTiler WorldCereal demo (`deploy/titiler`) is unaffected.
 - **Caching:** `[cache]` enabled (512 MB, TTL 3600 s). With the local build
   the rendered PNG of every canonical tile request is cached in-process —
   repeat requests (same source/z/x/y) are served from memory. The TTL trades
   freshness vs cost: dynamic STAC tiles freeze for the TTL window.
-- **Data:** both sources are remote (COG via GDAL `/vsicurl/`, Sentinel-2 via
-  Earth Search) — no local data download is needed.
+- **Data:** the source is remote (Sentinel-2 visual assets via Earth Search)
+  — no local data download is needed.
 
 The sandbox web app talks to this container over HTTP on port `8080` through
 the Vite dev-server proxy `/tileserver` → `http://localhost:8080` (COEP-safe,
@@ -71,19 +70,10 @@ curl http://localhost:8080/health
 ### 2. TileJSON (bounds/zoom derived from the source)
 
 ```sh
-curl -s http://localhost:8080/data/worldcereal.json | jq .
 curl -s http://localhost:8080/data/sentinel2-mosaic.json | jq .
 ```
 
-### 3. A WorldCereal tile (in-bounds: lon 26.5, lat 5.9 → z4 9/7)
-
-```sh
-curl -s -o /tmp/wc.png -w "%{http_code} %{content_type} %{size_download}B %{time_total}s\n" \
-  "http://localhost:8080/data/worldcereal/4/9/7.png"
-file /tmp/wc.png   # -> PNG image data
-```
-
-### 4. A Sentinel-2 mosaic tile (in-bounds: lon 26.75, lat 5.0 → z8 147/124)
+### 3. A Sentinel-2 mosaic tile (in-bounds: lon 26.75, lat 5.0 → z8 147/124)
 
 ```sh
 # Cold: STAC search + up to 5 concurrent COG renders + composite + PNG encode.
@@ -94,7 +84,7 @@ curl -s -o /tmp/s2.png -w "%{http_code} %{content_type} %{size_download}B %{time
 file /tmp/s2.png   # -> PNG image data (true-color visual imagery)
 ```
 
-### 5. Demonstrate the cache (timing)
+### 4. Demonstrate the cache (timing)
 
 ```sh
 TILE="http://localhost:8080/data/sentinel2-mosaic/8/147/124.png"
@@ -103,7 +93,7 @@ for i in 1 2 3; do curl -s -o /dev/null -w "req $i: %{time_total}s\n" "$TILE"; d
 # req 2/3: milliseconds (in-process cache hit)
 ```
 
-### 6. Built-in web UI
+### 5. Built-in web UI
 
 <http://localhost:8080/> — MapLibre viewer with the source dashboard.
 
@@ -111,7 +101,6 @@ for i in 1 2 3; do curl -s -o /dev/null -w "req $i: %{time_total}s\n" "$TILE"; d
 
 | Piece | Where |
 | --- | --- |
-| WorldCereal COG source + discrete colormap | `config.toml` → `[[sources]]` `worldcereal` |
 | Sentinel-2 STAC dynamic mosaic source | `config.toml` → `[[sources]]` `sentinel2-mosaic` |
 | Global raster defaults (resampling, tile size) | `config.toml` → `[raster]` |
 | In-process tile cache | `config.toml` → `[cache]` |
@@ -156,9 +145,6 @@ The compose `build.context` is `../../../tileserver-rs` (sibling repo, resolved 
 
 ## Performance notes
 
-- **WorldCereal (remote COG):** cold tiles are network-bound (GDAL range
-  requests to eu-central-1 Linode); warm tiles come from the GDAL block cache
-  + the in-process tile cache. GDAL tuning is in the compose env.
 - **Sentinel-2 mosaic (dynamic STAC):** each cold tile = 1 STAC `/search`
   (Earth Search, ~100-300 ms) + concurrent COG range-reads of up to 5 assets.
   `pixel_selection = "first"` short-circuits once the canvas is opaque. The

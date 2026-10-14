@@ -11,14 +11,16 @@
 #        "Building the image" if the build fails on it).
 #
 # Sources (see config.toml):
-#   worldcereal      — same COG as the TiTiler WorldCereal demo, discrete
-#                      server-side colormap (public WorldCereal STAC API is dead)
 #   sentinel2-mosaic — Earth Search STAC, dynamic per-tile /search + mosaic
 #
 # Start:   docker compose -f deploy/tileserver/docker-compose.yml up -d --build
 # Health:  curl http://localhost:8080/health
-# Tiles:   http://localhost:8080/data/worldcereal/{z}/{x}/{y}.png
-#          http://localhost:8080/data/sentinel2-mosaic/{z}/{x}/{y}.png
+# Tiles:   http://localhost:8080/data/sentinel2-mosaic/{z}/{x}/{y}.png
+#
+# NOTE 2026-10-14: the former `worldcereal` COG source was removed from
+# config.toml — it failed at startup registration (GDAL GDALOpenEx returned
+# NULL, "Failure writing output to destination") and the WorldCereal STAC API
+# is dead, so the demo now ships Sentinel-2 only.
 #
 # The sandbox app reaches it same-origin via the Vite dev-server proxy
 # '/tileserver' -> http://localhost:8080 (COEP-safe; see vite.config.js).
