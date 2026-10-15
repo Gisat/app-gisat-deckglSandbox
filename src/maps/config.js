@@ -65,7 +65,7 @@ const mapApps = [
     { category: '3DFLUS CCN', name: 'Arrow LOD Stream 3D', path: '/arrow-lod-stream-3d', component: ArrowLODStream3D },
     { category: '3DFLUS CCN', name: 'Terrain Interactive Slider', path: '/terrain-interactive-slider', component: MisicuniDam },
     { category: '3DFLUS CCN', name: 'Selection Drawing 3D', path: '/selection-drawing-3d', component: SelectionDrawing3D },
-    { category: '3DFLUS CCN', name: '3D Feature Scatter Chart', path: '/3d-feature-scatter-chart', component: FeatureScatterChart3D },
+    { category: '3DFLUS CCN', name: '3D Feature Charts', path: '/3d-feature-charts', component: FeatureScatterChart3D },
     { category: 'GDA Water', name: 'Misicuni Dam', path: '/misicuni-dam', component: MisicuniDam, description: 'Simple dam presentation map connected to GDA Water group' },
     { category: 'GDA Water', name: 'Tabqa Dam', path: '/tabqa', component: TabqaDam, description: 'Tabqa Dam, Syria - OSM basemap' },
     { category: 'TiTiler DEMO', name: 'Nepal Snow Cover', path: '/titiler-demo-nepal-snow', component: NepalSnow },

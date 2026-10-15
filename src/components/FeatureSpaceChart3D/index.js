@@ -8,6 +8,8 @@
 export { FeatureSpaceChart } from './FeatureSpaceChart';
 export { PointTooltip } from './PointTooltip';
 export { ProfileTooltip } from './ProfileTooltip';
+export { buildCurtainGeometry, curtainZDomain, CURTAIN_MAX_HEIGHT } from './curtainGeometry';
+export { hexToRgba } from './profileGeometry';
 
 export {
   ATTRIBUTES,

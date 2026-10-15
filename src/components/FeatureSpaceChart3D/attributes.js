@@ -125,7 +125,7 @@ export const TREND_WINDOWS = [
 export const PROFILE_VIEWS = ['attributes', 'trend'];
 
 /** Default profile view. */
-export const PROFILE_VIEW_DEFAULT = 'trend';
+export const PROFILE_VIEW_DEFAULT = 'attributes';
 
 /**
  * Trend shapes: `windows` (one line per window, with its `STD_*` band),
