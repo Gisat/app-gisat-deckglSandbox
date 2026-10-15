@@ -77,22 +77,29 @@ function buildAxisGeometry() {
 
 /** Ribbon triangle strip between the lo/hi edges of an ordered sample list. */
 function buildRibbonGeometry(samples) {
-  const banded = samples.filter((s) => s.ribbon);
+  // Keep each sample's source index so a missing σ breaks the strip instead of
+  // bridging an interval whose uncertainty is unknown (matches deck.gl).
+  const banded = samples
+    .map((sample, index) => ({ sample, index }))
+    .filter(({ sample }) => sample.ribbon);
   const n = banded.length;
   if (n < 2) return null;
   const positions = new Float32Array(n * 2 * 3);
-  banded.forEach((s, i) => {
-    positions.set(toThree(s.ribbon.lo), i * 6);
-    positions.set(toThree(s.ribbon.hi), i * 6 + 3);
+  banded.forEach(({ sample }, i) => {
+    positions.set(toThree(sample.ribbon.lo), i * 6);
+    positions.set(toThree(sample.ribbon.hi), i * 6 + 3);
   });
   const indices = [];
   for (let a = 0; a < n - 1; a++) {
+    // Only join source-adjacent samples.
+    if (banded[a + 1].index !== banded[a].index + 1) continue;
     const b0 = 2 * a;
     const t0 = 2 * a + 1;
     const b1 = 2 * a + 2;
     const t1 = 2 * a + 3;
     indices.push(b0, t0, t1, b0, t1, b1);
   }
+  if (indices.length === 0) return null;
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   g.setIndex(indices);

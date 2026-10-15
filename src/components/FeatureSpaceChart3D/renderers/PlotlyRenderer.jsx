@@ -172,9 +172,14 @@ function buildProfileTraces(frame) {
     if (n < 2) continue;
 
     if (curve.stdKey) {
-      // Only finite-σ samples define the band; a missing std means "unknown",
-      // so those samples drop out rather than producing a zero-width flap.
-      const banded = samples.filter((smp) => smp.ribbon);
+      // Only finite-σ samples define the band; a missing std means "unknown", so
+      // those samples drop out. Keep each sample's source index so a gap breaks
+      // the band rather than bridging an interval whose uncertainty is unknown
+      // (matches deck.gl).
+      const banded = [];
+      samples.forEach((smp, index) => {
+        if (smp.ribbon) banded.push({ smp, index });
+      });
       if (banded.length >= 2) {
         const x = [];
         const y = [];
@@ -182,7 +187,7 @@ function buildProfileTraces(frame) {
         const i = [];
         const j = [];
         const k = [];
-        banded.forEach((smp) => {
+        banded.forEach(({ smp }) => {
           if (plan) {
             x.push(smp.ribbon.lo[0], smp.ribbon.hi[0]);
             y.push(smp.ribbon.lo[1], smp.ribbon.hi[1]);
@@ -195,6 +200,8 @@ function buildProfileTraces(frame) {
           }
         });
         for (let a = 0; a < banded.length - 1; a++) {
+          // Only join source-adjacent samples.
+          if (banded[a + 1].index !== banded[a].index + 1) continue;
           const b0 = 2 * a;
           const t0 = 2 * a + 1;
           const b1 = 2 * a + 2;
@@ -203,21 +210,23 @@ function buildProfileTraces(frame) {
           j.push(t0, t1);
           k.push(t1, b1);
         }
-        traces.push({
-          type: 'mesh3d',
-          x,
-          y,
-          z,
-          i,
-          j,
-          k,
-          name: `${curve.label} band`,
-          color: curve.color,
-          opacity: 0.22,
-          flatshading: false,
-          hoverinfo: 'skip',
-          showscale: false,
-        });
+        if (i.length > 0) {
+          traces.push({
+            type: 'mesh3d',
+            x,
+            y,
+            z,
+            i,
+            j,
+            k,
+            name: `${curve.label} band`,
+            color: curve.color,
+            opacity: 0.22,
+            flatshading: false,
+            hoverinfo: 'skip',
+            showscale: false,
+          });
+        }
       }
     }
 
