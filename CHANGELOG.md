@@ -1,3 +1,22 @@
+## [1.12.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.11.0...v1.12.0) (2026-10-15)
+
+### Features
+
+* **feature-scatter-chart-3d:** add Tabqa 2D map and 3D line profile mode ([3412fd0](https://github.com/Gisat/app-gisat-deckglSandbox/commit/3412fd0e18ac1cd0b28a0966e86f523b6df50d63))
+* **feature-scatter-chart-3d:** split 3D chart into its own app ([24a26cd](https://github.com/Gisat/app-gisat-deckglSandbox/commit/24a26cd1fa61aeda59a3f430fe678c7f0725cfa3))
+* **feature-space-chart:** add Trend view to the 3D line profile ([7244da0](https://github.com/Gisat/app-gisat-deckglSandbox/commit/7244da0a27be8e5d0ab38f8bc4f45b2a5e131499))
+* **feature-space-chart:** project line selection onto the drawn line ([f55d2a0](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f55d2a0e778e97dbe5aad0b77730193c5c088cd3))
+* **feature-space-chart:** show map selection/hover as a border only ([ccd8453](https://github.com/Gisat/app-gisat-deckglSandbox/commit/ccd84537ab90d3af3085063fbe6d142956b2d528))
+* **feature-space-chart:** trend shapes, defaults and polish ([73957dd](https://github.com/Gisat/app-gisat-deckglSandbox/commit/73957dd7ee26a409d84f3bef75651b39790deb18))
+* **selection-drawing-3d:** add 3D feature-space chart spike ([0cb5c82](https://github.com/Gisat/app-gisat-deckglSandbox/commit/0cb5c826c43d8ef06a4ac2665b804d842c200540))
+
+### Bug Fixes
+
+* **feature-space-chart:** address 3D feature-space review findings ([de5468c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/de5468cc9c08b7bb8fc0441d9e63fdc6d326d3df))
+* **feature-space-chart:** break uncertainty ribbon at missing-std gaps ([1df23be](https://github.com/Gisat/app-gisat-deckglSandbox/commit/1df23be00ef8174b1a31f822e18f04502c4b67ba))
+* **feature-space-chart:** brighten three.js spheres to match the map ([6ea894f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/6ea894f37e25fea34c36b95c49ade94c357f90a3))
+* **feature-space-chart:** match three.js point colours to the map scale ([f5c7dc5](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f5c7dc5ed5b81f6e683c2a956fd7c5fe1f0301f3))
+
 ## [1.11.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.10.0...v1.11.0) (2026-10-14)
 
 ### Features
