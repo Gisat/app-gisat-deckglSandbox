@@ -2,10 +2,10 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
-import { BitmapLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { BitmapLayer, ScatterplotLayer, SolidPolygonLayer, PathLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
 import { SelectionControls, DrawingOverlay, pointInPolygon, normalizeGeometry } from '../../components/PointSelection';
-import { FeatureSpaceChart } from '../../components/FeatureSpaceChart3D';
+import { FeatureSpaceChart, buildCurtainGeometry, MAP_VELOCITY_COLORS, getColorDomain } from '../../components/FeatureSpaceChart3D';
 import { buildProfileSamples, sampleLineSelection } from '../../components/2DLineProfile';
 import chroma from 'chroma-js';
 import { scaleLinear } from 'd3-scale';
@@ -61,6 +61,9 @@ export default function FeatureScatterChart3D() {
   const [drawnLineCoords, setDrawnLineCoords] = useState(null);
   // The 3D feature-space chart is the whole point of this app, so it starts open.
   const [showFeatureSpace, setShowFeatureSpace] = useState(true);
+  // Effective chart mode / profile view / Z attribute / basis, reported by
+  // FeatureSpaceChart.
+  const [chartState, setChartState] = useState(null);
 
   const mapContainerRef = useRef(null);
 
@@ -142,6 +145,10 @@ export default function FeatureScatterChart3D() {
     return pointId ? selectedIdsSet.has(String(pointId)) : false;
   };
 
+  // Chart-driven hover: `hoveredPointId` is reported by FeatureSpaceChart and
+  // holds the same id space as the InSAR points (and the curtain nodes).
+  const isHovered = (id) => hoveredPointId != null && String(hoveredPointId) === String(id);
+
   const pointLayer = new ScatterplotLayer({
     id: 'points-2d',
     data: allFeatures,
@@ -160,9 +167,7 @@ export default function FeatureScatterChart3D() {
     stroked: true,
     lineWidthUnits: 'pixels',
     getLineColor: (d) => {
-      const pointId = getPointId(d);
-
-      if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
+      if (isHovered(getPointId(d))) {
         return [255, 0, 0, 255]; // red border for hovered
       }
 
@@ -173,9 +178,7 @@ export default function FeatureScatterChart3D() {
       return [0, 0, 0, 0];
     },
     getLineWidth: (d) => {
-      const pointId = getPointId(d);
-
-      if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
+      if (isHovered(getPointId(d))) {
         return 2;
       }
 
@@ -304,10 +307,94 @@ export default function FeatureScatterChart3D() {
   const showProfile = selectionMode === 'line'
     || (Array.isArray(drawnLineCoords) && drawnLineCoords.length >= 2);
 
+  // The geographic curtain exists only when a line selection is present AND the
+  // chart is in the 3D line-profile Attribute view on the Lon/Lat basis (the
+  // Trend view has its own Z semantics and keeps a stale `basis`, so gate on the
+  // view too).
+  const lineActive = Array.isArray(drawnLineCoords) && drawnLineCoords.length >= 2;
+  const curtainZKey = (chartState?.mode === 'profile'
+    && chartState?.view === 'attributes'
+    && chartState?.basis === 'plan')
+    ? chartState.zKey
+    : null;
+  const curtain = useMemo(
+    () => (lineActive && curtainZKey ? buildCurtainGeometry(profileSamples, curtainZKey) : null),
+    [lineActive, curtainZKey, profileSamples],
+  );
+  const curtainScale = useMemo(
+    () => (curtainZKey
+      ? chroma.scale(MAP_VELOCITY_COLORS).domain(getColorDomain(curtainZKey, profileSamples))
+      : null),
+    [curtainZKey, profileSamples],
+  );
+
+  const curtainLayers = [];
+  if (curtain && curtain.quads.length > 0) {
+    curtainLayers.push(
+      new SolidPolygonLayer({
+        id: 'curtain-walls',
+        data: curtain.quads,
+        // deck.gl's tesselator wants "already normalized" flat positions when
+        // `_normalize` is off, so flatten the nested ring here.
+        getPolygon: (d) => d.polygon.flat(),
+        getFillColor: (d) => [...curtainScale(d.value).rgb(), 150],
+        extruded: false,
+        // Keep the vertical walls planar instead of geodesically normalising
+        // them back onto the earth surface, and tessellate in the plane that
+        // actually has area (a vertical quad is degenerate in XY, so without
+        // `_full3d` earcut emits no triangles and the wall is invisible).
+        _normalize: false,
+        _full3d: true,
+        pickable: false,
+      }),
+      new PathLayer({
+        id: 'curtain-edge',
+        data: [curtain.path],
+        getPath: (d) => d,
+        getColor: [110, 110, 110, 220],
+        widthUnits: 'pixels',
+        getWidth: 2,
+        pickable: false,
+      }),
+      new PathLayer({
+        id: 'curtain-base',
+        data: [curtain.base],
+        getPath: (d) => d,
+        getColor: [110, 110, 110, 220],
+        widthUnits: 'pixels',
+        getWidth: 2,
+        pickable: false,
+      }),
+      new ScatterplotLayer({
+        id: 'curtain-nodes',
+        data: curtain.nodes,
+        getPosition: (d) => d.position,
+        radiusUnits: 'pixels',
+        getRadius: 3,
+        radiusMinPixels: 2,
+        radiusMaxPixels: 8,
+        billboard: true,
+        getFillColor: (d) => [...curtainScale(d.value).rgb(), 255],
+        // Mirror the chart-hover highlight: a red outline on the node whose id
+        // the chart reports via `onPointHover` (same ids as the InSAR points).
+        stroked: true,
+        lineWidthUnits: 'pixels',
+        getLineWidth: (d) => (isHovered(d.id) ? 2 : 0),
+        getLineColor: (d) => (isHovered(d.id) ? [255, 0, 0, 255] : [0, 0, 0, 0]),
+        updateTriggers: {
+          getLineWidth: [hoveredPointId],
+          getLineColor: [hoveredPointId],
+        },
+        pickable: false,
+      }),
+    );
+  }
+
   const layers = [
     baseMapLayer,
     precalculatedGlaze,
     pointLayer,
+    ...curtainLayers,
   ];
 
   return (
@@ -394,6 +481,7 @@ export default function FeatureScatterChart3D() {
           profileSamples={profileSamples}
           showProfile={showProfile}
           onPointHover={setHoveredPointId}
+          onStateChange={setChartState}
         />
       )}
     </div>

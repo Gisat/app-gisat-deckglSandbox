@@ -51,6 +51,7 @@ const RENDERER_COMPONENTS = {
  * @param {Array<any>} [props.profileSamples]  precomputed ordered line samples (app-owned)
  * @param {boolean} [props.showProfile]  expose the 3D line-profile mode (only when a line is drawn)
  * @param {(id: string|null) => void} [props.onPointHover]  map-link hover callback
+ * @param {(state: {mode:'scatter'|'profile', view:'attributes'|'trend', zKey:string, basis:'along'|'plan'}|null) => void} [props.onStateChange]  reports the effective mode/view/zKey/basis (null on unmount)
  * @param {'plotly'|'deckgl'|'three'} [props.defaultRenderer]
  * @param {string} [props.title]
  */
@@ -59,6 +60,7 @@ export function FeatureSpaceChart({
   profileSamples = [],
   showProfile = false,
   onPointHover,
+  onStateChange,
   defaultRenderer = 'plotly',
   title = '3D feature space',
 }) {
@@ -110,6 +112,18 @@ export function FeatureSpaceChart({
   );
 
   const profileSampleCount = profileSamples.length;
+
+  // Expose the effective mode/view/Z/basis to the host map (drives the 3D
+  // curtain). Primitives only, so this fires on real changes; the parent must
+  // pass a stable handler to avoid an update loop. On unmount clear it so the
+  // curtain hides when the chart panel is closed.
+  useEffect(() => {
+    if (onStateChange) onStateChange({ mode: activeMode, view: profileView, zKey: activeZKey, basis });
+  }, [onStateChange, activeMode, profileView, activeZKey, basis]);
+
+  useEffect(() => () => {
+    if (onStateChange) onStateChange(null);
+  }, [onStateChange]);
 
   const handleHover = useCallback(
     (id) => {

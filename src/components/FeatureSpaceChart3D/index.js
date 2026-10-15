@@ -8,6 +8,7 @@
 export { FeatureSpaceChart } from './FeatureSpaceChart';
 export { PointTooltip } from './PointTooltip';
 export { ProfileTooltip } from './ProfileTooltip';
+export { buildCurtainGeometry, CURTAIN_MAX_HEIGHT } from './curtainGeometry';
 
 export {
   ATTRIBUTES,
