@@ -1,3 +1,11 @@
+## [1.13.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.12.0...v1.13.0) (2026-10-15)
+
+### Features
+
+* **feature-space-chart:** render 3D geographic curtain for line profile ([689046d](https://github.com/Gisat/app-gisat-deckglSandbox/commit/689046de5ad89a3ada13b467f20ca45c7414bd61))
+* **feature-space-chart:** rework 3D panel controls and defaults ([5596268](https://github.com/Gisat/app-gisat-deckglSandbox/commit/55962687c236b077e6e77ab8e552e4e3209f6c5b))
+* **feature-space-chart:** stack trend-window curtains on the map ([76a69f8](https://github.com/Gisat/app-gisat-deckglSandbox/commit/76a69f8e6b89baaeb129028c5140e306d8022f2a))
+
 ## [1.12.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.11.0...v1.12.0) (2026-10-15)
 
 ### Features
