@@ -26,14 +26,43 @@ function isNum(v) {
 }
 
 /**
+ * Shared Z domain across several attribute keys, over the samples that sit on
+ * the line. Used so multiple curtains (e.g. the four trend windows) share one
+ * height scale and stay comparable. Returns null when no finite value exists.
+ *
+ * @param {Array<Record<string, any>>} samples
+ * @param {string[]} zKeys
+ * @returns {[number, number]|null}
+ */
+export function curtainZDomain(samples, zKeys) {
+  if (!Array.isArray(samples) || !Array.isArray(zKeys) || zKeys.length === 0) return null;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const s of samples) {
+    if (!s || !isNum(s.lon) || !isNum(s.lat)) continue;
+    for (const k of zKeys) {
+      const v = s[k];
+      if (isNum(v)) {
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+    }
+  }
+  return Number.isFinite(min) ? [min, max] : null;
+}
+
+/**
  * Build the render-ready curtain geometry.
  *
  * Z scaling: height attributes (`unit === 'm'`) use their literal value; every
- * other attribute is linearly normalised from its sample domain `[min, max]` to
+ * other attribute is linearly normalised from its domain to
  * `[0, CURTAIN_MAX_HEIGHT]` (a degenerate domain collapses to the mid-height).
+ * The domain defaults to the key's own sample `[min, max]`; pass `options.domain`
+ * (from `curtainZDomain`) to share one scale across several curtains.
  *
  * @param {Array<{ id?: any, lon?: number, lat?: number, [key: string]: any }>} samples
  * @param {string|null|undefined} zKey
+ * @param {{ domain?: [number, number] }} [options]
  * @returns {{
  *   quads: Array<{ polygon:number[][], value:number }>,
  *   path: number[][],
@@ -41,7 +70,7 @@ function isNum(v) {
  *   nodes: Array<{ id:any, position:number[], value:number }>,
  * }}
  */
-export function buildCurtainGeometry(samples, zKey) {
+export function buildCurtainGeometry(samples, zKey, options = {}) {
   const empty = { quads: [], path: [], base: [], nodes: [] };
   if (!Array.isArray(samples) || !zKey || samples.length < 2) return empty;
 
@@ -53,11 +82,17 @@ export function buildCurtainGeometry(samples, zKey) {
   }
   if (rows.length < 2) return empty;
 
-  let min = Infinity;
-  let max = -Infinity;
-  for (const r of rows) {
-    if (r.value < min) min = r.value;
-    if (r.value > max) max = r.value;
+  let min;
+  let max;
+  if (Array.isArray(options.domain) && options.domain.length === 2) {
+    [min, max] = options.domain;
+  } else {
+    min = Infinity;
+    max = -Infinity;
+    for (const r of rows) {
+      if (r.value < min) min = r.value;
+      if (r.value > max) max = r.value;
+    }
   }
 
   const literal = ATTRIBUTES[zKey]?.unit === 'm';

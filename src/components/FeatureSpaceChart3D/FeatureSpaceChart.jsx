@@ -51,7 +51,7 @@ const RENDERER_COMPONENTS = {
  * @param {Array<any>} [props.profileSamples]  precomputed ordered line samples (app-owned)
  * @param {boolean} [props.showProfile]  expose the 3D line-profile mode (only when a line is drawn)
  * @param {(id: string|null) => void} [props.onPointHover]  map-link hover callback
- * @param {(state: {mode:'scatter'|'profile', view:'attributes'|'trend', zKey:string, basis:'along'|'plan'}|null) => void} [props.onStateChange]  reports the effective mode/view/zKey/basis (null on unmount)
+ * @param {(state: {mode:'scatter'|'profile', view:'attributes'|'trend', zKey:string, basis:'along'|'plan', trendLines:'windows'|'windows-plain'|'points'}|null) => void} [props.onStateChange]  reports the effective mode/view/zKey/basis/trend shape (null on unmount)
  * @param {'plotly'|'deckgl'|'three'} [props.defaultRenderer]
  * @param {string} [props.title]
  */
@@ -118,8 +118,8 @@ export function FeatureSpaceChart({
   // pass a stable handler to avoid an update loop. On unmount clear it so the
   // curtain hides when the chart panel is closed.
   useEffect(() => {
-    if (onStateChange) onStateChange({ mode: activeMode, view: profileView, zKey: activeZKey, basis });
-  }, [onStateChange, activeMode, profileView, activeZKey, basis]);
+    if (onStateChange) onStateChange({ mode: activeMode, view: profileView, zKey: activeZKey, basis, trendLines });
+  }, [onStateChange, activeMode, profileView, activeZKey, basis, trendLines]);
 
   useEffect(() => () => {
     if (onStateChange) onStateChange(null);
