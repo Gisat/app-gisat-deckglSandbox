@@ -1,9 +1,10 @@
 # TiTiler caching stack — usage
 
 Local-development stack: **nginx disk tile-cache in front of three tile
-producers** — TiTiler plus two sibling elevation-tile encoders. Counterpart of
-the plain instance in [`deploy/titiler/`](../titiler/USAGE.md); both stacks run
-side by side without conflict (host ports `8000` plain, `8001` caching nginx).
+producers** — TiTiler plus two sibling elevation-tile encoders. The only TiTiler
+stack since the plain instance (`deploy/titiler/`, host port `8000`) was retired
+(2026-10-05); the colormaps it used to host now live in
+[`./colormaps/`](colormaps/README.md).
 
 ## Services (one compose file)
 
