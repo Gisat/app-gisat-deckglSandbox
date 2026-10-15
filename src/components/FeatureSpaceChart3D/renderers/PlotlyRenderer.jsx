@@ -1,0 +1,365 @@
+/**
+ * Plotly renderer for the 3D feature-space chart.
+ *
+ * Uses plotly.js via react-plotly.js' factory so the full library is imported
+ * only once (the heavy `plotly.js-dist-min` bundle stays behind the lazy() in
+ * FeatureSpaceChart).
+ *
+ * Two modes:
+ *  - scatter: the feature-space cloud. `scatter3d.marker.size` accepts a numeric
+ *    array, so the size channel is honoured per point.
+ *  - profile: one `scatter3d` line per `frame.curves` entry, plus a translucent
+ *    `mesh3d` uncertainty ribbon on Z for each banded curve (attribute view and
+ *    trend windows only). Plotly has real axes, so profile values are plotted in
+ *    raw units.
+ *
+ * KNOWN LIMITATION:
+ *   Plotly's `scatter3d` markers are flat billboards — there is no sphere marker
+ *   geometry — so this renderer cannot match the shaded spheres the deck.gl and
+ *   three.js renderers draw for the `sphere` marker style.
+ */
+
+import { useMemo } from 'react';
+import Plotly from 'plotly.js-dist-min';
+import createPlotlyComponent from 'react-plotly.js/factory';
+import { axisTitle, getAttribute } from '../attributes';
+import { buildPlotlyColorscale, sizeForValue } from '../colorScale';
+import { buildProfileFrame, DISPLACEMENT_COLORSCALE, displacementColor, formatTick } from '../profileGeometry';
+
+const Plot = createPlotlyComponent(Plotly);
+
+/**
+ * @param {Object} props
+ * @param {Array<import('../transformPoints').FeatureSpacePoint>} props.points
+ * @param {import('../attributes').PresetAxes} props.axes
+ * @param {ReturnType<import('../colorScale').buildColorScale>} props.colorScale
+ * @param {[number, number]} props.colorDomain
+ * @param {[number, number]} props.sizeDomain
+ * @param {[number, number]} props.sizeRange
+ * @param {{view:'attributes'|'trend', yKey:string, zKey:string, trendLines:string, samples:Array<any>}} [props.profile]
+ * @param {(id: string|null) => void} props.onHover
+ */
+export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDomain, sizeRange, profile, onHover }) {
+  const frame = useMemo(() => (profile ? buildProfileFrame(profile) : null), [profile]);
+
+  const traces = useMemo(() => {
+    if (frame) return buildProfileTraces(frame);
+
+    const colorscale = buildPlotlyColorscale(colorScale, colorDomain);
+
+    // `scatter3d.marker.size` accepts a numeric array, so the size channel maps
+    // one-to-one (no binning). Plotly's real limitation is the flat billboard
+    // marker, not per-point sizing.
+    return [{
+      type: 'scatter3d',
+      mode: 'markers',
+      name: 'points',
+      x: points.map((p) => p[axes.x]),
+      y: points.map((p) => p[axes.y]),
+      z: points.map((p) => p[axes.z]),
+      customdata: points.map((p) => [p.id, p.idOrig, p[axes.x], p[axes.y], p[axes.z], p.COH]),
+      marker: {
+        size: points.map((p) => sizeForValue(p[axes.size], sizeDomain, sizeRange)),
+        // Per-point colour maps values through a colorscale; scatter3d
+        // marker.color does not accept raw hex-string arrays.
+        color: points.map((p) => p[axes.color]),
+        colorscale,
+        cmin: colorDomain[0],
+        cmax: colorDomain[1],
+        opacity: 0.85,
+        line: { width: 0 },
+      },
+      hovertemplate:
+        '<b>%{customdata[0]}</b><br>'
+        + 'fid: %{customdata[1]}<br>'
+        + `${axisTitle(axes.x)}: %{customdata[2]}<br>`
+        + `${axisTitle(axes.y)}: %{customdata[3]}<br>`
+        + `${axisTitle(axes.z)}: %{customdata[4]}<br>`
+        + 'coherence: %{customdata[5]}'
+        + '<extra></extra>',
+    }];
+  }, [points, axes, colorScale, colorDomain, sizeDomain, sizeRange, frame]);
+
+  const layout = useMemo(() => {
+    const plan = frame?.basis === 'plan' && frame?.view === 'attributes';
+    // The Plan basis plots the same normalised cube positions deck.gl/three use,
+    // so it needs a fixed [-1,1] cube box with raw-value tick labels (rather than
+    // Plotly's auto-ranged axes) to look identical to the other renderers.
+    const planAxis = (slot) => ({
+      ...axisStyleText(frame.titles[slot]),
+      range: [-1, 1],
+      tickvals: [-1, 1],
+      ticktext: [
+        formatTick(frame.axisDomains[slot][0]),
+        formatTick(frame.axisDomains[slot][1]),
+      ],
+    });
+    return {
+      autosize: true,
+      margin: { l: 0, r: 0, t: 6, b: 0 },
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      showlegend: false,
+      font: { family: 'system-ui, sans-serif', size: 10, color: '#333' },
+      scene: {
+        bgcolor: 'rgba(0,0,0,0)',
+        aspectmode: 'cube',
+        xaxis: frame ? (plan ? planAxis('x') : axisStyleText(frame.titles.x)) : axisStyle(axes.x),
+        yaxis: frame
+          ? plan
+            ? planAxis('y')
+            : frame.yTicks
+              ? {
+                  ...axisStyleText(frame.titles.y),
+                  tickvals: frame.yTicks.map((t) => t.value),
+                  ticktext: frame.yTicks.map((t) => t.label),
+                }
+              : axisStyleText(frame.titles.y)
+          : axisStyle(axes.y),
+        zaxis: frame ? (plan ? planAxis('z') : axisStyleText(frame.titles.z)) : axisStyle(axes.z),
+        // Canonical default view (matches three.js / deck.gl): Z up, camera at
+        // azimuth 45deg / elevation 30deg.
+        camera: { eye: { x: 1.47, y: 1.47, z: 1.2 }, up: { x: 0, y: 0, z: 1 } },
+      },
+    };
+  }, [axes.x, axes.y, axes.z, frame]);
+
+  const config = useMemo(
+    () => ({
+      responsive: true,
+      displaylogo: false,
+      modeBarButtonsToRemove: ['toImage'],
+      scrollZoom: true,
+    }),
+    [],
+  );
+
+  const revision = frame
+    ? frame.curves.reduce((n, c) => n + c.samples.length, 0)
+    : points.length;
+
+  return (
+    <div style={{ position: 'absolute', inset: 0 }} onMouseLeave={() => onHover(null)}>
+      <Plot
+        data={traces}
+        layout={layout}
+        config={config}
+        revision={revision}
+        onHover={(e) => {
+          const id = e?.points?.[0]?.customdata?.[0];
+          if (id != null) onHover(String(id));
+        }}
+        onUnhover={() => onHover(null)}
+        useResizeHandler
+        style={{ width: '100%', height: '100%' }}
+      />
+    </div>
+  );
+}
+
+/** One `scatter3d` line per curve plus a `mesh3d` Z ribbon for each banded curve. */
+function buildProfileTraces(frame) {
+  // The Plan basis plots the cube-normalised positions (not raw lon/lat) so it
+  // shares the exact cube geometry deck.gl/three show; every other view plots
+  // raw values with real axes.
+  const plan = frame.basis === 'plan' && frame.view === 'attributes';
+  const coordsOf = (p) => (plan ? p.position : [p.raw.x, p.raw.y, p.raw.z]);
+  const traces = [];
+
+  for (const curve of frame.curves) {
+    const samples = curve.samples;
+    const n = samples.length;
+    if (n < 2) continue;
+
+    if (curve.stdKey) {
+      // Only finite-σ samples define the band; a missing std means "unknown", so
+      // those samples drop out. Keep each sample's source index so a gap breaks
+      // the band rather than bridging an interval whose uncertainty is unknown
+      // (matches deck.gl).
+      const banded = [];
+      samples.forEach((smp, index) => {
+        if (smp.ribbon) banded.push({ smp, index });
+      });
+      if (banded.length >= 2) {
+        const x = [];
+        const y = [];
+        const z = [];
+        const i = [];
+        const j = [];
+        const k = [];
+        banded.forEach(({ smp }) => {
+          if (plan) {
+            x.push(smp.ribbon.lo[0], smp.ribbon.hi[0]);
+            y.push(smp.ribbon.lo[1], smp.ribbon.hi[1]);
+            z.push(smp.ribbon.lo[2], smp.ribbon.hi[2]);
+          } else {
+            x.push(smp.raw.x, smp.raw.x);
+            y.push(smp.raw.y, smp.raw.y);
+            // Band lives on Z: lo/hi are `z ∓ std`.
+            z.push(smp.raw.lo, smp.raw.hi);
+          }
+        });
+        for (let a = 0; a < banded.length - 1; a++) {
+          // Only join source-adjacent samples.
+          if (banded[a + 1].index !== banded[a].index + 1) continue;
+          const b0 = 2 * a;
+          const t0 = 2 * a + 1;
+          const b1 = 2 * a + 2;
+          const t1 = 2 * a + 3;
+          i.push(b0, b0);
+          j.push(t0, t1);
+          k.push(t1, b1);
+        }
+        if (i.length > 0) {
+          traces.push({
+            type: 'mesh3d',
+            x,
+            y,
+            z,
+            i,
+            j,
+            k,
+            name: `${curve.label} band`,
+            color: curve.color,
+            opacity: 0.22,
+            flatshading: false,
+            hoverinfo: 'skip',
+            showscale: false,
+          });
+        }
+      }
+    }
+
+    const hover = curveHover(frame, curve, samples);
+    // Point/station curves colour their markers by displacement. `scatter3d`
+    // cannot gradient a line, so the line takes the station's mean displacement
+    // colour (thin) and the markers carry the full ramp.
+    const marker = curve.colored
+      ? {
+          color: samples.map((p) => p.raw.z),
+          colorscale: DISPLACEMENT_COLORSCALE,
+          cmin: frame.colorDomain[0],
+          cmax: frame.colorDomain[1],
+          size: 3,
+          line: { width: 0 },
+          showscale: false,
+        }
+      : { color: curve.color, size: 3, line: { width: 0 } };
+    const lineColor = curve.colored
+      ? displacementColor(meanDisplacementT(frame.colorDomain, samples))
+      : curve.color;
+    const coords = samples.map(coordsOf);
+    traces.push({
+      type: 'scatter3d',
+      mode: 'lines+markers',
+      name: curve.label,
+      x: coords.map((c) => c[0]),
+      y: coords.map((c) => c[1]),
+      z: coords.map((c) => c[2]),
+      customdata: hover.customdata,
+      line: { color: lineColor, width: curve.colored ? 2 : 3 },
+      marker,
+      hovertemplate: hover.hovertemplate,
+    });
+  }
+
+  return traces;
+}
+
+/** Mean normalised displacement (t in [0,1]) of a station, for its line colour. */
+function meanDisplacementT([cLo, cHi], samples) {
+  if (samples.length === 0 || cHi === cLo) return 0.5;
+  let sum = 0;
+  for (const p of samples) {
+    sum += Math.max(0, Math.min(1, (p.raw.z - cLo) / (cHi - cLo)));
+  }
+  return sum / samples.length;
+}
+
+/** Per-view `customdata` (id first, so `onHover` reads `customdata[0]`) + template. */
+function curveHover(frame, curve, samples) {
+  if (frame.view === 'trend') {
+    const unit = getAttribute(samples[0].windowKey ?? curve.key)?.unit ?? '';
+    const u = unit ? ` ${unit}` : '';
+    if (curve.stdKey) {
+      return {
+        customdata: samples.map((p) => {
+          const std = p.sample?.[curve.stdKey];
+          return [
+            p.id,
+            formatTick(p.raw.z),
+            std == null ? '\u2014' : formatTick(std),
+            formatTick(p.sample?.distance),
+          ];
+        }),
+        hovertemplate:
+          `<b>${curve.label}</b><br>`
+          + `displacement: %{customdata[1]}${u} \u00b1 %{customdata[2]}${u}<br>`
+          + 'distance: %{customdata[3]} m<br>'
+          + 'id: %{customdata[0]}'
+          + '<extra></extra>',
+      };
+    }
+    return {
+      customdata: samples.map((p) => [
+        p.id,
+        p.windowLabel ?? '\u2014',
+        formatTick(p.raw.z),
+        formatTick(p.sample?.distance),
+      ]),
+      hovertemplate:
+        `<b>${curve.label}</b><br>`
+        + 'window: %{customdata[1]}<br>'
+        + `displacement: %{customdata[2]}${u}<br>`
+        + 'distance: %{customdata[3]} m'
+        + '<extra></extra>',
+    };
+  }
+
+  const yAttr = getAttribute(frame.yKey);
+  const zAttr = getAttribute(frame.zKey);
+  const yUnit = yAttr.unit ? ` ${yAttr.unit}` : '';
+  const zUnit = zAttr.unit ? ` ${zAttr.unit}` : '';
+  return {
+    customdata: samples.map((p) => {
+      const std = curve.stdKey ? p.sample?.[curve.stdKey] : null;
+      return [
+        p.id,
+        formatTick(p.raw.y),
+        formatTick(p.raw.z),
+        std == null ? '\u2014' : formatTick(std),
+        formatTick(p.sample?.distance),
+        formatTick(p.sample?.offset),
+      ];
+    }),
+    hovertemplate:
+      '<b>id: %{customdata[0]}</b><br>'
+      + `${yAttr.label}: %{customdata[1]}${yUnit}<br>`
+      + `${zAttr.label}: %{customdata[2]}${zUnit}${curve.stdKey ? ` \u00b1 %{customdata[3]}${zUnit}` : ''}<br>`
+      + 'distance: %{customdata[4]} m<br>'
+      + 'offset: %{customdata[5]} m'
+      + '<extra></extra>',
+  };
+}
+
+function axisStyle(key) {
+  return {
+    title: { text: axisTitle(key) },
+    gridcolor: '#eee',
+    zerolinecolor: '#ddd',
+    color: '#555',
+    tickfont: { size: 9 },
+  };
+}
+
+function axisStyleText(title) {
+  return {
+    title: { text: title },
+    gridcolor: '#eee',
+    zerolinecolor: '#ddd',
+    color: '#555',
+    tickfont: { size: 9 },
+  };
+}
+
+export default PlotlyRenderer;

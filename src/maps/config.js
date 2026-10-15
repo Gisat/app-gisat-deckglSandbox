@@ -24,6 +24,7 @@ import MisicuniDam from './Misicuni_dam/index.jsx';
 import TabqaDam from './Tabqa_dam/index.jsx';
 import GisatDataService from './GisatDataService/index.jsx';
 import SelectionDrawing3D from './SelectionDrawing3D/index.jsx';
+import FeatureScatterChart3D from './FeatureScatterChart3D/index.jsx';
 import ArrowLODStream3D from './ArrowLODStream_3D/Map3D.jsx';
 import ArrowLODStream2D from './ArrowLODStream_2D/Map2D.jsx';
 import NepalSnow from './TiTilerDemo/NepalSnow';
@@ -64,6 +65,7 @@ const mapApps = [
     { category: '3DFLUS CCN', name: 'Arrow LOD Stream 3D', path: '/arrow-lod-stream-3d', component: ArrowLODStream3D },
     { category: '3DFLUS CCN', name: 'Terrain Interactive Slider', path: '/terrain-interactive-slider', component: MisicuniDam },
     { category: '3DFLUS CCN', name: 'Selection Drawing 3D', path: '/selection-drawing-3d', component: SelectionDrawing3D },
+    { category: '3DFLUS CCN', name: '3D Feature Scatter Chart', path: '/3d-feature-scatter-chart', component: FeatureScatterChart3D },
     { category: 'GDA Water', name: 'Misicuni Dam', path: '/misicuni-dam', component: MisicuniDam, description: 'Simple dam presentation map connected to GDA Water group' },
     { category: 'GDA Water', name: 'Tabqa Dam', path: '/tabqa', component: TabqaDam, description: 'Tabqa Dam, Syria - OSM basemap' },
     { category: 'TiTiler DEMO', name: 'Nepal Snow Cover', path: '/titiler-demo-nepal-snow', component: NepalSnow },
