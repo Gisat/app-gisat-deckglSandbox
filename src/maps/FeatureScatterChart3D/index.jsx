@@ -318,6 +318,8 @@ export default function FeatureScatterChart3D() {
   // once a line selection has been drawn).
   const showProfile = selectionMode === 'line'
     || (Array.isArray(drawnLineCoords) && drawnLineCoords.length >= 2);
+  // A polygon/circle selection has no line, so the chart's profile mode is off.
+  const profileDisabled = selectionMode === 'polygon' || selectionMode === 'circle';
 
   // The attribute curtain exists only when a line selection is present AND the
   // chart is in the 3D line-profile Attribute view on the Lon/Lat basis (the
@@ -518,6 +520,7 @@ export default function FeatureScatterChart3D() {
           featureCollection={selectedFeatures}
           profileSamples={profileSamples}
           showProfile={showProfile}
+          profileDisabled={profileDisabled}
           onPointHover={setHoveredPointId}
           onStateChange={setChartState}
         />

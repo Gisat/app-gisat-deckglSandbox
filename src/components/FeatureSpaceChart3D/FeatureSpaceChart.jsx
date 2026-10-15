@@ -25,8 +25,8 @@ const ThreeRenderer = lazy(() => import('./renderers/ThreeRenderer'));
 
 const RENDERERS = [
   { key: 'plotly', label: 'Plotly', note: 'billboard markers' },
-  { key: 'deckgl', label: 'deck.gl', note: 'OrbitView' },
-  { key: 'three', label: 'three.js', note: 'r3f + drei' },
+  { key: 'deckgl', label: 'Deck.gl', note: 'OrbitView' },
+  { key: 'three', label: 'Three.js', note: 'r3f + drei' },
 ];
 
 const RENDERER_COMPONENTS = {
@@ -49,7 +49,8 @@ const RENDERER_COMPONENTS = {
  * @param {Object} props
  * @param {any} props.featureCollection  GeoJSON FeatureCollection of selected points
  * @param {Array<any>} [props.profileSamples]  precomputed ordered line samples (app-owned)
- * @param {boolean} [props.showProfile]  expose the 3D line-profile mode (only when a line is drawn)
+ * @param {boolean} [props.showProfile]  a line tool is active or a line has been drawn (auto-selects the profile mode)
+ * @param {boolean} [props.profileDisabled]  disable the mode toggle (a polygon/circle selection is in use)
  * @param {(id: string|null) => void} [props.onPointHover]  map-link hover callback
  * @param {(state: {mode:'scatter'|'profile', view:'attributes'|'trend', zKey:string, basis:'along'|'plan', trendLines:'windows'|'windows-plain'|'points'}|null) => void} [props.onStateChange]  reports the effective mode/view/zKey/basis/trend shape (null on unmount)
  * @param {'plotly'|'deckgl'|'three'} [props.defaultRenderer]
@@ -59,6 +60,7 @@ export function FeatureSpaceChart({
   featureCollection,
   profileSamples = [],
   showProfile = false,
+  profileDisabled = false,
   onPointHover,
   onStateChange,
   defaultRenderer = 'plotly',
@@ -95,9 +97,10 @@ export function FeatureSpaceChart({
   const colorScale = useMemo(() => buildColorScale(axes.color, colorDomain), [axes.color, colorDomain]);
   const sizeDomain = useMemo(() => getSizeDomain(axes.size, points), [axes.size, points]);
 
-  // The profile mode only exists while the line tool is in use; otherwise the
-  // panel falls back to scatter even if `mode` state was left on 'profile'.
-  const activeMode = showProfile ? mode : 'scatter';
+  // The mode toggle is always shown, but a polygon/circle selection has no line
+  // to profile, so the profile mode is disabled and the panel falls back to
+  // scatter even if `mode` state was left on 'profile'.
+  const activeMode = profileDisabled ? 'scatter' : mode;
 
   // The Lon/Lat basis fixes X/Y to lon/lat and uses its own Z pick, so keep the two
   // bases' Z selections independent.
@@ -207,17 +210,35 @@ export function FeatureSpaceChart({
             {skipped} skipped
           </span>
         )}
+      </div>
 
-        {showProfile && (
-          <div style={{ display: 'flex', gap: '3px', marginLeft: 'auto' }} title="Chart mode">
-            <button onClick={() => setMode('scatter')} style={buttonStyle(activeMode === 'scatter')}>
-              Scatter
-            </button>
-            <button onClick={() => setMode('profile')} style={buttonStyle(activeMode === 'profile')}>
-              3D line profile
-            </button>
-          </div>
-        )}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '3px',
+          padding: '6px 12px',
+          borderBottom: '1px solid #eee',
+          flexWrap: 'wrap',
+        }}
+        title={
+          profileDisabled
+            ? 'Line profile needs a line selection'
+            : 'Chart mode'
+        }
+      >
+        <button
+          onClick={() => setMode('scatter')}
+          style={buttonStyle(activeMode === 'scatter', profileDisabled)}
+        >
+          Scatter
+        </button>
+        <button
+          onClick={() => setMode('profile')}
+          style={buttonStyle(activeMode === 'profile', profileDisabled)}
+        >
+          3D line profile
+        </button>
       </div>
 
       <div
@@ -242,20 +263,6 @@ export function FeatureSpaceChart({
             </button>
           ))}
         </div>
-        {activeMode === 'scatter' && (
-          <select
-            value={presetKey}
-            onChange={(e) => setPresetKey(e.target.value)}
-            style={selectStyle}
-            title="Axis preset"
-          >
-            {PRESET_KEYS.map((key) => (
-              <option key={key} value={key}>
-                {key === 'custom' ? 'Custom' : PRESETS[key].label}
-              </option>
-            ))}
-          </select>
-        )}
         <div
           style={{ display: 'flex', gap: '3px', marginLeft: 'auto' }}
           title={
@@ -269,25 +276,48 @@ export function FeatureSpaceChart({
             onClick={() => setMarkerStyle('billboard')}
             style={buttonStyle(effectiveMarker === 'billboard', renderer === 'plotly')}
           >
-            circles
+            Circles
           </button>
           <button
             disabled={renderer === 'plotly'}
             onClick={() => setMarkerStyle('sphere')}
             style={buttonStyle(effectiveMarker === 'sphere', renderer === 'plotly')}
           >
-            spheres
+            Spheres
           </button>
         </div>
       </div>
+
+      {activeMode === 'scatter' && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '3px',
+            padding: '6px 12px',
+            borderBottom: '1px solid #eee',
+            flexWrap: 'wrap',
+          }}
+          title="Axis preset"
+        >
+          {PRESET_KEYS.map((key) => (
+            <button
+              key={key}
+              onClick={() => setPresetKey(key)}
+              style={buttonStyle(presetKey === key)}
+            >
+              {key === 'custom' ? 'Custom' : PRESETS[key].label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {activeMode === 'profile' && (
         <div
           style={{
             display: 'flex',
-            flexWrap: 'wrap',
+            flexDirection: 'column',
             gap: '8px',
-            alignItems: 'flex-end',
             padding: '8px 12px',
             borderBottom: '1px solid #eee',
             background: '#fafafa',
@@ -301,53 +331,49 @@ export function FeatureSpaceChart({
               Trend
             </button>
           </div>
-          {profileView === 'attributes' ? (
-            <>
-              <div style={{ display: 'flex', gap: '3px', marginLeft: 'auto' }} title="Horizontal-plane basis: attributes vs lon/lat">
-                <button onClick={() => setBasis('along')} style={buttonStyle(basis === 'along')}>
-                  Attributes
-                </button>
+
+          <div
+            style={{ display: 'flex', gap: '3px' }}
+            title={profileView === 'attributes' ? 'Horizontal-plane basis: lon/lat vs custom' : 'Trend shape'}
+          >
+            {profileView === 'attributes' ? (
+              <>
                 <button onClick={() => setBasis('plan')} style={buttonStyle(basis === 'plan')}>
                   Lon/Lat
                 </button>
-              </div>
-              <div
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  flexBasis: '100%',
-                  gap: '8px',
-                  alignItems: 'flex-end',
-                }}
-              >
-                {basis === 'along' ? (
-                  <label style={axisPickerStyle}>
-                    <span style={axisPickerLabel}>Y axis</span>
-                    <select value={yKey} onChange={(e) => setYKey(e.target.value)} style={selectStyle}>
-                      {PROFILE_AXIS_KEYS.map((key) => (
-                        <option key={key} value={key}>
-                          {ATTRIBUTES[key].label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : (
-                  <span
-                    style={axisPickerStyle}
-                    title="Lon/Lat basis: X = longitude, Y = latitude (equal ground scale)"
-                  >
-                    <span style={axisPickerLabel}>X / Y axis</span>
-                    <span style={{ fontSize: '11px', color: '#333' }}>Longitude / Latitude</span>
-                  </span>
-                )}
+                <button onClick={() => setBasis('along')} style={buttonStyle(basis === 'along')}>
+                  Custom
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setTrendLines('windows')}
+                  style={buttonStyle(trendLines === 'windows')}
+                  title="One line per window, with its ±1σ band"
+                >
+                  Windows ±σ
+                </button>
+                <button
+                  onClick={() => setTrendLines('windows-plain')}
+                  style={buttonStyle(trendLines === 'windows-plain')}
+                  title="One line per window, no band (same Z scale as points)"
+                >
+                  Windows
+                </button>
+                <button onClick={() => setTrendLines('points')} style={buttonStyle(trendLines === 'points')}>
+                  Points
+                </button>
+              </>
+            )}
+          </div>
+
+          {profileView === 'attributes' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'flex-end' }}>
+              {basis === 'along' ? (
                 <label style={axisPickerStyle}>
-                  <span style={axisPickerLabel}>Z axis (up)</span>
-                  <select
-                    value={activeZKey}
-                    onChange={(e) => (basis === 'plan' ? setZPlanKey(e.target.value) : setZKey(e.target.value))}
-                    style={selectStyle}
-                    title={ATTRIBUTES[activeZKey]?.stdKey ? `Band: ${ATTRIBUTES[activeZKey].stdKey} (indicative)` : 'No uncertainty band for this attribute'}
-                  >
+                  <span style={axisPickerLabel}>Y axis</span>
+                  <select value={yKey} onChange={(e) => setYKey(e.target.value)} style={selectStyle}>
                     {PROFILE_AXIS_KEYS.map((key) => (
                       <option key={key} value={key}>
                         {ATTRIBUTES[key].label}
@@ -355,49 +381,52 @@ export function FeatureSpaceChart({
                     ))}
                   </select>
                 </label>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ display: 'flex', gap: '3px', marginLeft: 'auto' }} title="Trend shape">
-                <button
-                  onClick={() => setTrendLines('windows')}
-                  style={buttonStyle(trendLines === 'windows')}
-                  title="One line per window, with its ±1σ band"
+              ) : (
+                <span
+                  style={axisPickerStyle}
+                  title="Lon/Lat basis: X = longitude, Y = latitude (equal ground scale)"
                 >
-                  windows ±σ
-                </button>
-                <button
-                  onClick={() => setTrendLines('windows-plain')}
-                  style={buttonStyle(trendLines === 'windows-plain')}
-                  title="One line per window, no band (same Z scale as points)"
-                >
-                  windows
-                </button>
-                <button onClick={() => setTrendLines('points')} style={buttonStyle(trendLines === 'points')}>
-                  points
-                </button>
-              </div>
-              {trendLines === 'points' && (
-                <div style={{ display: 'flex', flexBasis: '100%', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '10px', color: '#666' }}>displacement</span>
-                  <span
-                    style={{
-                      flex: 1,
-                      minWidth: '80px',
-                      height: '8px',
-                      borderRadius: '4px',
-                      background: `linear-gradient(to right, ${DISPLACEMENT_RAMP.join(', ')})`,
-                    }}
-                  />
-                  <span style={{ fontSize: '10px', color: '#666' }}>
-                    {`${formatValue('TD_365', DISPLACEMENT_DOMAIN[0])} \u2013 ${formatValue('TD_365', DISPLACEMENT_DOMAIN[1])}`}
-                  </span>
-                </div>
+                  <span style={axisPickerLabel}>X / Y axis</span>
+                  <span style={{ fontSize: '11px', color: '#333' }}>Longitude / Latitude</span>
+                </span>
               )}
-            </>
+              <label style={axisPickerStyle}>
+                <span style={axisPickerLabel}>Z axis (up)</span>
+                <select
+                  value={activeZKey}
+                  onChange={(e) => (basis === 'plan' ? setZPlanKey(e.target.value) : setZKey(e.target.value))}
+                  style={selectStyle}
+                  title={ATTRIBUTES[activeZKey]?.stdKey ? `Band: ${ATTRIBUTES[activeZKey].stdKey} (indicative)` : 'No uncertainty band for this attribute'}
+                >
+                  {PROFILE_AXIS_KEYS.map((key) => (
+                    <option key={key} value={key}>
+                      {ATTRIBUTES[key].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           )}
-          <span style={{ flexBasis: '100%', fontSize: '10px', color: '#999' }}>
+
+          {profileView === 'trend' && trendLines === 'points' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '10px', color: '#666' }}>displacement</span>
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: '80px',
+                  height: '8px',
+                  borderRadius: '4px',
+                  background: `linear-gradient(to right, ${DISPLACEMENT_RAMP.join(', ')})`,
+                }}
+              />
+              <span style={{ fontSize: '10px', color: '#666' }}>
+                {`${formatValue('TD_365', DISPLACEMENT_DOMAIN[0])} \u2013 ${formatValue('TD_365', DISPLACEMENT_DOMAIN[1])}`}
+              </span>
+            </div>
+          )}
+
+          <span style={{ fontSize: '10px', color: '#999' }}>
             {profileView === 'trend'
               ? 'Trend windows are overlapping cumulative windows; the axis is ordered, not linear time.'
               : `${
@@ -415,7 +444,7 @@ export function FeatureSpaceChart({
                 }`}
           </span>
           {profileView === 'trend' && trendLines === 'windows' && (
-            <span style={{ flexBasis: '100%', fontSize: '10px', color: '#999' }}>
+            <span style={{ fontSize: '10px', color: '#999' }}>
               {'The shaded band is the \u00b11\u03c3 uncertainty of each window\u2019s trend displacement; it widens for longer windows because a longer accumulation carries more error.'}
             </span>
           )}
