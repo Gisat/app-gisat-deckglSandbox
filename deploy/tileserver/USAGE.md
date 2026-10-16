@@ -8,7 +8,7 @@ proven raster source.
 
 ## What it is
 
-- **Image:** built locally from `../../tileserver-rs` (branch
+- **Image:** built locally from `../../../tileserver-rs` (branch
   `feat/identity-raster-cache`) — a single-binary Rust tile server (axum +
   GDAL). The branch adds identity raster-tile caching to the global `[cache]`,
   which upstream `main` does not have (there, only Accept-Encoding re-encode
@@ -47,16 +47,23 @@ the Vite dev-server proxy `/tileserver-api` → `http://localhost:8080`
 
 ## Quick start
 
+The container runs the **prebuilt native binary** — no compilation in Docker.
+The build context is [`./tileserver-runtime/`](tileserver-runtime/), which ships
+the binary and the runtime libs, so the build needs **no network**. Refresh the
+binary after a rebuild, then start:
+
 ```sh
 # from the repository root
+cp tileserver-rs/target/release/tileserver-rs \
+   deploy/tileserver/tileserver-runtime/tileserver-rs
 docker compose -f deploy/tileserver/docker-compose.yml up -d --build
-```
 
-The first build takes a while (Rust release build). Verify it is up:
-
-```sh
 curl http://localhost:8080/health
 ```
+
+The image (`tileserver-rs-demo:local`) is `debian:12-slim` carrying the GDAL
+shared-library chain — seconds to build. See
+[Building the image](#building-the-image) for the online/offline split.
 
 Stop / restart / logs / teardown:
 
@@ -82,14 +89,14 @@ curl http://localhost:8080/health
 curl -s http://localhost:8080/data/manila-rgb.json | jq .
 ```
 
-### 3. An in-bounds Manila tile (center lon 120.94, lat 13.86 → z6 53/29)
+### 3. An in-bounds Manila tile (center lon 120.94, lat 13.86 → z8 214/118)
 
 ```sh
 # Cold: GDAL /vsicurl/ range reads of the remote COG + warp + PNG encode.
 # Repeat (within cache TTL): served from the in-process [cache] — watch
 # %{time_total} drop.
 curl -s -o /tmp/manila.png -w "%{http_code} %{content_type} %{size_download}B %{time_total}s\n" \
-  "http://localhost:8080/data/manila-rgb/6/53/29.png"
+  "http://localhost:8080/data/manila-rgb/8/214/118.png"
 file /tmp/manila.png   # -> PNG image data (true-color RGB imagery)
 ```
 
@@ -117,7 +124,31 @@ for i in 1 2 3; do curl -s -o /dev/null -w "req $i: %{time_total}s\n" "$TILE"; d
 | Manila RGB COG source | `config.toml` → `[[sources]]` `manila-rgb` |
 | Global raster defaults (resampling, tile size) | `config.toml` → `[raster]` |
 | In-process tile cache | `config.toml` → `[cache]` |
-| GDAL `/vsicurl/` tuning env | `docker-compose.yml` → `environment` |
+| Renderer pool (burst/load tuning) | `config.toml` → `[render]` |
+| GDAL `/vsicurl/` tuning env (container) | `tileserver-runtime/Dockerfile` → `ENV` |
+| GDAL `/vsicurl/` tuning env (no Docker) | `tileserver-rs/run-native.sh` → exports |
+
+The GDAL tuning values are **identical across every surface** (64 MB
+`CPL_VSIL_CURL_CACHE_SIZE`, `VSI_CACHE=FALSE`, `GDAL_CACHEMAX=200`, HTTP/2
+multiplexing, `GTIFF_SRS_SOURCE=EPSG`). See
+[`knowhow/Manila-RGBA-COG-Development-Summary.md`](knowhow/Manila-RGBA-COG-Development-Summary.md)
+for why each is set that way.
+
+## Running without Docker (`run-native.sh`)
+
+On a host without Docker (as here), start the **same prebuilt binary** bare-metal:
+
+```sh
+cd tileserver-rs
+./run-native.sh                # foreground (Ctrl-C stops)
+./run-native.sh --daemon       # background, logs to ./run-native.log
+./run-native.sh --stop         # stop the daemon
+```
+
+The script lives in the **tileserver-rs** repo (next to `build-native.sh`) and
+locates this directory's `config.toml` automatically; override with
+`CONFIG=/path/to/config.toml`. It bakes in the same GDAL `/vsicurl/` env as the
+container, so tile output and timing match the binary-variant container.
 
 ## Why the local build (not `ghcr.io/...:latest`)
 
@@ -143,18 +174,41 @@ services:
 
 ## Building the image
 
-The compose `build.context` is `../../../tileserver-rs` (sibling repo, resolved from this compose file's directory; the checkout must be on the `feat/identity-raster-cache` branch). Notes:
+No compilation happens in Docker. The build context is
+[`./tileserver-runtime/`](tileserver-runtime/) — **self-contained**, mirroring
+`deploy/titiler-caching/<encoder>/`: it holds the Dockerfile plus the generated
+build inputs (binary, runtime libs, GDAL/PROJ data). Nothing outside the app
+repo is read.
 
-- The repo has **uninitialized submodules** (`crates/mbgl-sys/vendor/maplibre-native`,
-  `.claude/skills/rust-skills`). The Dockerfile downloads pre-built MapLibre
-  Native static libs from GitHub releases and does **not** need the vendored
-  submodule — but `docker build` copies `crates/mbgl-sys` including the (empty)
-  vendor dir, which is fine. If the build complains about a missing submodule
-  path, initialize it once:
-  `git -C ../../../tileserver-rs submodule update --init crates/mbgl-sys/vendor/maplibre-native`
-- Build args: `FEATURES: "frontend stac"` (stac implies raster/GDAL).
-- The first build compiles ~700 crates; subsequent builds reuse the layer
-  cache as long as `Cargo.lock` does not change.
+**The generated inputs are NOT committed** (`.gitignore`d — ~219 MB of vendored
+`.so`/`.db` files that age badly). Regenerate them on a Debian 12 host that has
+GDAL — the same host that built the binary:
+
+```sh
+cd tileserver-rs && ./build-native.sh && cd -
+./deploy/tileserver/collect-runtime-libs.sh
+```
+
+The script collects, from `ldd` of the binary and `/usr/share`:
+
+| Into | From | Why |
+|---|---|---|
+| `runtime-libs/` | `ldd` (112 `.so`) | the shared libs the binary links |
+| `gdal-data/gdal/` | `/usr/share/gdal` | GDAL data — pkg `gdal-data`, **not** a dep of `libgdal32` |
+| `gdal-data/proj/` | `/usr/share/proj` | `proj.db` CRS database — pkg `proj-data`, **not** a dep of `libproj25` |
+| `tileserver-rs` | the built binary | what the image runs |
+
+**Offline vs online:** the default path installs nothing from the network — the
+libs and data are `COPY`d from the context. To build online instead (smaller
+context), uncomment the `apt-get` block in `tileserver-runtime/Dockerfile`,
+delete `runtime-libs/` + `gdal-data/`, and add `gdal-data proj-data` to the
+install list.
+
+The image is `debian:12-slim` + those files, so the container runs the **exact
+binary** `run-native.sh` runs. Note the runtime is deliberately **not** the
+upstream Dockerfile's `ubuntu:24.04` (glibc 2.39 / `libgdal34t64`): the binary is
+built against Debian 12's glibc 2.36 / `libgdal32`, so the SONAMEs would not
+resolve there. Notes:
 
 ## Performance notes
 
@@ -180,6 +234,7 @@ The compose `build.context` is `../../../tileserver-rs` (sibling repo, resolved 
   only checks in-bounds tiles at sane zooms.
 - **No persistence:** the container is stateless; the `[cache]` is RAM-only
   (restart clears it — by design for this demo).
-- **Updating:** `git -C ../../tileserver-rs fetch origin && git -C
-  ../../tileserver-rs pull --ff-only` (on `feat/identity-raster-cache` or
-  `main`), then rebuild: `docker compose -f deploy/tileserver/docker-compose.yml up -d --build`.
+- **Updating:** `git -C ../../../tileserver-rs fetch origin && git -C
+  ../../../tileserver-rs pull --ff-only` (on `feat/identity-raster-cache` or
+  `main`), then rebuild: `docker compose -f deploy/tileserver/docker-compose.yml up -d --build`
+  (or, for the binary variant, re-run `tileserver-rs/build-native.sh` first).

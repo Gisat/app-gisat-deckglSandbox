@@ -37,6 +37,30 @@ cors_origins = ["*"]
 enabled = false
 
 # ---------------------------------------------------------------------------
+# Native renderer pool.
+#
+# WHY THIS IS TUNED (not left at the 4/30 defaults):
+#   A fast zoom/pan fires a BURST of parallel tile requests (20-60 at once) and
+#   many of them are first-touch COLD tiles that must run a GDAL /vsicurl/
+#   range read + warp + encode. The 4/30 defaults give each burst only four
+#   concurrent render slots and drop a request that queues longer than 30 s,
+#   so a cold burst can exceed the default timeout.
+#
+#   pool_size is raised to give the burst headroom; the timeout is raised so a
+#   cold remote-COG render is never dropped while it waits behind other cold
+#   tiles. Tune down on a memory-constrained host (each in-flight render holds
+#   its own GDAL dataset handle + buffers).
+#
+# NOTE: measured behaviour, not assumed. With pool_size=16 and a cleared tile
+#   cache, a 40-way parallel COLD burst returned 40/40 x HTTP 200 (cold single
+#   tiles 0.15-0.48 s). So the pool is NOT a demonstrated cause of the demo's
+#   tile-error toast; this block is headroom hardening, not a fix for it.
+# ---------------------------------------------------------------------------
+[render]
+pool_size = 16
+render_timeout_secs = 120
+
+# ---------------------------------------------------------------------------
 # Global raster defaults.
 # ---------------------------------------------------------------------------
 [raster]
@@ -72,6 +96,12 @@ ttl_seconds = 3600
 [[sources]]
 id = "manila-rgb"
 type = "cog"
+# Remote HTTP(S) COG paths are normalised to `/vsicurl/` **in code**
+# (`sources::to_gdal_cog_path`), so a bare https:// URL here does proper 206
+# range reads — no need to spell the prefix out. Historically a bare URL made
+# GDAL use its curl->/vsimem full-download shim (4x full-file GETs, ~45 s open,
+# ~500 MB in-memory copy per handle); that is fixed as of commit 5253c30.
+# An explicit /vsicurl/ prefix still works (the normaliser is idempotent).
 path = "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_bitmap/Manila_S2_Composite_2020022_Mercator_RGB_COG_DEFLATE.tif"
 name = "Manila Sentinel-2 RGB Composite"
 attribution = "Sentinel-2 composite (Gisat demo data)"

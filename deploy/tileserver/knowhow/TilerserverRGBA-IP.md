@@ -1,5 +1,12 @@
 # Tileserver-RS RGBA COG rendering — implementation plan (TilerserverRGBA-IP)
 
+> **Historical (2026-10-14).** Written when `deploy/tileserver/docker-compose.yml`
+> *compiled* tileserver-rs in Docker ("code changed → rebuild"). The deploy now
+> runs the **prebuilt native binary** (see [`../USAGE.md`](../USAGE.md)): a code
+> change means re-run `tileserver-rs/build-native.sh`, then
+> `docker compose -f deploy/tileserver/docker-compose.yml up -d --build`
+> (the image only `COPY`s the new binary). The analysis below is unchanged.
+
 **Date:** 2026-10-14
 **Status:** patch applied locally on `tileserver-rs` branch `feat/identity-raster-cache` (this sandbox cannot compile Rust — the gate runs on the Docker host)
 **Scope:** make tileserver-rs render the 4-band RGBA Manila COG exactly like the TiTiler demo, and make the demo verifiable end-to-end.
@@ -131,6 +138,9 @@ git log --oneline -2          # alpha fix on top of 407fe8c
 cargo test -p tileserver-rs --lib --features raster
 
 # 3. rebuild the demo image (code changed → rebuild, not just restart)
+# NOTE (current deploy): the compose image only COPYs the prebuilt binary, so
+# rebuild it first — `cd ../tileserver-rs && ./build-native.sh` — otherwise the
+# container recreates with the OLD binary.
 cd ../app-gisat-deckglSandbox
 docker compose -f deploy/tileserver/docker-compose.yml up -d --build
 

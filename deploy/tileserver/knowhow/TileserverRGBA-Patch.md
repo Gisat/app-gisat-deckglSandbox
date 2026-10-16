@@ -47,8 +47,11 @@ cd ../tileserver-rs
 git log --oneline -2                # alpha fix on top of 407fe8c (identity cache)
 cargo test -p tileserver-rs --lib --features raster   # THE GATE — 3 new alpha tests must pass
 
+# NOTE (current deploy): the compose image only COPYs the prebuilt binary —
+# run `cd ../tileserver-rs && ./build-native.sh` first, or "rebuild" recreates
+# the container with the OLD binary. See ../USAGE.md.
 cd ../app-gisat-deckglSandbox
-docker compose -f deploy/tileserver/docker-compose.yml up -d --build   # code changed → rebuild
+docker compose -f deploy/tileserver/docker-compose.yml up -d --build   # recreates with the new binary
 docker compose -f deploy/tileserver/docker-compose.yml restart         # RAM-only cache → guaranteed cold
 ./deploy/tileserver/verify.sh
 ```

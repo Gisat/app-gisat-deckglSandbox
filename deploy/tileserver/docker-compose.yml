@@ -1,71 +1,61 @@
-# Tileserver-RS demo stack — server-side COG rendering + in-process caching.
+# =============================================================================
+# Tileserver-RS demo — local-development stack.
 #
-# Image: BUILT FROM ../tileserver-rs (branch feat/identity-raster-cache, which
-#        adds identity raster-tile caching to the global [cache]) — the published
-#        ghcr.io/vinayakkulkarni/tileserver-rs does NOT yet cache plain PNG
-#        raster tiles, and "caching utilized" is part of the demo motivation.
-#        The Dockerfile there includes the `stac` feature (implies raster/GDAL).
-#        NOTE: the repo has uninitialized submodules — the build checks them
-#        out itself (submodules: recursive is in .github; plain `docker build`
-#        needs the maplibre-native vendor only for mbgl — see USAGE.md
-#        "Building the image" if the build fails on it).
+# Runs the PREBUILT native tileserver-rs binary in a thin Debian 12 runtime. It
+# does NOT compile anything: tileserver-runtime/Dockerfile copies the binary
+# that tileserver-rs/build-native.sh produced on a Debian 12 host, so the
+# container runs the exact same artifact as the no-Docker runner (run-native.sh).
 #
-# Source (see config.toml):
-#   manila-rgb — the same true-color RGB COG as the TiTiler Manila demo
+# PREREQUISITE — refresh the binary shipped in the build context:
+#   cp ../../../tileserver-rs/target/release/tileserver-rs \
+#      tileserver-runtime/tileserver-rs
+# then (from the repository root):
+#   docker compose -f deploy/tileserver/docker-compose.yml up -d --build
 #
-# Start:   docker compose -f deploy/tileserver/docker-compose.yml up -d --build
+# The build is seconds, not minutes, and needs NO network (see the header note).
+# Full guide: USAGE.md.
+#
 # Health:  curl http://localhost:8080/health
 # Tiles:   http://localhost:8080/data/manila-rgb/{z}/{x}/{y}.png
 #
-# HISTORY 2026-10-14: the STAC-based demo was retired.
-#   - sentinel2-mosaic (Earth Search STAC dynamic /search + mosaic) was
-#     removed — the STAC configuration test case failed (low-zoom tiles mostly
-#     black: `pixel_selection = "first"` picks the newest scenes which are
-#     89-99 % cloud in this region). Replaced by a plain, proven COG.
-#   - worldcereal COG was removed earlier — failed at startup registration
-#     (GDAL GDALOpenEx returned NULL) and the WorldCereal STAC API is dead.
+# BUILD CONTEXT (mirrors deploy/titiler-caching/<encoder>/)
+#   ./tileserver-runtime/ is self-contained: the Dockerfile, the prebuilt
+#   binary, and the runtime shared libs. Nothing outside the app repo is read.
+#   Refresh the binary after a rebuild:
+#     cp ../../../tileserver-rs/target/release/tileserver-rs \
+#        tileserver-runtime/tileserver-rs
 #
-# The sandbox app reaches it same-origin via the Vite dev-server proxy
-# '/tileserver' -> http://localhost:8080 (COEP-safe; see vite.config.js).
+# OFFLINE vs ONLINE
+#   The image installs NOTHING from the network in the default (offline) path:
+#   the libs are shipped in tileserver-runtime/runtime-libs/ and COPYd in.
+#   To build online instead (smaller context), uncomment the apt-get block in
+#   tileserver-runtime/Dockerfile and delete runtime-libs/.
+# =============================================================================
 
 services:
   tileserver:
-    # Build from the local tileserver-rs checkout (with the cache patch) so the
-    # demo exercises the full feature set. Resolved relative to THIS compose
-    # file (deploy/tileserver/): ../../../tileserver-rs = the sibling repo
-    # DynamicServerSideTiles/tileserver-rs (checkout must be on the
-    # feat/identity-raster-cache branch).
+    # Self-contained build context — mirrors deploy/titiler-caching/<encoder>/.
+    # Everything the image needs lives in tileserver-runtime/ (the Dockerfile,
+    # the prebuilt binary, and — for offline builds — the runtime shared libs).
+    # No cross-repo context, no monorepo root: the app repo is self-sufficient.
     build:
-      context: ../../../tileserver-rs
-      args:
-        FEATURES: "frontend stac"
+      context: ./tileserver-runtime
     image: tileserver-rs-demo:local
     container_name: tileserver-rs-demo
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
+      # Same demo config as the native runner (run-native.sh uses this too).
       - ./config.toml:/app/config.toml:ro
     environment:
+      # GDAL /vsicurl/ tuning is baked into the image (tileserver-runtime/Dockerfile ENV),
+      # but RUST_LOG is kept here so it stays easy to flip at run time.
       - RUST_LOG=${RUST_LOG:-info}
-      # GDAL /vsicurl/ tuning for the remote Manila COG.
-      # From the verified analysis in DynamicServerSideTiles/TITILER_VS_TILESERVER_RS.md §5.
-      - GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
-      - CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.TIF,.tiff
-      - CPL_VSIL_CURL_CACHE_SIZE=536870912
-      - VSI_CACHE=TRUE
-      - VSI_CACHE_SIZE=5000000
-      - GDAL_CACHEMAX=200
-      - GDAL_BAND_BLOCK_CACHE=HASHSET
-      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
-      - GDAL_HTTP_MULTIPLEX=YES
-      - GDAL_HTTP_VERSION=2
-      # Do NOT set GDAL_INGESTED_BYTES_AT_OPEN here: the COG path re-opens per
-      # overview level, so ingest-at-open = a full-file download per tile.
-    # Default CMD from the image: ./tileserver-rs --config /app/config.toml
-    # (entrypoint boots Xvfb for headless GL, then exec "$@").
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      # Must match what the image actually has: debian:12-slim ships no curl
+      # (see tileserver-runtime/Dockerfile), so probe with bash /dev/tcp.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
       interval: 30s
       timeout: 5s
       retries: 3
