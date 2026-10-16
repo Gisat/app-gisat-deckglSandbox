@@ -1,3 +1,15 @@
+## [1.14.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.13.0...v1.14.0) (2026-10-16)
+
+### Features
+
+* **feature-space-chart:** add Aggregate profile view and offset-sized markers ([55e5c45](https://github.com/Gisat/app-gisat-deckglSandbox/commit/55e5c453d5d3449a821b8f093bcc218f5fc4faa6))
+* **feature-space-chart:** persist selection boundary with flat-ended line buffer ([8df915b](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8df915bd6409661937d47327ae95115cb07506a4))
+* **feature-space-chart:** rework trend view to cumulative settlement ([a709c4c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/a709c4c36b0c7cd4ec76684976a5f3084c129c24))
+
+### Bug Fixes
+
+* **feature-space-chart:** drop dead gap-breaking and settle colour domain ([dfa0c6b](https://github.com/Gisat/app-gisat-deckglSandbox/commit/dfa0c6babaf40f3dc41ac489b4e980e4b4b8fe5d))
+
 ## [1.13.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.12.0...v1.13.0) (2026-10-15)
 
 ### Features
