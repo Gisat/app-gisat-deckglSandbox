@@ -8,7 +8,11 @@
 > (the image only `COPY`s the new binary). The analysis below is unchanged.
 
 **Date:** 2026-10-14
-**Status:** patch applied locally on `tileserver-rs` branch `feat/identity-raster-cache` (this sandbox cannot compile Rust — the gate runs on the Docker host)
+**Status:** DONE — the fix landed as `5353d79` ("fix(cog): warp-maintained destination
+alpha for RGB(A) sources") on `tileserver-rs` branch `feat/identity-raster-cache`,
+later carried onto `tileserver-rs-gisat`. The three unit tests in §6 pass. This is a
+historical design record: keep it for the *why* (the GDAL band-mapping subtlety in
+§2 is the part that looks like a bug and is not), not as a current task list.
 **Scope:** make tileserver-rs render the 4-band RGBA Manila COG exactly like the TiTiler demo, and make the demo verifiable end-to-end.
 
 ## 1. Problem
