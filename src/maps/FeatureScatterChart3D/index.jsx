@@ -2,10 +2,10 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
-import { BitmapLayer, ScatterplotLayer, SolidPolygonLayer, PathLayer } from '@deck.gl/layers';
+import { BitmapLayer, GeoJsonLayer, ScatterplotLayer, SolidPolygonLayer, PathLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
-import { SelectionControls, DrawingOverlay, pointInPolygon, normalizeGeometry } from '../../components/PointSelection';
-import { FeatureSpaceChart, buildCurtainGeometry, curtainZDomain, hexToRgba, TREND_WINDOWS, MAP_VELOCITY_COLORS, getColorDomain } from '../../components/FeatureSpaceChart3D';
+import { SelectionControls, DrawingOverlay, pointInPolygon, normalizeGeometry, buildLineCorridor } from '../../components/PointSelection';
+import { FeatureSpaceChart, buildCurtainGeometry, curtainZDomain, hexToRgba, aggregateSamples, TREND_WINDOWS, TREND_TIMELINE, SETTLEMENT_KEYS, withSettlement, MAP_VELOCITY_COLORS, getColorDomain } from '../../components/FeatureSpaceChart3D';
 import { buildProfileSamples, sampleLineSelection } from '../../components/2DLineProfile';
 import chroma from 'chroma-js';
 import { scaleLinear } from 'd3-scale';
@@ -22,8 +22,9 @@ const INITIAL_VIEW_STATE = {
 const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_z4_bilinear_cog.tif';
 const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/Tabqua_LOS_selected.geojson';
 
+// Map marker colours share the (reversed) chart scale so red = negative.
 const colorScale = chroma
-  .scale([[65, 182, 196], [254, 254, 191], [215, 25, 28]])
+  .scale(MAP_VELOCITY_COLORS)
   .domain([-3, 3]);
 
 // Per-point scatter radius (pixels) from |VEL_REL|.
@@ -32,12 +33,30 @@ const sizeScale = scaleLinear([0, 5], [3, 8]).clamp(true);
 // Fill alpha for the trend-window curtains (transparent walls, one per window).
 const TREND_WALL_ALPHA = 55;
 
-/** One shared Z domain across all four windows so their heights are comparable. */
+// Shared highlight colour for a selection: used both for the selected point
+// borders and for the persistent selection-boundary layer, so they always match.
+const SELECTION_COLOR = [66, 212, 244];
+
+/** One curtain per raw trend window, on a single shared Z domain. */
 function buildTrendCurtains(samples) {
   const domain = curtainZDomain(samples, TREND_WINDOWS.map((w) => w.key));
   if (!domain) return [];
   return TREND_WINDOWS
     .map((w) => ({ key: w.key, color: w.color, geometry: buildCurtainGeometry(samples, w.key, { domain }) }))
+    .filter((c) => c.geometry.quads.length > 0);
+}
+
+/**
+ * One curtain per settlement timeline step, all on a single shared Z domain so
+ * their heights are comparable. The per-step cumulative-settlement values are
+ * materialised on the samples via `withSettlement`.
+ */
+function buildSettlementCurtains(samples) {
+  const withValues = withSettlement(samples);
+  const domain = curtainZDomain(withValues, SETTLEMENT_KEYS);
+  if (!domain) return [];
+  return SETTLEMENT_KEYS
+    .map((key, i) => ({ key, color: TREND_TIMELINE[i].color, geometry: buildCurtainGeometry(withValues, key, { domain }) }))
     .filter((c) => c.geometry.quads.length > 0);
 }
 
@@ -184,7 +203,7 @@ export default function FeatureScatterChart3D() {
       }
 
       if (isPointSelected(d)) {
-        return [66, 212, 244, 255]; // cyan border for selected
+        return [...SELECTION_COLOR, 255]; // cyan border for selected
       }
 
       return [0, 0, 0, 0];
@@ -341,15 +360,45 @@ export default function FeatureScatterChart3D() {
     [curtainZKey, profileSamples],
   );
 
-  // The Trend view instead stacks one curtain per trend window (both window
-  // shapes; the ±σ band is irrelevant here) on a single shared Z domain.
-  const trendMode = chartState?.mode === 'profile'
-    && chartState?.view === 'trend'
-    && (chartState?.trendLines === 'windows' || chartState?.trendLines === 'windows-plain');
-  const trendCurtains = useMemo(
-    () => (lineActive && trendMode ? buildTrendCurtains(profileSamples) : []),
-    [lineActive, trendMode, profileSamples],
+  // Aggregate curtain: the binned median per distance bin, placed at each bin's
+  // mean foot position, so the map wall shows the same aggregated line as the
+  // chart's Aggregate view. Reuses the attribute curtain machinery.
+  const aggCurtainKey = chartState?.mode === 'profile' && chartState?.view === 'aggregate'
+    ? chartState.valueKey
+    : null;
+  const aggCurtainStep = chartState?.mode === 'profile' && chartState?.view === 'aggregate'
+    ? chartState.step
+    : null;
+  const aggCurtain = useMemo(() => {
+    if (!lineActive || !aggCurtainKey || !(typeof aggCurtainStep === 'number' && aggCurtainStep > 0)) {
+      return null;
+    }
+    const rows = aggregateSamples(profileSamples, aggCurtainKey, aggCurtainStep, chartState?.interpolate === true)
+      .filter((e) => Number.isFinite(e.lon) && Number.isFinite(e.lat))
+      .map((e) => ({ id: e.id, lon: e.lon, lat: e.lat, [aggCurtainKey]: e.value }));
+    return rows.length >= 2 ? buildCurtainGeometry(rows, aggCurtainKey) : null;
+  }, [lineActive, aggCurtainKey, aggCurtainStep, chartState, profileSamples]);
+  const aggCurtainScale = useMemo(
+    () => (aggCurtainKey && aggCurtain
+      ? chroma
+          .scale(MAP_VELOCITY_COLORS)
+          .domain(getColorDomain(aggCurtainKey, aggCurtain.nodes.map((n) => ({ [aggCurtainKey]: n.value }))))
+      : null),
+    [aggCurtainKey, aggCurtain],
   );
+
+  // The Trend view stacks one curtain per series on a single shared Z domain:
+  // raw per-window displacement for `windows`, cumulative settlement per timeline
+  // step for `profiles`. `points` (one curve per location) has no curtain.
+  const trendShape = chartState?.mode === 'profile' && chartState?.view === 'trend'
+    ? chartState.trendLines
+    : null;
+  const trendCurtains = useMemo(() => {
+    if (!lineActive) return [];
+    if (trendShape === 'windows') return buildTrendCurtains(profileSamples);
+    if (trendShape === 'profiles') return buildSettlementCurtains(profileSamples);
+    return [];
+  }, [lineActive, trendShape, profileSamples]);
 
   // One curtain = walls + top/base edges + nodes; callers supply the colours (a
   // value-driven scale for the attribute curtain, a flat window colour for the
@@ -429,13 +478,48 @@ export default function FeatureScatterChart3D() {
       lineColor: color,
     }));
   }
+  if (aggCurtain && aggCurtain.quads.length > 0 && aggCurtainScale) {
+    curtainLayers.push(...curtainLayerSet('agg-curtain', aggCurtain, {
+      fillColor: (d) => [...aggCurtainScale(d.value).rgb(), 150],
+      nodeColor: (d) => [...aggCurtainScale(d.value).rgb(), 255],
+      lineColor: [110, 110, 110, 220],
+    }));
+  }
+
+  // Persistent selection boundary, kept on the map after drawing finishes (unlike
+  // the transient canvas overlay, which is cleared once drawing stops). For line
+  // mode the boundary is a flat-ended (butt-cap) buffer corridor around the line,
+  // rebuilt from `drawnLineCoords` so it tracks the buffer-distance slider live and
+  // matches the flat-ended line selection (`sampleLineSelection`).
+  const selectionBoundary = useMemo(() => {
+    if (selectionMode === 'line' && Array.isArray(drawnLineCoords) && drawnLineCoords.length >= 2) {
+      return buildLineCorridor(drawnLineCoords, bufferDistance);
+    }
+    return drawnGeometry;
+  }, [selectionMode, drawnLineCoords, bufferDistance, drawnGeometry]);
+
+  const selectionBoundaryLayer = selectionBoundary
+    ? new GeoJsonLayer({
+        id: 'selection-boundary',
+        data: { type: 'Feature', properties: {}, geometry: selectionBoundary },
+        filled: true,
+        stroked: true,
+        getFillColor: [...SELECTION_COLOR, 40],
+        getLineColor: [...SELECTION_COLOR, 220],
+        lineWidthUnits: 'pixels',
+        getLineWidth: 2,
+        lineWidthMinPixels: 2,
+        pickable: false,
+      })
+    : null;
 
   const layers = [
     baseMapLayer,
     precalculatedGlaze,
+    selectionBoundaryLayer,
     pointLayer,
     ...curtainLayers,
-  ];
+  ].filter(Boolean);
 
   return (
     <div ref={mapContainerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -521,6 +605,7 @@ export default function FeatureScatterChart3D() {
           profileSamples={profileSamples}
           showProfile={showProfile}
           profileDisabled={profileDisabled}
+          bufferDistance={bufferDistance}
           onPointHover={setHoveredPointId}
           onStateChange={setChartState}
         />

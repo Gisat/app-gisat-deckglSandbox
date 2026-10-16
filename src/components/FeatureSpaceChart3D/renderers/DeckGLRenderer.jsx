@@ -183,10 +183,17 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     // Trend ▸ points uses thinner lines and smaller marks; the other profile
     // views keep their current weight.
     const pointsMode = frame.shape === 'points';
+    const aggregateView = frame.view === 'aggregate';
+    const sizeByOffset = frame.sizeByOffset;
+    const baseBillboard = pointsMode ? 3 : 4;
+    const baseScale = pointsMode ? 0.02 : 0.03;
 
-    // Uniform-coloured curves use a PathLayer; displacement-coloured point
-    // curves are split into per-segment lines so each segment shows its colour.
+    // Uniform-coloured curves use a PathLayer; settlement-coloured points are
+    // split into per-segment lines so each segment shows its colour. Curves
+    // containing interpolated bins are drawn as a distinct (thinner, translucent)
+    // path so the inferred stretches read differently from measured ones.
     const linePaths = [];
+    const interpPaths = [];
     const lineSegments = [];
     for (const c of frame.curves) {
       if (c.colored) {
@@ -200,15 +207,16 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           });
         }
       } else {
-        linePaths.push({
-          path: c.samples.map((p) => p.position),
-          color: hexToRgba(c.color, 255),
-        });
+        const entry = { path: c.samples.map((p) => p.position), color: hexToRgba(c.color, 255) };
+        // The Aggregate line is a single connected polyline, so interpolated
+        // bins stay on the same line (flagged in the tooltip instead).
+        if (!aggregateView && c.samples.some((p) => p.interpolated)) interpPaths.push(entry);
+        else linePaths.push(entry);
       }
     }
 
     const ribbons = frame.curves.flatMap((c) => {
-      if (!c.stdKey) return [];
+      if (!c.banded) return [];
       return c.samples.slice(0, -1).flatMap((a, i) => {
         const b = c.samples[i + 1];
         if (!a.ribbon || !b.ribbon) return [];
@@ -221,13 +229,24 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     });
 
     const pointData = frame.curves.flatMap((c) =>
-      c.samples.map((p) => ({
-        id: p.id,
-        position: p.position,
-        fillColor: hexToRgba(p.color ?? c.color, 255),
-        frameSample: p,
-        curve: c,
-      })),
+      c.samples
+        // Aggregate marks the measured bins only; interpolated bins stay line-only.
+        .filter((p) => !(aggregateView && p.interpolated))
+        .map((p) => {
+          const off = !aggregateView && sizeByOffset && p.offsetT != null ? p.offsetT : null;
+          return {
+            id: p.id,
+            position: p.position,
+            fillColor: hexToRgba(p.color ?? c.color, 255),
+            // Billboard circle radius (px) and sphere world radius; the
+            // perpendicular offset grows the mark from the base size (bigger
+            // offset = bigger mark), never below it.
+            radius: off == null ? baseBillboard : baseBillboard + off * 4,
+            scale: off == null ? baseScale : baseScale + off * 0.04,
+            frameSample: p,
+            curve: c,
+          };
+        }),
     );
 
     const out = [];
@@ -259,6 +278,22 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
         }),
       );
     }
+    if (interpPaths.length > 0) {
+      // Interpolated runs: thinner + translucent (deck.gl has no native dashes).
+      out.push(
+        new PathLayer({
+          id: 'profile-lines-interpolated',
+          data: interpPaths,
+          getPath: (d) => d.path,
+          getColor: (d) => [d.color[0], d.color[1], d.color[2], 140],
+          widthUnits: 'pixels',
+          getWidth: 1,
+          jointRounded: true,
+          capRounded: true,
+          pickable: false,
+        }),
+      );
+    }
     if (lineSegments.length > 0) {
       out.push(
         new LineLayer({
@@ -279,7 +314,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           id: 'profile-points',
           data: pointData,
           getPosition: (d) => d.position,
-          getRadius: pointsMode ? 3 : 4,
+          getRadius: (d) => d.radius,
           radiusUnits: 'pixels',
           radiusMinPixels: 2,
           radiusMaxPixels: 12,
@@ -298,7 +333,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           mesh: sphereGeometry,
           getPosition: (d) => d.position,
           getColor: (d) => d.fillColor,
-          getScale: pointsMode ? [0.02, 0.02, 0.02] : [0.03, 0.03, 0.03],
+          getScale: (d) => [d.scale, d.scale, d.scale],
           material: { ambient: 0.35, diffuse: 0.6, shininess: 0, specularColor: [0, 0, 0] },
           pickable: true,
           autoHighlight: true,

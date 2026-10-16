@@ -27,7 +27,7 @@ function isNum(v) {
 
 /**
  * Shared Z domain across several attribute keys, over the samples that sit on
- * the line. Used so multiple curtains (e.g. the four trend windows) share one
+ * the line. Used so multiple curtains (e.g. the trend windows or settlement steps) share one
  * height scale and stay comparable. Returns null when no finite value exists.
  *
  * @param {Array<Record<string, any>>} samples

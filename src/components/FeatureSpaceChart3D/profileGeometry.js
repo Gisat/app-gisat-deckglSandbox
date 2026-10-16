@@ -8,37 +8,51 @@
  * axes and wants real units).
  *
  * Profile shape: `{ view, yKey, zKey, trendLines, samples: [{ id, distance, lon,
- * lat, <ATTRIBUTES keys…> }] }`. Two views, both emitting a `curves` array:
+ * lat, <ATTRIBUTES keys…> }] }`. Three views, all emitting a `curves` array:
  *
  * - `attributes`: one curve. X = distance, Y = `yKey`, Z = `zKey`, with a
  *   translucent `z ± std` ribbon on Z when `zKey` declares a paired `stdKey`.
- * - `trend` / `windows`: one curve per `TREND_WINDOWS` entry. X = distance,
- *   Y = the window's evenly spaced band, Z = that window's `TD_*`, with a
- *   `TD ± STD` band on Z when the paired `STD_*` is finite.
- * - `trend` / `windows-plain`: same as `windows` but with the uncertainty band
- *   omitted, so its Z range matches the `points` shape.
- * - `trend` / `points`: one curve per point, stepping across the window bands
- *   (Y) against that point's `TD_*` (Z); no ribbon.
+ *   Each sample carries `offsetT` (its perpendicular offset normalised by
+ *   `bufferDistance`) for size encoding.
+ * - `aggregate`: one curve from `aggregateSamples`, binning `distance` into
+ *   `profile.step`-metre bins and plotting the per-bin median with an IQR band.
+ *   Empty bins are gaps; `profile.interpolate` bridges them (flagged).
+ * - `trend` / `windows`: the original reading. One curve per `TREND_WINDOWS`
+ *   entry. X = distance, Y = the window's evenly spaced band, Z = that window's
+ *   `TD_*`, with its paired `STD_*` band on Z. This is the only shape whose
+ *   uncertainty is genuinely per-series.
+ * - `trend` / `profiles`: one cumulative-settlement profile per `TREND_TIMELINE`
+ *   step. X = distance, Y = the step's evenly spaced band, Z = the cumulative
+ *   settlement (`TD_730 - TD_x`, see `settlement.js`); no band.
+ * - `trend` / `points`: one settlement-vs-time curve per point, stepping across
+ *   the timeline bands (Y) against that point's cumulative settlement (Z); no
+ *   ribbon.
  */
 
-import { ATTRIBUTES, axisTitle, TREND_WINDOWS, trendWindowLabel } from './attributes';
+import { ATTRIBUTES, axisTitle, TREND_TIMELINE, TREND_WINDOWS, trendWindowLabel } from './attributes';
+import { settlementOf } from './settlement';
 
 /** Colour used for the attribute curve and the (uniform) per-point curves. */
 export const PROFILE_COLOR = '#1f77b4';
 
 /**
- * Sequential ramp used to colour points by their trend displacement. Mirrors
- * the map's default colour scale (`MAP_VELOCITY_COLORS`: blue -> yellow -> red,
- * rgb interpolation) so the chart agrees with the map. Ordered low -> high.
+ * Sequential ramp used to colour points by their cumulative settlement (the
+ * Trend ▸ points shape). Ordered low -> high as red -> yellow -> teal, so that
+ * negative / downward settlement reads red and upward reads teal. It shares the
+ * orientation of the map marker scale (`MAP_VELOCITY_COLORS`, flipped to the
+ * same red -> teal order); only the orientation is shared, the domain is
+ * settlement-specific (see `DISPLACEMENT_DOMAIN`).
  */
-export const DISPLACEMENT_RAMP = ['#41b6c4', '#fefebf', '#d7191c'];
+export const DISPLACEMENT_RAMP = ['#d7191c', '#fefebf', '#41b6c4'];
 
 /**
- * Fixed colour domain for the displacement ramp, matching the map's velocity
- * colour domain (`MAP_VELOCITY_DOMAIN`) so point colours are comparable across
- * selections and agree with the map scale. Values outside are clamped.
+ * Fixed colour domain for the settlement ramp (mm). The Trend ▸ points shape
+ * colours by cumulative settlement, not by velocity, so it spans a settlement
+ * range rather than the map's velocity domain (`MAP_VELOCITY_DOMAIN`, mm/yr).
+ * Pinned rather than data-driven so colours stay comparable across selections;
+ * `±8` covers ~95% of the sample data. Values outside are clamped.
  */
-export const DISPLACEMENT_DOMAIN = [-3, 3];
+export const DISPLACEMENT_DOMAIN = [-8, 8];
 
 /** `#rrggbb` -> [r, g, b] (0-255). */
 function hexToRgb(hex) {
@@ -107,6 +121,138 @@ function bandY(i, count, cube) {
 }
 
 /**
+ * Linear-interpolated quantile (R type 7) of an already-sorted numeric array.
+ * @param {number[]} sorted
+ * @param {number} q  quantile in [0,1]
+ * @returns {number|null}
+ */
+function quantile(sorted, q) {
+  const n = sorted.length;
+  if (n === 0) return null;
+  if (n === 1) return sorted[0];
+  const pos = (n - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+/**
+ * Round a raw step to a "nice" 1/2/5 × 10^n value, used as the auto aggregate
+ * bin size (`niceStep(maxDistance / 50)`).
+ * @param {number} raw
+ * @returns {number}
+ */
+export function niceStep(raw) {
+  if (!isNum(raw) || raw <= 0) return 1;
+  const exp = Math.floor(Math.log10(raw));
+  const base = 10 ** exp;
+  const f = raw / base;
+  const nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+  return nice * base;
+}
+
+/**
+ * Bin the raw line samples by `distance` and summarise each bin. Pure: it only
+ * reads `s.distance` and `s[valueKey]`, so it stays portable.
+ *
+ * Per non-empty bin: `{ binIndex, id, distance: binCenter, binStart, binEnd,
+ * value: median, iqrLo, iqrHi, n, interpolated: false }`. Empty bins are omitted
+ * (they read as gaps). When `interpolate` is set, empty bins strictly *between*
+ * the first and last non-empty bin are filled by linear interpolation of the
+ * median (`iqrLo/iqrHi = null`, `n = 0`, `interpolated: true`) — never before the
+ * first or after the last measured bin.
+ *
+ * @param {Array<any>} samples
+ * @param {string} valueKey
+ * @param {number} stepMeters
+ * @param {boolean} interpolate
+ * @returns {Array<{ binIndex:number, id:string, distance:number, binStart:number,
+ *   binEnd:number, value:number, iqrLo:number|null, iqrHi:number|null,
+ *   n:number, lon:number|null, lat:number|null, interpolated:boolean }>}
+ */
+export function aggregateSamples(samples, valueKey, stepMeters, interpolate) {
+  const step = Number(stepMeters);
+  if (!isNum(step) || step <= 0 || !Array.isArray(samples) || samples.length === 0) return [];
+
+  let maxDistance = -Infinity;
+  for (const s of samples) {
+    if (isNum(s.distance) && s.distance > maxDistance) maxDistance = s.distance;
+  }
+  if (!isNum(maxDistance)) return [];
+
+  const binCount = Math.floor(maxDistance / step) + 1;
+  const buckets = Array.from({ length: binCount }, () => []);
+  for (const s of samples) {
+    const v = s[valueKey];
+    if (!isNum(s.distance) || !isNum(v)) continue;
+    const idx = Math.max(0, Math.min(binCount - 1, Math.floor(s.distance / step)));
+    // Keep each member's foot position so the bin can emit a geographic centroid
+    // (used to place the map-side curtain).
+    buckets[idx].push({ v, lon: s.lon, lat: s.lat });
+  }
+
+  const entries = [];
+  for (let i = 0; i < binCount; i += 1) {
+    const members = buckets[i];
+    if (members.length === 0) continue;
+    const vals = members.map((m) => m.v).sort((a, b) => a - b);
+    let lonSum = 0;
+    let latSum = 0;
+    let posN = 0;
+    for (const m of members) {
+      if (isNum(m.lon) && isNum(m.lat)) {
+        lonSum += m.lon;
+        latSum += m.lat;
+        posN += 1;
+      }
+    }
+    entries.push({
+      binIndex: i,
+      id: `bin-${i}`,
+      distance: (i + 0.5) * step,
+      binStart: i * step,
+      binEnd: Math.min((i + 1) * step, maxDistance),
+      value: quantile(vals, 0.5),
+      iqrLo: quantile(vals, 0.25),
+      iqrHi: quantile(vals, 0.75),
+      n: vals.length,
+      lon: posN > 0 ? lonSum / posN : null,
+      lat: posN > 0 ? latSum / posN : null,
+      interpolated: false,
+    });
+  }
+
+  if (!interpolate || entries.length < 2) return entries;
+
+  const filled = [];
+  for (let k = 0; k < entries.length; k += 1) {
+    const cur = entries[k];
+    filled.push(cur);
+    const next = entries[k + 1];
+    if (!next) break;
+    for (let b = cur.binIndex + 1; b < next.binIndex; b += 1) {
+      const t = (b - cur.binIndex) / (next.binIndex - cur.binIndex);
+      filled.push({
+        binIndex: b,
+        id: `bin-${b}`,
+        distance: (b + 0.5) * step,
+        binStart: b * step,
+        binEnd: Math.min((b + 1) * step, maxDistance),
+        value: cur.value + (next.value - cur.value) * t,
+        iqrLo: null,
+        iqrHi: null,
+        n: 0,
+        lon: isNum(cur.lon) && isNum(next.lon) ? cur.lon + (next.lon - cur.lon) * t : null,
+        lat: isNum(cur.lat) && isNum(next.lat) ? cur.lat + (next.lat - cur.lat) * t : null,
+        interpolated: true,
+      });
+    }
+  }
+  return filled;
+}
+
+/**
  * Attribute view: one curve. `along` basis: X = distance along the line,
  * Y = `yKey`, Z = `zKey`. `plan` basis: X = longitude, Y = latitude on an equal
  * ground scale, Z = `zKey`. A `z ± std` band is added when `zKey` declares a
@@ -133,6 +279,7 @@ function attributeCurves(yKey, zKey, samples, basis) {
       z,
       lo: std != null ? z - std : z,
       hi: std != null ? z + std : z,
+      std,
       banded: std != null,
       // `x`/`y` are the cube-normalisation coordinates (`xRaw`/`yRaw` are the
       // values the axes are labelled with: distance/attribute, or real lon/lat).
@@ -167,16 +314,42 @@ function attributeCurves(yKey, zKey, samples, basis) {
     const db = isNum(b.s.distance) ? b.s.distance : b.x;
     return da - db;
   });
-  return [{ key: 'profile', label: 'Profile', color: PROFILE_COLOR, stdKey, rows }];
+  return [{ key: 'profile', label: 'Profile', color: PROFILE_COLOR, stdKey, banded: !!stdKey, rows }];
 }
 
 /**
- * Trend / windows: one curve per trend window at an even Y band, carrying that
- * window's `TD_*` on Z and (when `withStd`) its `STD_*` band. A curve needs ≥ 2
- * finite samples. Without `withStd` the band is omitted, so the curve's Z range
- * (and thus the frame's Z domain) matches the points shape.
+ * Aggregate view: bin `distance` into `stepMeters` bins and plot each bin's
+ * median on Z (X = distance, Y pinned flat), with the IQR (25-75 pct) as the Z
+ * ribbon. Empty bins are gaps; `interpolate` bridges them (flagged). Rows carry
+ * their bin entry on `s` so the tooltip can read `n`/`iqrLo`/`iqrHi`.
  */
-function windowCurves(samples, cube, withStd) {
+function aggregateCurve(samples, valueKey, stepMeters, interpolate) {
+  const entries = aggregateSamples(samples, valueKey, stepMeters, interpolate);
+  const rows = entries.map((e) => ({
+    s: e,
+    x: e.distance,
+    y: 0,
+    z: e.value,
+    lo: e.iqrLo ?? e.value,
+    hi: e.iqrHi ?? e.value,
+    std: null,
+    banded: e.iqrLo != null && e.iqrHi != null,
+    interpolated: e.interpolated,
+  }));
+  if (rows.length === 0) return [];
+  // Only flag the curve banded when a bin actually has a positive-width IQR, so
+  // single-sample bins (median === quartiles) do not emit a degenerate ribbon.
+  const banded = rows.some((r) => r.banded && r.hi > r.lo);
+  return [{ key: 'aggregate', label: 'Median', color: PROFILE_COLOR, stdKey: null, banded, rows }];
+}
+
+/**
+ * Trend / windows: the original reading. One curve per `TREND_WINDOWS` entry at
+ * an even Y band, carrying that window's `TD_*` on Z and its paired `STD_*` band.
+ * A curve needs ≥ 2 finite samples. The band is the raw per-window uncertainty
+ * (the one place it varies meaningfully between series).
+ */
+function windowCurves(samples, cube) {
   const count = TREND_WINDOWS.length;
   const curves = [];
   TREND_WINDOWS.forEach((w, i) => {
@@ -186,7 +359,7 @@ function windowCurves(samples, cube, withStd) {
       const x = s.distance;
       const z = s[w.key];
       if (!isNum(x) || !isNum(z)) continue;
-      const std = withStd && isNum(s[w.stdKey]) ? Math.abs(s[w.stdKey]) : null;
+      const std = isNum(s[w.stdKey]) ? Math.abs(s[w.stdKey]) : null;
       rows.push({
         s,
         x,
@@ -194,9 +367,10 @@ function windowCurves(samples, cube, withStd) {
         z,
         lo: std != null ? z - std : z,
         hi: std != null ? z + std : z,
+        std,
         banded: std != null,
-        windowKey: w.key,
-        windowLabel: trendWindowLabel(w.days),
+        stepKey: w.key,
+        stepLabel: trendWindowLabel(w.days),
       });
     }
     rows.sort((a, b) => a.x - b.x);
@@ -205,7 +379,8 @@ function windowCurves(samples, cube, withStd) {
         key: w.key,
         label: trendWindowLabel(w.days),
         color: w.color,
-        stdKey: withStd ? w.stdKey : null,
+        stdKey: w.stdKey,
+        banded: !!w.stdKey,
         rows,
       });
     }
@@ -214,13 +389,58 @@ function windowCurves(samples, cube, withStd) {
 }
 
 /**
- * Trend / points: one curve per point, stepping across the window bands in
- * ascending window order against that point's `TD_*` values. No ribbon. A curve
- * needs ≥ 2 finite windows; samples are grouped by `id` (one sample per feature
- * in practice, each carrying all its `TD_*` values).
+ * Trend / profiles: one cumulative-settlement profile per timeline step at an
+ * even Y band, carrying the settlement `TD_730 - TD_x` on Z. No uncertainty band
+ * (the per-window ±σ lives on the `windows` shape instead — a propagated σ here
+ * is dominated by the shared reference term and barely varies between steps).
+ * A curve needs ≥ 2 finite samples.
  */
-function pointCurves(samples, cube) {
-  const count = TREND_WINDOWS.length;
+function settlementProfiles(samples, cube) {
+  const count = TREND_TIMELINE.length;
+  const curves = [];
+  TREND_TIMELINE.forEach((step, i) => {
+    const y = bandY(i, count, cube);
+    const rows = [];
+    for (const s of samples) {
+      const x = s.distance;
+      const z = settlementOf(s, step);
+      if (!isNum(x) || !isNum(z)) continue;
+      rows.push({
+        s,
+        x,
+        y,
+        z,
+        lo: z,
+        hi: z,
+        std: null,
+        banded: false,
+        stepKey: step.label,
+        stepLabel: step.label,
+      });
+    }
+    rows.sort((a, b) => a.x - b.x);
+    if (rows.length >= 2) {
+      curves.push({
+        key: step.label,
+        label: step.label,
+        color: step.color,
+        stdKey: null,
+        banded: false,
+        rows,
+      });
+    }
+  });
+  return curves;
+}
+
+/**
+ * Trend / points: one cumulative-settlement curve per point, stepping across the
+ * timeline bands in ascending time order against that point's settlement values.
+ * No ribbon. A curve needs ≥ 2 finite steps; samples are grouped by `id` (one
+ * sample per feature in practice, each carrying all its `TD_*` values).
+ */
+function settlementPoints(samples, cube) {
+  const count = TREND_TIMELINE.length;
   const groups = new Map();
   for (const s of samples) {
     const key = s.id == null ? `__point_${groups.size}` : String(s.id);
@@ -232,10 +452,10 @@ function pointCurves(samples, cube) {
   let index = 0;
   for (const group of groups.values()) {
     const rows = [];
-    TREND_WINDOWS.forEach((w, i) => {
-      const s = group.samples.find((sm) => isNum(sm[w.key]));
+    TREND_TIMELINE.forEach((step, i) => {
+      const s = group.samples.find((sm) => settlementOf(sm, step) != null);
       if (!s) return;
-      const z = s[w.key];
+      const z = settlementOf(s, step);
       rows.push({
         s,
         x: s.distance,
@@ -243,14 +463,15 @@ function pointCurves(samples, cube) {
         z,
         lo: z,
         hi: z,
+        std: null,
         banded: false,
-        windowKey: w.key,
-        windowLabel: trendWindowLabel(w.days),
+        stepKey: step.label,
+        stepLabel: step.label,
       });
     });
     if (rows.length >= 2) {
       const label = group.id == null ? `point ${index + 1}` : String(group.id);
-      curves.push({ key: `point-${index}`, label, color: PROFILE_COLOR, stdKey: null, rows });
+      curves.push({ key: `point-${index}`, label, color: PROFILE_COLOR, stdKey: null, banded: false, rows });
     }
     index += 1;
   }
@@ -260,43 +481,72 @@ function pointCurves(samples, cube) {
 /**
  * Build the render-ready profile frame (one or more curves).
  *
- * @param {{view?:'attributes'|'trend', basis?:'along'|'plan', yKey?:string,
- *   zKey?:string, trendLines?:'windows'|'windows-plain'|'points',
+ * @param {{view?:'attributes'|'trend'|'aggregate', basis?:'along'|'plan',
+ *   yKey?:string, zKey?:string, trendLines?:'windows'|'profiles'|'points',
+ *   valueKey?:string, step?:number, interpolate?:boolean,
+ *   bufferDistance?:number, sizeByOffset?:boolean,
  *   samples?:Array<any>}} profile
  * @param {number} [cube] half-extent of the normalised cube
  * @returns {{
- *   view:'attributes'|'trend', shape:'windows'|'windows-plain'|'points'|null,
+ *   view:'attributes'|'trend'|'aggregate', shape:'windows'|'profiles'|'points'|null,
  *   basis:'along'|'plan', yKey:string|null, zKey:string|null,
+ *   valueKey:string|null, sizeByOffset:boolean,
  *   titles:{x:string,y:string,z:string},
  *   domains:{x:[number,number],y:[number,number],z:[number,number]},
  *   axisDomains:{x:[number,number],y:[number,number],z:[number,number]},
  *   colorDomain:[number,number]|null,
  *   yTicks:Array<{value:number,label:string}>|null,
  *   curves:Array<{ key:string, label:string, color:string, stdKey:string|null,
- *     colored:boolean,
+ *     banded:boolean, colored:boolean,
  *     samples:Array<{
  *       id:any, position:[number,number,number],
  *       ribbon:{lo:[number,number,number],hi:[number,number,number]}|null,
- *       raw:{x:number,y:number,z:number,lo:number,hi:number},
- *       color:string|null,
- *       windowKey:string|null, windowLabel:string|null, sample:any }> }>,
+ *       raw:{x:number,y:number,z:number,lo:number,hi:number,std:number|null},
+ *       color:string|null, interpolated:boolean, offsetT:number|null,
+ *       stepKey:string|null, stepLabel:string|null, sample:any }> }>,
  * }}
  */
 export function buildProfileFrame(profile, cube = 1) {
-  const view = profile?.view === 'trend' ? 'trend' : 'attributes';
+  const view =
+    profile?.view === 'aggregate' ? 'aggregate' : profile?.view === 'trend' ? 'trend' : 'attributes';
   const samples = profile?.samples ?? [];
   const yKey = profile?.yKey ?? 'H';
   const zKey = profile?.zKey ?? 'VEL_REL';
-  const trendLines = profile?.trendLines;
   const basis = profile?.basis === 'plan' ? 'plan' : 'along';
   const isPlan = view === 'attributes' && basis === 'plan';
+  const shape = view === 'trend' ? (profile?.trendLines ?? 'profiles') : null;
+
+  // Aggregate reads one attribute on Z; the Attribute view always carries a
+  // normalised perpendicular offset for size encoding.
+  const aggValueKey = profile?.valueKey ?? zKey;
+  const aggStep = profile?.step;
+  const aggInterpolate = profile?.interpolate === true;
+  const sizeByOffset = profile?.sizeByOffset !== false;
+
+  // Offset normaliser (Attribute/Trend views): the corridor half-width when
+  // known, else the selection's own max |offset| so the encoding still spans the
+  // sample set.
+  let offsetDenom = isNum(profile?.bufferDistance) && profile.bufferDistance > 0
+    ? profile.bufferDistance
+    : null;
+  if (view !== 'aggregate' && offsetDenom == null) {
+    let maxOff = 0;
+    for (const s of samples) {
+      if (isNum(s.offset)) maxOff = Math.max(maxOff, Math.abs(s.offset));
+    }
+    offsetDenom = maxOff > 0 ? maxOff : null;
+  }
 
   const rawCurves =
-    view === 'trend'
-      ? trendLines === 'points'
-        ? pointCurves(samples, cube)
-        : windowCurves(samples, cube, trendLines === 'windows')
-      : attributeCurves(yKey, zKey, samples, basis);
+    view === 'aggregate'
+      ? aggregateCurve(samples, aggValueKey, aggStep, aggInterpolate)
+      : view === 'trend'
+        ? shape === 'windows'
+          ? windowCurves(samples, cube)
+          : shape === 'points'
+            ? settlementPoints(samples, cube)
+            : settlementProfiles(samples, cube)
+        : attributeCurves(yKey, zKey, samples, basis);
 
   let xMin = Infinity;
   let xMax = -Infinity;
@@ -338,7 +588,7 @@ export function buildProfileFrame(profile, cube = 1) {
   } else if (view === 'trend') {
     xd = resolveDomain(xMin, xMax);
     // Trend Y is an ordered categorical axis: pin the domain to the band range so
-    // the bands keep fixed, even spacing regardless of which windows are present.
+    // the bands keep fixed, even spacing regardless of which steps are present.
     yd = [-cube, cube];
   } else {
     xd = resolveDomain(xMin, xMax);
@@ -354,10 +604,10 @@ export function buildProfileFrame(profile, cube = 1) {
     z: zd,
   };
 
-  // The Trend ▸ points shape colours each point by its own displacement; every
-  // other curve keeps its fixed colour. The colour domain is pinned to the map's
-  // [-3, 3] (not the data range), so point colours stay comparable.
-  const colorByDisplacement = view === 'trend' && trendLines === 'points';
+  // The Trend ▸ points shape colours each point by its own cumulative settlement;
+  // every other curve keeps its fixed colour. The colour domain is pinned to a
+  // fixed settlement range (not the data range) so curve colours stay comparable.
+  const colorByDisplacement = view === 'trend' && shape === 'points';
   const [cLo, cHi] = DISPLACEMENT_DOMAIN;
 
   const curves = rawCurves.map((c) => ({
@@ -365,54 +615,79 @@ export function buildProfileFrame(profile, cube = 1) {
     label: c.label,
     color: c.color,
     stdKey: c.stdKey ?? null,
+    banded: c.banded ?? !!c.stdKey,
     colored: colorByDisplacement,
     samples: c.rows.map((r) => {
       const xn = normalize(r.x, xd, cube);
       const yn = normalize(r.y, yd, cube);
       const zn = normalize(r.z, zd, cube);
-      const ribbon = r.banded
+      // Only emit a ribbon when the band has positive width, so zero-σ samples
+      // and single-sample aggregate bins do not draw degenerate (zero-height)
+      // geometry.
+      const ribbon = r.banded && r.hi > r.lo
         ? {
             lo: [xn, yn, normalize(r.lo, zd, cube)],
             hi: [xn, yn, normalize(r.hi, zd, cube)],
           }
         : null;
       const zt = cHi === cLo ? 0.5 : (r.z - cLo) / (cHi - cLo);
+      const offset = r.s?.offset;
+      const offsetT = isNum(offset) && offsetDenom
+        ? Math.max(0, Math.min(1, Math.abs(offset) / offsetDenom))
+        : null;
       return {
         id: r.s.id,
         position: [xn, yn, zn],
         ribbon,
-        raw: { x: r.xRaw ?? r.x, y: r.yRaw ?? r.y, z: r.z, lo: r.lo, hi: r.hi },
+        raw: { x: r.xRaw ?? r.x, y: r.yRaw ?? r.y, z: r.z, lo: r.lo, hi: r.hi, std: r.std ?? null },
         color: colorByDisplacement ? displacementColor(zt) : null,
-        windowKey: r.windowKey ?? null,
-        windowLabel: r.windowLabel ?? null,
+        stepKey: r.stepKey ?? null,
+        stepLabel: r.stepLabel ?? null,
+        interpolated: r.interpolated === true || r.s?.interpolated === true,
+        // Perpendicular offset normalised to [0,1] (Attribute/Trend views); the
+        // renderers map it to marker/sphere size. `null` when not applicable.
+        offsetT,
         sample: r.s,
       };
     }),
   }));
 
+  // The `windows` shape reads the raw per-window displacement; the cumulative
+  // shapes read settlement from the initial state.
   const titles =
-    view === 'trend'
-      ? { x: 'Distance along profile [m]', y: 'Trend window', z: 'Trend displacement [mm]' }
-      : isPlan
-        ? { x: 'Longitude [\u00b0]', y: 'Latitude [\u00b0]', z: axisTitle(zKey) }
-        : { x: 'Distance along profile [m]', y: axisTitle(yKey), z: axisTitle(zKey) };
+    view === 'aggregate'
+      ? { x: 'Distance along profile [m]', y: '', z: axisTitle(aggValueKey) }
+      : view === 'trend'
+        ? shape === 'windows'
+          ? { x: 'Distance along profile [m]', y: 'Trend window', z: 'Trend displacement [mm]' }
+          : { x: 'Distance along profile [m]', y: 'Time', z: 'Cumulative settlement [mm]' }
+        : isPlan
+          ? { x: 'Longitude [\u00b0]', y: 'Latitude [\u00b0]', z: axisTitle(zKey) }
+          : { x: 'Distance along profile [m]', y: axisTitle(yKey), z: axisTitle(zKey) };
 
-  // Trend Y is categorical: label each band position with its window, else the
-  // numeric -1..1 band coordinate is meaningless.
+  // Trend Y is categorical: label each band position with its window/timeline
+  // step, else the numeric -1..1 band coordinate is meaningless.
   const yTicks =
     view === 'trend'
-      ? TREND_WINDOWS.map((w, i) => ({
-          value: bandY(i, TREND_WINDOWS.length, cube),
-          label: trendWindowLabel(w.days),
-        }))
+      ? shape === 'windows'
+        ? TREND_WINDOWS.map((w, i) => ({
+            value: bandY(i, TREND_WINDOWS.length, cube),
+            label: trendWindowLabel(w.days),
+          }))
+        : TREND_TIMELINE.map((step, i) => ({
+            value: bandY(i, TREND_TIMELINE.length, cube),
+            label: step.label,
+          }))
       : null;
 
   return {
     view,
-    shape: view === 'trend' ? (trendLines ?? 'windows') : null,
+    shape,
     basis,
     yKey: view === 'attributes' ? (isPlan ? 'lat' : yKey) : null,
     zKey: view === 'attributes' ? zKey : null,
+    valueKey: view === 'aggregate' ? aggValueKey : null,
+    sizeByOffset,
     titles,
     domains: { x: xd, y: yd, z: zd },
     axisDomains,

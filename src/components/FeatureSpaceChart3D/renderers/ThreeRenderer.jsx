@@ -6,7 +6,7 @@
  *  - scatter: points as a single InstancedMesh (per-instance colour and scale)
  *    with r3f raycast picking via `event.instanceId`.
  *  - profile: one line per `frame.curves` entry, a translucent `z ± std` ribbon
- *    per banded curve (attribute view and trend windows only) and per-sample
+ *    per banded curve (attribute view and the trend `windows` shape only) and per-sample
  *    points, all unlit/flat so the colour matches the map and deck.gl.
  *
  * KNOWN LIMITATION: there are no built-in labelled axes in three.js. Axis titles
@@ -144,15 +144,22 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
     if (!frame) return [];
     // Trend ▸ points uses smaller marks; the other profile views keep their size.
     const pointsMode = frame.shape === 'points';
+    const aggregateView = frame.view === 'aggregate';
+    const sizeByOffset = frame.sizeByOffset;
+    const baseRadius = pointsMode ? 3 : 4;
+    const baseWorld = pointsMode ? 0.017 : 0.03;
     const out = [];
     for (const curve of frame.curves) {
       for (const p of curve.samples) {
+        // Aggregate marks the measured bins only; interpolated bins stay line-only.
+        if (aggregateView && p.interpolated) continue;
+        const off = !aggregateView && sizeByOffset && p.offsetT != null ? p.offsetT : null;
         out.push({
           point: { id: p.id },
           position: toThree(p.position),
           hex: p.color ?? curve.color,
-          radius: pointsMode ? 3 : 4,
-          worldRadius: pointsMode ? 0.017 : 0.03,
+          radius: off == null ? baseRadius : baseRadius + off * 4,
+          worldRadius: off == null ? baseWorld : baseWorld + off * 0.04,
           frameSample: p,
           curve,
         });
@@ -190,7 +197,7 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
         <ambientLight intensity={1.1} />
         <directionalLight position={[5, 8, 6]} intensity={1.9} />
         {frame ? <ProfileAxes frame={frame} /> : <Axes domains={domains} axes={axes} />}
-        {frame && <ProfileLines curves={frame.curves} />}
+        {frame && <ProfileLines curves={frame.curves} flagInterpolated={frame.view !== 'aggregate'} />}
         {frame && <ProfileRibbons curves={frame.curves} />}
         {markerStyle === 'billboard' ? (
           <BillboardPoints data={data} hovered={hovered} onPick={handlePick} />
@@ -214,34 +221,46 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
   );
 }
 
-/** One profile polyline per curve (chart-space positions already normalised). */
-function ProfileLines({ curves }) {
+/**
+ * One profile polyline per curve (chart-space positions already normalised).
+ * A curve containing interpolated bins is drawn thinner + translucent (three.js
+ * lines have no native dashes).
+ */
+function ProfileLines({ curves, flagInterpolated }) {
   return (
     <group>
       {curves.map((curve) => (
-        <ProfileLine key={curve.key} curve={curve} />
+        <ProfileLine
+          key={curve.key}
+          samples={curve.samples}
+          color={curve.color}
+          colored={curve.colored}
+          interpolated={flagInterpolated && curve.samples.some((p) => p.interpolated)}
+        />
       ))}
     </group>
   );
 }
 
-function ProfileLine({ curve }) {
+function ProfileLine({ samples, color, colored, interpolated }) {
   const { positions, colors } = useMemo(() => {
-    const n = curve.samples.length;
+    const n = samples.length;
     const pos = new Float32Array(n * 3);
-    const col = curve.colored ? new Float32Array(n * 3) : null;
+    const col = colored ? new Float32Array(n * 3) : null;
     const c = new THREE.Color();
-    curve.samples.forEach((p, i) => {
+    samples.forEach((p, i) => {
       pos.set(toThree(p.position), i * 3);
       if (col) {
-        c.set(p.color ?? curve.color);
+        c.set(p.color ?? color);
         col.set([c.r, c.g, c.b], i * 3);
       }
     });
     return { positions: pos, colors: col };
-  }, [curve]);
+  }, [samples, color, colored]);
 
-  if (curve.samples.length < 2) return null;
+  if (samples.length < 2) return null;
+
+  const materialProps = interpolated ? { transparent: true, opacity: 0.5 } : {};
 
   return (
     <line>
@@ -250,9 +269,9 @@ function ProfileLine({ curve }) {
         {colors && <bufferAttribute attach="attributes-color" args={[colors, 3]} />}
       </bufferGeometry>
       {colors ? (
-        <lineBasicMaterial vertexColors />
+        <lineBasicMaterial vertexColors {...materialProps} />
       ) : (
-        <lineBasicMaterial color={curve.color} />
+        <lineBasicMaterial color={color} {...materialProps} />
       )}
     </line>
   );
@@ -260,7 +279,7 @@ function ProfileLine({ curve }) {
 
 /** Translucent uncertainty ribbon per banded curve, unlit to match the map. */
 function ProfileRibbons({ curves }) {
-  const banded = useMemo(() => curves.filter((c) => c.stdKey), [curves]);
+  const banded = useMemo(() => curves.filter((c) => c.banded), [curves]);
   return (
     <group>
       {banded.map((curve) => (

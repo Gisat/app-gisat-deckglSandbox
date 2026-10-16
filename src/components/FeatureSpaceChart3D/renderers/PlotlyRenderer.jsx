@@ -10,7 +10,7 @@
  *    array, so the size channel is honoured per point.
  *  - profile: one `scatter3d` line per `frame.curves` entry, plus a translucent
  *    `mesh3d` uncertainty ribbon on Z for each banded curve (attribute view and
- *    trend windows only). Plotly has real axes, so profile values are plotted in
+ *    the trend `windows` shape only). Plotly has real axes, so profile values are plotted in
  *    raw units.
  *
  * KNOWN LIMITATION:
@@ -164,6 +164,7 @@ function buildProfileTraces(frame) {
   // raw values with real axes.
   const plan = frame.basis === 'plan' && frame.view === 'attributes';
   const coordsOf = (p) => (plan ? p.position : [p.raw.x, p.raw.y, p.raw.z]);
+  const aggregate = frame.view === 'aggregate';
   const traces = [];
 
   for (const curve of frame.curves) {
@@ -171,7 +172,7 @@ function buildProfileTraces(frame) {
     const n = samples.length;
     if (n < 2) continue;
 
-    if (curve.stdKey) {
+    if (curve.banded) {
       // Only finite-σ samples define the band; a missing std means "unknown", so
       // those samples drop out. Keep each sample's source index so a gap breaks
       // the band rather than bridging an interval whose uncertainty is unknown
@@ -230,33 +231,71 @@ function buildProfileTraces(frame) {
       }
     }
 
-    const hover = curveHover(frame, curve, samples);
+    const hover = curveHover(frame, curve);
+
+    if (aggregate) {
+      // One line connecting all bins, with markers on measured bins only
+      // (interpolated bins stay line-only and are flagged in the tooltip).
+      const line = toArrays(samples, coordsOf, hover.row);
+      traces.push({
+        type: 'scatter3d',
+        mode: 'lines',
+        name: curve.label,
+        x: line.x,
+        y: line.y,
+        z: line.z,
+        customdata: line.cd,
+        line: { color: curve.color, width: 3 },
+        hovertemplate: hover.hovertemplate,
+      });
+      const measured = samples.filter((p) => !p.interpolated);
+      if (measured.length > 0) {
+        const m = toArrays(measured, coordsOf, hover.row);
+        traces.push({
+          type: 'scatter3d',
+          mode: 'markers',
+          name: `${curve.label} (measured)`,
+          x: m.x,
+          y: m.y,
+          z: m.z,
+          customdata: m.cd,
+          marker: { color: curve.color, size: 4, line: { width: 0 } },
+          hovertemplate: hover.hovertemplate,
+        });
+      }
+      continue;
+    }
+
     // Point/station curves colour their markers by displacement. `scatter3d`
     // cannot gradient a line, so the line takes the station's mean displacement
-    // colour (thin) and the markers carry the full ramp.
+    // colour (thin) and the markers carry the full ramp. Marker size encodes the
+    // perpendicular offset in both the Attribute and Trend views.
+    const sizes = frame.sizeByOffset
+      ? samples.map((p) => 3 + (p.offsetT ?? 0) * 4)
+      : 3;
     const marker = curve.colored
       ? {
           color: samples.map((p) => p.raw.z),
           colorscale: DISPLACEMENT_COLORSCALE,
           cmin: frame.colorDomain[0],
           cmax: frame.colorDomain[1],
-          size: 3,
+          size: sizes,
           line: { width: 0 },
           showscale: false,
         }
-      : { color: curve.color, size: 3, line: { width: 0 } };
+      : { color: curve.color, size: sizes, line: { width: 0 } };
     const lineColor = curve.colored
       ? displacementColor(meanDisplacementT(frame.colorDomain, samples))
       : curve.color;
-    const coords = samples.map(coordsOf);
+    const a = toArrays(samples, coordsOf, hover.row);
     traces.push({
       type: 'scatter3d',
       mode: 'lines+markers',
       name: curve.label,
-      x: coords.map((c) => c[0]),
-      y: coords.map((c) => c[1]),
-      z: coords.map((c) => c[2]),
-      customdata: hover.customdata,
+      x: a.x,
+      y: a.y,
+      z: a.z,
+      customdata: a.cd,
       line: { color: lineColor, width: curve.colored ? 2 : 3 },
       marker,
       hovertemplate: hover.hovertemplate,
@@ -264,6 +303,25 @@ function buildProfileTraces(frame) {
   }
 
   return traces;
+}
+
+/**
+ * Map a sample list to Plotly coordinate arrays. `row` builds the per-sample
+ * customdata (id first, so `onHover` reads `customdata[0]`).
+ */
+function toArrays(samples, coordsOf, row) {
+  const x = [];
+  const y = [];
+  const z = [];
+  const cd = [];
+  for (const s of samples) {
+    const c = coordsOf(s);
+    x.push(c[0]);
+    y.push(c[1]);
+    z.push(c[2]);
+    cd.push(row ? row(s) : [s.id]);
+  }
+  return { x, y, z, cd };
 }
 
 /** Mean normalised displacement (t in [0,1]) of a station, for its line colour. */
@@ -276,22 +334,53 @@ function meanDisplacementT([cLo, cHi], samples) {
   return sum / samples.length;
 }
 
-/** Per-view `customdata` (id first, so `onHover` reads `customdata[0]`) + template. */
-function curveHover(frame, curve, samples) {
+/**
+ * Per-view hovertemplate + a `row(sample)` builder (id first, so `onHover` reads
+ * `customdata[0]`). The builder is applied over a sample list by `toArrays`.
+ */
+function curveHover(frame, curve) {
+  if (frame.view === 'aggregate') {
+    const attr = getAttribute(frame.valueKey);
+    const unit = attr.unit ? ` ${attr.unit}` : '';
+    return {
+      row: (p) => {
+        const bin = p.sample ?? {};
+        return [
+          p.id,
+          formatTick(p.raw.z),
+          bin.iqrLo == null ? '\u2014' : formatTick(bin.iqrLo),
+          bin.iqrHi == null ? '\u2014' : formatTick(bin.iqrHi),
+          bin.n ?? 0,
+          formatTick(bin.distance),
+          formatTick(bin.binStart),
+          formatTick(bin.binEnd),
+          p.interpolated ? 'yes' : 'no',
+        ];
+      },
+      hovertemplate:
+        `<b>${attr.label}${unit}</b><br>`
+        + `median: %{customdata[1]}${unit}<br>`
+        + `IQR: %{customdata[2]} \u2013 %{customdata[3]}${unit}<br>`
+        + 'n: %{customdata[4]}<br>'
+        + 'bin: %{customdata[6]} \u2013 %{customdata[7]} m<br>'
+        + 'interpolated: %{customdata[8]}'
+        + '<extra></extra>',
+    };
+  }
+
   if (frame.view === 'trend') {
-    const unit = getAttribute(samples[0].windowKey ?? curve.key)?.unit ?? '';
-    const u = unit ? ` ${unit}` : '';
-    if (curve.stdKey) {
+    const u = ' mm';
+    if (frame.shape === 'windows') {
       return {
-        customdata: samples.map((p) => {
-          const std = p.sample?.[curve.stdKey];
+        row: (p) => {
+          const std = p.raw.std;
           return [
             p.id,
             formatTick(p.raw.z),
             std == null ? '\u2014' : formatTick(std),
             formatTick(p.sample?.distance),
           ];
-        }),
+        },
         hovertemplate:
           `<b>${curve.label}</b><br>`
           + `displacement: %{customdata[1]}${u} \u00b1 %{customdata[2]}${u}<br>`
@@ -300,18 +389,28 @@ function curveHover(frame, curve, samples) {
           + '<extra></extra>',
       };
     }
+    if (frame.shape === 'points') {
+      return {
+        row: (p) => [
+          p.id,
+          p.stepLabel ?? '\u2014',
+          formatTick(p.raw.z),
+          formatTick(p.sample?.distance),
+        ],
+        hovertemplate:
+          `<b>${curve.label}</b><br>`
+          + 'time step: %{customdata[1]}<br>'
+          + `settlement: %{customdata[2]}${u}<br>`
+          + 'distance: %{customdata[3]} m'
+          + '<extra></extra>',
+      };
+    }
     return {
-      customdata: samples.map((p) => [
-        p.id,
-        p.windowLabel ?? '\u2014',
-        formatTick(p.raw.z),
-        formatTick(p.sample?.distance),
-      ]),
+      row: (p) => [p.id, formatTick(p.raw.z), formatTick(p.sample?.distance)],
       hovertemplate:
         `<b>${curve.label}</b><br>`
-        + 'window: %{customdata[1]}<br>'
-        + `displacement: %{customdata[2]}${u}<br>`
-        + 'distance: %{customdata[3]} m'
+        + `settlement: %{customdata[1]}${u}<br>`
+        + 'distance: %{customdata[2]} m'
         + '<extra></extra>',
     };
   }
@@ -321,8 +420,8 @@ function curveHover(frame, curve, samples) {
   const yUnit = yAttr.unit ? ` ${yAttr.unit}` : '';
   const zUnit = zAttr.unit ? ` ${zAttr.unit}` : '';
   return {
-    customdata: samples.map((p) => {
-      const std = curve.stdKey ? p.sample?.[curve.stdKey] : null;
+    row: (p) => {
+      const std = p.raw.std;
       return [
         p.id,
         formatTick(p.raw.y),
@@ -331,7 +430,7 @@ function curveHover(frame, curve, samples) {
         formatTick(p.sample?.distance),
         formatTick(p.sample?.offset),
       ];
-    }),
+    },
     hovertemplate:
       '<b>id: %{customdata[0]}</b><br>'
       + `${yAttr.label}: %{customdata[1]}${yUnit}<br>`
