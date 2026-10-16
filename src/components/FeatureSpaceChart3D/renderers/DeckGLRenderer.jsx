@@ -23,7 +23,7 @@ import { SphereGeometry } from '@luma.gl/engine';
 import { axisTitle, formatValue } from '../attributes';
 import { colorToRgba, sizeForValue } from '../colorScale';
 import { computeAxisDomains, projectToCube } from '../transformPoints';
-import { buildProfileFrame, formatTick, hexToRgba } from '../profileGeometry';
+import { buildProfileFrame, formatTick, hexToRgba, splitRuns } from '../profileGeometry';
 import { PointTooltip } from '../PointTooltip';
 import { ProfileTooltip } from '../ProfileTooltip';
 
@@ -183,35 +183,49 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     // Trend ▸ points uses thinner lines and smaller marks; the other profile
     // views keep their current weight.
     const pointsMode = frame.shape === 'points';
+    const aggregateView = frame.view === 'aggregate';
+    const breakAtGaps = frame.breakAtGaps;
+    const sizeByOffset = frame.sizeByOffset;
+    const baseBillboard = pointsMode ? 3 : 4;
+    const baseScale = pointsMode ? 0.02 : 0.03;
 
     // Uniform-coloured curves use a PathLayer; settlement-coloured points are
-    // split into per-segment lines so each segment shows its colour.
+    // split into per-segment lines so each segment shows its colour. Each curve
+    // is split into runs at broken gaps; runs containing interpolated bins get a
+    // distinct (thinner, translucent) layer.
     const linePaths = [];
+    const interpPaths = [];
     const lineSegments = [];
     for (const c of frame.curves) {
+      const runs = splitRuns(c.samples, breakAtGaps);
       if (c.colored) {
-        for (let i = 0; i < c.samples.length - 1; i++) {
-          const a = c.samples[i];
-          const b = c.samples[i + 1];
-          lineSegments.push({
-            source: a.position,
-            target: b.position,
-            color: hexToRgba(a.color ?? c.color, 255),
-          });
+        for (const run of runs) {
+          for (let i = 0; i < run.length - 1; i++) {
+            lineSegments.push({
+              source: run[i].position,
+              target: run[i + 1].position,
+              color: hexToRgba(run[i].color ?? c.color, 255),
+            });
+          }
         }
       } else {
-        linePaths.push({
-          path: c.samples.map((p) => p.position),
-          color: hexToRgba(c.color, 255),
-        });
+        for (const run of runs) {
+          const entry = { path: run.map((p) => p.position), color: hexToRgba(c.color, 255) };
+          // The Aggregate line is a single connected polyline (no gaps), so it
+          // is never split off as an "interpolated" path.
+          if (!aggregateView && run.some((p) => p.interpolated)) interpPaths.push(entry);
+          else linePaths.push(entry);
+        }
       }
     }
 
     const ribbons = frame.curves.flatMap((c) => {
-      if (!c.stdKey) return [];
+      if (!c.banded) return [];
       return c.samples.slice(0, -1).flatMap((a, i) => {
         const b = c.samples[i + 1];
         if (!a.ribbon || !b.ribbon) return [];
+        // Never bridge a broken gap.
+        if (breakAtGaps && !b.linkedToPrev) return [];
         return [{
           key: `${c.key}-ribbon-${i}`,
           polygon: [a.ribbon.lo, b.ribbon.lo, b.ribbon.hi, a.ribbon.hi],
@@ -221,13 +235,23 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     });
 
     const pointData = frame.curves.flatMap((c) =>
-      c.samples.map((p) => ({
-        id: p.id,
-        position: p.position,
-        fillColor: hexToRgba(p.color ?? c.color, 255),
-        frameSample: p,
-        curve: c,
-      })),
+      c.samples
+        // Aggregate marks the measured bins only; interpolated bins stay line-only.
+        .filter((p) => !(aggregateView && p.interpolated))
+        .map((p) => {
+          const off = !aggregateView && sizeByOffset && p.offsetT != null ? p.offsetT : null;
+          return {
+            id: p.id,
+            position: p.position,
+            fillColor: hexToRgba(p.color ?? c.color, 255),
+            // Billboard circle radius (px) and sphere world radius; offset scales
+            // the Attribute-view mark (bigger offset = bigger mark).
+            radius: off == null ? baseBillboard : 2 + off * 4,
+            scale: off == null ? baseScale : 0.02 + off * 0.04,
+            frameSample: p,
+            curve: c,
+          };
+        }),
     );
 
     const out = [];
@@ -259,6 +283,22 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
         }),
       );
     }
+    if (interpPaths.length > 0) {
+      // Interpolated runs: thinner + translucent (deck.gl has no native dashes).
+      out.push(
+        new PathLayer({
+          id: 'profile-lines-interpolated',
+          data: interpPaths,
+          getPath: (d) => d.path,
+          getColor: (d) => [d.color[0], d.color[1], d.color[2], 140],
+          widthUnits: 'pixels',
+          getWidth: 1,
+          jointRounded: true,
+          capRounded: true,
+          pickable: false,
+        }),
+      );
+    }
     if (lineSegments.length > 0) {
       out.push(
         new LineLayer({
@@ -279,7 +319,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           id: 'profile-points',
           data: pointData,
           getPosition: (d) => d.position,
-          getRadius: pointsMode ? 3 : 4,
+          getRadius: (d) => d.radius,
           radiusUnits: 'pixels',
           radiusMinPixels: 2,
           radiusMaxPixels: 12,
@@ -298,7 +338,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           mesh: sphereGeometry,
           getPosition: (d) => d.position,
           getColor: (d) => d.fillColor,
-          getScale: pointsMode ? [0.02, 0.02, 0.02] : [0.03, 0.03, 0.03],
+          getScale: (d) => [d.scale, d.scale, d.scale],
           material: { ambient: 0.35, diffuse: 0.6, shininess: 0, specularColor: [0, 0, 0] },
           pickable: true,
           autoHighlight: true,

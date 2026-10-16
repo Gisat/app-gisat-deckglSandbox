@@ -17,7 +17,12 @@ import {
 } from './attributes';
 import { activeFieldsFor, transformPoints } from './transformPoints';
 import { SIZE_PIXEL_RANGE, buildColorScale, getColorDomain, getSizeDomain } from './colorScale';
-import { DISPLACEMENT_DOMAIN, DISPLACEMENT_RAMP } from './profileGeometry';
+import {
+  DISPLACEMENT_DOMAIN,
+  DISPLACEMENT_RAMP,
+  aggregateSamples,
+  niceStep,
+} from './profileGeometry';
 
 const PlotlyRenderer = lazy(() => import('./renderers/PlotlyRenderer'));
 const DeckGLRenderer = lazy(() => import('./renderers/DeckGLRenderer'));
@@ -52,8 +57,9 @@ const RENDERER_COMPONENTS = {
  * @param {Array<any>} [props.profileSamples]  precomputed ordered line samples (app-owned)
  * @param {boolean} [props.showProfile]  a line tool is active or a line has been drawn (auto-selects the profile mode)
  * @param {boolean} [props.profileDisabled]  disable the mode toggle (a polygon/circle selection is in use)
+ * @param {number} [props.bufferDistance]  selection corridor half-width (m), for normalising the offset size encoding
  * @param {(id: string|null) => void} [props.onPointHover]  map-link hover callback
- * @param {(state: {mode:'scatter'|'profile', view:'attributes'|'trend', zKey:string, basis:'along'|'plan', trendLines:'windows'|'profiles'|'points'}|null) => void} [props.onStateChange]  reports the effective mode/view/zKey/basis/trend shape (null on unmount)
+ * @param {(state: {mode:'scatter'|'profile', view:'attributes'|'trend'|'aggregate', zKey:string, basis:'along'|'plan', trendLines:'windows'|'profiles'|'points', valueKey:string, step:number, interpolate:boolean}|null) => void} [props.onStateChange]  reports the effective mode/view/zKey/basis/trend shape (plus the aggregate value/step/interpolate), or null on unmount
  * @param {'plotly'|'deckgl'|'three'} [props.defaultRenderer]
  * @param {string} [props.title]
  */
@@ -62,6 +68,7 @@ export function FeatureSpaceChart({
   profileSamples = [],
   showProfile = false,
   profileDisabled = false,
+  bufferDistance,
   onPointHover,
   onStateChange,
   defaultRenderer = 'plotly',
@@ -79,6 +86,13 @@ export function FeatureSpaceChart({
   const [yKey, setYKey] = useState(PROFILE_DEFAULTS.y);
   const [zKey, setZKey] = useState(PROFILE_DEFAULTS.z);
   const [zPlanKey, setZPlanKey] = useState(PROFILE_DEFAULTS.zPlan);
+  // Aggregate view: binned cross-section controls.
+  const [aggValueKey, setAggValueKey] = useState(PROFILE_DEFAULTS.z);
+  const [aggStep, setAggStep] = useState(null);
+  const [aggStepTouched, setAggStepTouched] = useState(false);
+  const [aggInterpolate, setAggInterpolate] = useState(false);
+  // Per-point Attribute-view size encoding, on by default and reversible.
+  const [sizeByOffset, setSizeByOffset] = useState(true);
 
   // Default to the 3D line profile whenever the line tool is active (or a line
   // has been drawn); the user can still switch back to scatter.
@@ -107,12 +121,54 @@ export function FeatureSpaceChart({
   // bases' Z selections independent.
   const activeZKey = basis === 'plan' ? zPlanKey : zKey;
 
+  // Auto aggregate step: a nice-rounded ≈ lineLength / 50, overridden once the
+  // user edits the step input (`aggStepTouched`).
+  const maxDistance = useMemo(
+    () => profileSamples.reduce((m, s) => (Number.isFinite(s.distance) && s.distance > m ? s.distance : m), 0),
+    [profileSamples],
+  );
+  const autoAggStep = useMemo(() => niceStep(maxDistance / 50), [maxDistance]);
+  const effectiveAggStep = aggStepTouched && Number.isFinite(aggStep) && aggStep > 0
+    ? aggStep
+    : autoAggStep;
+  const aggregateBins = useMemo(
+    () => (profileView === 'aggregate' && profileSamples.length > 0
+      ? aggregateSamples(profileSamples, aggValueKey, effectiveAggStep, aggInterpolate).length
+      : 0),
+    [profileView, profileSamples, aggValueKey, effectiveAggStep, aggInterpolate],
+  );
+
   const profile = useMemo(
     () =>
       activeMode === 'profile' && profileSamples.length > 0
-        ? { view: profileView, basis, yKey, zKey: activeZKey, trendLines, samples: profileSamples }
+        ? {
+            view: profileView,
+            basis,
+            yKey,
+            zKey: activeZKey,
+            trendLines,
+            valueKey: aggValueKey,
+            step: effectiveAggStep,
+            interpolate: aggInterpolate,
+            bufferDistance,
+            sizeByOffset,
+            samples: profileSamples,
+          }
         : null,
-    [activeMode, profileView, basis, activeZKey, trendLines, yKey, profileSamples],
+    [
+      activeMode,
+      profileView,
+      basis,
+      activeZKey,
+      trendLines,
+      yKey,
+      aggValueKey,
+      effectiveAggStep,
+      aggInterpolate,
+      bufferDistance,
+      sizeByOffset,
+      profileSamples,
+    ],
   );
 
   const profileSampleCount = profileSamples.length;
@@ -122,8 +178,31 @@ export function FeatureSpaceChart({
   // pass a stable handler to avoid an update loop. On unmount clear it so the
   // curtain hides when the chart panel is closed.
   useEffect(() => {
-    if (onStateChange) onStateChange({ mode: activeMode, view: profileView, zKey: activeZKey, basis, trendLines });
-  }, [onStateChange, activeMode, profileView, activeZKey, basis, trendLines]);
+    if (onStateChange) {
+      onStateChange({
+        mode: activeMode,
+        view: profileView,
+        zKey: activeZKey,
+        basis,
+        trendLines,
+        // Aggregate controls (only meaningful for the Aggregate view); the host
+        // uses these to build the binned map curtain.
+        valueKey: aggValueKey,
+        step: effectiveAggStep,
+        interpolate: aggInterpolate,
+      });
+    }
+  }, [
+    onStateChange,
+    activeMode,
+    profileView,
+    activeZKey,
+    basis,
+    trendLines,
+    aggValueKey,
+    effectiveAggStep,
+    aggInterpolate,
+  ]);
 
   useEffect(() => () => {
     if (onStateChange) onStateChange(null);
@@ -157,7 +236,11 @@ export function FeatureSpaceChart({
     onHover: handleHover,
   };
 
-  const headerBadge = activeMode === 'profile' ? `${profileSampleCount} samples` : `${points.length} pts`;
+  const headerBadge = activeMode === 'profile'
+    ? profileView === 'aggregate'
+      ? `${aggregateBins} bins`
+      : `${profileSampleCount} samples`
+    : `${points.length} pts`;
 
   return (
     <div
@@ -331,8 +414,12 @@ export function FeatureSpaceChart({
             <button onClick={() => setProfileView('trend')} style={buttonStyle(profileView === 'trend')}>
               Trend
             </button>
+            <button onClick={() => setProfileView('aggregate')} style={buttonStyle(profileView === 'aggregate')}>
+              Aggregate
+            </button>
           </div>
 
+          {profileView !== 'aggregate' && (
           <div
             style={{ display: 'flex', gap: '3px' }}
             title={profileView === 'attributes' ? 'Horizontal-plane basis: lon/lat vs custom' : 'Trend shape'}
@@ -372,6 +459,7 @@ export function FeatureSpaceChart({
               </>
             )}
           </div>
+          )}
 
           {profileView === 'attributes' && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'flex-end' }}>
@@ -413,6 +501,71 @@ export function FeatureSpaceChart({
             </div>
           )}
 
+          {profileView !== 'aggregate' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+              <label style={checkboxStyle} title="Scale each marker/sphere by its perpendicular offset from the line (Attribute and Trend views)">
+                <input
+                  type="checkbox"
+                  checked={sizeByOffset}
+                  onChange={(e) => setSizeByOffset(e.target.checked)}
+                />
+                <span>Size by offset</span>
+              </label>
+            </div>
+          )}
+
+          {profileView !== 'aggregate' && sizeByOffset && (
+            <span style={{ fontSize: '10px', color: '#999' }}>
+              {'Marker/sphere size shows the perpendicular offset from the line: larger marker = further from the line (normalised by the selection buffer).'}
+            </span>
+          )}
+
+          {profileView === 'aggregate' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'flex-end' }}>
+              <label style={axisPickerStyle}>
+                <span style={axisPickerLabel}>Value (Z)</span>
+                <select value={aggValueKey} onChange={(e) => setAggValueKey(e.target.value)} style={selectStyle}>
+                  {PROFILE_AXIS_KEYS.map((key) => (
+                    <option key={key} value={key}>
+                      {ATTRIBUTES[key].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={axisPickerStyle}>
+                <span style={axisPickerLabel}>Step (m)</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={effectiveAggStep}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (Number.isFinite(v) && v > 0) {
+                      setAggStep(v);
+                      setAggStepTouched(true);
+                    } else {
+                      setAggStep(null);
+                      setAggStepTouched(false);
+                    }
+                  }}
+                  style={numberInputStyle}
+                />
+              </label>
+              <label style={checkboxStyle} title="Add linearly interpolated points for empty bins (flagged in the tooltip)">
+                <input
+                  type="checkbox"
+                  checked={aggInterpolate}
+                  onChange={(e) => setAggInterpolate(e.target.checked)}
+                />
+                <span>Interpolate</span>
+              </label>
+              <span style={{ fontSize: '10px', color: '#666' }}>
+                {`${aggregateBins} bins${aggStepTouched ? '' : ' (auto)'}`}
+              </span>
+            </div>
+          )}
+
           {profileView === 'trend' && trendLines === 'points' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '10px', color: '#666' }}>settlement</span>
@@ -432,7 +585,9 @@ export function FeatureSpaceChart({
           )}
 
           <span style={{ fontSize: '10px', color: '#999' }}>
-            {profileView === 'trend'
+            {profileView === 'aggregate'
+              ? 'Each bin shows the median value of the samples whose along-line distance falls in it; the line connects the bins (no gaps) and the shaded ribbon is the interquartile range (25\u201375 pct). Interpolated bins are flagged in the tooltip.'
+              : profileView === 'trend'
               ? trendLines === 'windows'
                 ? 'Each window is a cumulative displacement over the last N days, ending now; the axis is ordered, not linear time.'
                 : 'Cumulative settlement is measured from the initial state (T-730 = 0) to now (T0 = TD_730); the time axis is ordered, not linear.'
@@ -618,6 +773,25 @@ const axisPickerLabel = {
   fontSize: '10px',
   color: '#666',
   textTransform: 'uppercase',
+};
+
+const numberInputStyle = {
+  padding: '3px 6px',
+  border: '1px solid #ccc',
+  borderRadius: '4px',
+  background: '#fff',
+  color: '#333',
+  fontSize: '11px',
+  width: '72px',
+};
+
+const checkboxStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '4px',
+  fontSize: '11px',
+  color: '#333',
+  cursor: 'pointer',
 };
 
 export default FeatureSpaceChart;

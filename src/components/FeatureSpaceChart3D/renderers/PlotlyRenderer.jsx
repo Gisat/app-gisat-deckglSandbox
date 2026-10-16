@@ -24,7 +24,7 @@ import Plotly from 'plotly.js-dist-min';
 import createPlotlyComponent from 'react-plotly.js/factory';
 import { axisTitle, getAttribute } from '../attributes';
 import { buildPlotlyColorscale, sizeForValue } from '../colorScale';
-import { buildProfileFrame, DISPLACEMENT_COLORSCALE, displacementColor, formatTick } from '../profileGeometry';
+import { buildProfileFrame, DISPLACEMENT_COLORSCALE, displacementColor, formatTick, splitRuns } from '../profileGeometry';
 
 const Plot = createPlotlyComponent(Plotly);
 
@@ -164,6 +164,8 @@ function buildProfileTraces(frame) {
   // raw values with real axes.
   const plan = frame.basis === 'plan' && frame.view === 'attributes';
   const coordsOf = (p) => (plan ? p.position : [p.raw.x, p.raw.y, p.raw.z]);
+  const aggregate = frame.view === 'aggregate';
+  const breakAtGaps = frame.breakAtGaps;
   const traces = [];
 
   for (const curve of frame.curves) {
@@ -171,7 +173,7 @@ function buildProfileTraces(frame) {
     const n = samples.length;
     if (n < 2) continue;
 
-    if (curve.stdKey) {
+    if (curve.banded) {
       // Only finite-σ samples define the band; a missing std means "unknown", so
       // those samples drop out. Keep each sample's source index so a gap breaks
       // the band rather than bridging an interval whose uncertainty is unknown
@@ -200,8 +202,9 @@ function buildProfileTraces(frame) {
           }
         });
         for (let a = 0; a < banded.length - 1; a++) {
-          // Only join source-adjacent samples.
+          // Only join source-adjacent samples, and never across a broken gap.
           if (banded[a + 1].index !== banded[a].index + 1) continue;
+          if (breakAtGaps && !banded[a + 1].smp.linkedToPrev) continue;
           const b0 = 2 * a;
           const t0 = 2 * a + 1;
           const b1 = 2 * a + 2;
@@ -230,33 +233,74 @@ function buildProfileTraces(frame) {
       }
     }
 
-    const hover = curveHover(frame, curve, samples);
+    const hover = curveHover(frame, curve);
+    const runs = splitRuns(samples, breakAtGaps);
+
+    if (aggregate) {
+      // One line connecting all bins (no gaps), with markers on measured bins
+      // only (interpolated bins stay line-only and are flagged in the tooltip).
+      const line = runsToArrays([samples], coordsOf, hover.row);
+      traces.push({
+        type: 'scatter3d',
+        mode: 'lines',
+        name: curve.label,
+        x: line.x,
+        y: line.y,
+        z: line.z,
+        customdata: line.cd,
+        line: { color: curve.color, width: 3 },
+        hovertemplate: hover.hovertemplate,
+      });
+      const measured = samples.filter((p) => !p.interpolated);
+      if (measured.length > 0) {
+        const m = runsToArrays([measured], coordsOf, hover.row);
+        traces.push({
+          type: 'scatter3d',
+          mode: 'markers',
+          name: `${curve.label} (measured)`,
+          x: m.x,
+          y: m.y,
+          z: m.z,
+          customdata: m.cd,
+          marker: { color: curve.color, size: 4, line: { width: 0 } },
+          hovertemplate: hover.hovertemplate,
+        });
+      }
+      continue;
+    }
+
     // Point/station curves colour their markers by displacement. `scatter3d`
     // cannot gradient a line, so the line takes the station's mean displacement
-    // colour (thin) and the markers carry the full ramp.
+    // colour (thin) and the markers carry the full ramp. Marker size encodes the
+    // perpendicular offset in both the Attribute and Trend views.
+    const sizes = frame.sizeByOffset && frame.view !== 'aggregate'
+      ? samples.map((p) => 3 + (p.offsetT ?? 0) * 4)
+      : 3;
     const marker = curve.colored
       ? {
           color: samples.map((p) => p.raw.z),
           colorscale: DISPLACEMENT_COLORSCALE,
           cmin: frame.colorDomain[0],
           cmax: frame.colorDomain[1],
-          size: 3,
+          size: sizes,
           line: { width: 0 },
           showscale: false,
         }
-      : { color: curve.color, size: 3, line: { width: 0 } };
+      : { color: curve.color, size: sizes, line: { width: 0 } };
     const lineColor = curve.colored
       ? displacementColor(meanDisplacementT(frame.colorDomain, samples))
       : curve.color;
-    const coords = samples.map(coordsOf);
+    // Broken segments are expressed as `null` gaps in the coordinate arrays; the
+    // markers at the real rows are untouched.
+    const a = runsToArrays(runs, coordsOf, hover.row);
     traces.push({
       type: 'scatter3d',
       mode: 'lines+markers',
       name: curve.label,
-      x: coords.map((c) => c[0]),
-      y: coords.map((c) => c[1]),
-      z: coords.map((c) => c[2]),
-      customdata: hover.customdata,
+      x: a.x,
+      y: a.y,
+      z: a.z,
+      customdata: a.cd,
       line: { color: lineColor, width: curve.colored ? 2 : 3 },
       marker,
       hovertemplate: hover.hovertemplate,
@@ -264,6 +308,34 @@ function buildProfileTraces(frame) {
   }
 
   return traces;
+}
+
+/**
+ * Flatten a list of runs into Plotly coordinate arrays, inserting a `null`
+ * separator between runs (a `null` in x/y/z breaks the line; markers skip it).
+ * `row` builds the per-sample customdata (or a `null` placeholder for the gap).
+ */
+function runsToArrays(runs, coordsOf, row) {
+  const x = [];
+  const y = [];
+  const z = [];
+  const cd = [];
+  runs.forEach((run, ri) => {
+    if (ri > 0) {
+      x.push(null);
+      y.push(null);
+      z.push(null);
+      cd.push(null);
+    }
+    for (const s of run) {
+      const c = coordsOf(s);
+      x.push(c[0]);
+      y.push(c[1]);
+      z.push(c[2]);
+      cd.push(row ? row(s) : [s.id]);
+    }
+  });
+  return { x, y, z, cd };
 }
 
 /** Mean normalised displacement (t in [0,1]) of a station, for its line colour. */
@@ -276,13 +348,45 @@ function meanDisplacementT([cLo, cHi], samples) {
   return sum / samples.length;
 }
 
-/** Per-view `customdata` (id first, so `onHover` reads `customdata[0]`) + template. */
-function curveHover(frame, curve, samples) {
+/**
+ * Per-view hovertemplate + a `row(sample)` builder (id first, so `onHover` reads
+ * `customdata[0]`). The builder is applied over any run list by `runsToArrays`.
+ */
+function curveHover(frame, curve) {
+  if (frame.view === 'aggregate') {
+    const attr = getAttribute(frame.valueKey);
+    const unit = attr.unit ? ` ${attr.unit}` : '';
+    return {
+      row: (p) => {
+        const bin = p.sample ?? {};
+        return [
+          p.id,
+          formatTick(p.raw.z),
+          bin.iqrLo == null ? '\u2014' : formatTick(bin.iqrLo),
+          bin.iqrHi == null ? '\u2014' : formatTick(bin.iqrHi),
+          bin.n ?? 0,
+          formatTick(bin.distance),
+          formatTick(bin.binStart),
+          formatTick(bin.binEnd),
+          p.interpolated ? 'yes' : 'no',
+        ];
+      },
+      hovertemplate:
+        `<b>${attr.label}${unit}</b><br>`
+        + `median: %{customdata[1]}${unit}<br>`
+        + `IQR: %{customdata[2]} \u2013 %{customdata[3]}${unit}<br>`
+        + 'n: %{customdata[4]}<br>'
+        + 'bin: %{customdata[6]} \u2013 %{customdata[7]} m<br>'
+        + 'interpolated: %{customdata[8]}'
+        + '<extra></extra>',
+    };
+  }
+
   if (frame.view === 'trend') {
     const u = ' mm';
     if (frame.shape === 'windows') {
       return {
-        customdata: samples.map((p) => {
+        row: (p) => {
           const std = p.raw.std;
           return [
             p.id,
@@ -290,7 +394,7 @@ function curveHover(frame, curve, samples) {
             std == null ? '\u2014' : formatTick(std),
             formatTick(p.sample?.distance),
           ];
-        }),
+        },
         hovertemplate:
           `<b>${curve.label}</b><br>`
           + `displacement: %{customdata[1]}${u} \u00b1 %{customdata[2]}${u}<br>`
@@ -301,12 +405,12 @@ function curveHover(frame, curve, samples) {
     }
     if (frame.shape === 'points') {
       return {
-        customdata: samples.map((p) => [
+        row: (p) => [
           p.id,
           p.stepLabel ?? '\u2014',
           formatTick(p.raw.z),
           formatTick(p.sample?.distance),
-        ]),
+        ],
         hovertemplate:
           `<b>${curve.label}</b><br>`
           + 'time step: %{customdata[1]}<br>'
@@ -316,7 +420,7 @@ function curveHover(frame, curve, samples) {
       };
     }
     return {
-      customdata: samples.map((p) => [p.id, formatTick(p.raw.z), formatTick(p.sample?.distance)]),
+      row: (p) => [p.id, formatTick(p.raw.z), formatTick(p.sample?.distance)],
       hovertemplate:
         `<b>${curve.label}</b><br>`
         + `settlement: %{customdata[1]}${u}<br>`
@@ -330,7 +434,7 @@ function curveHover(frame, curve, samples) {
   const yUnit = yAttr.unit ? ` ${yAttr.unit}` : '';
   const zUnit = zAttr.unit ? ` ${zAttr.unit}` : '';
   return {
-    customdata: samples.map((p) => {
+    row: (p) => {
       const std = p.raw.std;
       return [
         p.id,
@@ -340,7 +444,7 @@ function curveHover(frame, curve, samples) {
         formatTick(p.sample?.distance),
         formatTick(p.sample?.offset),
       ];
-    }),
+    },
     hovertemplate:
       '<b>id: %{customdata[0]}</b><br>'
       + `${yAttr.label}: %{customdata[1]}${yUnit}<br>`

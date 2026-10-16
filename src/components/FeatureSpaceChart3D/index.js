@@ -9,7 +9,7 @@ export { FeatureSpaceChart } from './FeatureSpaceChart';
 export { PointTooltip } from './PointTooltip';
 export { ProfileTooltip } from './ProfileTooltip';
 export { buildCurtainGeometry, curtainZDomain, CURTAIN_MAX_HEIGHT } from './curtainGeometry';
-export { hexToRgba } from './profileGeometry';
+export { hexToRgba, aggregateSamples } from './profileGeometry';
 export { settlementOf, withSettlement, SETTLEMENT_KEYS } from './settlement';
 
 export {

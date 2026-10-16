@@ -5,7 +5,7 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer, GeoJsonLayer, ScatterplotLayer, SolidPolygonLayer, PathLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
 import { SelectionControls, DrawingOverlay, pointInPolygon, normalizeGeometry, buildLineCorridor } from '../../components/PointSelection';
-import { FeatureSpaceChart, buildCurtainGeometry, curtainZDomain, hexToRgba, TREND_WINDOWS, TREND_TIMELINE, SETTLEMENT_KEYS, withSettlement, MAP_VELOCITY_COLORS, getColorDomain } from '../../components/FeatureSpaceChart3D';
+import { FeatureSpaceChart, buildCurtainGeometry, curtainZDomain, hexToRgba, aggregateSamples, TREND_WINDOWS, TREND_TIMELINE, SETTLEMENT_KEYS, withSettlement, MAP_VELOCITY_COLORS, getColorDomain } from '../../components/FeatureSpaceChart3D';
 import { buildProfileSamples, sampleLineSelection } from '../../components/2DLineProfile';
 import chroma from 'chroma-js';
 import { scaleLinear } from 'd3-scale';
@@ -360,6 +360,33 @@ export default function FeatureScatterChart3D() {
     [curtainZKey, profileSamples],
   );
 
+  // Aggregate curtain: the binned median per distance bin, placed at each bin's
+  // mean foot position, so the map wall shows the same aggregated line as the
+  // chart's Aggregate view. Reuses the attribute curtain machinery.
+  const aggCurtainKey = chartState?.mode === 'profile' && chartState?.view === 'aggregate'
+    ? chartState.valueKey
+    : null;
+  const aggCurtainStep = chartState?.mode === 'profile' && chartState?.view === 'aggregate'
+    ? chartState.step
+    : null;
+  const aggCurtain = useMemo(() => {
+    if (!lineActive || !aggCurtainKey || !(typeof aggCurtainStep === 'number' && aggCurtainStep > 0)) {
+      return null;
+    }
+    const rows = aggregateSamples(profileSamples, aggCurtainKey, aggCurtainStep, chartState?.interpolate === true)
+      .filter((e) => Number.isFinite(e.lon) && Number.isFinite(e.lat))
+      .map((e) => ({ id: e.id, lon: e.lon, lat: e.lat, [aggCurtainKey]: e.value }));
+    return rows.length >= 2 ? buildCurtainGeometry(rows, aggCurtainKey) : null;
+  }, [lineActive, aggCurtainKey, aggCurtainStep, chartState, profileSamples]);
+  const aggCurtainScale = useMemo(
+    () => (aggCurtainKey && aggCurtain
+      ? chroma
+          .scale(MAP_VELOCITY_COLORS)
+          .domain(getColorDomain(aggCurtainKey, aggCurtain.nodes.map((n) => ({ [aggCurtainKey]: n.value }))))
+      : null),
+    [aggCurtainKey, aggCurtain],
+  );
+
   // The Trend view stacks one curtain per series on a single shared Z domain:
   // raw per-window displacement for `windows`, cumulative settlement per timeline
   // step for `profiles`. `points` (one curve per location) has no curtain.
@@ -449,6 +476,13 @@ export default function FeatureScatterChart3D() {
       fillColor: hexToRgba(tc.color, TREND_WALL_ALPHA),
       nodeColor: color,
       lineColor: color,
+    }));
+  }
+  if (aggCurtain && aggCurtain.quads.length > 0 && aggCurtainScale) {
+    curtainLayers.push(...curtainLayerSet('agg-curtain', aggCurtain, {
+      fillColor: (d) => [...aggCurtainScale(d.value).rgb(), 150],
+      nodeColor: (d) => [...aggCurtainScale(d.value).rgb(), 255],
+      lineColor: [110, 110, 110, 220],
     }));
   }
 
@@ -571,6 +605,7 @@ export default function FeatureScatterChart3D() {
           profileSamples={profileSamples}
           showProfile={showProfile}
           profileDisabled={profileDisabled}
+          bufferDistance={bufferDistance}
           onPointHover={setHoveredPointId}
           onStateChange={setChartState}
         />

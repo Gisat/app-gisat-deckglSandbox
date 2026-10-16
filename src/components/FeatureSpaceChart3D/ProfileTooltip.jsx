@@ -13,7 +13,22 @@ export function ProfileTooltip({ sample, curve, frame }) {
   const rows = [];
   let header;
 
-  if (frame.view === 'trend') {
+  if (frame.view === 'aggregate') {
+    const attr = getAttribute(frame.valueKey);
+    const unit = attr.unit ? ` ${attr.unit}` : '';
+    const bin = sample.sample ?? {};
+    header = `${attr.label} \u2014 bin ${formatTick(bin.distance)} m`;
+    rows.push(['median', `${formatTick(sample.raw.z)}${unit}`]);
+    rows.push([
+      'IQR (25\u201375 pct)',
+      bin.iqrLo == null || bin.iqrHi == null
+        ? '\u2014'
+        : `${formatTick(bin.iqrLo)} \u2013 ${formatTick(bin.iqrHi)}${unit}`,
+    ]);
+    rows.push(['n', String(bin.n ?? 0)]);
+    rows.push(['bin', `${formatTick(bin.binStart)} \u2013 ${formatTick(bin.binEnd)} m`]);
+    if (sample.interpolated) rows.push(['note', 'interpolated']);
+  } else if (frame.view === 'trend') {
     header = curve.label;
     const unitText = ' mm';
     const std = sample.raw.std;

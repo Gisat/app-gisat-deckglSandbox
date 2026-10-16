@@ -8,10 +8,17 @@
  * axes and wants real units).
  *
  * Profile shape: `{ view, yKey, zKey, trendLines, samples: [{ id, distance, lon,
- * lat, <ATTRIBUTES keys…> }] }`. Two views, both emitting a `curves` array:
+ * lat, <ATTRIBUTES keys…> }] }`. Three views, all emitting a `curves` array:
  *
  * - `attributes`: one curve. X = distance, Y = `yKey`, Z = `zKey`, with a
  *   translucent `z ± std` ribbon on Z when `zKey` declares a paired `stdKey`.
+ *   When `profile.breakAtGaps` is set, a segment is dropped where the along-line
+ *   spacing exceeds `GAP_FACTOR ×` the median spacing (so a straight line is not
+ *   drawn across a sparse stretch), and each sample carries `offsetT` (its
+ *   perpendicular offset normalised by `bufferDistance`) for size encoding.
+ * - `aggregate`: one curve from `aggregateSamples`, binning `distance` into
+ *   `profile.step`-metre bins and plotting the per-bin median with an IQR band.
+ *   Empty bins are gaps; `profile.interpolate` bridges them (flagged).
  * - `trend` / `windows`: the original reading. One curve per `TREND_WINDOWS`
  *   entry. X = distance, Y = the window's evenly spaced band, Z = that window's
  *   `TD_*`, with its paired `STD_*` band on Z. This is the only shape whose
@@ -113,6 +120,206 @@ function bandY(i, count, cube) {
 }
 
 /**
+ * Multiplier on the median consecutive-distance spacing beyond which the drawn
+ * Attribute polyline is broken instead of bridging a sparse stretch. A heuristic
+ * (no break when fewer than 3 rows or the median spacing is 0).
+ */
+export const GAP_FACTOR = 4;
+
+/**
+ * Linear-interpolated quantile (R type 7) of an already-sorted numeric array.
+ * @param {number[]} sorted
+ * @param {number} q  quantile in [0,1]
+ * @returns {number|null}
+ */
+function quantile(sorted, q) {
+  const n = sorted.length;
+  if (n === 0) return null;
+  if (n === 1) return sorted[0];
+  const pos = (n - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+/**
+ * Round a raw step to a "nice" 1/2/5 × 10^n value, used as the auto aggregate
+ * bin size (`niceStep(maxDistance / 50)`).
+ * @param {number} raw
+ * @returns {number}
+ */
+export function niceStep(raw) {
+  if (!isNum(raw) || raw <= 0) return 1;
+  const exp = Math.floor(Math.log10(raw));
+  const base = 10 ** exp;
+  const f = raw / base;
+  const nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+  return nice * base;
+}
+
+/**
+ * Bin the raw line samples by `distance` and summarise each bin. Pure: it only
+ * reads `s.distance` and `s[valueKey]`, so it stays portable.
+ *
+ * Per non-empty bin: `{ binIndex, id, distance: binCenter, binStart, binEnd,
+ * value: median, iqrLo, iqrHi, n, interpolated: false }`. Empty bins are omitted
+ * (they read as gaps). When `interpolate` is set, empty bins strictly *between*
+ * the first and last non-empty bin are filled by linear interpolation of the
+ * median (`iqrLo/iqrHi = null`, `n = 0`, `interpolated: true`) — never before the
+ * first or after the last measured bin.
+ *
+ * @param {Array<any>} samples
+ * @param {string} valueKey
+ * @param {number} stepMeters
+ * @param {boolean} interpolate
+ * @returns {Array<{ binIndex:number, id:string, distance:number, binStart:number,
+ *   binEnd:number, value:number, iqrLo:number|null, iqrHi:number|null,
+ *   n:number, lon:number|null, lat:number|null, interpolated:boolean }>}
+ */
+export function aggregateSamples(samples, valueKey, stepMeters, interpolate) {
+  const step = Number(stepMeters);
+  if (!isNum(step) || step <= 0 || !Array.isArray(samples) || samples.length === 0) return [];
+
+  let maxDistance = -Infinity;
+  for (const s of samples) {
+    if (isNum(s.distance) && s.distance > maxDistance) maxDistance = s.distance;
+  }
+  if (!isNum(maxDistance)) return [];
+
+  const binCount = Math.floor(maxDistance / step) + 1;
+  const buckets = Array.from({ length: binCount }, () => []);
+  for (const s of samples) {
+    const v = s[valueKey];
+    if (!isNum(s.distance) || !isNum(v)) continue;
+    const idx = Math.max(0, Math.min(binCount - 1, Math.floor(s.distance / step)));
+    // Keep each member's foot position so the bin can emit a geographic centroid
+    // (used to place the map-side curtain).
+    buckets[idx].push({ v, lon: s.lon, lat: s.lat });
+  }
+
+  const entries = [];
+  for (let i = 0; i < binCount; i += 1) {
+    const members = buckets[i];
+    if (members.length === 0) continue;
+    const vals = members.map((m) => m.v).sort((a, b) => a - b);
+    let lonSum = 0;
+    let latSum = 0;
+    let posN = 0;
+    for (const m of members) {
+      if (isNum(m.lon) && isNum(m.lat)) {
+        lonSum += m.lon;
+        latSum += m.lat;
+        posN += 1;
+      }
+    }
+    entries.push({
+      binIndex: i,
+      id: `bin-${i}`,
+      distance: (i + 0.5) * step,
+      binStart: i * step,
+      binEnd: Math.min((i + 1) * step, maxDistance),
+      value: quantile(vals, 0.5),
+      iqrLo: quantile(vals, 0.25),
+      iqrHi: quantile(vals, 0.75),
+      n: vals.length,
+      lon: posN > 0 ? lonSum / posN : null,
+      lat: posN > 0 ? latSum / posN : null,
+      interpolated: false,
+    });
+  }
+
+  if (!interpolate || entries.length < 2) return entries;
+
+  const filled = [];
+  for (let k = 0; k < entries.length; k += 1) {
+    const cur = entries[k];
+    filled.push(cur);
+    const next = entries[k + 1];
+    if (!next) break;
+    for (let b = cur.binIndex + 1; b < next.binIndex; b += 1) {
+      const t = (b - cur.binIndex) / (next.binIndex - cur.binIndex);
+      filled.push({
+        binIndex: b,
+        id: `bin-${b}`,
+        distance: (b + 0.5) * step,
+        binStart: b * step,
+        binEnd: Math.min((b + 1) * step, maxDistance),
+        value: cur.value + (next.value - cur.value) * t,
+        iqrLo: null,
+        iqrHi: null,
+        n: 0,
+        lon: isNum(cur.lon) && isNum(next.lon) ? cur.lon + (next.lon - cur.lon) * t : null,
+        lat: isNum(cur.lat) && isNum(next.lat) ? cur.lat + (next.lat - cur.lat) * t : null,
+        interpolated: true,
+      });
+    }
+  }
+  return filled;
+}
+
+/**
+ * Split a curve's frame samples into drawable runs, breaking at any row whose
+ * `linkedToPrev` is false (a sparse gap in the Attribute view, or a skipped empty
+ * bin in the Aggregate view). When `breakAtGaps` is false the whole list is a
+ * single run, so the line is drawn continuously.
+ *
+ * @param {Array<any>} samples
+ * @param {boolean} [breakAtGaps]
+ * @returns {Array<Array<any>>}
+ */
+export function splitRuns(samples, breakAtGaps = true) {
+  if (!Array.isArray(samples) || samples.length === 0) return [];
+  if (!breakAtGaps) return [samples];
+  const runs = [];
+  let run = [samples[0]];
+  for (let i = 1; i < samples.length; i += 1) {
+    if (samples[i].linkedToPrev) {
+      run.push(samples[i]);
+    } else {
+      runs.push(run);
+      run = [samples[i]];
+    }
+  }
+  runs.push(run);
+  return runs;
+}
+
+/**
+ * Mark `linkedToPrev` on an Attribute curve's rows from the along-line spacing:
+ * a row is linked only when the `distance` gap to the previous row does not
+ * exceed `GAP_FACTOR ×` the median spacing. With fewer than 3 rows, or a
+ * zero/undefined median spacing, every row is linked (no breaks).
+ */
+function markAttributeLinks(rows) {
+  const d = rows.map((r) => (isNum(r.s?.distance) ? r.s.distance : NaN));
+  const gaps = [];
+  for (let i = 1; i < d.length; i += 1) {
+    if (isNum(d[i]) && isNum(d[i - 1])) gaps.push(d[i] - d[i - 1]);
+  }
+  let threshold = Infinity;
+  if (rows.length >= 3 && gaps.length >= 2) {
+    const med = quantile([...gaps].sort((a, b) => a - b), 0.5);
+    if (isNum(med) && med > 0) threshold = GAP_FACTOR * med;
+  }
+  rows.forEach((r, i) => {
+    if (i === 0) {
+      r.linkedToPrev = false;
+      return;
+    }
+    const diff = isNum(d[i]) && isNum(d[i - 1]) ? d[i] - d[i - 1] : Infinity;
+    r.linkedToPrev = diff <= threshold;
+  });
+}
+
+/** Mark `linkedToPrev` on an Aggregate curve's rows from bin adjacency. */
+function markBinLinks(rows) {
+  rows.forEach((r, i) => {
+    r.linkedToPrev = i > 0 && r.bin.binIndex === rows[i - 1].bin.binIndex + 1;
+  });
+}
+
+/**
  * Attribute view: one curve. `along` basis: X = distance along the line,
  * Y = `yKey`, Z = `zKey`. `plan` basis: X = longitude, Y = latitude on an equal
  * ground scale, Z = `zKey`. A `z ± std` band is added when `zKey` declares a
@@ -174,7 +381,33 @@ function attributeCurves(yKey, zKey, samples, basis) {
     const db = isNum(b.s.distance) ? b.s.distance : b.x;
     return da - db;
   });
-  return [{ key: 'profile', label: 'Profile', color: PROFILE_COLOR, stdKey, rows }];
+  markAttributeLinks(rows);
+  return [{ key: 'profile', label: 'Profile', color: PROFILE_COLOR, stdKey, banded: !!stdKey, rows }];
+}
+
+/**
+ * Aggregate view: bin `distance` into `stepMeters` bins and plot each bin's
+ * median on Z (X = distance, Y pinned flat), with the IQR (25-75 pct) as the Z
+ * ribbon. Empty bins are gaps; `interpolate` bridges them (flagged). Rows carry
+ * their bin entry on `s` so the tooltip can read `n`/`iqrLo`/`iqrHi`.
+ */
+function aggregateCurve(samples, valueKey, stepMeters, interpolate) {
+  const entries = aggregateSamples(samples, valueKey, stepMeters, interpolate);
+  const rows = entries.map((e) => ({
+    s: e,
+    bin: e,
+    x: e.distance,
+    y: 0,
+    z: e.value,
+    lo: e.iqrLo ?? e.value,
+    hi: e.iqrHi ?? e.value,
+    std: null,
+    banded: e.iqrLo != null && e.iqrHi != null,
+    interpolated: e.interpolated,
+  }));
+  if (rows.length === 0) return [];
+  markBinLinks(rows);
+  return [{ key: 'aggregate', label: 'Median', color: PROFILE_COLOR, stdKey: null, banded: true, rows }];
 }
 
 /**
@@ -214,6 +447,7 @@ function windowCurves(samples, cube) {
         label: trendWindowLabel(w.days),
         color: w.color,
         stdKey: w.stdKey,
+        banded: !!w.stdKey,
         rows,
       });
     }
@@ -258,6 +492,7 @@ function settlementProfiles(samples, cube) {
         label: step.label,
         color: step.color,
         stdKey: null,
+        banded: false,
         rows,
       });
     }
@@ -303,7 +538,7 @@ function settlementPoints(samples, cube) {
     });
     if (rows.length >= 2) {
       const label = group.id == null ? `point ${index + 1}` : String(group.id);
-      curves.push({ key: `point-${index}`, label, color: PROFILE_COLOR, stdKey: null, rows });
+      curves.push({ key: `point-${index}`, label, color: PROFILE_COLOR, stdKey: null, banded: false, rows });
     }
     index += 1;
   }
@@ -313,30 +548,36 @@ function settlementPoints(samples, cube) {
 /**
  * Build the render-ready profile frame (one or more curves).
  *
- * @param {{view?:'attributes'|'trend', basis?:'along'|'plan', yKey?:string,
- *   zKey?:string, trendLines?:'windows'|'profiles'|'points',
+ * @param {{view?:'attributes'|'trend'|'aggregate', basis?:'along'|'plan',
+ *   yKey?:string, zKey?:string, trendLines?:'windows'|'profiles'|'points',
+ *   valueKey?:string, step?:number, interpolate?:boolean,
+ *   bufferDistance?:number, breakAtGaps?:boolean, sizeByOffset?:boolean,
  *   samples?:Array<any>}} profile
  * @param {number} [cube] half-extent of the normalised cube
  * @returns {{
- *   view:'attributes'|'trend', shape:'windows'|'profiles'|'points'|null,
+ *   view:'attributes'|'trend'|'aggregate', shape:'windows'|'profiles'|'points'|null,
  *   basis:'along'|'plan', yKey:string|null, zKey:string|null,
+ *   valueKey:string|null, binCount:number|null,
+ *   breakAtGaps:boolean, sizeByOffset:boolean,
  *   titles:{x:string,y:string,z:string},
  *   domains:{x:[number,number],y:[number,number],z:[number,number]},
  *   axisDomains:{x:[number,number],y:[number,number],z:[number,number]},
  *   colorDomain:[number,number]|null,
  *   yTicks:Array<{value:number,label:string}>|null,
  *   curves:Array<{ key:string, label:string, color:string, stdKey:string|null,
- *     colored:boolean,
+ *     banded:boolean, colored:boolean,
  *     samples:Array<{
  *       id:any, position:[number,number,number],
  *       ribbon:{lo:[number,number,number],hi:[number,number,number]}|null,
  *       raw:{x:number,y:number,z:number,lo:number,hi:number,std:number|null},
- *       color:string|null,
+ *       color:string|null, linkedToPrev:boolean, interpolated:boolean,
+ *       offsetT:number|null,
  *       stepKey:string|null, stepLabel:string|null, sample:any }> }>,
  * }}
  */
 export function buildProfileFrame(profile, cube = 1) {
-  const view = profile?.view === 'trend' ? 'trend' : 'attributes';
+  const view =
+    profile?.view === 'aggregate' ? 'aggregate' : profile?.view === 'trend' ? 'trend' : 'attributes';
   const samples = profile?.samples ?? [];
   const yKey = profile?.yKey ?? 'H';
   const zKey = profile?.zKey ?? 'VEL_REL';
@@ -344,14 +585,41 @@ export function buildProfileFrame(profile, cube = 1) {
   const isPlan = view === 'attributes' && basis === 'plan';
   const shape = view === 'trend' ? (profile?.trendLines ?? 'profiles') : null;
 
+  // Aggregate reads one attribute on Z; the Attribute view breaks the polyline
+  // at sparse gaps unless disabled, and always carries a normalised offset.
+  const aggValueKey = profile?.valueKey ?? zKey;
+  const aggStep = profile?.step;
+  const aggInterpolate = profile?.interpolate === true;
+  // Polyline stays connected by default (opt in to gap breaks with
+  // `profile.breakAtGaps === true`). The Aggregate view is always a single
+  // connected line through its bins, so it never breaks.
+  const breakAtGaps = profile?.breakAtGaps === true;
+  const sizeByOffset = profile?.sizeByOffset !== false;
+
+  // Offset normaliser (Attribute/Trend views): the corridor half-width when
+  // known, else the selection's own max |offset| so the encoding still spans the
+  // sample set.
+  let offsetDenom = isNum(profile?.bufferDistance) && profile.bufferDistance > 0
+    ? profile.bufferDistance
+    : null;
+  if (view !== 'aggregate' && offsetDenom == null) {
+    let maxOff = 0;
+    for (const s of samples) {
+      if (isNum(s.offset)) maxOff = Math.max(maxOff, Math.abs(s.offset));
+    }
+    offsetDenom = maxOff > 0 ? maxOff : null;
+  }
+
   const rawCurves =
-    view === 'trend'
-      ? shape === 'windows'
-        ? windowCurves(samples, cube)
-        : shape === 'points'
-          ? settlementPoints(samples, cube)
-          : settlementProfiles(samples, cube)
-      : attributeCurves(yKey, zKey, samples, basis);
+    view === 'aggregate'
+      ? aggregateCurve(samples, aggValueKey, aggStep, aggInterpolate)
+      : view === 'trend'
+        ? shape === 'windows'
+          ? windowCurves(samples, cube)
+          : shape === 'points'
+            ? settlementPoints(samples, cube)
+            : settlementProfiles(samples, cube)
+        : attributeCurves(yKey, zKey, samples, basis);
 
   let xMin = Infinity;
   let xMax = -Infinity;
@@ -420,8 +688,9 @@ export function buildProfileFrame(profile, cube = 1) {
     label: c.label,
     color: c.color,
     stdKey: c.stdKey ?? null,
+    banded: c.banded ?? !!c.stdKey,
     colored: colorByDisplacement,
-    samples: c.rows.map((r) => {
+    samples: c.rows.map((r, i) => {
       const xn = normalize(r.x, xd, cube);
       const yn = normalize(r.y, yd, cube);
       const zn = normalize(r.z, zd, cube);
@@ -432,6 +701,10 @@ export function buildProfileFrame(profile, cube = 1) {
           }
         : null;
       const zt = cHi === cLo ? 0.5 : (r.z - cLo) / (cHi - cLo);
+      const offset = r.s?.offset;
+      const offsetT = isNum(offset) && offsetDenom
+        ? Math.max(0, Math.min(1, Math.abs(offset) / offsetDenom))
+        : null;
       return {
         id: r.s.id,
         position: [xn, yn, zn],
@@ -440,6 +713,13 @@ export function buildProfileFrame(profile, cube = 1) {
         color: colorByDisplacement ? displacementColor(zt) : null,
         stepKey: r.stepKey ?? null,
         stepLabel: r.stepLabel ?? null,
+        // Whether the segment from the previous emitted row may be drawn, and
+        // whether this row is inferred rather than measured.
+        linkedToPrev: r.linkedToPrev ?? i > 0,
+        interpolated: r.interpolated === true || r.s?.interpolated === true,
+        // Perpendicular offset normalised to [0,1] (Attribute view only); the
+        // renderers map it to marker/sphere size. `null` when not applicable.
+        offsetT,
         sample: r.s,
       };
     }),
@@ -448,13 +728,15 @@ export function buildProfileFrame(profile, cube = 1) {
   // The `windows` shape reads the raw per-window displacement; the cumulative
   // shapes read settlement from the initial state.
   const titles =
-    view === 'trend'
-      ? shape === 'windows'
-        ? { x: 'Distance along profile [m]', y: 'Trend window', z: 'Trend displacement [mm]' }
-        : { x: 'Distance along profile [m]', y: 'Time', z: 'Cumulative settlement [mm]' }
-      : isPlan
-        ? { x: 'Longitude [\u00b0]', y: 'Latitude [\u00b0]', z: axisTitle(zKey) }
-        : { x: 'Distance along profile [m]', y: axisTitle(yKey), z: axisTitle(zKey) };
+    view === 'aggregate'
+      ? { x: 'Distance along profile [m]', y: '', z: axisTitle(aggValueKey) }
+      : view === 'trend'
+        ? shape === 'windows'
+          ? { x: 'Distance along profile [m]', y: 'Trend window', z: 'Trend displacement [mm]' }
+          : { x: 'Distance along profile [m]', y: 'Time', z: 'Cumulative settlement [mm]' }
+        : isPlan
+          ? { x: 'Longitude [\u00b0]', y: 'Latitude [\u00b0]', z: axisTitle(zKey) }
+          : { x: 'Distance along profile [m]', y: axisTitle(yKey), z: axisTitle(zKey) };
 
   // Trend Y is categorical: label each band position with its window/timeline
   // step, else the numeric -1..1 band coordinate is meaningless.
@@ -477,6 +759,10 @@ export function buildProfileFrame(profile, cube = 1) {
     basis,
     yKey: view === 'attributes' ? (isPlan ? 'lat' : yKey) : null,
     zKey: view === 'attributes' ? zKey : null,
+    valueKey: view === 'aggregate' ? aggValueKey : null,
+    binCount: view === 'aggregate' ? (curves[0]?.samples.length ?? 0) : null,
+    breakAtGaps,
+    sizeByOffset,
     titles,
     domains: { x: xd, y: yd, z: zd },
     axisDomains,

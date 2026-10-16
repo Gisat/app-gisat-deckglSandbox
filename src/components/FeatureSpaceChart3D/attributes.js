@@ -179,8 +179,11 @@ export const TREND_TIMELINE = [
   { daysAgo: 0, label: 'now', tdKey: null, stdKey: 'STD_730', color: '#08519c', anchor: 'now' },
 ];
 
-/** Profile views: the attribute explorer (shipped) and the settlement trend. */
-export const PROFILE_VIEWS = ['attributes', 'trend'];
+/**
+ * Profile views: the attribute explorer (shipped), the settlement trend, and the
+ * binned cross-section (`aggregate`: median ± IQR per distance bin).
+ */
+export const PROFILE_VIEWS = ['attributes', 'trend', 'aggregate'];
 
 /** Default profile view. */
 export const PROFILE_VIEW_DEFAULT = 'attributes';
