@@ -2,9 +2,9 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
-import { BitmapLayer, ScatterplotLayer, SolidPolygonLayer, PathLayer } from '@deck.gl/layers';
+import { BitmapLayer, GeoJsonLayer, ScatterplotLayer, SolidPolygonLayer, PathLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
-import { SelectionControls, DrawingOverlay, pointInPolygon, normalizeGeometry } from '../../components/PointSelection';
+import { SelectionControls, DrawingOverlay, pointInPolygon, normalizeGeometry, buildLineCorridor } from '../../components/PointSelection';
 import { FeatureSpaceChart, buildCurtainGeometry, curtainZDomain, hexToRgba, TREND_WINDOWS, TREND_TIMELINE, SETTLEMENT_KEYS, withSettlement, MAP_VELOCITY_COLORS, getColorDomain } from '../../components/FeatureSpaceChart3D';
 import { buildProfileSamples, sampleLineSelection } from '../../components/2DLineProfile';
 import chroma from 'chroma-js';
@@ -32,6 +32,10 @@ const sizeScale = scaleLinear([0, 5], [3, 8]).clamp(true);
 
 // Fill alpha for the trend-window curtains (transparent walls, one per window).
 const TREND_WALL_ALPHA = 55;
+
+// Shared highlight colour for a selection: used both for the selected point
+// borders and for the persistent selection-boundary layer, so they always match.
+const SELECTION_COLOR = [66, 212, 244];
 
 /** One curtain per raw trend window, on a single shared Z domain. */
 function buildTrendCurtains(samples) {
@@ -199,7 +203,7 @@ export default function FeatureScatterChart3D() {
       }
 
       if (isPointSelected(d)) {
-        return [66, 212, 244, 255]; // cyan border for selected
+        return [...SELECTION_COLOR, 255]; // cyan border for selected
       }
 
       return [0, 0, 0, 0];
@@ -448,12 +452,40 @@ export default function FeatureScatterChart3D() {
     }));
   }
 
+  // Persistent selection boundary, kept on the map after drawing finishes (unlike
+  // the transient canvas overlay, which is cleared once drawing stops). For line
+  // mode the boundary is a flat-ended (butt-cap) buffer corridor around the line,
+  // rebuilt from `drawnLineCoords` so it tracks the buffer-distance slider live and
+  // matches the flat-ended line selection (`sampleLineSelection`).
+  const selectionBoundary = useMemo(() => {
+    if (selectionMode === 'line' && Array.isArray(drawnLineCoords) && drawnLineCoords.length >= 2) {
+      return buildLineCorridor(drawnLineCoords, bufferDistance);
+    }
+    return drawnGeometry;
+  }, [selectionMode, drawnLineCoords, bufferDistance, drawnGeometry]);
+
+  const selectionBoundaryLayer = selectionBoundary
+    ? new GeoJsonLayer({
+        id: 'selection-boundary',
+        data: { type: 'Feature', properties: {}, geometry: selectionBoundary },
+        filled: true,
+        stroked: true,
+        getFillColor: [...SELECTION_COLOR, 40],
+        getLineColor: [...SELECTION_COLOR, 220],
+        lineWidthUnits: 'pixels',
+        getLineWidth: 2,
+        lineWidthMinPixels: 2,
+        pickable: false,
+      })
+    : null;
+
   const layers = [
     baseMapLayer,
     precalculatedGlaze,
+    selectionBoundaryLayer,
     pointLayer,
     ...curtainLayers,
-  ];
+  ].filter(Boolean);
 
   return (
     <div ref={mapContainerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>

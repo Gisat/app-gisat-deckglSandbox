@@ -57,6 +57,87 @@ export function normalizeGeometry(mode, coords, bufferMeters = 100) {
     return null;
 }
 
+// Metres in one degree of latitude (used to keep the corridor width physical).
+const METERS_PER_DEG_LAT = 111320;
+
+/**
+ * Build a flat-ended (butt-cap) corridor polygon around a drawn line.
+ *
+ * Unlike `@turf/buffer`, which rounds the caps, this matches the line-selection
+ * semantics (`sampleLineSelection`): the corridor stops squarely at the first and
+ * last vertex, so points beyond either end never fall inside it. Each vertex is
+ * offset by `bufferMeters` along a metric-space normal (longitude degrees are
+ * scaled by the local latitude so the width stays physically constant).
+ *
+ * @param {number[][]} lineCoords - [lon, lat] vertices of the drawn line.
+ * @param {number} bufferMeters - Half-width of the corridor in metres.
+ * @returns {object|null} A GeoJSON Polygon geometry, or null when degenerate.
+ */
+export function buildLineCorridor(lineCoords, bufferMeters = 100) {
+    if (!Array.isArray(lineCoords) || lineCoords.length < 2) return null;
+
+    // Drop consecutive duplicate vertices so the normals stay well-defined.
+    const pts = [];
+    for (const c of lineCoords) {
+        if (!Array.isArray(c) || c.length < 2) continue;
+        const last = pts[pts.length - 1];
+        if (!last || last[0] !== c[0] || last[1] !== c[1]) pts.push([c[0], c[1]]);
+    }
+    if (pts.length < 2) return null;
+
+    // Unit tangent (in metric space, at the given latitude) from a -> b.
+    const metricUnit = (a, b, lat) => {
+        const mPerDegLon = METERS_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
+        const dx = (b[0] - a[0]) * mPerDegLon;
+        const dy = (b[1] - a[1]) * METERS_PER_DEG_LAT;
+        const len = Math.hypot(dx, dy);
+        return len === 0 ? null : [dx / len, dy / len];
+    };
+
+    const left = [];
+    const right = [];
+    for (let i = 0; i < pts.length; i++) {
+        const lat = pts[i][1];
+        // Average the adjacent segment tangents so interior joins stay centred.
+        const tPrev = i > 0 ? metricUnit(pts[i - 1], pts[i], lat) : null;
+        const tNext = i < pts.length - 1 ? metricUnit(pts[i], pts[i + 1], lat) : null;
+
+        let tx = 0;
+        let ty = 0;
+        for (const t of [tPrev, tNext]) {
+            if (t) {
+                tx += t[0];
+                ty += t[1];
+            }
+        }
+        const tLen = Math.hypot(tx, ty);
+        if (tLen === 0) {
+            // 180° turn back on itself: fall back to a neighbouring tangent.
+            const fallback = tPrev || tNext;
+            if (!fallback) return null;
+            [tx, ty] = fallback;
+        } else {
+            tx /= tLen;
+            ty /= tLen;
+        }
+
+        // Left normal (tangent rotated +90°) scaled from metres back to degrees.
+        const mPerDegLon = METERS_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
+        const dLon = (-ty * bufferMeters) / mPerDegLon;
+        const dLat = (tx * bufferMeters) / METERS_PER_DEG_LAT;
+
+        left.push([pts[i][0] + dLon, pts[i][1] + dLat]);
+        right.push([pts[i][0] - dLon, pts[i][1] - dLat]);
+    }
+
+    // Flat ends: the left side runs forward, the right side runs back, joined
+    // squarely across the first and last vertices.
+    const ring = [...left, ...right.reverse()];
+    ring.push([ring[0][0], ring[0][1]]);
+
+    return { type: 'Polygon', coordinates: [ring] };
+}
+
 /**
  * Calculate distance between two points using Haversine formula (in km)
  */
