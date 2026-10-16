@@ -15,25 +15,25 @@ export function ProfileTooltip({ sample, curve, frame }) {
 
   if (frame.view === 'trend') {
     header = curve.label;
-    const unit = getAttribute(sample.windowKey ?? curve.key)?.unit ?? '';
-    const unitText = unit ? ` ${unit}` : '';
-    const std = curve.stdKey ? sample.sample?.[curve.stdKey] : null;
+    const unitText = ' mm';
+    const std = sample.raw.std;
+    const windows = frame.shape === 'windows';
 
-    if (!curve.stdKey) {
-      // Stations: each vertex belongs to a different trend window.
-      rows.push(['window', sample.windowLabel ?? '\u2014']);
+    if (frame.shape === 'points') {
+      // Points: each vertex belongs to a different timeline step.
+      rows.push(['time step', sample.stepLabel ?? '\u2014']);
     }
     rows.push([
-      'displacement',
+      windows ? 'displacement' : 'settlement',
       `${formatTick(sample.raw.z)}${unitText}${std != null ? ` \u00b1 ${formatTick(std)}${unitText}` : ''}`,
     ]);
     rows.push(['distance', `${formatTick(sample.sample?.distance)} m`]);
-    if (curve.stdKey) rows.push(['id', sample.id ?? '\u2014']);
+    if (windows) rows.push(['id', sample.id ?? '\u2014']);
   } else {
     header = sample.id ?? '\u2014';
     const zKey = frame.zKey;
     const zUnit = getAttribute(zKey).unit ? ` ${getAttribute(zKey).unit}` : '';
-    const std = curve.stdKey ? sample.sample?.[curve.stdKey] : null;
+    const std = sample.raw.std;
 
     rows.push([getAttribute(frame.yKey).label, formatValue(frame.yKey, sample.raw.y)]);
     rows.push([

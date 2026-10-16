@@ -107,12 +107,11 @@ export const PROFILE_DEFAULTS = { y: 'H', z: 'VEL_REL', zPlan: 'H', basis: 'plan
 export const PROFILE_BASES = ['along', 'plan'];
 
 /**
- * Trend windows: cumulative trend displacement over 90/180/365/730 days, in
- * ascending window order with a light->dark sequential colour ramp so a line's
- * window reads at a glance. Each window's uncertainty field is its paired
- * `STD_*`; these are cumulative windows ending "now", so the axis is ordered
- * categorical, not a linear time scale. (The `points` shape instead colours by
- * displacement — see `DISPLACEMENT_RAMP`.)
+ * Raw trend windows: cumulative trend displacement over 90/180/365/730 days, in
+ * ascending window order with a light->dark sequential colour ramp. These are
+ * the source fields for the Trend view's `windows ±σ` shape, which keeps the
+ * original per-window `TD_x ± STD_x` reading (the one place the uncertainty is
+ * genuinely per-series). Each window's uncertainty field is its paired `STD_*`.
  */
 export const TREND_WINDOWS = [
   { key: 'TD_90', stdKey: 'STD_90', days: 90, color: '#c6dbef' },
@@ -121,22 +120,6 @@ export const TREND_WINDOWS = [
   { key: 'TD_730', stdKey: 'STD_730', days: 730, color: '#08306b' },
 ];
 
-/** Profile views: the attribute explorer (shipped) and the trend view (new). */
-export const PROFILE_VIEWS = ['attributes', 'trend'];
-
-/** Default profile view. */
-export const PROFILE_VIEW_DEFAULT = 'attributes';
-
-/**
- * Trend shapes: `windows` (one line per window, with its `STD_*` band),
- * `windows-plain` (same, band omitted so the Z range matches `points`) and
- * `points` (one displacement-coloured line per selected point).
- */
-export const TREND_SHAPES = ['windows', 'windows-plain', 'points'];
-
-/** Default trend shape. */
-export const TREND_LINES_DEFAULT = 'windows';
-
 /**
  * Human-readable label for a trend window, e.g. `90 d`.
  * @param {number} days
@@ -144,6 +127,76 @@ export const TREND_LINES_DEFAULT = 'windows';
 export function trendWindowLabel(days) {
   return `${days} d`;
 }
+
+/**
+ * Reference key for the cumulative-settlement transform: the longest trend
+ * window (`TD_730`) spans the whole record (730 days ending "now"), so it is
+ * the total displacement from the initial state and anchors the settlement
+ * timeline (see `TREND_TIMELINE` / `settlement.js`).
+ */
+export const SETTLEMENT_REF_KEY = 'TD_730';
+
+/**
+ * @typedef {Object} TrendStep
+ * @property {number} daysAgo  days before "now" (730 = initial state, 0 = now)
+ * @property {string} label    axis/tooltip label, e.g. `T-90` or `now`
+ * @property {string|null} tdKey   cumulative window subtracted from the reference
+ * @property {string} stdKey   paired uncertainty field (before propagation)
+ * @property {string} color    light->dark sequential colour (oldest -> now)
+ * @property {'initial'|'now'} [anchor]  derived endpoint (value 0 / `TD_730`)
+ */
+
+/**
+ * Settlement timeline for the 3D line-profile Trend view.
+ *
+ * The source trend fields (`TD_90/180/365/730`) are *cumulative displacements
+ * over overlapping windows, all ending "now"*, which is not geotechnically
+ * intuitive on its own. The Trend view instead reports the cumulative
+ * settlement measured from the initial state (the oldest epoch, 730 days before
+ * now):
+ *
+ *   settlement(t) = TD_730 - TD_x        (TD_0 := 0)
+ *
+ * which gives, from the initial state to now:
+ *   T-730 (initial) = 0
+ *   T-365           = TD_730 - TD_365
+ *   T-180           = TD_730 - TD_180
+ *   T-90            = TD_730 - TD_90
+ *   T0   (now)      = TD_730
+ *
+ * Ordered oldest -> now; the light -> dark blue ramp tracks time since the
+ * initial state. The `initial` and `now` anchors are derived from the reference
+ * window rather than a `TD_*` field (see `settlement.js`). These are ordered
+ * categorical steps, not a linear time scale.
+ *
+ * @type {TrendStep[]}
+ */
+export const TREND_TIMELINE = [
+  { daysAgo: 730, label: 'T-730', tdKey: 'TD_730', stdKey: 'STD_730', color: '#eff3ff', anchor: 'initial' },
+  { daysAgo: 365, label: 'T-365', tdKey: 'TD_365', stdKey: 'STD_365', color: '#bdd7e7' },
+  { daysAgo: 180, label: 'T-180', tdKey: 'TD_180', stdKey: 'STD_180', color: '#6baed6' },
+  { daysAgo: 90, label: 'T-90', tdKey: 'TD_90', stdKey: 'STD_90', color: '#3182bd' },
+  { daysAgo: 0, label: 'now', tdKey: null, stdKey: 'STD_730', color: '#08519c', anchor: 'now' },
+];
+
+/** Profile views: the attribute explorer (shipped) and the settlement trend. */
+export const PROFILE_VIEWS = ['attributes', 'trend'];
+
+/** Default profile view. */
+export const PROFILE_VIEW_DEFAULT = 'attributes';
+
+/**
+ * Trend shapes:
+ *  - `windows`: the original reading — one line per raw `TREND_WINDOWS` entry
+ *    (`TD_x` displacement across distance), each with its paired `STD_x` band.
+ *  - `profiles`: one cumulative-settlement profile per `TREND_TIMELINE` step
+ *    (`TD_730 - TD_x`, see `settlement.js`), no band.
+ *  - `points`: one settlement-vs-time curve per selected point, no bands.
+ */
+export const TREND_SHAPES = ['windows', 'profiles', 'points'];
+
+/** Default trend shape (the cumulative-settlement profile). */
+export const TREND_LINES_DEFAULT = 'profiles';
 
 /**
  * @typedef {Object} PresetAxes

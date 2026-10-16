@@ -184,8 +184,8 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     // views keep their current weight.
     const pointsMode = frame.shape === 'points';
 
-    // Uniform-coloured curves use a PathLayer; displacement-coloured point
-    // curves are split into per-segment lines so each segment shows its colour.
+    // Uniform-coloured curves use a PathLayer; settlement-coloured points are
+    // split into per-segment lines so each segment shows its colour.
     const linePaths = [];
     const lineSegments = [];
     for (const c of frame.curves) {

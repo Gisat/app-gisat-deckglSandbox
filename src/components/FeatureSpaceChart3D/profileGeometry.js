@@ -12,31 +12,37 @@
  *
  * - `attributes`: one curve. X = distance, Y = `yKey`, Z = `zKey`, with a
  *   translucent `z ± std` ribbon on Z when `zKey` declares a paired `stdKey`.
- * - `trend` / `windows`: one curve per `TREND_WINDOWS` entry. X = distance,
- *   Y = the window's evenly spaced band, Z = that window's `TD_*`, with a
- *   `TD ± STD` band on Z when the paired `STD_*` is finite.
- * - `trend` / `windows-plain`: same as `windows` but with the uncertainty band
- *   omitted, so its Z range matches the `points` shape.
- * - `trend` / `points`: one curve per point, stepping across the window bands
- *   (Y) against that point's `TD_*` (Z); no ribbon.
+ * - `trend` / `windows`: the original reading. One curve per `TREND_WINDOWS`
+ *   entry. X = distance, Y = the window's evenly spaced band, Z = that window's
+ *   `TD_*`, with its paired `STD_*` band on Z. This is the only shape whose
+ *   uncertainty is genuinely per-series.
+ * - `trend` / `profiles`: one cumulative-settlement profile per `TREND_TIMELINE`
+ *   step. X = distance, Y = the step's evenly spaced band, Z = the cumulative
+ *   settlement (`TD_730 - TD_x`, see `settlement.js`); no band.
+ * - `trend` / `points`: one settlement-vs-time curve per point, stepping across
+ *   the timeline bands (Y) against that point's cumulative settlement (Z); no
+ *   ribbon.
  */
 
-import { ATTRIBUTES, axisTitle, TREND_WINDOWS, trendWindowLabel } from './attributes';
+import { ATTRIBUTES, axisTitle, TREND_TIMELINE, TREND_WINDOWS, trendWindowLabel } from './attributes';
+import { settlementOf } from './settlement';
 
 /** Colour used for the attribute curve and the (uniform) per-point curves. */
 export const PROFILE_COLOR = '#1f77b4';
 
 /**
- * Sequential ramp used to colour points by their trend displacement. Mirrors
- * the map's default colour scale (`MAP_VELOCITY_COLORS`: blue -> yellow -> red,
- * rgb interpolation) so the chart agrees with the map. Ordered low -> high.
+ * Sequential ramp used to colour points by their cumulative settlement (the
+ * Trend ▸ points shape). Ordered low -> high as red -> yellow -> teal, so that
+ * negative / downward settlement reads red and upward reads teal. Matches the
+ * map marker scale (`MAP_VELOCITY_COLORS`), which is flipped to the same
+ * orientation.
  */
-export const DISPLACEMENT_RAMP = ['#41b6c4', '#fefebf', '#d7191c'];
+export const DISPLACEMENT_RAMP = ['#d7191c', '#fefebf', '#41b6c4'];
 
 /**
- * Fixed colour domain for the displacement ramp, matching the map's velocity
+ * Fixed colour domain for the settlement ramp, matching the map's velocity
  * colour domain (`MAP_VELOCITY_DOMAIN`) so point colours are comparable across
- * selections and agree with the map scale. Values outside are clamped.
+ * selections. Values outside are clamped.
  */
 export const DISPLACEMENT_DOMAIN = [-3, 3];
 
@@ -133,6 +139,7 @@ function attributeCurves(yKey, zKey, samples, basis) {
       z,
       lo: std != null ? z - std : z,
       hi: std != null ? z + std : z,
+      std,
       banded: std != null,
       // `x`/`y` are the cube-normalisation coordinates (`xRaw`/`yRaw` are the
       // values the axes are labelled with: distance/attribute, or real lon/lat).
@@ -171,12 +178,12 @@ function attributeCurves(yKey, zKey, samples, basis) {
 }
 
 /**
- * Trend / windows: one curve per trend window at an even Y band, carrying that
- * window's `TD_*` on Z and (when `withStd`) its `STD_*` band. A curve needs ≥ 2
- * finite samples. Without `withStd` the band is omitted, so the curve's Z range
- * (and thus the frame's Z domain) matches the points shape.
+ * Trend / windows: the original reading. One curve per `TREND_WINDOWS` entry at
+ * an even Y band, carrying that window's `TD_*` on Z and its paired `STD_*` band.
+ * A curve needs ≥ 2 finite samples. The band is the raw per-window uncertainty
+ * (the one place it varies meaningfully between series).
  */
-function windowCurves(samples, cube, withStd) {
+function windowCurves(samples, cube) {
   const count = TREND_WINDOWS.length;
   const curves = [];
   TREND_WINDOWS.forEach((w, i) => {
@@ -186,7 +193,7 @@ function windowCurves(samples, cube, withStd) {
       const x = s.distance;
       const z = s[w.key];
       if (!isNum(x) || !isNum(z)) continue;
-      const std = withStd && isNum(s[w.stdKey]) ? Math.abs(s[w.stdKey]) : null;
+      const std = isNum(s[w.stdKey]) ? Math.abs(s[w.stdKey]) : null;
       rows.push({
         s,
         x,
@@ -194,9 +201,10 @@ function windowCurves(samples, cube, withStd) {
         z,
         lo: std != null ? z - std : z,
         hi: std != null ? z + std : z,
+        std,
         banded: std != null,
-        windowKey: w.key,
-        windowLabel: trendWindowLabel(w.days),
+        stepKey: w.key,
+        stepLabel: trendWindowLabel(w.days),
       });
     }
     rows.sort((a, b) => a.x - b.x);
@@ -205,7 +213,7 @@ function windowCurves(samples, cube, withStd) {
         key: w.key,
         label: trendWindowLabel(w.days),
         color: w.color,
-        stdKey: withStd ? w.stdKey : null,
+        stdKey: w.stdKey,
         rows,
       });
     }
@@ -214,13 +222,57 @@ function windowCurves(samples, cube, withStd) {
 }
 
 /**
- * Trend / points: one curve per point, stepping across the window bands in
- * ascending window order against that point's `TD_*` values. No ribbon. A curve
- * needs ≥ 2 finite windows; samples are grouped by `id` (one sample per feature
- * in practice, each carrying all its `TD_*` values).
+ * Trend / profiles: one cumulative-settlement profile per timeline step at an
+ * even Y band, carrying the settlement `TD_730 - TD_x` on Z. No uncertainty band
+ * (the per-window ±σ lives on the `windows` shape instead — a propagated σ here
+ * is dominated by the shared reference term and barely varies between steps).
+ * A curve needs ≥ 2 finite samples.
  */
-function pointCurves(samples, cube) {
-  const count = TREND_WINDOWS.length;
+function settlementProfiles(samples, cube) {
+  const count = TREND_TIMELINE.length;
+  const curves = [];
+  TREND_TIMELINE.forEach((step, i) => {
+    const y = bandY(i, count, cube);
+    const rows = [];
+    for (const s of samples) {
+      const x = s.distance;
+      const z = settlementOf(s, step);
+      if (!isNum(x) || !isNum(z)) continue;
+      rows.push({
+        s,
+        x,
+        y,
+        z,
+        lo: z,
+        hi: z,
+        std: null,
+        banded: false,
+        stepKey: step.label,
+        stepLabel: step.label,
+      });
+    }
+    rows.sort((a, b) => a.x - b.x);
+    if (rows.length >= 2) {
+      curves.push({
+        key: step.label,
+        label: step.label,
+        color: step.color,
+        stdKey: null,
+        rows,
+      });
+    }
+  });
+  return curves;
+}
+
+/**
+ * Trend / points: one cumulative-settlement curve per point, stepping across the
+ * timeline bands in ascending time order against that point's settlement values.
+ * No ribbon. A curve needs ≥ 2 finite steps; samples are grouped by `id` (one
+ * sample per feature in practice, each carrying all its `TD_*` values).
+ */
+function settlementPoints(samples, cube) {
+  const count = TREND_TIMELINE.length;
   const groups = new Map();
   for (const s of samples) {
     const key = s.id == null ? `__point_${groups.size}` : String(s.id);
@@ -232,10 +284,10 @@ function pointCurves(samples, cube) {
   let index = 0;
   for (const group of groups.values()) {
     const rows = [];
-    TREND_WINDOWS.forEach((w, i) => {
-      const s = group.samples.find((sm) => isNum(sm[w.key]));
+    TREND_TIMELINE.forEach((step, i) => {
+      const s = group.samples.find((sm) => settlementOf(sm, step) != null);
       if (!s) return;
-      const z = s[w.key];
+      const z = settlementOf(s, step);
       rows.push({
         s,
         x: s.distance,
@@ -243,9 +295,10 @@ function pointCurves(samples, cube) {
         z,
         lo: z,
         hi: z,
+        std: null,
         banded: false,
-        windowKey: w.key,
-        windowLabel: trendWindowLabel(w.days),
+        stepKey: step.label,
+        stepLabel: step.label,
       });
     });
     if (rows.length >= 2) {
@@ -261,11 +314,11 @@ function pointCurves(samples, cube) {
  * Build the render-ready profile frame (one or more curves).
  *
  * @param {{view?:'attributes'|'trend', basis?:'along'|'plan', yKey?:string,
- *   zKey?:string, trendLines?:'windows'|'windows-plain'|'points',
+ *   zKey?:string, trendLines?:'windows'|'profiles'|'points',
  *   samples?:Array<any>}} profile
  * @param {number} [cube] half-extent of the normalised cube
  * @returns {{
- *   view:'attributes'|'trend', shape:'windows'|'windows-plain'|'points'|null,
+ *   view:'attributes'|'trend', shape:'windows'|'profiles'|'points'|null,
  *   basis:'along'|'plan', yKey:string|null, zKey:string|null,
  *   titles:{x:string,y:string,z:string},
  *   domains:{x:[number,number],y:[number,number],z:[number,number]},
@@ -277,9 +330,9 @@ function pointCurves(samples, cube) {
  *     samples:Array<{
  *       id:any, position:[number,number,number],
  *       ribbon:{lo:[number,number,number],hi:[number,number,number]}|null,
- *       raw:{x:number,y:number,z:number,lo:number,hi:number},
+ *       raw:{x:number,y:number,z:number,lo:number,hi:number,std:number|null},
  *       color:string|null,
- *       windowKey:string|null, windowLabel:string|null, sample:any }> }>,
+ *       stepKey:string|null, stepLabel:string|null, sample:any }> }>,
  * }}
  */
 export function buildProfileFrame(profile, cube = 1) {
@@ -287,15 +340,17 @@ export function buildProfileFrame(profile, cube = 1) {
   const samples = profile?.samples ?? [];
   const yKey = profile?.yKey ?? 'H';
   const zKey = profile?.zKey ?? 'VEL_REL';
-  const trendLines = profile?.trendLines;
   const basis = profile?.basis === 'plan' ? 'plan' : 'along';
   const isPlan = view === 'attributes' && basis === 'plan';
+  const shape = view === 'trend' ? (profile?.trendLines ?? 'profiles') : null;
 
   const rawCurves =
     view === 'trend'
-      ? trendLines === 'points'
-        ? pointCurves(samples, cube)
-        : windowCurves(samples, cube, trendLines === 'windows')
+      ? shape === 'windows'
+        ? windowCurves(samples, cube)
+        : shape === 'points'
+          ? settlementPoints(samples, cube)
+          : settlementProfiles(samples, cube)
       : attributeCurves(yKey, zKey, samples, basis);
 
   let xMin = Infinity;
@@ -338,7 +393,7 @@ export function buildProfileFrame(profile, cube = 1) {
   } else if (view === 'trend') {
     xd = resolveDomain(xMin, xMax);
     // Trend Y is an ordered categorical axis: pin the domain to the band range so
-    // the bands keep fixed, even spacing regardless of which windows are present.
+    // the bands keep fixed, even spacing regardless of which steps are present.
     yd = [-cube, cube];
   } else {
     xd = resolveDomain(xMin, xMax);
@@ -354,10 +409,10 @@ export function buildProfileFrame(profile, cube = 1) {
     z: zd,
   };
 
-  // The Trend ▸ points shape colours each point by its own displacement; every
-  // other curve keeps its fixed colour. The colour domain is pinned to the map's
-  // [-3, 3] (not the data range), so point colours stay comparable.
-  const colorByDisplacement = view === 'trend' && trendLines === 'points';
+  // The Trend ▸ points shape colours each point by its own cumulative settlement;
+  // every other curve keeps its fixed colour. The colour domain is pinned to the
+  // map's [-3, 3] (not the data range), so curve colours stay comparable.
+  const colorByDisplacement = view === 'trend' && shape === 'points';
   const [cLo, cHi] = DISPLACEMENT_DOMAIN;
 
   const curves = rawCurves.map((c) => ({
@@ -381,35 +436,44 @@ export function buildProfileFrame(profile, cube = 1) {
         id: r.s.id,
         position: [xn, yn, zn],
         ribbon,
-        raw: { x: r.xRaw ?? r.x, y: r.yRaw ?? r.y, z: r.z, lo: r.lo, hi: r.hi },
+        raw: { x: r.xRaw ?? r.x, y: r.yRaw ?? r.y, z: r.z, lo: r.lo, hi: r.hi, std: r.std ?? null },
         color: colorByDisplacement ? displacementColor(zt) : null,
-        windowKey: r.windowKey ?? null,
-        windowLabel: r.windowLabel ?? null,
+        stepKey: r.stepKey ?? null,
+        stepLabel: r.stepLabel ?? null,
         sample: r.s,
       };
     }),
   }));
 
+  // The `windows` shape reads the raw per-window displacement; the cumulative
+  // shapes read settlement from the initial state.
   const titles =
     view === 'trend'
-      ? { x: 'Distance along profile [m]', y: 'Trend window', z: 'Trend displacement [mm]' }
+      ? shape === 'windows'
+        ? { x: 'Distance along profile [m]', y: 'Trend window', z: 'Trend displacement [mm]' }
+        : { x: 'Distance along profile [m]', y: 'Time', z: 'Cumulative settlement [mm]' }
       : isPlan
         ? { x: 'Longitude [\u00b0]', y: 'Latitude [\u00b0]', z: axisTitle(zKey) }
         : { x: 'Distance along profile [m]', y: axisTitle(yKey), z: axisTitle(zKey) };
 
-  // Trend Y is categorical: label each band position with its window, else the
-  // numeric -1..1 band coordinate is meaningless.
+  // Trend Y is categorical: label each band position with its window/timeline
+  // step, else the numeric -1..1 band coordinate is meaningless.
   const yTicks =
     view === 'trend'
-      ? TREND_WINDOWS.map((w, i) => ({
-          value: bandY(i, TREND_WINDOWS.length, cube),
-          label: trendWindowLabel(w.days),
-        }))
+      ? shape === 'windows'
+        ? TREND_WINDOWS.map((w, i) => ({
+            value: bandY(i, TREND_WINDOWS.length, cube),
+            label: trendWindowLabel(w.days),
+          }))
+        : TREND_TIMELINE.map((step, i) => ({
+            value: bandY(i, TREND_TIMELINE.length, cube),
+            label: step.label,
+          }))
       : null;
 
   return {
     view,
-    shape: view === 'trend' ? (trendLines ?? 'windows') : null,
+    shape,
     basis,
     yKey: view === 'attributes' ? (isPlan ? 'lat' : yKey) : null,
     zKey: view === 'attributes' ? zKey : null,

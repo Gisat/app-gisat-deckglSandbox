@@ -6,7 +6,7 @@
  *  - scatter: points as a single InstancedMesh (per-instance colour and scale)
  *    with r3f raycast picking via `event.instanceId`.
  *  - profile: one line per `frame.curves` entry, a translucent `z ± std` ribbon
- *    per banded curve (attribute view and trend windows only) and per-sample
+ *    per banded curve (attribute view and the trend `windows` shape only) and per-sample
  *    points, all unlit/flat so the colour matches the map and deck.gl.
  *
  * KNOWN LIMITATION: there are no built-in labelled axes in three.js. Axis titles

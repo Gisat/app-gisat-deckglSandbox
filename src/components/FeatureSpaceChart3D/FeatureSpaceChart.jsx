@@ -40,7 +40,8 @@ const RENDERER_COMPONENTS = {
  *  - `scatter`: the feature-space point cloud (default).
  *  - `profile`: 3D line profile over the drawn line selection, in one of two
  *    views — `Attribute` (X = distance, selectable Y/Z, Z band) or `Trend`
- *    (X = distance, Y = trend window, Z = displacement; windows or points).
+ *    (X = distance; `windows` reads the raw per-window `TD ± STD`, while
+ *    `profiles`/`points` read cumulative settlement over time).
  *
  * Portable module: consumes a GeoJSON FeatureCollection, a precomputed profile
  * sample list and a hover callback only. It intentionally imports nothing from
@@ -52,7 +53,7 @@ const RENDERER_COMPONENTS = {
  * @param {boolean} [props.showProfile]  a line tool is active or a line has been drawn (auto-selects the profile mode)
  * @param {boolean} [props.profileDisabled]  disable the mode toggle (a polygon/circle selection is in use)
  * @param {(id: string|null) => void} [props.onPointHover]  map-link hover callback
- * @param {(state: {mode:'scatter'|'profile', view:'attributes'|'trend', zKey:string, basis:'along'|'plan', trendLines:'windows'|'windows-plain'|'points'}|null) => void} [props.onStateChange]  reports the effective mode/view/zKey/basis/trend shape (null on unmount)
+ * @param {(state: {mode:'scatter'|'profile', view:'attributes'|'trend', zKey:string, basis:'along'|'plan', trendLines:'windows'|'profiles'|'points'}|null) => void} [props.onStateChange]  reports the effective mode/view/zKey/basis/trend shape (null on unmount)
  * @param {'plotly'|'deckgl'|'three'} [props.defaultRenderer]
  * @param {string} [props.title]
  */
@@ -350,18 +351,22 @@ export function FeatureSpaceChart({
                 <button
                   onClick={() => setTrendLines('windows')}
                   style={buttonStyle(trendLines === 'windows')}
-                  title="One line per window, with its ±1σ band"
+                  title="One raw trend-window line per TD_* field, with its ±1σ STD_* band"
                 >
                   Windows ±σ
                 </button>
                 <button
-                  onClick={() => setTrendLines('windows-plain')}
-                  style={buttonStyle(trendLines === 'windows-plain')}
-                  title="One line per window, no band (same Z scale as points)"
+                  onClick={() => setTrendLines('profiles')}
+                  style={buttonStyle(trendLines === 'profiles')}
+                  title="One cumulative-settlement profile per time step (from the initial state)"
                 >
-                  Windows
+                  Profiles
                 </button>
-                <button onClick={() => setTrendLines('points')} style={buttonStyle(trendLines === 'points')}>
+                <button
+                  onClick={() => setTrendLines('points')}
+                  style={buttonStyle(trendLines === 'points')}
+                  title="One cumulative-settlement curve per selected point"
+                >
                   Points
                 </button>
               </>
@@ -410,7 +415,7 @@ export function FeatureSpaceChart({
 
           {profileView === 'trend' && trendLines === 'points' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '10px', color: '#666' }}>displacement</span>
+              <span style={{ fontSize: '10px', color: '#666' }}>settlement</span>
               <span
                 style={{
                   flex: 1,
@@ -421,14 +426,16 @@ export function FeatureSpaceChart({
                 }}
               />
               <span style={{ fontSize: '10px', color: '#666' }}>
-                {`${formatValue('TD_365', DISPLACEMENT_DOMAIN[0])} \u2013 ${formatValue('TD_365', DISPLACEMENT_DOMAIN[1])}`}
+                {`${formatValue('TD_730', DISPLACEMENT_DOMAIN[0])} \u2013 ${formatValue('TD_730', DISPLACEMENT_DOMAIN[1])}`}
               </span>
             </div>
           )}
 
           <span style={{ fontSize: '10px', color: '#999' }}>
             {profileView === 'trend'
-              ? 'Trend windows are overlapping cumulative windows; the axis is ordered, not linear time.'
+              ? trendLines === 'windows'
+                ? 'Each window is a cumulative displacement over the last N days, ending now; the axis is ordered, not linear time.'
+                : 'Cumulative settlement is measured from the initial state (T-730 = 0) to now (T0 = TD_730); the time axis is ordered, not linear.'
               : `${
                   basis === 'plan'
                     ? 'Lon/Lat view: X = longitude, Y = latitude on an equal ground scale. '
@@ -445,7 +452,7 @@ export function FeatureSpaceChart({
           </span>
           {profileView === 'trend' && trendLines === 'windows' && (
             <span style={{ fontSize: '10px', color: '#999' }}>
-              {'The shaded band is the \u00b11\u03c3 uncertainty of each window\u2019s trend displacement; it widens for longer windows because a longer accumulation carries more error.'}
+              {'The shaded band is the \u00b11\u03c3 uncertainty of each window\u2019s trend displacement (its paired STD_*); it widens for longer windows because a longer accumulation carries more error.'}
             </span>
           )}
         </div>

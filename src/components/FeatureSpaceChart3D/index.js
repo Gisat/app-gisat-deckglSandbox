@@ -10,6 +10,7 @@ export { PointTooltip } from './PointTooltip';
 export { ProfileTooltip } from './ProfileTooltip';
 export { buildCurtainGeometry, curtainZDomain, CURTAIN_MAX_HEIGHT } from './curtainGeometry';
 export { hexToRgba } from './profileGeometry';
+export { settlementOf, withSettlement, SETTLEMENT_KEYS } from './settlement';
 
 export {
   ATTRIBUTES,
@@ -22,6 +23,8 @@ export {
   PROFILE_VIEWS,
   PROFILE_VIEW_DEFAULT,
   TREND_WINDOWS,
+  TREND_TIMELINE,
+  SETTLEMENT_REF_KEY,
   TREND_SHAPES,
   TREND_LINES_DEFAULT,
   trendWindowLabel,

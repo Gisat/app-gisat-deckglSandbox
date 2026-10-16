@@ -10,8 +10,14 @@
 
 import chroma from 'chroma-js';
 
-/** Same stops/domain as SelectionDrawing3D's map colour scale. */
-export const MAP_VELOCITY_COLORS = [[65, 182, 196], [254, 254, 191], [215, 25, 28]];
+/**
+ * Map marker colour scale, oriented so low/negative values read red and
+ * high/positive read teal (red -> yellow -> teal). This is the reverse of the
+ * `SelectionDrawing3D` map scale; it is flipped to match the 3D chart's
+ * cumulative-settlement (Points) ramp, where negative / "downward" values are
+ * red. The domain matches (`[-3, 3]` for `VEL_REL`).
+ */
+export const MAP_VELOCITY_COLORS = [[215, 25, 28], [254, 254, 191], [65, 182, 196]];
 export const MAP_VELOCITY_DOMAIN = [-3, 3];
 
 /** Viridis, for non-velocity attributes. */

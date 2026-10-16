@@ -10,7 +10,7 @@
  *    array, so the size channel is honoured per point.
  *  - profile: one `scatter3d` line per `frame.curves` entry, plus a translucent
  *    `mesh3d` uncertainty ribbon on Z for each banded curve (attribute view and
- *    trend windows only). Plotly has real axes, so profile values are plotted in
+ *    the trend `windows` shape only). Plotly has real axes, so profile values are plotted in
  *    raw units.
  *
  * KNOWN LIMITATION:
@@ -279,12 +279,11 @@ function meanDisplacementT([cLo, cHi], samples) {
 /** Per-view `customdata` (id first, so `onHover` reads `customdata[0]`) + template. */
 function curveHover(frame, curve, samples) {
   if (frame.view === 'trend') {
-    const unit = getAttribute(samples[0].windowKey ?? curve.key)?.unit ?? '';
-    const u = unit ? ` ${unit}` : '';
-    if (curve.stdKey) {
+    const u = ' mm';
+    if (frame.shape === 'windows') {
       return {
         customdata: samples.map((p) => {
-          const std = p.sample?.[curve.stdKey];
+          const std = p.raw.std;
           return [
             p.id,
             formatTick(p.raw.z),
@@ -300,18 +299,28 @@ function curveHover(frame, curve, samples) {
           + '<extra></extra>',
       };
     }
+    if (frame.shape === 'points') {
+      return {
+        customdata: samples.map((p) => [
+          p.id,
+          p.stepLabel ?? '\u2014',
+          formatTick(p.raw.z),
+          formatTick(p.sample?.distance),
+        ]),
+        hovertemplate:
+          `<b>${curve.label}</b><br>`
+          + 'time step: %{customdata[1]}<br>'
+          + `settlement: %{customdata[2]}${u}<br>`
+          + 'distance: %{customdata[3]} m'
+          + '<extra></extra>',
+      };
+    }
     return {
-      customdata: samples.map((p) => [
-        p.id,
-        p.windowLabel ?? '\u2014',
-        formatTick(p.raw.z),
-        formatTick(p.sample?.distance),
-      ]),
+      customdata: samples.map((p) => [p.id, formatTick(p.raw.z), formatTick(p.sample?.distance)]),
       hovertemplate:
         `<b>${curve.label}</b><br>`
-        + 'window: %{customdata[1]}<br>'
-        + `displacement: %{customdata[2]}${u}<br>`
-        + 'distance: %{customdata[3]} m'
+        + `settlement: %{customdata[1]}${u}<br>`
+        + 'distance: %{customdata[2]} m'
         + '<extra></extra>',
     };
   }
@@ -322,7 +331,7 @@ function curveHover(frame, curve, samples) {
   const zUnit = zAttr.unit ? ` ${zAttr.unit}` : '';
   return {
     customdata: samples.map((p) => {
-      const std = curve.stdKey ? p.sample?.[curve.stdKey] : null;
+      const std = p.raw.std;
       return [
         p.id,
         formatTick(p.raw.y),

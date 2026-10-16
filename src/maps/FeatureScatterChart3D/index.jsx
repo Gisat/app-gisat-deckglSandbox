@@ -5,7 +5,7 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer, ScatterplotLayer, SolidPolygonLayer, PathLayer } from '@deck.gl/layers';
 import { CogBitmapLayer } from '@gisatcz/deckgl-geolib';
 import { SelectionControls, DrawingOverlay, pointInPolygon, normalizeGeometry } from '../../components/PointSelection';
-import { FeatureSpaceChart, buildCurtainGeometry, curtainZDomain, hexToRgba, TREND_WINDOWS, MAP_VELOCITY_COLORS, getColorDomain } from '../../components/FeatureSpaceChart3D';
+import { FeatureSpaceChart, buildCurtainGeometry, curtainZDomain, hexToRgba, TREND_WINDOWS, TREND_TIMELINE, SETTLEMENT_KEYS, withSettlement, MAP_VELOCITY_COLORS, getColorDomain } from '../../components/FeatureSpaceChart3D';
 import { buildProfileSamples, sampleLineSelection } from '../../components/2DLineProfile';
 import chroma from 'chroma-js';
 import { scaleLinear } from 'd3-scale';
@@ -22,8 +22,9 @@ const INITIAL_VIEW_STATE = {
 const PRECALCULATED_GLAZE_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/glo_30_geoid_Point_tabqa_kudairan_cropped_final_glaze_overlay_z4_bilinear_cog.tif';
 const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/Tabqua_LOS_selected.geojson';
 
+// Map marker colours share the (reversed) chart scale so red = negative.
 const colorScale = chroma
-  .scale([[65, 182, 196], [254, 254, 191], [215, 25, 28]])
+  .scale(MAP_VELOCITY_COLORS)
   .domain([-3, 3]);
 
 // Per-point scatter radius (pixels) from |VEL_REL|.
@@ -32,12 +33,26 @@ const sizeScale = scaleLinear([0, 5], [3, 8]).clamp(true);
 // Fill alpha for the trend-window curtains (transparent walls, one per window).
 const TREND_WALL_ALPHA = 55;
 
-/** One shared Z domain across all four windows so their heights are comparable. */
+/** One curtain per raw trend window, on a single shared Z domain. */
 function buildTrendCurtains(samples) {
   const domain = curtainZDomain(samples, TREND_WINDOWS.map((w) => w.key));
   if (!domain) return [];
   return TREND_WINDOWS
     .map((w) => ({ key: w.key, color: w.color, geometry: buildCurtainGeometry(samples, w.key, { domain }) }))
+    .filter((c) => c.geometry.quads.length > 0);
+}
+
+/**
+ * One curtain per settlement timeline step, all on a single shared Z domain so
+ * their heights are comparable. The per-step cumulative-settlement values are
+ * materialised on the samples via `withSettlement`.
+ */
+function buildSettlementCurtains(samples) {
+  const withValues = withSettlement(samples);
+  const domain = curtainZDomain(withValues, SETTLEMENT_KEYS);
+  if (!domain) return [];
+  return SETTLEMENT_KEYS
+    .map((key, i) => ({ key, color: TREND_TIMELINE[i].color, geometry: buildCurtainGeometry(withValues, key, { domain }) }))
     .filter((c) => c.geometry.quads.length > 0);
 }
 
@@ -341,15 +356,18 @@ export default function FeatureScatterChart3D() {
     [curtainZKey, profileSamples],
   );
 
-  // The Trend view instead stacks one curtain per trend window (both window
-  // shapes; the ±σ band is irrelevant here) on a single shared Z domain.
-  const trendMode = chartState?.mode === 'profile'
-    && chartState?.view === 'trend'
-    && (chartState?.trendLines === 'windows' || chartState?.trendLines === 'windows-plain');
-  const trendCurtains = useMemo(
-    () => (lineActive && trendMode ? buildTrendCurtains(profileSamples) : []),
-    [lineActive, trendMode, profileSamples],
-  );
+  // The Trend view stacks one curtain per series on a single shared Z domain:
+  // raw per-window displacement for `windows`, cumulative settlement per timeline
+  // step for `profiles`. `points` (one curve per location) has no curtain.
+  const trendShape = chartState?.mode === 'profile' && chartState?.view === 'trend'
+    ? chartState.trendLines
+    : null;
+  const trendCurtains = useMemo(() => {
+    if (!lineActive) return [];
+    if (trendShape === 'windows') return buildTrendCurtains(profileSamples);
+    if (trendShape === 'profiles') return buildSettlementCurtains(profileSamples);
+    return [];
+  }, [lineActive, trendShape, profileSamples]);
 
   // One curtain = walls + top/base edges + nodes; callers supply the colours (a
   // value-driven scale for the attribute curtain, a flat window colour for the

@@ -121,8 +121,9 @@ to a point. Viable as a hack, not as the primary approach.
 ## Cross-cutting findings
 
 - **Colour parity:** when the colour channel is `vel_rel`, all three reuse
-  `chroma.scale([[65,182,196],[254,254,191],[215,25,28]]).domain([-3,3])`; the
-  node smoke test confirms `(-3, 0, 3) → [65,182,196] / [254,254,191] / [215,25,28]` [M].
+  `chroma.scale([[215,25,28],[254,254,191],[65,182,196]]).domain([-3,3])` (red ->
+  yellow -> teal, so negative = red); the node smoke test confirms
+  `(-3, 0, 3) → [215,25,28] / [254,254,191] / [65,182,196]` [M].
 - **Null handling:** points missing a value for any **active** axis/color/size field
   are dropped and counted in the header badge (`N skipped`) — `vel_last` and
   `h_dtm` are the common offenders in the sample data [M].
@@ -205,19 +206,27 @@ The panel's `Scatter | 3D line profile` toggle swaps the point cloud for a 3D
 profile over the drawn line selection (all three renderers). The profile has two
 views, selected with an `Attribute | Trend` toggle:
 
-- **Trend** (default): X = distance (fixed); **Y = trend window** (an *ordered
-  categorical* axis, evenly spaced bands) and **Z (up) = trend displacement**
-  (`TD_*`, mm). Three shapes via a `windows ±σ | windows | points` toggle:
-  - **windows ±σ**: up to four lines, one per `TREND_WINDOWS` entry
-    (`90/180/365/730 d`), in a light→dark sequential ramp, each carrying its
-    paired `STD_*` band on Z (so the Z domain also spans `TD ± STD`).
-  - **windows**: same four lines with the band omitted; the Z domain is then just
-    the `TD_*` range, so the up-scale matches the points shape.
-  - **points**: one line per selected point, stepping across the window bands,
-    no bands. Each point is **coloured by its displacement** using the map's
-    default blue→yellow→red ramp over the fixed `[-3, 3]` domain (with a matching
-    legend in the panel; values outside are clamped). N points → dense fan;
-    thinning is out of scope.
+- **Trend** (default): X = distance (fixed). Three shapes via a
+  `windows ±σ | profiles | points` toggle:
+  - **windows ±σ**: the original reading — one line per raw `TREND_WINDOWS` entry
+    (`TD_90/180/365/730`), in a light→dark ramp. **Y = trend window** (ordered
+    categorical) and **Z (up) = trend displacement** (`TD_x`, mm), each carrying
+    its paired `STD_x` band on Z. This is the only shape whose uncertainty is
+    genuinely per-series, so it is where the ±σ reading lives.
+  - **profiles** (default): cumulative settlement from the initial state. The
+    source fields are cumulative displacements over overlapping windows all
+    ending "now"; the chart re-bases them on the initial state (730 d before now)
+    as `settlement(t) = TD_730 - TD_x` (with `TD_0 := 0`), giving the
+    `TREND_TIMELINE` steps `T-730 = 0, T-365, T-180, T-90, now = TD_730` (see
+    `settlement.js`). One settlement profile per time step, in a light→dark ramp.
+    **Y = time step** (ordered categorical) and **Z (up) = cumulative settlement**
+    (mm); no band (a propagated σ is dominated by the shared reference term and
+    barely varies between steps, so it carries no signal here).
+  - **points**: one settlement-vs-time curve per selected point, no bands. Each
+    point is **coloured by its cumulative settlement** using the map marker ramp
+    (red→yellow→teal, so negative / downward settlement is red and upward is
+    teal) over the fixed `[-3, 3]` domain, with a matching legend in the panel;
+    values outside are clamped. N points → dense fan; thinning is out of scope.
 - **Attribute**: has an `Attributes | Lon/Lat` basis switch.
   - **Lon/Lat** (default): X = **longitude**, Y = **latitude** on one equal ground
     scale (so the transect keeps its true shape), Z = the selected attribute (default
@@ -250,10 +259,11 @@ ranges).
   points on the drawn line. Samples also carry their perpendicular `offset` (m, shown
   in every tooltip) alongside `distance` (the X in the Attributes basis).
 - **Frame contract:** one curve for `attributes`; up to four for `trend/windows`
-  and `trend/windows-plain` (one per window; `stdKey` set only for `windows`);
-  one per point for `trend/points` (`stdKey: null`). Renderers iterate
-  `frame.curves`; ribbons are gated on `curve.stdKey`. Missing values drop per
-  line (a curve connects only its finite samples and needs ≥ 2 to render).
+  (one per window; `stdKey` = its `STD_*`) and up to five for `trend/profiles`
+  (one per timeline step; `stdKey: null`); one per point for `trend/points`
+  (`stdKey: null`). Renderers iterate `frame.curves`; ribbons are gated on
+  `curve.stdKey`. Missing values drop per line (a curve connects only its finite
+  samples and needs ≥ 2 to render).
 - **Caveat:** the dataset has no true vertical-rate field, so the Attribute Z
   default is the LOS/relative velocity proxy; its band is indicative until the
   `VEL_SD` pairing is confirmed.
