@@ -262,7 +262,7 @@ ranges).
   (one per window; `stdKey` = its `STD_*`) and up to five for `trend/profiles`
   (one per timeline step; `stdKey: null`); one per point for `trend/points`
   (`stdKey: null`). Renderers iterate `frame.curves`; ribbons are gated on
-  `curve.stdKey`. Missing values drop per line (a curve connects only its finite
+  `curve.banded`. Missing values drop per line (a curve connects only its finite
   samples and needs ≥ 2 to render).
 - **Caveat:** the dataset has no true vertical-rate field, so the Attribute Z
   default is the LOS/relative velocity proxy; its band is indicative until the

@@ -12,10 +12,8 @@
  *
  * - `attributes`: one curve. X = distance, Y = `yKey`, Z = `zKey`, with a
  *   translucent `z ± std` ribbon on Z when `zKey` declares a paired `stdKey`.
- *   When `profile.breakAtGaps` is set, a segment is dropped where the along-line
- *   spacing exceeds `GAP_FACTOR ×` the median spacing (so a straight line is not
- *   drawn across a sparse stretch), and each sample carries `offsetT` (its
- *   perpendicular offset normalised by `bufferDistance`) for size encoding.
+ *   Each sample carries `offsetT` (its perpendicular offset normalised by
+ *   `bufferDistance`) for size encoding.
  * - `aggregate`: one curve from `aggregateSamples`, binning `distance` into
  *   `profile.step`-metre bins and plotting the per-bin median with an IQR band.
  *   Empty bins are gaps; `profile.interpolate` bridges them (flagged).
@@ -40,18 +38,21 @@ export const PROFILE_COLOR = '#1f77b4';
 /**
  * Sequential ramp used to colour points by their cumulative settlement (the
  * Trend ▸ points shape). Ordered low -> high as red -> yellow -> teal, so that
- * negative / downward settlement reads red and upward reads teal. Matches the
- * map marker scale (`MAP_VELOCITY_COLORS`), which is flipped to the same
- * orientation.
+ * negative / downward settlement reads red and upward reads teal. It shares the
+ * orientation of the map marker scale (`MAP_VELOCITY_COLORS`, flipped to the
+ * same red -> teal order); only the orientation is shared, the domain is
+ * settlement-specific (see `DISPLACEMENT_DOMAIN`).
  */
 export const DISPLACEMENT_RAMP = ['#d7191c', '#fefebf', '#41b6c4'];
 
 /**
- * Fixed colour domain for the settlement ramp, matching the map's velocity
- * colour domain (`MAP_VELOCITY_DOMAIN`) so point colours are comparable across
- * selections. Values outside are clamped.
+ * Fixed colour domain for the settlement ramp (mm). The Trend ▸ points shape
+ * colours by cumulative settlement, not by velocity, so it spans a settlement
+ * range rather than the map's velocity domain (`MAP_VELOCITY_DOMAIN`, mm/yr).
+ * Pinned rather than data-driven so colours stay comparable across selections;
+ * `±8` covers ~95% of the sample data. Values outside are clamped.
  */
-export const DISPLACEMENT_DOMAIN = [-3, 3];
+export const DISPLACEMENT_DOMAIN = [-8, 8];
 
 /** `#rrggbb` -> [r, g, b] (0-255). */
 function hexToRgb(hex) {
@@ -118,13 +119,6 @@ function bandY(i, count, cube) {
   if (count <= 1) return 0;
   return (i / (count - 1) - 0.5) * 2 * cube;
 }
-
-/**
- * Multiplier on the median consecutive-distance spacing beyond which the drawn
- * Attribute polyline is broken instead of bridging a sparse stretch. A heuristic
- * (no break when fewer than 3 rows or the median spacing is 0).
- */
-export const GAP_FACTOR = 4;
 
 /**
  * Linear-interpolated quantile (R type 7) of an already-sorted numeric array.
@@ -259,67 +253,6 @@ export function aggregateSamples(samples, valueKey, stepMeters, interpolate) {
 }
 
 /**
- * Split a curve's frame samples into drawable runs, breaking at any row whose
- * `linkedToPrev` is false (a sparse gap in the Attribute view, or a skipped empty
- * bin in the Aggregate view). When `breakAtGaps` is false the whole list is a
- * single run, so the line is drawn continuously.
- *
- * @param {Array<any>} samples
- * @param {boolean} [breakAtGaps]
- * @returns {Array<Array<any>>}
- */
-export function splitRuns(samples, breakAtGaps = true) {
-  if (!Array.isArray(samples) || samples.length === 0) return [];
-  if (!breakAtGaps) return [samples];
-  const runs = [];
-  let run = [samples[0]];
-  for (let i = 1; i < samples.length; i += 1) {
-    if (samples[i].linkedToPrev) {
-      run.push(samples[i]);
-    } else {
-      runs.push(run);
-      run = [samples[i]];
-    }
-  }
-  runs.push(run);
-  return runs;
-}
-
-/**
- * Mark `linkedToPrev` on an Attribute curve's rows from the along-line spacing:
- * a row is linked only when the `distance` gap to the previous row does not
- * exceed `GAP_FACTOR ×` the median spacing. With fewer than 3 rows, or a
- * zero/undefined median spacing, every row is linked (no breaks).
- */
-function markAttributeLinks(rows) {
-  const d = rows.map((r) => (isNum(r.s?.distance) ? r.s.distance : NaN));
-  const gaps = [];
-  for (let i = 1; i < d.length; i += 1) {
-    if (isNum(d[i]) && isNum(d[i - 1])) gaps.push(d[i] - d[i - 1]);
-  }
-  let threshold = Infinity;
-  if (rows.length >= 3 && gaps.length >= 2) {
-    const med = quantile([...gaps].sort((a, b) => a - b), 0.5);
-    if (isNum(med) && med > 0) threshold = GAP_FACTOR * med;
-  }
-  rows.forEach((r, i) => {
-    if (i === 0) {
-      r.linkedToPrev = false;
-      return;
-    }
-    const diff = isNum(d[i]) && isNum(d[i - 1]) ? d[i] - d[i - 1] : Infinity;
-    r.linkedToPrev = diff <= threshold;
-  });
-}
-
-/** Mark `linkedToPrev` on an Aggregate curve's rows from bin adjacency. */
-function markBinLinks(rows) {
-  rows.forEach((r, i) => {
-    r.linkedToPrev = i > 0 && r.bin.binIndex === rows[i - 1].bin.binIndex + 1;
-  });
-}
-
-/**
  * Attribute view: one curve. `along` basis: X = distance along the line,
  * Y = `yKey`, Z = `zKey`. `plan` basis: X = longitude, Y = latitude on an equal
  * ground scale, Z = `zKey`. A `z ± std` band is added when `zKey` declares a
@@ -381,7 +314,6 @@ function attributeCurves(yKey, zKey, samples, basis) {
     const db = isNum(b.s.distance) ? b.s.distance : b.x;
     return da - db;
   });
-  markAttributeLinks(rows);
   return [{ key: 'profile', label: 'Profile', color: PROFILE_COLOR, stdKey, banded: !!stdKey, rows }];
 }
 
@@ -395,7 +327,6 @@ function aggregateCurve(samples, valueKey, stepMeters, interpolate) {
   const entries = aggregateSamples(samples, valueKey, stepMeters, interpolate);
   const rows = entries.map((e) => ({
     s: e,
-    bin: e,
     x: e.distance,
     y: 0,
     z: e.value,
@@ -406,8 +337,10 @@ function aggregateCurve(samples, valueKey, stepMeters, interpolate) {
     interpolated: e.interpolated,
   }));
   if (rows.length === 0) return [];
-  markBinLinks(rows);
-  return [{ key: 'aggregate', label: 'Median', color: PROFILE_COLOR, stdKey: null, banded: true, rows }];
+  // Only flag the curve banded when a bin actually has a positive-width IQR, so
+  // single-sample bins (median === quartiles) do not emit a degenerate ribbon.
+  const banded = rows.some((r) => r.banded && r.hi > r.lo);
+  return [{ key: 'aggregate', label: 'Median', color: PROFILE_COLOR, stdKey: null, banded, rows }];
 }
 
 /**
@@ -551,14 +484,13 @@ function settlementPoints(samples, cube) {
  * @param {{view?:'attributes'|'trend'|'aggregate', basis?:'along'|'plan',
  *   yKey?:string, zKey?:string, trendLines?:'windows'|'profiles'|'points',
  *   valueKey?:string, step?:number, interpolate?:boolean,
- *   bufferDistance?:number, breakAtGaps?:boolean, sizeByOffset?:boolean,
+ *   bufferDistance?:number, sizeByOffset?:boolean,
  *   samples?:Array<any>}} profile
  * @param {number} [cube] half-extent of the normalised cube
  * @returns {{
  *   view:'attributes'|'trend'|'aggregate', shape:'windows'|'profiles'|'points'|null,
  *   basis:'along'|'plan', yKey:string|null, zKey:string|null,
- *   valueKey:string|null, binCount:number|null,
- *   breakAtGaps:boolean, sizeByOffset:boolean,
+ *   valueKey:string|null, sizeByOffset:boolean,
  *   titles:{x:string,y:string,z:string},
  *   domains:{x:[number,number],y:[number,number],z:[number,number]},
  *   axisDomains:{x:[number,number],y:[number,number],z:[number,number]},
@@ -570,8 +502,7 @@ function settlementPoints(samples, cube) {
  *       id:any, position:[number,number,number],
  *       ribbon:{lo:[number,number,number],hi:[number,number,number]}|null,
  *       raw:{x:number,y:number,z:number,lo:number,hi:number,std:number|null},
- *       color:string|null, linkedToPrev:boolean, interpolated:boolean,
- *       offsetT:number|null,
+ *       color:string|null, interpolated:boolean, offsetT:number|null,
  *       stepKey:string|null, stepLabel:string|null, sample:any }> }>,
  * }}
  */
@@ -585,15 +516,11 @@ export function buildProfileFrame(profile, cube = 1) {
   const isPlan = view === 'attributes' && basis === 'plan';
   const shape = view === 'trend' ? (profile?.trendLines ?? 'profiles') : null;
 
-  // Aggregate reads one attribute on Z; the Attribute view breaks the polyline
-  // at sparse gaps unless disabled, and always carries a normalised offset.
+  // Aggregate reads one attribute on Z; the Attribute view always carries a
+  // normalised perpendicular offset for size encoding.
   const aggValueKey = profile?.valueKey ?? zKey;
   const aggStep = profile?.step;
   const aggInterpolate = profile?.interpolate === true;
-  // Polyline stays connected by default (opt in to gap breaks with
-  // `profile.breakAtGaps === true`). The Aggregate view is always a single
-  // connected line through its bins, so it never breaks.
-  const breakAtGaps = profile?.breakAtGaps === true;
   const sizeByOffset = profile?.sizeByOffset !== false;
 
   // Offset normaliser (Attribute/Trend views): the corridor half-width when
@@ -678,8 +605,8 @@ export function buildProfileFrame(profile, cube = 1) {
   };
 
   // The Trend ▸ points shape colours each point by its own cumulative settlement;
-  // every other curve keeps its fixed colour. The colour domain is pinned to the
-  // map's [-3, 3] (not the data range), so curve colours stay comparable.
+  // every other curve keeps its fixed colour. The colour domain is pinned to a
+  // fixed settlement range (not the data range) so curve colours stay comparable.
   const colorByDisplacement = view === 'trend' && shape === 'points';
   const [cLo, cHi] = DISPLACEMENT_DOMAIN;
 
@@ -690,11 +617,14 @@ export function buildProfileFrame(profile, cube = 1) {
     stdKey: c.stdKey ?? null,
     banded: c.banded ?? !!c.stdKey,
     colored: colorByDisplacement,
-    samples: c.rows.map((r, i) => {
+    samples: c.rows.map((r) => {
       const xn = normalize(r.x, xd, cube);
       const yn = normalize(r.y, yd, cube);
       const zn = normalize(r.z, zd, cube);
-      const ribbon = r.banded
+      // Only emit a ribbon when the band has positive width, so zero-σ samples
+      // and single-sample aggregate bins do not draw degenerate (zero-height)
+      // geometry.
+      const ribbon = r.banded && r.hi > r.lo
         ? {
             lo: [xn, yn, normalize(r.lo, zd, cube)],
             hi: [xn, yn, normalize(r.hi, zd, cube)],
@@ -713,11 +643,8 @@ export function buildProfileFrame(profile, cube = 1) {
         color: colorByDisplacement ? displacementColor(zt) : null,
         stepKey: r.stepKey ?? null,
         stepLabel: r.stepLabel ?? null,
-        // Whether the segment from the previous emitted row may be drawn, and
-        // whether this row is inferred rather than measured.
-        linkedToPrev: r.linkedToPrev ?? i > 0,
         interpolated: r.interpolated === true || r.s?.interpolated === true,
-        // Perpendicular offset normalised to [0,1] (Attribute view only); the
+        // Perpendicular offset normalised to [0,1] (Attribute/Trend views); the
         // renderers map it to marker/sphere size. `null` when not applicable.
         offsetT,
         sample: r.s,
@@ -760,8 +687,6 @@ export function buildProfileFrame(profile, cube = 1) {
     yKey: view === 'attributes' ? (isPlan ? 'lat' : yKey) : null,
     zKey: view === 'attributes' ? zKey : null,
     valueKey: view === 'aggregate' ? aggValueKey : null,
-    binCount: view === 'aggregate' ? (curves[0]?.samples.length ?? 0) : null,
-    breakAtGaps,
     sizeByOffset,
     titles,
     domains: { x: xd, y: yd, z: zd },

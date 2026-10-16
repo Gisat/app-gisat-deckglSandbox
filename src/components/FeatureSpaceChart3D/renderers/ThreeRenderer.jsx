@@ -23,7 +23,7 @@ import * as THREE from 'three';
 import { axisTitle, formatValue } from '../attributes';
 import { colorToHex, sizeForValue } from '../colorScale';
 import { computeAxisDomains, projectToCube } from '../transformPoints';
-import { buildProfileFrame, formatTick, splitRuns } from '../profileGeometry';
+import { buildProfileFrame, formatTick } from '../profileGeometry';
 import { PointTooltip } from '../PointTooltip';
 import { ProfileTooltip } from '../ProfileTooltip';
 
@@ -76,7 +76,7 @@ function buildAxisGeometry() {
 }
 
 /** Ribbon triangle strip between the lo/hi edges of an ordered sample list. */
-function buildRibbonGeometry(samples, breakAtGaps = true) {
+function buildRibbonGeometry(samples) {
   // Keep each sample's source index so a missing σ breaks the strip instead of
   // bridging an interval whose uncertainty is unknown (matches deck.gl).
   const banded = samples
@@ -91,9 +91,8 @@ function buildRibbonGeometry(samples, breakAtGaps = true) {
   });
   const indices = [];
   for (let a = 0; a < n - 1; a++) {
-    // Only join source-adjacent samples, and never across a broken gap.
+    // Only join source-adjacent samples.
     if (banded[a + 1].index !== banded[a].index + 1) continue;
-    if (breakAtGaps && !banded[a + 1].sample.linkedToPrev) continue;
     const b0 = 2 * a;
     const t0 = 2 * a + 1;
     const b1 = 2 * a + 2;
@@ -159,8 +158,8 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
           point: { id: p.id },
           position: toThree(p.position),
           hex: p.color ?? curve.color,
-          radius: off == null ? baseRadius : 2 + off * 4,
-          worldRadius: off == null ? baseWorld : 0.02 + off * 0.04,
+          radius: off == null ? baseRadius : baseRadius + off * 4,
+          worldRadius: off == null ? baseWorld : baseWorld + off * 0.04,
           frameSample: p,
           curve,
         });
@@ -198,14 +197,8 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
         <ambientLight intensity={1.1} />
         <directionalLight position={[5, 8, 6]} intensity={1.9} />
         {frame ? <ProfileAxes frame={frame} /> : <Axes domains={domains} axes={axes} />}
-        {frame && (
-          <ProfileLines
-            curves={frame.curves}
-            breakAtGaps={frame.breakAtGaps}
-            flagInterpolated={frame.view !== 'aggregate'}
-          />
-        )}
-        {frame && <ProfileRibbons curves={frame.curves} breakAtGaps={frame.breakAtGaps} />}
+        {frame && <ProfileLines curves={frame.curves} flagInterpolated={frame.view !== 'aggregate'} />}
+        {frame && <ProfileRibbons curves={frame.curves} />}
         {markerStyle === 'billboard' ? (
           <BillboardPoints data={data} hovered={hovered} onPick={handlePick} />
         ) : (
@@ -230,35 +223,19 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
 
 /**
  * One profile polyline per curve (chart-space positions already normalised).
- * Each curve is split into runs at broken gaps; runs containing interpolated
- * bins are drawn thinner + translucent (three.js lines have no native dashes).
+ * A curve containing interpolated bins is drawn thinner + translucent (three.js
+ * lines have no native dashes).
  */
-function ProfileLines({ curves, breakAtGaps, flagInterpolated }) {
+function ProfileLines({ curves, flagInterpolated }) {
   return (
     <group>
       {curves.map((curve) => (
-        <ProfileLineGroup
-          key={curve.key}
-          curve={curve}
-          breakAtGaps={breakAtGaps}
-          flagInterpolated={flagInterpolated}
-        />
-      ))}
-    </group>
-  );
-}
-
-function ProfileLineGroup({ curve, breakAtGaps, flagInterpolated }) {
-  const runs = useMemo(() => splitRuns(curve.samples, breakAtGaps), [curve, breakAtGaps]);
-  return (
-    <group>
-      {runs.map((run, i) => (
         <ProfileLine
-          key={i}
-          samples={run}
+          key={curve.key}
+          samples={curve.samples}
           color={curve.color}
           colored={curve.colored}
-          interpolated={flagInterpolated && run.some((p) => p.interpolated)}
+          interpolated={flagInterpolated && curve.samples.some((p) => p.interpolated)}
         />
       ))}
     </group>
@@ -301,19 +278,19 @@ function ProfileLine({ samples, color, colored, interpolated }) {
 }
 
 /** Translucent uncertainty ribbon per banded curve, unlit to match the map. */
-function ProfileRibbons({ curves, breakAtGaps }) {
+function ProfileRibbons({ curves }) {
   const banded = useMemo(() => curves.filter((c) => c.banded), [curves]);
   return (
     <group>
       {banded.map((curve) => (
-        <ProfileRibbon key={curve.key} curve={curve} breakAtGaps={breakAtGaps} />
+        <ProfileRibbon key={curve.key} curve={curve} />
       ))}
     </group>
   );
 }
 
-function ProfileRibbon({ curve, breakAtGaps }) {
-  const geometry = useMemo(() => buildRibbonGeometry(curve.samples, breakAtGaps), [curve, breakAtGaps]);
+function ProfileRibbon({ curve }) {
+  const geometry = useMemo(() => buildRibbonGeometry(curve.samples), [curve]);
 
   useEffect(() => () => {
     if (geometry) geometry.dispose();

@@ -24,7 +24,7 @@ import Plotly from 'plotly.js-dist-min';
 import createPlotlyComponent from 'react-plotly.js/factory';
 import { axisTitle, getAttribute } from '../attributes';
 import { buildPlotlyColorscale, sizeForValue } from '../colorScale';
-import { buildProfileFrame, DISPLACEMENT_COLORSCALE, displacementColor, formatTick, splitRuns } from '../profileGeometry';
+import { buildProfileFrame, DISPLACEMENT_COLORSCALE, displacementColor, formatTick } from '../profileGeometry';
 
 const Plot = createPlotlyComponent(Plotly);
 
@@ -165,7 +165,6 @@ function buildProfileTraces(frame) {
   const plan = frame.basis === 'plan' && frame.view === 'attributes';
   const coordsOf = (p) => (plan ? p.position : [p.raw.x, p.raw.y, p.raw.z]);
   const aggregate = frame.view === 'aggregate';
-  const breakAtGaps = frame.breakAtGaps;
   const traces = [];
 
   for (const curve of frame.curves) {
@@ -202,9 +201,8 @@ function buildProfileTraces(frame) {
           }
         });
         for (let a = 0; a < banded.length - 1; a++) {
-          // Only join source-adjacent samples, and never across a broken gap.
+          // Only join source-adjacent samples.
           if (banded[a + 1].index !== banded[a].index + 1) continue;
-          if (breakAtGaps && !banded[a + 1].smp.linkedToPrev) continue;
           const b0 = 2 * a;
           const t0 = 2 * a + 1;
           const b1 = 2 * a + 2;
@@ -234,12 +232,11 @@ function buildProfileTraces(frame) {
     }
 
     const hover = curveHover(frame, curve);
-    const runs = splitRuns(samples, breakAtGaps);
 
     if (aggregate) {
-      // One line connecting all bins (no gaps), with markers on measured bins
-      // only (interpolated bins stay line-only and are flagged in the tooltip).
-      const line = runsToArrays([samples], coordsOf, hover.row);
+      // One line connecting all bins, with markers on measured bins only
+      // (interpolated bins stay line-only and are flagged in the tooltip).
+      const line = toArrays(samples, coordsOf, hover.row);
       traces.push({
         type: 'scatter3d',
         mode: 'lines',
@@ -253,7 +250,7 @@ function buildProfileTraces(frame) {
       });
       const measured = samples.filter((p) => !p.interpolated);
       if (measured.length > 0) {
-        const m = runsToArrays([measured], coordsOf, hover.row);
+        const m = toArrays(measured, coordsOf, hover.row);
         traces.push({
           type: 'scatter3d',
           mode: 'markers',
@@ -273,7 +270,7 @@ function buildProfileTraces(frame) {
     // cannot gradient a line, so the line takes the station's mean displacement
     // colour (thin) and the markers carry the full ramp. Marker size encodes the
     // perpendicular offset in both the Attribute and Trend views.
-    const sizes = frame.sizeByOffset && frame.view !== 'aggregate'
+    const sizes = frame.sizeByOffset
       ? samples.map((p) => 3 + (p.offsetT ?? 0) * 4)
       : 3;
     const marker = curve.colored
@@ -290,9 +287,7 @@ function buildProfileTraces(frame) {
     const lineColor = curve.colored
       ? displacementColor(meanDisplacementT(frame.colorDomain, samples))
       : curve.color;
-    // Broken segments are expressed as `null` gaps in the coordinate arrays; the
-    // markers at the real rows are untouched.
-    const a = runsToArrays(runs, coordsOf, hover.row);
+    const a = toArrays(samples, coordsOf, hover.row);
     traces.push({
       type: 'scatter3d',
       mode: 'lines+markers',
@@ -311,30 +306,21 @@ function buildProfileTraces(frame) {
 }
 
 /**
- * Flatten a list of runs into Plotly coordinate arrays, inserting a `null`
- * separator between runs (a `null` in x/y/z breaks the line; markers skip it).
- * `row` builds the per-sample customdata (or a `null` placeholder for the gap).
+ * Map a sample list to Plotly coordinate arrays. `row` builds the per-sample
+ * customdata (id first, so `onHover` reads `customdata[0]`).
  */
-function runsToArrays(runs, coordsOf, row) {
+function toArrays(samples, coordsOf, row) {
   const x = [];
   const y = [];
   const z = [];
   const cd = [];
-  runs.forEach((run, ri) => {
-    if (ri > 0) {
-      x.push(null);
-      y.push(null);
-      z.push(null);
-      cd.push(null);
-    }
-    for (const s of run) {
-      const c = coordsOf(s);
-      x.push(c[0]);
-      y.push(c[1]);
-      z.push(c[2]);
-      cd.push(row ? row(s) : [s.id]);
-    }
-  });
+  for (const s of samples) {
+    const c = coordsOf(s);
+    x.push(c[0]);
+    y.push(c[1]);
+    z.push(c[2]);
+    cd.push(row ? row(s) : [s.id]);
+  }
   return { x, y, z, cd };
 }
 
@@ -350,7 +336,7 @@ function meanDisplacementT([cLo, cHi], samples) {
 
 /**
  * Per-view hovertemplate + a `row(sample)` builder (id first, so `onHover` reads
- * `customdata[0]`). The builder is applied over any run list by `runsToArrays`.
+ * `customdata[0]`). The builder is applied over a sample list by `toArrays`.
  */
 function curveHover(frame, curve) {
   if (frame.view === 'aggregate') {

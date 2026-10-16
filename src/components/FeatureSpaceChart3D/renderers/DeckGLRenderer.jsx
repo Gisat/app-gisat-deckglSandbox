@@ -23,7 +23,7 @@ import { SphereGeometry } from '@luma.gl/engine';
 import { axisTitle, formatValue } from '../attributes';
 import { colorToRgba, sizeForValue } from '../colorScale';
 import { computeAxisDomains, projectToCube } from '../transformPoints';
-import { buildProfileFrame, formatTick, hexToRgba, splitRuns } from '../profileGeometry';
+import { buildProfileFrame, formatTick, hexToRgba } from '../profileGeometry';
 import { PointTooltip } from '../PointTooltip';
 import { ProfileTooltip } from '../ProfileTooltip';
 
@@ -184,38 +184,34 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     // views keep their current weight.
     const pointsMode = frame.shape === 'points';
     const aggregateView = frame.view === 'aggregate';
-    const breakAtGaps = frame.breakAtGaps;
     const sizeByOffset = frame.sizeByOffset;
     const baseBillboard = pointsMode ? 3 : 4;
     const baseScale = pointsMode ? 0.02 : 0.03;
 
     // Uniform-coloured curves use a PathLayer; settlement-coloured points are
-    // split into per-segment lines so each segment shows its colour. Each curve
-    // is split into runs at broken gaps; runs containing interpolated bins get a
-    // distinct (thinner, translucent) layer.
+    // split into per-segment lines so each segment shows its colour. Curves
+    // containing interpolated bins are drawn as a distinct (thinner, translucent)
+    // path so the inferred stretches read differently from measured ones.
     const linePaths = [];
     const interpPaths = [];
     const lineSegments = [];
     for (const c of frame.curves) {
-      const runs = splitRuns(c.samples, breakAtGaps);
       if (c.colored) {
-        for (const run of runs) {
-          for (let i = 0; i < run.length - 1; i++) {
-            lineSegments.push({
-              source: run[i].position,
-              target: run[i + 1].position,
-              color: hexToRgba(run[i].color ?? c.color, 255),
-            });
-          }
+        for (let i = 0; i < c.samples.length - 1; i++) {
+          const a = c.samples[i];
+          const b = c.samples[i + 1];
+          lineSegments.push({
+            source: a.position,
+            target: b.position,
+            color: hexToRgba(a.color ?? c.color, 255),
+          });
         }
       } else {
-        for (const run of runs) {
-          const entry = { path: run.map((p) => p.position), color: hexToRgba(c.color, 255) };
-          // The Aggregate line is a single connected polyline (no gaps), so it
-          // is never split off as an "interpolated" path.
-          if (!aggregateView && run.some((p) => p.interpolated)) interpPaths.push(entry);
-          else linePaths.push(entry);
-        }
+        const entry = { path: c.samples.map((p) => p.position), color: hexToRgba(c.color, 255) };
+        // The Aggregate line is a single connected polyline, so interpolated
+        // bins stay on the same line (flagged in the tooltip instead).
+        if (!aggregateView && c.samples.some((p) => p.interpolated)) interpPaths.push(entry);
+        else linePaths.push(entry);
       }
     }
 
@@ -224,8 +220,6 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
       return c.samples.slice(0, -1).flatMap((a, i) => {
         const b = c.samples[i + 1];
         if (!a.ribbon || !b.ribbon) return [];
-        // Never bridge a broken gap.
-        if (breakAtGaps && !b.linkedToPrev) return [];
         return [{
           key: `${c.key}-ribbon-${i}`,
           polygon: [a.ribbon.lo, b.ribbon.lo, b.ribbon.hi, a.ribbon.hi],
@@ -244,10 +238,11 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
             id: p.id,
             position: p.position,
             fillColor: hexToRgba(p.color ?? c.color, 255),
-            // Billboard circle radius (px) and sphere world radius; offset scales
-            // the Attribute-view mark (bigger offset = bigger mark).
-            radius: off == null ? baseBillboard : 2 + off * 4,
-            scale: off == null ? baseScale : 0.02 + off * 0.04,
+            // Billboard circle radius (px) and sphere world radius; the
+            // perpendicular offset grows the mark from the base size (bigger
+            // offset = bigger mark), never below it.
+            radius: off == null ? baseBillboard : baseBillboard + off * 4,
+            scale: off == null ? baseScale : baseScale + off * 0.04,
             frameSample: p,
             curve: c,
           };
