@@ -57,4 +57,5 @@ tmp/
 # that has GDAL; these are ~219 MB of vendored .so/.db files that age badly.
 deploy/tileserver/tileserver-runtime/runtime-libs/
 deploy/tileserver/tileserver-runtime/gdal-data/
+deploy/tileserver/tileserver-runtime/ca-certs/
 deploy/tileserver/tileserver-runtime/tileserver-rs

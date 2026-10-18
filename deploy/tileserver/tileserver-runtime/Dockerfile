@@ -51,6 +51,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 # runtime-libs/, and the remote COG is fetched over HTTPS from inside the
 # process, so no curl BINARY is required for tile serving.
 COPY runtime-libs/ /usr/lib/x86_64-linux-gnu/
+# CA trust store for libcurl-gnutls (TLS verification of remote /vsicurl/
+# COGs). The offline build installs nothing, so without this the handshake
+# aborts -> "HTTP response code: 0" -> GDALOpenEx NULL -> source never loads.
+# See collect-runtime-libs.sh section 3b.
+COPY ca-certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 RUN ldconfig
 # ---------------------------------------------------------------------------
 
@@ -73,7 +78,9 @@ COPY gdal-data/proj/ /usr/share/proj/
 # (which match here, but explicit is robust across GDAL rebuilds).
 ENV GDAL_DATA=/usr/share/gdal \
     PROJ_DATA=/usr/share/proj \
-    PROJ_LIB=/usr/share/proj
+    PROJ_LIB=/usr/share/proj \
+    CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
 
@@ -107,6 +114,17 @@ ENV GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR \
 
 EXPOSE 8080
 VOLUME ["/data"]
+
+# --- glibc NSS resolver config (REQUIRED for HTTPS /vsicurl/) ----------------
+# debian:12-slim ships NO /etc/nsswitch.conf. Without it, getaddrinfo() inside
+# libcurl has no `hosts:` source and returns "Could not resolve host" even
+# though `getent hosts` still works (glibc uses its own fallbacks there).
+# That surfaces as "HTTP response code: 0" from GDAL, a NULL GDALOpenEx, the
+# remote COG failing to register ("Loaded 0 tile source(s)") and every
+# /data/{source}/... request 404ing. Paired with libnss_dns.so.2, which
+# runtime-libs/ now ships (collect-runtime-libs.sh collects it explicitly,
+# since glibc dlopen()s it and `ldd` never lists it).
+COPY nsswitch.conf /etc/nsswitch.conf
 
 # Healthcheck: debian:12-slim ships NO curl/wget (only bash + coreutils), and
 # the binary has no self-check flag. bash's /dev/tcp needs no extra package, so
