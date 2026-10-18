@@ -25,9 +25,16 @@ const INITIAL_VIEW_STATE = {
     bearing: 0
 };
 
-// In-bounds probe tile (lon 120.94, lat 13.86 at z6 -> 53/29) for the
-// systemic-error gate.
-const PROBE_TILE = '6/53/29.png';
+// In-bounds probe tile for the systemic-error gate. MUST be fully inside the
+// COG footprint (lon 118.13-123.75, lat 11.13-16.58) or the gate misfires:
+// a genuinely out-of-bounds tile 500s/404s, the probe then fails too, and the
+// app cannot tell "server is down" from "you panned off the edge" -> it shows
+// the tile-error modal on every off-edge zoom.
+// z8/214/118 -> tile bbox lon 120.94..122.34, lat 12.55..13.92 — fully inside,
+// and it is the app's initial view centre, so it is always rendered anyway.
+// (The previous probe, z6 53/29, sat at lat 16.64 — just OUTSIDE the 16.58
+// northern edge, which is exactly how the misfire happened.)
+const PROBE_TILE = '8/214/118.png';
 
 const ManilaRGB = () => (
     <TileserverTileMap
