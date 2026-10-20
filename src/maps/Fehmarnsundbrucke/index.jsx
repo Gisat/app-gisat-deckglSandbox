@@ -10,6 +10,17 @@ const ANCHOR = [11.1125624, 54.4018203];
 const BRIDGE_MIDPOINT = [11.1117306, 54.4005333];
 const BRIDGE_OBJ_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/fehmarnsund_bridge.obj';
 
+const MODEL_URL = 'https://www.thingiverse.com/thing:3982427';
+const MODEL_LICENSE_URL = 'https://creativecommons.org/licenses/by/';
+const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright';
+const ODBL_URL = 'https://opendatacommons.org/licenses/odbl/1-0/';
+const CARTO_ATTRIBUTION_URL = 'https://carto.com/attributions';
+
+const ATTRIBUTION_LINK_STYLE = {
+    color: '#1a4f8a',
+    pointerEvents: 'auto',
+};
+
 const INITIAL_VIEW_STATE = {
     longitude: BRIDGE_MIDPOINT[0],
     latitude: BRIDGE_MIDPOINT[1],
@@ -68,16 +79,52 @@ function Fehmarnsundbrucke() {
                     position: 'absolute',
                     bottom: 6,
                     left: 8,
-                    padding: '2px 6px',
+                    maxWidth: 520,
+                    padding: '4px 7px',
                     borderRadius: 3,
-                    background: 'rgba(255, 255, 255, 0.75)',
+                    background: 'rgba(255, 255, 255, 0.85)',
                     fontFamily: 'system-ui, sans-serif',
                     fontSize: 10,
+                    lineHeight: 1.45,
                     color: '#333',
                     pointerEvents: 'none',
                 }}
             >
-                MiLi1954 / Thingiverse thing:3982427, CC BY · © OpenStreetMap contributors
+                <div>
+                    Bridge model:{' '}
+                    <a href={MODEL_URL} target="_blank" rel="noreferrer" style={ATTRIBUTION_LINK_STYLE}>
+                        “Fehmarn Sundbrücke” by MiLi1954, Thingiverse thing 3982427
+                    </a>
+                    ,{' '}
+                    <a href={MODEL_LICENSE_URL} target="_blank" rel="noreferrer" style={ATTRIBUTION_LINK_STYLE}>
+                        CC BY
+                    </a>
+                    . Modified: rescaled to real-world dimensions (arch span 248.5 m, width 21 m, deck 22 m,
+                    crown 67 m); deck overhang clipped at the arch ends; approach spans, approach piers and
+                    abutments added; below-water parts of the main piers clamped to the Z=0 waterline.
+                </div>
+                <div>
+                    Alignment/anchor data:{' '}
+                    <a href={OSM_COPYRIGHT_URL} target="_blank" rel="noreferrer" style={ATTRIBUTION_LINK_STYLE}>
+                        © OpenStreetMap contributors
+                    </a>
+                    ,{' '}
+                    <a href={ODBL_URL} target="_blank" rel="noreferrer" style={ATTRIBUTION_LINK_STYLE}>
+                        ODbL
+                    </a>
+                    .
+                </div>
+                <div>
+                    Basemap:{' '}
+                    <a href={CARTO_ATTRIBUTION_URL} target="_blank" rel="noreferrer" style={ATTRIBUTION_LINK_STYLE}>
+                        © CARTO
+                    </a>
+                    ,{' '}
+                    <a href={OSM_COPYRIGHT_URL} target="_blank" rel="noreferrer" style={ATTRIBUTION_LINK_STYLE}>
+                        © OpenStreetMap contributors
+                    </a>
+                    .
+                </div>
             </div>
         </div>
     );
