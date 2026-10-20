@@ -12,7 +12,7 @@ function AppContent() {
         'GeoParquet': false,
         'Other': false,
         'GDA Water': false,
-        'TiTiler DEMO': true,
+        'TiTiler DEMO': false,
     });
 
     const toggleGroup = (category) => {
