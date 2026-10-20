@@ -7,14 +7,15 @@ import { OBJLoader } from '@loaders.gl/obj';
 import { cartoLightBasemapUrl } from '../basemaps';
 
 const ANCHOR = [11.1125624, 54.4018203];
+const BRIDGE_MIDPOINT = [11.1117306, 54.4005333];
 const BRIDGE_OBJ_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets/fehmarnsund_bridge.obj';
 
 const INITIAL_VIEW_STATE = {
-    longitude: ANCHOR[0],
-    latitude: ANCHOR[1],
-    zoom: 15.5,
-    pitch: 50,
-    bearing: 20.66,
+    longitude: BRIDGE_MIDPOINT[0],
+    latitude: BRIDGE_MIDPOINT[1],
+    zoom: 14.75,
+    pitch: 60,
+    bearing: -47,
     minZoom: 12,
     maxZoom: 18,
 };
