@@ -7,12 +7,12 @@ import './App.css'; // Import the CSS file for styling
 function AppContent() {
     const location = useLocation();
     const [expandedGroups, setExpandedGroups] = useState({
-        '3DFLUS CCN': true,
+        '3DFLUS CCN': false,
         '3DFLUS': false,
         'GeoParquet': false,
         'Other': false,
         'GDA Water': false,
-        'TiTiler DEMO': true,
+        'TiTiler DEMO': false,
     });
 
     const toggleGroup = (category) => {
