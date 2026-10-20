@@ -1,3 +1,11 @@
+## [1.15.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.14.0...v1.15.0) (2026-10-20)
+
+### Features
+
+* **fehmarnsundbrucke:** add Fehmarnsund bridge OBJ map ([1da0db2](https://github.com/Gisat/app-gisat-deckglSandbox/commit/1da0db2f6f7186ee81e80c9f3659cbf0e3264900))
+* **fehmarnsundbrucke:** complete model attribution and collapse categories by default ([cb0f282](https://github.com/Gisat/app-gisat-deckglSandbox/commit/cb0f28290590fcb60239e075379b18b741bc0689))
+* **fehmarnsundbrucke:** set oblique bridge camera ([59c7657](https://github.com/Gisat/app-gisat-deckglSandbox/commit/59c765734072e4c6d5bb952c69dd0647d7347916))
+
 ## [1.14.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.13.0...v1.14.0) (2026-10-16)
 
 ### Features
