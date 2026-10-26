@@ -76,7 +76,7 @@ binary / quantized-mesh tiles) is the fix — changing the encoder format is not
 | | `/titiler-demo-misicuni-terrain` | `/titiler-demo-terrarium-terrain` | `/titiler-demo-float32-terrain` |
 | --- | --- | --- | --- |
 | Tile producer | TiTiler PNG render | `terrarium-encoder` (sibling, direct rasterio COG reads) | `float32-encoder` (sibling, direct rasterio COG reads) |
-| Wire format | grayscale PNG (R=G=B) | Terrarium RGB PNG | headerless little-endian float32 (`'<f4'`, 262,144 B/tile) |
+| Wire format | grayscale PNG (R=G=B) | Terrarium RGB PNG | headerless little-endian float32 (`'<f4'`, 1,048,576 B/tile) |
 | Loader | default TerrainWorkerLoader | custom `TerrariumLoader` (UPNG, `worker:false`) | custom `Float32Loader` (`new Float32Array(buffer)`) |
 | Precision | ~8-bit (≈256 levels, coarse steps) | 24-bit, sub-metre | full float32 (source precision) |
 | Needles (#10400) | hidden (±1 shift ≈ ±2 m, below visibility) | fixed by pure-JS decode | immune by construction |

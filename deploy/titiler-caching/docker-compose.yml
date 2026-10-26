@@ -10,10 +10,11 @@ services:
       # local COGs (remote https:// / s3:// URLs work without any mount)
       - ./data:/data:ro
       # Server-side registered colormaps (COLORMAP_DIRECTORY, scanned at startup).
-      # Lives with the plain stack (../titiler/colormaps) so both instances register
-      # the same colormap_name. The GHS transparent-low ramp keeps the tile query
-      # short -> nginx tile cache (proxy_cache_key = full $args) engages.
-      - ../titiler/colormaps:/colormaps:ro
+      # Lives with this stack (./colormaps) so the registered colormap_name is
+      # self-contained after deploy/titiler (plain stack) was retired. The GHS
+      # transparent-low ramp keeps the tile query short -> nginx tile cache
+      # (proxy_cache_key = full $args) engages.
+      - ./colormaps:/colormaps:ro
     environment:
       - COLORMAP_DIRECTORY=/colormaps
       # GDAL/VSI: fast COG reads
@@ -71,7 +72,7 @@ services:
   # Raw float32 elevation-tile encoder: a SIBLING tile producer to TiTiler and
   # the terrarium encoder that reads the same public float32 COG directly via
   # rasterio /vsicurl/ and serves {z}/{x}/{y}.f32 as a HEADERLESS little-endian
-  # float32 stream (256*256*4 = 262,144 bytes, row-major north-up, heights in
+  # float32 stream (512*512*4 = 1,048,576 bytes, row-major north-up, heights in
   # metres, NaN/masked filled with 0.0). No host port — reached only through
   # nginx at /api/v1/float32/. No PIL: there is no image pipeline; this is
   # what lets the client bypass the color-managed PNG path entirely.

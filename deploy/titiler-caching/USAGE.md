@@ -1,9 +1,10 @@
 # TiTiler caching stack — usage
 
 Local-development stack: **nginx disk tile-cache in front of three tile
-producers** — TiTiler plus two sibling elevation-tile encoders. Counterpart of
-the plain instance in [`deploy/titiler/`](../titiler/USAGE.md); both stacks run
-side by side without conflict (host ports `8000` plain, `8001` caching nginx).
+producers** — TiTiler plus two sibling elevation-tile encoders. The only TiTiler
+stack since the plain instance (`deploy/titiler/`, host port `8000`) was retired
+(2026-10-05); the colormaps it used to host now live in
+[`./colormaps/`](colormaps/README.md).
 
 ## Services (one compose file)
 
@@ -102,7 +103,7 @@ Consumed by the deck.gl demos in `src/maps/TiTilerDemo/` through the vite
 ### Raw float32 (`/api/v1/float32/{z}/{x}/{y}.f32`)
 
 - Wire contract: **headerless little-endian IEEE-754 float32 (`'<f4'`),
-  row-major north-up, 256×256 → exactly 262,144 bytes**, heights in metres.
+  row-major north-up, 512×512 → exactly 1,048,576 bytes**, heights in metres.
   No packing, no CLAMP, nothing the browser image pipeline can corrupt.
 - NaN/masked/out-of-footprint pixels are filled with `0.0` server-side;
   fully-outside tiles return a flat all-zero tile (200) so the terrain mesh
@@ -114,7 +115,7 @@ Consumed by the deck.gl demos in `src/maps/TiTilerDemo/` through the vite
   needles by construction.
 
 ```sh
-curl -s http://localhost:8001/api/v1/float32/8/80/140.f32 | wc -c   # 262144
+curl -s http://localhost:8001/api/v1/float32/8/80/140.f32 | wc -c   # 1048576
 curl -s --compressed -D - -o /dev/null \
   http://localhost:8001/api/v1/float32/8/80/140.f32 | grep -i content-encoding
 # content-encoding: gzip

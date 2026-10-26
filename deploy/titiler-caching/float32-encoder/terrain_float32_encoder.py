@@ -19,10 +19,10 @@ It is mounted behind the same nginx as TiTiler in this stack, at
 
 - HTTP 200 body is a headerless, raw stream of IEEE-754 **little-endian**
   float32 values (`'<f4'`), row-major, north-up.
-- Tile edge is 256 px, so the body is exactly 256*256*4 = 262,144 bytes.
+- Tile edge is 512 px, so the body is exactly 512*512*4 = 1,048,576 bytes.
 - The first value (index 0) is the **north-west** corner; the last (index
-  65535) is the **south-east** corner. Row `r` spans indices `r*256 ..
-  r*256+255`, south each row.
+  262143) is the **south-east** corner. Row `r` spans indices `r*512 ..
+  r*512+511`, south each row.
 - Height units are **metres** (the COG is a GLO-30 + geoid DEM) — the client
   uses an identity decode, no elevationDecoder math needed.
 - Masked / nodata / out-of-COG pixels are filled **server-side with 0.0**.
@@ -61,7 +61,7 @@ COG_URL = os.environ.get(
 HALF = 20037508.342789244
 WORLD = 2.0 * HALF
 
-TILE_SIZE = 256                     # pixels per tile edge
+TILE_SIZE = 512                     # pixels per tile edge
 Z_MIN = int(os.environ.get("ENCODER_Z_MIN", "1"))
 # Cap at the COG's native detail (~30 m GLO-30). Beyond it is upsampling with
 # no added precision. Matches the cap used by MisicuniTerrain.jsx.

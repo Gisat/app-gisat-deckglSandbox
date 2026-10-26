@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { TerrainLayer } from '@deck.gl/geo-layers';
-import Float32Loader from '../shared/Float32Loader';
-import TiTilerErrorModal from '../shared/TiTilerErrorModal';
-import { useTileTiming } from '../shared/useTileTiming';
-import { useTileHealth } from '../shared/useTileHealth';
-import '../shared/TiTilerEndpointSwitch.css';
+import Float32Loader from '../../TiTilerDemo/shared/Float32Loader';
+import TiTilerErrorModal from '../../TiTilerDemo/shared/TiTilerErrorModal';
+import { useTileTiming } from '../../TiTilerDemo/shared/useTileTiming';
+import { useTileHealth } from '../../TiTilerDemo/shared/useTileHealth';
+import { getTiTilerApiBase } from '../../TiTilerDemo/shared/endpoints';
+import '../../TiTilerDemo/shared/TiTilerEndpointSwitch.css';
 
 // Raw float32 terrain demo (bypasses the browser image pipeline).
 //
@@ -42,11 +43,13 @@ const COG_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22
 const ELEVATION_LOADERS = [Float32Loader];
 
 // The encoder is mounted inside the caching stack (same nginx), so there is a
-// single source here: the caching stack's public URL. Tiles are served from
-// /api/v1/float32/{z}/{x}/{y}.f32; health is /api/v1/float32/healthz.
+// single source here: the caching stack's public URL, whose base prefix is
+// runtime-configurable (getTiTilerApiBase: window.TITILER_API_BASE ->
+// VITE_TITILER_API_BASE -> '/titiler/api/v1'). Tiles are served from
+// {base}/float32/{z}/{x}/{y}.f32; health is {base}/float32/healthz.
 const SOURCE = {
     label: 'Raw float32 encoder',
-    baseUrl: '/titiler/api/v1/float32',
+    baseUrl: `${getTiTilerApiBase()}/float32`,
     startCommand: 'docker compose -f deploy/titiler-caching/docker-compose.yml up -d',
 };
 
@@ -122,7 +125,7 @@ function Float32Terrain() {
             loaders: ELEVATION_LOADERS,
             minZoom: 0,
             maxZoom: 14,
-            tileSize: 256,
+            tileSize: 512,  // matches the float32 encoder's TILE_SIZE (server + loader)
             color: [255, 255, 255],
             onTileLoad: handleTileLoad,
             onTileError: handleTileError,
