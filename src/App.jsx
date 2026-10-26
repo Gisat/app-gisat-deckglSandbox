@@ -12,8 +12,8 @@ function AppContent() {
         'GeoParquet': false,
         'Other': false,
         'GDA Water': false,
-        'TiTiler DEMO': true,
-        '3d Terrain': true,
+        'TiTiler DEMO': false,
+        '3d Terrain': false,
     });
 
     const toggleGroup = (category) => {
