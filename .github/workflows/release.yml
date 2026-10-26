@@ -17,8 +17,10 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
-      packages: write
       actions: write
+    outputs:
+      new_release_published: ${{ steps.release.outputs.new_release_published }}
+      new_release_version: ${{ steps.release.outputs.new_release_version }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -79,8 +81,38 @@ jobs:
             fi
           fi
 
+  # Publish one image per entry: the app itself plus the two sibling tile
+  # encoders of the titiler-caching stack (terrarium + float32). Each image is
+  # tagged with the release semver (X.Y.Z, X.Y, X) and `latest`.
+  docker:
+    needs: release
+    if: needs.release.outputs.new_release_published == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: app
+            context: .
+            image_suffix: ""
+            cache_scope: base
+          - name: terrarium-encoder
+            context: deploy/titiler-caching/terrarium-encoder
+            image_suffix: "-terrarium-encoder"
+            cache_scope: terrarium-encoder
+          - name: float32-encoder
+            context: deploy/titiler-caching/float32-encoder
+            image_suffix: "-float32-encoder"
+            cache_scope: float32-encoder
+    name: docker / ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v6
+
       - name: Login to Container Registry
-        if: steps.release.outputs.new_release_published == 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -89,10 +121,9 @@ jobs:
 
       - name: Check if Docker image already exists
         id: check
-        if: steps.release.outputs.new_release_published == 'true'
         env:
-          IMAGE: ghcr.io/${{ github.repository }}
-          VERSION: v${{ steps.release.outputs.new_release_version }}
+          IMAGE: ghcr.io/${{ github.repository }}${{ matrix.image_suffix }}
+          VERSION: v${{ needs.release.outputs.new_release_version }}
         run: |
           if docker manifest inspect "$IMAGE:$VERSION" > /dev/null 2>&1; then
             echo "Image $IMAGE:$VERSION already exists, skipping docker build"
@@ -111,20 +142,20 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ github.repository }}${{ matrix.image_suffix }}
           tags: |
-            type=semver,pattern={{version}},value=v${{ steps.release.outputs.new_release_version }},enable=${{ steps.release.outputs.new_release_version != '' }}
-            type=semver,pattern={{major}}.{{minor}},value=v${{ steps.release.outputs.new_release_version }},enable=${{ steps.release.outputs.new_release_version != '' }}
-            type=semver,pattern={{major}},value=v${{ steps.release.outputs.new_release_version }},enable=${{ steps.release.outputs.new_release_version != '' }}
+            type=semver,pattern={{version}},value=v${{ needs.release.outputs.new_release_version }},enable=${{ needs.release.outputs.new_release_version != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.release.outputs.new_release_version }},enable=${{ needs.release.outputs.new_release_version != '' }}
+            type=semver,pattern={{major}},value=v${{ needs.release.outputs.new_release_version }},enable=${{ needs.release.outputs.new_release_version != '' }}
             type=raw,value=latest
 
       - name: Build and push
         if: steps.check.outputs.docker_image_exists == 'false'
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ matrix.context }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=base
-          cache-to: type=gha,scope=base,mode=max
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}
+          cache-to: type=gha,scope=${{ matrix.cache_scope }},mode=max

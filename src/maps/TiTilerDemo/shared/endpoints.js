@@ -1,62 +1,69 @@
 // TiTiler endpoint definitions + shared constants/helpers for the TiTiler DEMO
-// category. One source of truth for the two local stacks and the custom
-// override (VITE_TITILER_URL), so the endpoint switcher and the error modal
-// always agree on which stack to start.
+// category. One source of truth for the caching stack's API base, so the
+// endpoint switcher and the error modal always agree on the resolved URL.
 
-// Selectable TiTiler endpoints. 'plain' mirrors deploy/titiler/docker-compose.yml
-// (uvicorn directly on :8000); 'caching' mirrors deploy/titiler-caching/docker-compose.yml
-// (nginx :8001 -> TiTiler :8081, URL prefix /api/v1/titiler stripped by nginx).
-// The startCommand is shown by the error modal so it always tells you which
-// stack to start for the currently selected endpoint.
-const DEFAULT_TITILER_ENDPOINTS = {
-    plain: {
-        label: 'TiTiler (plain)',
-        // Same-origin Vite proxy path (vite.config.js server.proxy): the page is
-        // served under COEP require-corp, which blocks direct cross-origin fetches
-        // to localhost:8000. '/titiler-plain/...' -> http://localhost:8000/...
-        baseUrl: '/titiler-plain',
-        startCommand: 'docker compose -f deploy/titiler/docker-compose.yml up -d',
-    },
-    caching: {
-        label: 'TiTiler + cache',
-        // '/titiler/api/v1/titiler/...' -> http://localhost:8001/api/v1/titiler/...
-        baseUrl: '/titiler/api/v1/titiler',
-        startCommand: 'docker compose -f deploy/titiler-caching/docker-compose.yml up -d',
-    },
+// Base prefix under which the TiTiler caching stack's nginx serves ALL three
+// services (deploy/titiler-caching/docker-compose.yml): /titiler, /float32,
+// /terrarium. Local default is the COEP-safe Vite proxy path (same-origin).
+const DEFAULT_TITILER_API_BASE = '/titiler/api/v1';
+
+// Resolve the effective TiTiler stack base. ONE source of truth, in order:
+//   1. window.TITILER_API_BASE        — runtime, injected by serve_web.py from
+//                                      the TITILER_API_BASE env var (deployment
+//                                      path: no rebuild, wins).
+//   2. import.meta.env.VITE_TITILER_API_BASE — build-time override.
+//   3. import.meta.env.VITE_TITILER_URL      — legacy build-time override; a
+//                                      full URL is normalized to the stack base
+//                                      by stripping a trailing "/titiler" seg.
+//   4. DEFAULT_TITILER_API_BASE       — local dev default.
+// Every branch is normalized to a base WITHOUT a trailing slash: the caller
+// appends '/titiler', and a trailing slash here would yield '//titiler', which
+// nginx's `location /api/v1/titiler/` does not match (falls through to 404).
+// COG URLs are NOT affected: they stay demo-specific and unchanged.
+function stripTrailingSlashes(value) {
+    return value.replace(/\/+$/, '');
+}
+
+function getTiTilerApiBase() {
+    const runtime = typeof window !== 'undefined' && window.TITILER_API_BASE;
+    if (runtime) return stripTrailingSlashes(runtime);
+    const built = import.meta.env.VITE_TITILER_API_BASE;
+    if (built) return stripTrailingSlashes(built);
+    const legacy = import.meta.env.VITE_TITILER_URL;
+    // Legacy values were used VERBATIM as the TiTiler root (${base}/cog/tiles),
+    // so a value ending in '/titiler' is already a stack base — strip that seg
+    // and any trailing slash. A value that does NOT end in '/titiler' is a bare
+    // TiTiler root (e.g. https://host/api/v1), which is exactly what the caller
+    // expects to append '/titiler' to, so pass it through unchanged.
+    if (legacy) return stripTrailingSlashes(legacy.replace(/\/titiler\/?$/, ''));
+    return DEFAULT_TITILER_API_BASE;
+}
+
+const CACHING_ENDPOINT = {
+    label: 'TiTiler + cache',
+    // '{base}/titiler/...' -> nginx :8001/api/v1/titiler/... in local dev.
+    startCommand: 'docker compose -f deploy/titiler-caching/docker-compose.yml up -d',
 };
+// Resolved once at module init so every consumer sees the same base (runtime
+// global, build-time override, or bundled default).
+CACHING_ENDPOINT.baseUrl = `${getTiTilerApiBase()}/titiler`;
 
-// Optional override for a deployed/custom instance (see .env.example):
-// VITE_TITILER_URL=https://your-deployed-titiler.example
-const CUSTOM_TITILER_URL = import.meta.env.VITE_TITILER_URL;
-
-// Presets plus the env override when it points somewhere else.
-const TITILER_ENDPOINTS = (() => {
-    const endpoints = { ...DEFAULT_TITILER_ENDPOINTS };
-    if (CUSTOM_TITILER_URL && !Object.values(DEFAULT_TITILER_ENDPOINTS).some(ep => ep.baseUrl === CUSTOM_TITILER_URL)) {
-        endpoints.custom = {
-            label: 'Custom (env)',
-            baseUrl: CUSTOM_TITILER_URL,
-            startCommand: null, // deployment-specific, not a local compose stack
-        };
-    }
-    return endpoints;
-})();
+const DEFAULT_TITILER_ENDPOINTS = { caching: CACHING_ENDPOINT };
+const TITILER_ENDPOINTS = DEFAULT_TITILER_ENDPOINTS;
 
 const ENDPOINT_STORAGE_KEY = 'titiler-demo-endpoint';
 
 function getInitialEndpointId() {
-    // Remember the last choice across demos/reloads (comparison workflow);
-    // fall back to the VITE_TITILER_URL override when configured, else plain.
+    // Remember the last choice across demos/reloads; stale ids (e.g. the
+    // retired 'plain') and storage-absence all settle on the single 'caching'
+    // endpoint, whose base is resolved by getTiTilerApiBase().
     try {
         const stored = window.localStorage.getItem(ENDPOINT_STORAGE_KEY);
         if (stored && TITILER_ENDPOINTS[stored]) return stored;
     } catch {
-        /* storage unavailable (e.g. private mode) — use defaults */
+        /* storage unavailable (e.g. private mode) — use default */
     }
-    if (!CUSTOM_TITILER_URL) return 'plain';
-    const match = Object.keys(DEFAULT_TITILER_ENDPOINTS)
-        .find(id => DEFAULT_TITILER_ENDPOINTS[id].baseUrl === CUSTOM_TITILER_URL);
-    return match || 'custom';
+    return 'caching';
 }
 
 // Shared measurement/health constants (a single copy instead of per-file).
@@ -103,6 +110,7 @@ export {
     TITILER_ENDPOINTS,
     ENDPOINT_STORAGE_KEY,
     getInitialEndpointId,
+    getTiTilerApiBase,
     HEALTH_TIMEOUT_MS,
     PROBE_TIMEOUT_MS,
     TILE_ERROR_GRACE_MS,

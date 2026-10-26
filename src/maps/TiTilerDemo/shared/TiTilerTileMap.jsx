@@ -14,9 +14,11 @@ import './TiTilerEndpointSwitch.css';
  * light base map. Tiles are generated on the fly by TiTiler
  * (/cog/tiles/{z}/{x}/{y}.png?url=...&...).
  *
- * The endpoint switcher (top right) toggles between the plain TiTiler instance
- * (:8000) and the nginx-cached one (:8001/api/v1/titiler) so both can be
- * compared side by side; VITE_TITILER_URL adds a custom entry when set.
+ * The endpoint switcher (top right) shows the nginx-cached TiTiler
+ * (:8001/api/v1/titiler; the only local stack since deploy/titiler was retired).
+ * Its base prefix resolves once at runtime (window.TITILER_API_BASE from
+ * serve_web.py -> VITE_TITILER_API_BASE -> VITE_TITILER_URL legacy -> local
+ * default) — see getTiTilerApiBase() in ./endpoints.
  *
  * If TiTiler is unreachable (health probe) or fails systemically (tile errors
  * confirmed by a z0 probe), a modal reports which endpoint is expected to run
@@ -34,7 +36,7 @@ import './TiTilerEndpointSwitch.css';
 function TiTilerTileMap({ cogUrl, queryParams, initialViewState, maxZoom = 16 }) {
     const [viewState, setViewState] = useState(initialViewState);
     const [endpointId, setEndpointId] = useState(getInitialEndpointId);
-    const endpoint = TITILER_ENDPOINTS[endpointId] || TITILER_ENDPOINTS.plain;
+    const endpoint = TITILER_ENDPOINTS[endpointId] || TITILER_ENDPOINTS.caching;
     const { baseUrl, startCommand } = endpoint;
     // Bumped on retry/endpoint switch/timing toggle to recreate the TileLayer and force a full tile reload.
     const [titilerLayerKey, setTitilerLayerKey] = useState(0);

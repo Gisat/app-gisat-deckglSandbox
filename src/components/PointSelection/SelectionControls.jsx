@@ -13,8 +13,12 @@
  * @param {boolean} props.isLoadingBackend - Whether backend query is in progress
  * @param {number} props.bufferDistance - Current buffer distance (for line mode)
  * @param {Function} props.onBufferChange - Called with new buffer distance
+ * @param {number} [props.bufferMin] - Minimum buffer distance in meters (default: 10)
+ * @param {number} [props.bufferMax] - Maximum buffer distance in meters (default: 500)
+ * @param {number} [props.bufferStep] - Buffer slider step in meters (default: 10)
  * @param {boolean} props.showLineProfileChart - Whether the 2D line profile chart is shown
  * @param {Function} props.onShowLineProfileChartChange - Called with new checkbox value
+ * @param {boolean} props.showLineProfileToggle - Whether to render the "2D Profile" checkbox (default: true)
  * @param {string} props.top - Top position (default: '130px')
  * @param {string} props.left - Left position (default: '10px')
  */
@@ -27,8 +31,12 @@ export function SelectionControls({
     isLoadingBackend = false,
     bufferDistance = 100,
     onBufferChange,
+    bufferMin = 10,
+    bufferMax = 500,
+    bufferStep = 10,
     showLineProfileChart,
     onShowLineProfileChartChange,
+    showLineProfileToggle = true,
     top = '130px',
     left = '10px'
 }) {
@@ -88,25 +96,27 @@ export function SelectionControls({
                         <label style={{ fontSize: '11px', fontWeight: '500' }}>
                             Buffer: {bufferDistance}m
                         </label>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <input
-                                type="checkbox"
-                                id="showLineProfileCheckbox"
-                                checked={showLineProfileChart}
-                                onChange={(e) => onShowLineProfileChartChange(e.target.checked)}
-                                style={{ cursor: 'pointer', width: '14px', height: '14px' }}
-                            />
-                            <label htmlFor="showLineProfileCheckbox" style={{ cursor: 'pointer', fontSize: '11px', userSelect: 'none', whiteSpace: 'nowrap' }}>
-                                2D Profile
-                            </label>
-                        </div>
+                        {showLineProfileToggle && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <input
+                                    type="checkbox"
+                                    id="showLineProfileCheckbox"
+                                    checked={showLineProfileChart}
+                                    onChange={(e) => onShowLineProfileChartChange(e.target.checked)}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px' }}
+                                />
+                                <label htmlFor="showLineProfileCheckbox" style={{ cursor: 'pointer', fontSize: '11px', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                                    2D Profile
+                                </label>
+                            </div>
+                        )}
                     </div>
                     {/* Buffer Distance Slider */}
                     <input
                         type="range"
-                        min="10"
-                        max="500"
-                        step="10"
+                        min={bufferMin}
+                        max={bufferMax}
+                        step={bufferStep}
                         value={bufferDistance}
                         onChange={e => onBufferChange(Number(e.target.value))}
                         style={{ width: '100%', fontSize: '11px' }}

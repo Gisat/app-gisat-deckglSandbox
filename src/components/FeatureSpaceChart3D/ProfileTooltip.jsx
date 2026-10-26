@@ -1,0 +1,94 @@
+import { formatValue, getAttribute } from './attributes';
+import { formatTick } from './profileGeometry';
+
+/**
+ * Presentational hover tooltip for the 3D line-profile mode, shared by the
+ * deck.gl and three.js renderers. Plotly uses its own hovertemplate.
+ *
+ * @param {{ sample: any, curve: any, frame: any }} props
+ */
+export function ProfileTooltip({ sample, curve, frame }) {
+  if (!sample || !frame || !curve) return null;
+
+  const rows = [];
+  let header;
+
+  if (frame.view === 'aggregate') {
+    const attr = getAttribute(frame.valueKey);
+    const unit = attr.unit ? ` ${attr.unit}` : '';
+    const bin = sample.sample ?? {};
+    header = `${attr.label} \u2014 bin ${formatTick(bin.distance)} m`;
+    rows.push(['median', `${formatTick(sample.raw.z)}${unit}`]);
+    rows.push([
+      'IQR (25\u201375 pct)',
+      bin.iqrLo == null || bin.iqrHi == null
+        ? '\u2014'
+        : `${formatTick(bin.iqrLo)} \u2013 ${formatTick(bin.iqrHi)}${unit}`,
+    ]);
+    rows.push(['n', String(bin.n ?? 0)]);
+    rows.push(['bin', `${formatTick(bin.binStart)} \u2013 ${formatTick(bin.binEnd)} m`]);
+    if (sample.interpolated) rows.push(['note', 'interpolated']);
+  } else if (frame.view === 'trend') {
+    header = curve.label;
+    const unitText = ' mm';
+    const std = sample.raw.std;
+    const windows = frame.shape === 'windows';
+
+    if (frame.shape === 'points') {
+      // Points: each vertex belongs to a different timeline step.
+      rows.push(['time step', sample.stepLabel ?? '\u2014']);
+    }
+    rows.push([
+      windows ? 'displacement' : 'settlement',
+      `${formatTick(sample.raw.z)}${unitText}${std != null ? ` \u00b1 ${formatTick(std)}${unitText}` : ''}`,
+    ]);
+    rows.push(['distance', `${formatTick(sample.sample?.distance)} m`]);
+    if (windows) rows.push(['id', sample.id ?? '\u2014']);
+  } else {
+    header = sample.id ?? '\u2014';
+    const zKey = frame.zKey;
+    const zUnit = getAttribute(zKey).unit ? ` ${getAttribute(zKey).unit}` : '';
+    const std = sample.raw.std;
+
+    rows.push([getAttribute(frame.yKey).label, formatValue(frame.yKey, sample.raw.y)]);
+    rows.push([
+      getAttribute(zKey).label,
+      `${formatTick(sample.raw.z)}${zUnit}${std != null ? ` \u00b1 ${formatTick(std)}${zUnit}` : ''}`,
+    ]);
+    rows.push(['distance', `${formatTick(sample.sample?.distance)} m`]);
+    rows.push(['offset', `${formatTick(sample.sample?.offset)} m`]);
+  }
+
+  return (
+    <div
+      style={{
+        pointerEvents: 'none',
+        background: 'rgba(255, 255, 255, 0.97)',
+        border: '1px solid #ddd',
+        borderRadius: '6px',
+        padding: '8px 10px',
+        boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '11px',
+        color: '#333',
+        lineHeight: 1.5,
+        minWidth: '150px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, marginBottom: '4px' }}>
+        {sample.color && (
+          <span style={{ width: '9px', height: '9px', borderRadius: '2px', background: sample.color, flex: 'none' }} />
+        )}
+        <span>{header}</span>
+      </div>
+      {rows.map(([label, value]) => (
+        <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+          <span style={{ color: '#666' }}>{label}</span>
+          <span>{value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default ProfileTooltip;

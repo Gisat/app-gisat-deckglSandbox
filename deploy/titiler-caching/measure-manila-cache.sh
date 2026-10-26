@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # measure-manila-cache.sh — steady-state repeated-HIT latency comparison for
-# the Manila RGB demo (/titiler-demo-manila): plain TiTiler (:8000) vs
+# the Manila RGB demo (/titiler-demo-manila): an uncached TiTiler baseline
+# (PLAIN_BASE, optional since the bundled plain stack was retired) vs
 # nginx-cached TiTiler (:8001).
 #
 # Same methodology as measure-ghs-cache.sh:
 #   For each tile z/x/y:
-#     - PLAIN  baseline:  N_PLAIN repeat requests to :8000 (live TiTiler render)
+#     - PLAIN  baseline:  N_PLAIN repeat requests to $PLAIN_BASE (live render;
+#                          skipped when unreachable — the bundled plain stack
+#                          deploy/titiler was retired 2026-10-05)
 #     - CACHED warm-up:   1 request to :8001 -> assert X-Cache-Status=MISS
 #     - CACHED repeated-HIT: HITS repeat requests to :8001 -> assert HIT each time
 #   Aggregates median & p95 of PLAIN vs CACHED-HIT per-tile latency
@@ -15,9 +18,10 @@
 # uint8 3-band RGB, TiTiler serves the bands straight to PNG. So the only query
 # param is `url=<COG>`; short query -> nginx caching engages.
 #
-# Prereqs (same as GHS): plain + caching stacks up; clean cache for clean MISS->HIT:
+# Prereqs (same as GHS): caching stack up; clean cache for clean MISS->HIT:
 #   docker compose -f deploy/titiler-caching/docker-compose.yml down -v
 #   docker compose -f deploy/titiler-caching/docker-compose.yml up -d
+#   (optional uncached baseline: point PLAIN_BASE at any live TiTiler)
 #
 # Usage:
 #   bash measure-manila-cache.sh
@@ -41,6 +45,10 @@ checkup() {
   local code
   code=$("$CURL" -sS --max-time 5 -o /dev/null -w '%{http_code}' "$2" 2>/dev/null)
   if [ -z "$code" ] || [ "$code" = "000" ]; then
+    if [ "${3:-fatal}" = "warn" ]; then
+      echo "WARN: $1 ($2) not reachable — skipping the plain baseline"
+      return 1
+    fi
     echo "FATAL: $1 ($2) not reachable"; exit 1
   fi
 }
@@ -81,13 +89,18 @@ time_tile() { # $1 base, $2 z, $3 x, $4 y
 }
 
 # ------------------------------------------------------------------ main
-echo "== Plain  : $PLAIN_BASE"
+echo "== Plain  : $PLAIN_BASE (optional baseline; skipped when unreachable)"
 echo "== Cached : $CACHED_BASE"
 echo "== COG    : $COG_URL"
 echo "== Params : (none — true-color RGB)"
-checkup "plain" "$PLAIN_BASE/healthz"
+PLAIN_OK=1
+checkup "plain" "$PLAIN_BASE/healthz" warn || PLAIN_OK=0
 checkup "cached" "$CACHED_BASE/healthz"
-echo "== both stacks reachable"
+if [ "$PLAIN_OK" = 1 ]; then
+  echo "== both endpoints reachable"
+else
+  echo "== cached stack reachable (plain baseline skipped)"
+fi
 
 TJ=$("$CURL" -sS --max-time 60 -G "$CACHED_BASE/cog/WebMercatorQuad/tilejson.json" --data-urlencode "url=$COG_URL")
 read -r CLON CLAT CZ <<< "$(tj_center "$TJ")"
@@ -114,11 +127,13 @@ for tc in "${COORDS[@]}"; do
   echo ""
   echo "--- tile $Z/$X/$Y ---"
 
-  for i in $(seq 1 "$N_PLAIN"); do
-    read -r c ms xs <<< "$(time_tile "$PLAIN_BASE" "$Z" "$X" "$Y")"
-    plain_ms+=( "$ms" )
-    printf "  plain   req%d: %sms (http %s)\n" "$i" "$ms" "$c"
-  done
+  if [ "$PLAIN_OK" = 1 ]; then
+    for i in $(seq 1 "$N_PLAIN"); do
+      read -r c ms xs <<< "$(time_tile "$PLAIN_BASE" "$Z" "$X" "$Y")"
+      plain_ms+=( "$ms" )
+      printf "  plain   req%d: %sms (http %s)\n" "$i" "$ms" "$c"
+    done
+  fi
 
   read -r c ms xs <<< "$(time_tile "$CACHED_BASE" "$Z" "$X" "$Y")"
   printf "  cached  warmup: %sms (http %s) cache=%s (expect MISS)\n" "$ms" "$c" "$xs"
@@ -150,10 +165,16 @@ def stats(s):
             "p95": v[min(len(v)-1, int(len(v)*0.95))],
             "min": v[0], "max": v[-1]}
 p, c = stats(sys.argv[1]), stats(sys.argv[2])
-if not p or not c:
-    print("FATAL: no samples gathered"); sys.exit(1)
+if not c:
+    print("FATAL: no cached samples gathered"); sys.exit(1)
 def line(t, s): print(f"  {t:<10} n={s['n']:<4} median={s['median']:8.2f}ms  p95={s['p95']:8.2f}ms  [min {s['min']:.2f}, max {s['max']:.2f}]")
-line("PLAIN", p); line("CACHED-HIT", c)
+if p:
+    line("PLAIN", p)
+line("CACHED-HIT", c)
+if not p:
+    print("  --> plain baseline skipped (PLAIN_BASE unreachable): no savings computed")
+    print("      point PLAIN_BASE at any live uncached TiTiler to compare")
+    sys.exit(0)
 saved = p["median"] - c["median"]
 pct = (saved / p["median"] * 100) if p["median"] else 0
 psaved = p["p95"] - c["p95"]

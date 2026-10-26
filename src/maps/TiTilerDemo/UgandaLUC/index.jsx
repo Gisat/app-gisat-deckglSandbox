@@ -16,7 +16,7 @@ import './UgandaLUC.css';
 // the p2–p98 contrast choice.)
 //
 // The colormap is band-independent (only `bidx` and `rescale` change per band),
-// so one SERVER-SIDE registered name serves all bands: deploy/titiler/colormaps/
+// so one SERVER-SIDE registered name serves all bands: deploy/titiler-caching/colormaps/
 // uganda_blues_transparent.json (generated from colormaps.js by
 // gen-demo-colormaps.mjs, byte 0 transparent), referenced by short
 // `colormap_name` so the tile query stays small and the nginx tile cache

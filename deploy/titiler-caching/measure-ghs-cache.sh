@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # measure-ghs-cache.sh — steady-state repeated-HIT latency comparison for the
-# GHS_POP COG demo: plain TiTiler (:8000) vs nginx-cached TiTiler (:8001).
+# GHS_POP COG demo: an uncached TiTiler baseline (PLAIN_BASE, optional since the
+# bundled plain stack was retired) vs nginx-cached TiTiler (:8001).
 #
 # Measures per-tile server latency (curl %{time_starttransfer}), answering
 # "how much time does the nginx tile cache actually save per tile".
 #
 # Methodology (steady-state repeated-HIT):
 #   For each tile z/x/y:
-#     - PLAIN  baseline:  N_PLAIN repeat requests to :8000 (live TiTiler render)
+#     - PLAIN  baseline:  N_PLAIN repeat requests to $PLAIN_BASE (live render;
+#                          skipped when unreachable — the bundled plain stack
+#                          deploy/titiler was retired 2026-10-05)
 #     - CACHED warm-up:   1 request to :8001 -> assert X-Cache-Status=MISS
 #                          (populates the nginx disk cache for this tile)
 #     - CACHED repeated-HIT: HITS repeat requests to :8001 -> assert HIT each time
@@ -17,19 +20,21 @@
 #
 # The demo (src/maps/TiTilerDemo/GhsPop.jsx) now uses a SERVER-SIDE registered
 # colormap: the full 256-entry RGBA transparent-low ramp lives in
-# deploy/titiler/colormaps/ghs_pop_transparent_low.json and is registered by
-# TiTiler at startup via COLORMAP_DIRECTORY (both stacks). The client references
+# deploy/titiler-caching/colormaps/ghs_pop_transparent_low.json and is registered by
+# TiTiler at startup via COLORMAP_DIRECTORY (caching stack). The client references
 # it by the short `colormap_name=ghs_pop_transparent_low`, so the tile query is
 # small and the nginx cache engages (a full ~10KB inline ramp would bypass it).
 # This script uses the same short params.
 #
 # If the colormap JSON is missing (not mounted / stack not restarted after) the
-# tile URL 400s with "Invalid colormap name" — restart BOTH stacks after adding
+# tile URL 400s with "Invalid colormap name" — restart the caching stack after adding
 # a colormap file (COLORMAP_DIRECTORY is scanned at startup only).
 #
 # Prereqs:
-#   - plain stack up:    docker compose -f deploy/titiler/docker-compose.yml up -d
 #   - caching stack up:  docker compose -f deploy/titiler-caching/docker-compose.yml up -d
+#   - (optional) uncached baseline: point PLAIN_BASE at any live TiTiler; the
+#     bundled plain stack deploy/titiler was retired, so the baseline is skipped
+#     when PLAIN_BASE is unreachable
 #   - a clean tile cache is REQUIRED for clean MISS->HIT sequences:
 #         docker compose -f deploy/titiler-caching/docker-compose.yml down -v
 #         docker compose -f deploy/titiler-caching/docker-compose.yml up -d
@@ -56,10 +61,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 TPARAMS="bidx=1&rescale=0,10&colormap_name=ghs_pop_transparent_low"
 
 # ---------------------------------------------------------------- helpers
-checkup() { # $1 label, $2 health url
+checkup() { # $1 label, $2 health url; $3 "warn" makes unreachable non-fatal
   local code
   code=$("$CURL" -sS --max-time 5 -o /dev/null -w '%{http_code}' "$2" 2>/dev/null)
   if [ -z "$code" ] || [ "$code" = "000" ]; then
+    if [ "${3:-fatal}" = "warn" ]; then
+      echo "WARN: $1 ($2) not reachable — skipping the plain baseline"
+      return 1
+    fi
     echo "FATAL: $1 ($2) not reachable"; exit 1
   fi
 }
@@ -101,13 +110,18 @@ time_tile() { # $1 base, $2 z, $3 x, $4 y
 }
 
 # ------------------------------------------------------------------ main
-echo "== Plain  : $PLAIN_BASE"
+echo "== Plain  : $PLAIN_BASE (optional baseline; skipped when unreachable)"
 echo "== Cached : $CACHED_BASE"
 echo "== COG    : $COG_URL"
 echo "== Params : bidx=1&rescale=0,10&colormap_name=ghs_pop_transparent_low (registered server-side)"
-checkup "plain" "$PLAIN_BASE/healthz"
+PLAIN_OK=1
+checkup "plain" "$PLAIN_BASE/healthz" warn || PLAIN_OK=0
 checkup "cached" "$CACHED_BASE/healthz"
-echo "== both stacks reachable"
+if [ "$PLAIN_OK" = 1 ]; then
+  echo "== both endpoints reachable"
+else
+  echo "== cached stack reachable (plain baseline skipped)"
+fi
 
 # TileJSON drives batch geometry (COG CRS-agnostic: center is WGS84).
 TJ=$("$CURL" -sS --max-time 60 -G "$CACHED_BASE/cog/WebMercatorQuad/tilejson.json" --data-urlencode "url=$COG_URL")
@@ -139,12 +153,14 @@ for tc in "${COORDS[@]}"; do
   echo ""
   echo "--- tile $Z/$X/$Y ---"
 
-  # PLAIN baseline
-  for i in $(seq 1 "$N_PLAIN"); do
-    read -r c ms xs <<< "$(time_tile "$PLAIN_BASE" "$Z" "$X" "$Y")"
-    plain_ms+=( "$ms" )
-    printf "  plain   req%d: %sms (http %s)\n" "$i" "$ms" "$c"
-  done
+  # PLAIN baseline (optional; skipped when PLAIN_BASE is unreachable)
+  if [ "$PLAIN_OK" = 1 ]; then
+    for i in $(seq 1 "$N_PLAIN"); do
+      read -r c ms xs <<< "$(time_tile "$PLAIN_BASE" "$Z" "$X" "$Y")"
+      plain_ms+=( "$ms" )
+      printf "  plain   req%d: %sms (http %s)\n" "$i" "$ms" "$c"
+    done
+  fi
 
   # CACHED warm-up -> expect MISS
   read -r c ms xs <<< "$(time_tile "$CACHED_BASE" "$Z" "$X" "$Y")"
@@ -178,10 +194,16 @@ def stats(s):
             "p95": v[min(len(v)-1, int(len(v)*0.95))],
             "min": v[0], "max": v[-1]}
 p, c = stats(sys.argv[1]), stats(sys.argv[2])
-if not p or not c:
-    print("FATAL: no samples gathered"); sys.exit(1)
+if not c:
+    print("FATAL: no cached samples gathered"); sys.exit(1)
 def line(t, s): print(f"  {t:<10} n={s['n']:<4} median={s['median']:8.2f}ms  p95={s['p95']:8.2f}ms  [min {s['min']:.2f}, max {s['max']:.2f}]")
-line("PLAIN", p); line("CACHED-HIT", c)
+if p:
+    line("PLAIN", p)
+line("CACHED-HIT", c)
+if not p:
+    print("  --> plain baseline skipped (PLAIN_BASE unreachable): no savings computed")
+    print("      point PLAIN_BASE at any live uncached TiTiler to compare")
+    sys.exit(0)
 saved = p["median"] - c["median"]
 pct = (saved / p["median"] * 100) if p["median"] else 0
 psaved = p["p95"] - c["p95"]

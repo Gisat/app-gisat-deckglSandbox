@@ -7,12 +7,14 @@ import './App.css'; // Import the CSS file for styling
 function AppContent() {
     const location = useLocation();
     const [expandedGroups, setExpandedGroups] = useState({
-        '3DFLUS CCN': true,
+        '3DFLUS CCN': false,
         '3DFLUS': false,
         'GeoParquet': false,
         'Other': false,
         'GDA Water': false,
-        'TiTiler DEMO': true,
+        'TiTiler DEMO': false,
+        'Tileserver-RS': false,
+        '3d Terrain': false,
     });
 
     const toggleGroup = (category) => {
@@ -31,7 +33,7 @@ function AppContent() {
     }, {});
 
     // Define group order
-    const groupOrder = ['3DFLUS CCN', 'GDA Water', '3DFLUS', 'GeoParquet', 'TiTiler DEMO', 'Other'];
+    const groupOrder = ['3DFLUS CCN', 'GDA Water', '3DFLUS', 'GeoParquet', 'TiTiler DEMO', 'Tileserver-RS', '3d Terrain', 'Other'];
     const sortedGroups = groupOrder.filter(g => g in groupedMaps);
 
     // Auto-expand group when path changes

@@ -24,16 +24,17 @@ import MisicuniDam from './Misicuni_dam/index.jsx';
 import TabqaDam from './Tabqa_dam/index.jsx';
 import GisatDataService from './GisatDataService/index.jsx';
 import SelectionDrawing3D from './SelectionDrawing3D/index.jsx';
+import FeatureScatterChart3D from './FeatureScatterChart3D/index.jsx';
 import ArrowLODStream3D from './ArrowLODStream_3D/Map3D.jsx';
 import ArrowLODStream2D from './ArrowLODStream_2D/Map2D.jsx';
-import NepalSnow from './TiTilerDemo/NepalSnow';
 import UgandaLUC from './TiTilerDemo/UgandaLUC';
 import ManilaRGB from './TiTilerDemo/ManilaRGB';
 import WorldCereal from './TiTilerDemo/WorldCereal';
 import GhsPop from './TiTilerDemo/GhsPop';
 import MisicuniTerrain from './TiTilerDemo/MisicuniTerrain';
-import TerrariumTerrain from './TiTilerDemo/TerrariumTerrain';
-import Float32Terrain from './TiTilerDemo/Float32Terrain';
+import TerrariumTerrain from './3dTerrain/TerrariumTerrain';
+import Float32Terrain from './3dTerrain/Float32Terrain';
+import Fehmarnsundbrucke from './Fehmarnsundbrucke/index.jsx';
 import ManilaRGBTS from './TileserverRS/ManilaRGB';
 
 const mapApps = [
@@ -58,6 +59,7 @@ const mapApps = [
     { category: 'GeoParquet', name: 'GeoParquet Virtual Tiles', path: '/geoparquet-virtual-tiles', component: geoParquetVirtualTiles },
     { category: 'Other', name: 'Deck.gl-raster COG', path: '/deck.gl-raster', component: devSeedCOG },
     { category: 'Other', name: 'Nepal', path: '/nepal', component: NepalMap, description: 'Nepal COP30 terrain COG with satellite imagery overlay' },
+    { category: 'Other', name: 'Fehmarnsundbrucke', path: '/fehmarnsundbrucke', component: Fehmarnsundbrucke, description: 'Fehmarnsundbrücke 3D OBJ model on a Carto light basemap' },
     // { name: 'Test Gisat Geotiff', path: '/test-gisat-geotiff', component: GisatGeotiffMap, description: 'Testing Gisat Geotiff rendering' },
     { category: '3DFLUS CCN', name: 'COG Terrain Kernel', path: '/cog-kernel', component: CogTerrainKernel, description: 'Showcase kernel calculation and hover features with deck.gl-geotiff' },
     { category: '3DFLUS CCN', name: 'Gisat Data Service', path: '/gisat-data-service', component: GisatDataService },
@@ -65,16 +67,16 @@ const mapApps = [
     { category: '3DFLUS CCN', name: 'Arrow LOD Stream 3D', path: '/arrow-lod-stream-3d', component: ArrowLODStream3D },
     { category: '3DFLUS CCN', name: 'Terrain Interactive Slider', path: '/terrain-interactive-slider', component: MisicuniDam },
     { category: '3DFLUS CCN', name: 'Selection Drawing 3D', path: '/selection-drawing-3d', component: SelectionDrawing3D },
+    { category: '3DFLUS CCN', name: '3D Feature Charts', path: '/3d-feature-charts', component: FeatureScatterChart3D },
     { category: 'GDA Water', name: 'Misicuni Dam', path: '/misicuni-dam', component: MisicuniDam, description: 'Simple dam presentation map connected to GDA Water group' },
     { category: 'GDA Water', name: 'Tabqa Dam', path: '/tabqa', component: TabqaDam, description: 'Tabqa Dam, Syria - OSM basemap' },
-    { category: 'TiTiler DEMO', name: 'Nepal Snow Cover', path: '/titiler-demo-nepal-snow', component: NepalSnow },
-    { category: 'TiTiler DEMO', name: 'Uganda Multiband', path: '/titiler-demo-uganda', component: UgandaLUC },
-    { category: 'TiTiler DEMO', name: 'Manila RGB', path: '/titiler-demo-manila', component: ManilaRGB },
-    { category: 'TiTiler DEMO', name: 'WorldCereal Active Cropland', path: '/titiler-demo-worldcereal', component: WorldCereal },
-    { category: 'TiTiler DEMO', name: 'GHS Population Density', path: '/titiler-demo-ghs-pop', component: GhsPop },
-    { category: 'TiTiler DEMO', name: 'Misicuni Terrain (DEM)', path: '/titiler-demo-misicuni-terrain', component: MisicuniTerrain, description: 'Native deck.gl TerrainLayer fed from TiTiler grayscale tiles of the Misicuni GLO-30+geoid DEM' },
-    { category: 'TiTiler DEMO', name: 'Terrarium Terrain (Mapzen encoder)', path: '/titiler-demo-terrarium-terrain', component: TerrariumTerrain, description: 'True Mapzen-style Terrarium-packed elevation tiles from a separate GDAL/rasterio encoder behind the caching-stack nginx' },
-    { category: 'TiTiler DEMO', name: 'Float32 Terrain (raw binary)', path: '/titiler-demo-float32-terrain', component: Float32Terrain, description: 'Raw headerless little-endian float32 elevation tiles (262144 bytes, metres) from a separate GDAL/rasterio encoder — bypasses the browser image pipeline, no needles' },
+    { category: 'TiTiler DEMO', name: 'RGB (Manila)', path: '/titiler-demo-manila', component: ManilaRGB },
+    { category: 'TiTiler DEMO', name: 'Multiband (Uganda)', path: '/titiler-demo-uganda', component: UgandaLUC },
+    { category: 'TiTiler DEMO', name: 'Large COG 6GB+ (Active Cropland)', path: '/titiler-demo-worldcereal', component: WorldCereal },
+    { category: 'TiTiler DEMO', name: 'Large COG 6GB+ (Population Dens.)', path: '/titiler-demo-ghs-pop', component: GhsPop },
+    { category: 'TiTiler DEMO', name: '3D Misicuni 8bit DEM (256 levels)', path: '/titiler-demo-misicuni-terrain', component: MisicuniTerrain, description: 'Native deck.gl TerrainLayer fed from TiTiler grayscale tiles of the Misicuni GLO-30+geoid DEM' },
+    { category: '3d Terrain', name: 'Mapzen 24-bit RGB enc. PNG', path: '/titiler-demo-terrarium-terrain', component: TerrariumTerrain, description: 'True Mapzen-style Terrarium-packed elevation tiles from a separate GDAL/rasterio encoder behind the caching-stack nginx' },
+    { category: '3d Terrain', name: 'Raw float32 binary + gzip', path: '/titiler-demo-float32-terrain', component: Float32Terrain, description: 'Raw headerless little-endian float32 elevation tiles (512×512 → 1,048,576 bytes, metres) from a separate GDAL/rasterio encoder — bypasses the browser image pipeline, no needles' },
     { category: 'Tileserver-RS', name: 'Manila RGB', path: '/tileserver-manila-rgb', component: ManilaRGBTS, description: 'Same true-color RGB COG as the TiTiler Manila demo, rendered by Rust-native tileserver-rs (server-side COG warp + PNG encode) with in-process tile caching' },
 ];
 

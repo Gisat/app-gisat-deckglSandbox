@@ -17,9 +17,9 @@ const RESCALE = '0,10';
 // plus nodata -200 (clamps to byte 0) also transparent.
 //
 // Delivered as a SERVER-SIDE registered colormap: the full 256-entry RGBA ramp
-// (alpha=0 on bytes 0-10) is written to deploy/titiler/colormaps/ghs_pop_transparent_low.json
-// and registered by TiTiler at startup via COLORMAP_DIRECTORY (mounted into both
-// the plain and caching compose stacks). The client references it by the short
+// (alpha=0 on bytes 0-10) is written to deploy/titiler-caching/colormaps/ghs_pop_transparent_low.json
+// and registered by TiTiler at startup via COLORMAP_DIRECTORY (mounted into the
+// caching compose stack). The client references it by the short
 // `colormap_name=ghs_pop_transparent_low`, so the tile query stays small & the
 // nginx tile cache (deploy/titiler-caching, proxy_cache_key = full $args) engages.
 //
