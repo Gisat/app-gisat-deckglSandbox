@@ -1,3 +1,17 @@
+## [1.16.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.15.0...v1.16.0) (2026-10-26)
+
+### Features
+
+* **config:** runtime-configurable TiTiler API base (TITILER_API_BASE) ([acb5ed0](https://github.com/Gisat/app-gisat-deckglSandbox/commit/acb5ed0c6a981010c428c8b43105d474edb6382f))
+* **float32:** serve 512px elevation tiles from the encoder ([204fc6b](https://github.com/Gisat/app-gisat-deckglSandbox/commit/204fc6b0bdba02d94ebce2297f763df1f61b8964))
+
+### Bug Fixes
+
+* **sidebar:** start TiTiler DEMO and 3d Terrain groups folded ([5a1654f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/5a1654f74c41337fddfa4777e64fe9fa76ea744c))
+* **titiler-config:** normalize base resolution and restore legacy URL semantics ([d652eda](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d652eda93c6a79206c8ada967979f285af7c5e02))
+* **vite:** quiet missing-sourcemap warnings from [@developmentseed](https://github.com/developmentseed) packages ([b7eb094](https://github.com/Gisat/app-gisat-deckglSandbox/commit/b7eb09451bc73b56c944b93ff147711400a9a503))
+* **vite:** use createLogger() and hoist customLogger to top level ([da85afc](https://github.com/Gisat/app-gisat-deckglSandbox/commit/da85afca8496855e81c6b7f4a929555a20af495d))
+
 ## [1.15.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.14.0...v1.15.0) (2026-10-20)
 
 ### Features
