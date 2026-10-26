@@ -16,14 +16,26 @@ const DEFAULT_TITILER_API_BASE = '/titiler/api/v1';
 //                                      full URL is normalized to the stack base
 //                                      by stripping a trailing "/titiler" seg.
 //   4. DEFAULT_TITILER_API_BASE       — local dev default.
+// Every branch is normalized to a base WITHOUT a trailing slash: the caller
+// appends '/titiler', and a trailing slash here would yield '//titiler', which
+// nginx's `location /api/v1/titiler/` does not match (falls through to 404).
 // COG URLs are NOT affected: they stay demo-specific and unchanged.
+function stripTrailingSlashes(value) {
+    return value.replace(/\/+$/, '');
+}
+
 function getTiTilerApiBase() {
     const runtime = typeof window !== 'undefined' && window.TITILER_API_BASE;
-    if (runtime) return runtime;
+    if (runtime) return stripTrailingSlashes(runtime);
     const built = import.meta.env.VITE_TITILER_API_BASE;
-    if (built) return built;
+    if (built) return stripTrailingSlashes(built);
     const legacy = import.meta.env.VITE_TITILER_URL;
-    if (legacy) return legacy.replace(/\/titiler\/?$/, '').replace(/\/+$/, '');
+    // Legacy values were used VERBATIM as the TiTiler root (${base}/cog/tiles),
+    // so a value ending in '/titiler' is already a stack base — strip that seg
+    // and any trailing slash. A value that does NOT end in '/titiler' is a bare
+    // TiTiler root (e.g. https://host/api/v1), which is exactly what the caller
+    // expects to append '/titiler' to, so pass it through unchanged.
+    if (legacy) return stripTrailingSlashes(legacy.replace(/\/titiler\/?$/, ''));
     return DEFAULT_TITILER_API_BASE;
 }
 
