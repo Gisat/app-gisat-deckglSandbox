@@ -1,4 +1,4 @@
-import { defineConfig, logger } from 'vite'
+import { defineConfig, createLogger } from 'vite'
 import react from '@vitejs/plugin-react'
 import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
@@ -9,6 +9,21 @@ import topLevelAwait from "vite-plugin-top-level-await";
 // startup. The packages work fine — the maps are just incomplete. Filter only
 // those exact warnings so the terminal stays clean.
 const quietMissingSourcemapSources = ['@developmentseed/affine', '@developmentseed/geotiff'];
+
+// Vite has no public `logger` export; `createLogger()` is the supported entry
+// point. Wrap its warn() so only the @developmentseed sourcemap noise is
+// dropped and every other warning still reaches the terminal.
+const logger = createLogger();
+const originalWarn = logger.warn.bind(logger);
+logger.warn = (msg, options) => {
+  if (
+    msg.includes('points to missing source files') &&
+    quietMissingSourcemapSources.some((p) => msg.includes(p))
+  ) {
+    return; // @developmentseed packages publish incomplete sourcemaps
+  }
+  originalWarn(msg, options);
+};
 
 // luma.gl's Texture class has `static defaultProps = { usage: Texture.SAMPLE |
 // Texture.RENDER | Texture.COPY_DST }`, i.e. it references the class from within
@@ -47,6 +62,7 @@ function patchLumaTexture() {
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  customLogger: logger,
   plugins: [patchLumaTexture(), react(), wasm(), topLevelAwait()],
   resolve: {
     alias: {
@@ -71,18 +87,6 @@ export default defineConfig({
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
-    },
-    customLogger: {
-      ...logger,
-      warn(msg, options) {
-        if (
-          msg.includes('points to missing source files') &&
-          quietMissingSourcemapSources.some((p) => msg.includes(p))
-        ) {
-          return; // @developmentseed packages publish incomplete sourcemaps
-        }
-        logger.warn(msg, options);
-      },
     },
     // Proxy the caching TiTiler stack through the same-origin Vite dev server.
     // The page is served under COEP require-corp, which blocks cross-origin
