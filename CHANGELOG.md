@@ -1,3 +1,56 @@
+## [1.15.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.14.0...v1.15.0) (2026-10-20)
+
+### Features
+
+* **fehmarnsundbrucke:** add Fehmarnsund bridge OBJ map ([1da0db2](https://github.com/Gisat/app-gisat-deckglSandbox/commit/1da0db2f6f7186ee81e80c9f3659cbf0e3264900))
+* **fehmarnsundbrucke:** complete model attribution and collapse categories by default ([cb0f282](https://github.com/Gisat/app-gisat-deckglSandbox/commit/cb0f28290590fcb60239e075379b18b741bc0689))
+* **fehmarnsundbrucke:** set oblique bridge camera ([59c7657](https://github.com/Gisat/app-gisat-deckglSandbox/commit/59c765734072e4c6d5bb952c69dd0647d7347916))
+
+## [1.14.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.13.0...v1.14.0) (2026-10-16)
+
+### Features
+
+* **feature-space-chart:** add Aggregate profile view and offset-sized markers ([55e5c45](https://github.com/Gisat/app-gisat-deckglSandbox/commit/55e5c453d5d3449a821b8f093bcc218f5fc4faa6))
+* **feature-space-chart:** persist selection boundary with flat-ended line buffer ([8df915b](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8df915bd6409661937d47327ae95115cb07506a4))
+* **feature-space-chart:** rework trend view to cumulative settlement ([a709c4c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/a709c4c36b0c7cd4ec76684976a5f3084c129c24))
+
+### Bug Fixes
+
+* **feature-space-chart:** drop dead gap-breaking and settle colour domain ([dfa0c6b](https://github.com/Gisat/app-gisat-deckglSandbox/commit/dfa0c6babaf40f3dc41ac489b4e980e4b4b8fe5d))
+
+## [1.13.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.12.0...v1.13.0) (2026-10-15)
+
+### Features
+
+* **feature-space-chart:** render 3D geographic curtain for line profile ([689046d](https://github.com/Gisat/app-gisat-deckglSandbox/commit/689046de5ad89a3ada13b467f20ca45c7414bd61))
+* **feature-space-chart:** rework 3D panel controls and defaults ([5596268](https://github.com/Gisat/app-gisat-deckglSandbox/commit/55962687c236b077e6e77ab8e552e4e3209f6c5b))
+* **feature-space-chart:** stack trend-window curtains on the map ([76a69f8](https://github.com/Gisat/app-gisat-deckglSandbox/commit/76a69f8e6b89baaeb129028c5140e306d8022f2a))
+
+## [1.12.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.11.0...v1.12.0) (2026-10-15)
+
+### Features
+
+* **feature-scatter-chart-3d:** add Tabqa 2D map and 3D line profile mode ([3412fd0](https://github.com/Gisat/app-gisat-deckglSandbox/commit/3412fd0e18ac1cd0b28a0966e86f523b6df50d63))
+* **feature-scatter-chart-3d:** split 3D chart into its own app ([24a26cd](https://github.com/Gisat/app-gisat-deckglSandbox/commit/24a26cd1fa61aeda59a3f430fe678c7f0725cfa3))
+* **feature-space-chart:** add Trend view to the 3D line profile ([7244da0](https://github.com/Gisat/app-gisat-deckglSandbox/commit/7244da0a27be8e5d0ab38f8bc4f45b2a5e131499))
+* **feature-space-chart:** project line selection onto the drawn line ([f55d2a0](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f55d2a0e778e97dbe5aad0b77730193c5c088cd3))
+* **feature-space-chart:** show map selection/hover as a border only ([ccd8453](https://github.com/Gisat/app-gisat-deckglSandbox/commit/ccd84537ab90d3af3085063fbe6d142956b2d528))
+* **feature-space-chart:** trend shapes, defaults and polish ([73957dd](https://github.com/Gisat/app-gisat-deckglSandbox/commit/73957dd7ee26a409d84f3bef75651b39790deb18))
+* **selection-drawing-3d:** add 3D feature-space chart spike ([0cb5c82](https://github.com/Gisat/app-gisat-deckglSandbox/commit/0cb5c826c43d8ef06a4ac2665b804d842c200540))
+
+### Bug Fixes
+
+* **feature-space-chart:** address 3D feature-space review findings ([de5468c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/de5468cc9c08b7bb8fc0441d9e63fdc6d326d3df))
+* **feature-space-chart:** break uncertainty ribbon at missing-std gaps ([1df23be](https://github.com/Gisat/app-gisat-deckglSandbox/commit/1df23be00ef8174b1a31f822e18f04502c4b67ba))
+* **feature-space-chart:** brighten three.js spheres to match the map ([6ea894f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/6ea894f37e25fea34c36b95c49ade94c357f90a3))
+* **feature-space-chart:** match three.js point colours to the map scale ([f5c7dc5](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f5c7dc5ed5b81f6e683c2a956fd7c5fe1f0301f3))
+
+## [1.11.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.10.0...v1.11.0) (2026-10-14)
+
+### Features
+
+* **release:** publish titiler encoder images to GHCR ([259d79e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/259d79e5c4e28a578458b9745e01e8880c33e568))
+
 ## [1.10.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.9.1...v1.10.0) (2026-10-07)
 
 ### Features

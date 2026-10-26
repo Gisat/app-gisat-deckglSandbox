@@ -24,6 +24,7 @@ import MisicuniDam from './Misicuni_dam/index.jsx';
 import TabqaDam from './Tabqa_dam/index.jsx';
 import GisatDataService from './GisatDataService/index.jsx';
 import SelectionDrawing3D from './SelectionDrawing3D/index.jsx';
+import FeatureScatterChart3D from './FeatureScatterChart3D/index.jsx';
 import ArrowLODStream3D from './ArrowLODStream_3D/Map3D.jsx';
 import ArrowLODStream2D from './ArrowLODStream_2D/Map2D.jsx';
 import UgandaLUC from './TiTilerDemo/UgandaLUC';
@@ -33,6 +34,7 @@ import GhsPop from './TiTilerDemo/GhsPop';
 import MisicuniTerrain from './TiTilerDemo/MisicuniTerrain';
 import TerrariumTerrain from './3dTerrain/TerrariumTerrain';
 import Float32Terrain from './3dTerrain/Float32Terrain';
+import Fehmarnsundbrucke from './Fehmarnsundbrucke/index.jsx';
 
 const mapApps = [
     { category: '3DFLUS', name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
@@ -56,6 +58,7 @@ const mapApps = [
     { category: 'GeoParquet', name: 'GeoParquet Virtual Tiles', path: '/geoparquet-virtual-tiles', component: geoParquetVirtualTiles },
     { category: 'Other', name: 'Deck.gl-raster COG', path: '/deck.gl-raster', component: devSeedCOG },
     { category: 'Other', name: 'Nepal', path: '/nepal', component: NepalMap, description: 'Nepal COP30 terrain COG with satellite imagery overlay' },
+    { category: 'Other', name: 'Fehmarnsundbrucke', path: '/fehmarnsundbrucke', component: Fehmarnsundbrucke, description: 'Fehmarnsundbrücke 3D OBJ model on a Carto light basemap' },
     // { name: 'Test Gisat Geotiff', path: '/test-gisat-geotiff', component: GisatGeotiffMap, description: 'Testing Gisat Geotiff rendering' },
     { category: '3DFLUS CCN', name: 'COG Terrain Kernel', path: '/cog-kernel', component: CogTerrainKernel, description: 'Showcase kernel calculation and hover features with deck.gl-geotiff' },
     { category: '3DFLUS CCN', name: 'Gisat Data Service', path: '/gisat-data-service', component: GisatDataService },
@@ -63,6 +66,7 @@ const mapApps = [
     { category: '3DFLUS CCN', name: 'Arrow LOD Stream 3D', path: '/arrow-lod-stream-3d', component: ArrowLODStream3D },
     { category: '3DFLUS CCN', name: 'Terrain Interactive Slider', path: '/terrain-interactive-slider', component: MisicuniDam },
     { category: '3DFLUS CCN', name: 'Selection Drawing 3D', path: '/selection-drawing-3d', component: SelectionDrawing3D },
+    { category: '3DFLUS CCN', name: '3D Feature Charts', path: '/3d-feature-charts', component: FeatureScatterChart3D },
     { category: 'GDA Water', name: 'Misicuni Dam', path: '/misicuni-dam', component: MisicuniDam, description: 'Simple dam presentation map connected to GDA Water group' },
     { category: 'GDA Water', name: 'Tabqa Dam', path: '/tabqa', component: TabqaDam, description: 'Tabqa Dam, Syria - OSM basemap' },
     { category: 'TiTiler DEMO', name: 'RGB (Manila)', path: '/titiler-demo-manila', component: ManilaRGB },
