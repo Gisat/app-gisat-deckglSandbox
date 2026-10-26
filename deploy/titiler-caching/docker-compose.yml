@@ -72,7 +72,7 @@ services:
   # Raw float32 elevation-tile encoder: a SIBLING tile producer to TiTiler and
   # the terrarium encoder that reads the same public float32 COG directly via
   # rasterio /vsicurl/ and serves {z}/{x}/{y}.f32 as a HEADERLESS little-endian
-  # float32 stream (256*256*4 = 262,144 bytes, row-major north-up, heights in
+  # float32 stream (512*512*4 = 1,048,576 bytes, row-major north-up, heights in
   # metres, NaN/masked filled with 0.0). No host port — reached only through
   # nginx at /api/v1/float32/. No PIL: there is no image pipeline; this is
   # what lets the client bypass the color-managed PNG path entirely.
