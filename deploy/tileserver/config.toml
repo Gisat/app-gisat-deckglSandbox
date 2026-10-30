@@ -108,3 +108,77 @@ attribution = "Sentinel-2 composite (Gisat demo data)"
 resampling = "bilinear"
 minzoom = 0
 maxzoom = 15
+
+# ---------------------------------------------------------------------------
+# Source: Impact Observatory 10m Annual LULC (STAC dynamic mosaic, 1-band
+# uint8 land-cover classes)
+#
+# The true STAC demo for this category. `io-10m-annual-lulc` on the Impact
+# Observatory STAC API is a global 10 m land-cover product: one COG per
+# Sentinel-2 MGRS supercell per year (2017-2024), 9 classes, EPSG:UTM
+# (326xx/327xx). A per-tile bbox /search returns the ADJACENT supercells that
+# composite into a seamless class raster.
+#
+# Why UTM and not the previous EUGW_LCMH (EPSG:3035): tileserver-rs warps
+# every asset into EPSG:3857 (XYZ tiles are WebMercator by definition). A
+# conic equal-area grid (3035) is rotated relative to Mercator everywhere,
+# so adjacent warped footprints left growing wedge gaps when zooming out.
+# UTM is a transverse Mercator: near a zone's central meridian its grid is
+# essentially axis-aligned in Mercator, so the residual skew is negligible.
+# Munich (11.5E) sits close to UTM 32N's 9E central meridian. Measured
+# 2026-10-27: rendered coverage z10 96.0%, z11 100%, z12/z13 interior 100%.
+#
+# Contrast with the removed `sentinel2-mosaic` (see HISTORY above): that failed
+# because it was a temporal scene collection where `pixel_selection="first"`
+# picked by STAC rank = newest = 89-99 % cloud. Here every item is a
+# cloud-free annual composite, so `first` is simply "an adjacent supercell".
+#
+# VERIFIED 2026-10-27 (live, against the asset bytes):
+#   - Real COG, publicly range-readable (HTTP 206, no auth), TIFF magic II+.
+#   - 1-band uint8 -> colormap path applies; nearest resampling (categorical).
+#   - Asset role is "data" (the key is `supercell`).
+#   - proj:code is EPSG:32632/32633 (UTM 32N/33N) over Bavaria.
+#
+# Colormap: the standard IO 9-class legend. `rescale_mode = "none"` is
+# ESSENTIAL: with the default ("static") the values would be stretched to
+# 0-255 before lookup and every class would map to the wrong color.
+#
+# stac_bbox / initial view: Munich, Bavaria ([11.58E, 48.14N]).
+# ---------------------------------------------------------------------------
+[[sources]]
+id = "io-lulc"
+type = "stac"
+path = "https://api.impactobservatory.com/stac-aws"
+collection = "io-10m-annual-lulc"
+asset_role = "supercell"
+name = "Impact Observatory 10m Annual LULC (9-class)"
+attribution = "Impact Observatory / National Geographic Society (CC-BY-4.0)"
+dynamic = true
+# max_items is the PAGE SIZE (limit per STAC /search request); the total
+# fetched per tile is bounded by max_total_items (default 64). 20 x 64
+# comfortably covers z>=9 in Bavaria.
+max_items = 20
+pixel_selection = "first"
+stac_bbox = [11.2, 47.9, 11.9, 48.4]
+resampling = "nearest"
+minzoom = 0
+maxzoom = 14
+
+# Categorical class ids -> IO 9-class legend colors. `rescale_mode = "none"`
+# is ESSENTIAL: with the default ("static") the values would be stretched to
+# 0-255 before lookup and every class would map to the wrong color.
+[sources.colormap]
+map_type = "discrete"
+rescale_mode = "none"
+nodata_color = "#00000000"
+entries = [
+    { value = 1.0, color = "#419BDF" },  # Water
+    { value = 2.0, color = "#397D49" },  # Trees
+    { value = 3.0, color = "#88B053" },  # Flooded vegetation
+    { value = 4.0, color = "#7A87C6" },  # Crops
+    { value = 5.0, color = "#E49635" },  # Built area
+    { value = 6.0, color = "#DFC35A" },  # Bare ground
+    { value = 7.0, color = "#C4281B" },  # Snow/ice
+    { value = 8.0, color = "#A59B8F" },  # Clouds
+    { value = 9.0, color = "#B39FE1" },  # Rangeland
+]
