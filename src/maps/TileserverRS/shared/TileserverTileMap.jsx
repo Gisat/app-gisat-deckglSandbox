@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import TileserverErrorModal from './TileserverErrorModal';
+import { TileOutline, TileContextMenu } from './TileInspectorOverlay';
+import { useTileHoverInspector } from './useTileHoverInspector';
 import { TILESERVER_ENDPOINT } from './endpoints';
+import './TileInspectorOverlay.css';
 // Shared with the TiTiler category: the timing hook is a pure measurement
 // utility (settle-debounce + quiescence) with no TiTiler-specific behavior.
 import { useTileTiming } from '../../TiTilerDemo/shared/useTileTiming';
@@ -32,18 +36,95 @@ import '../../TiTilerDemo/shared/TiTilerEndpointSwitch.css';
  * @param {object} initialViewState - per-source initial camera
  * @param {number} maxZoom      - max zoom for the tile layer
  * @param {string} [probeTile]  - guaranteed in-bounds tile path (defaults to a z0 probe)
+ * @param {boolean} [inspectTiles=false] - outline the hovered tile + custom right-click menu
  */
-function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile = '0/0/0.png' }) {
+function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile = '0/0/0.png', inspectTiles = false }) {
     const [viewState, setViewState] = useState(initialViewState);
     const { baseUrl, healthUrl, startCommand } = TILESERVER_ENDPOINT;
     // Bumped on retry/timing toggle to recreate the TileLayer and force a full tile reload.
     const [tileLayerKey, setTileLayerKey] = useState(0);
+    // Right-click menu state: client coords of the click + the tile under it.
+    const [menu, setMenu] = useState(null);
 
     const tileUrl = `${baseUrl}/data/${sourceId}/{z}/{x}/{y}.png`;
     // The probe tile must be in-bounds for the source — systemic failures only.
     const probeTileUrl = `${baseUrl}/data/${sourceId}/${probeTile}`;
 
     const forceReload = () => setTileLayerKey(k => k + 1);
+
+    // The tile the menu was opened on. While the menu is open we FREEZE the
+    // hover state: the pointer is over the menu (outside the map), so deck.gl
+    // would otherwise clear the hover and re-render, flickering the menu.
+    const menuTileRef = useRef(null);
+
+    const closeMenu = useCallback(() => {
+        menuTileRef.current = null;
+        setMenu(null);
+    }, []);
+
+    // STAC-only hover inspector: reads the picked tile from deck.gl's onHover
+    // info and derives the exact request URL for the outline + context menu.
+    const { hoveredTile, label: tileLabel, handleHover } = useTileHoverInspector({
+        tileUrl,
+    });
+
+    // Mirror the live hover into a ref so the native contextmenu listener (a
+    // closure created once) can read the current tile without being re-bound
+    // on every hover event.
+    const hoveredTileRef = useRef(null);
+    useEffect(() => {
+        hoveredTileRef.current = hoveredTile;
+    }, [hoveredTile]);
+
+    // When the menu is open, keep showing the frozen tile instead of the live
+    // hover (the pointer has left the map, so hover would be null).
+    const displayTile = menu ? menuTileRef.current : hoveredTile;
+    const displayLabel = menu ? (menuTileRef.current
+        ? `z${menuTileRef.current.z} / x${menuTileRef.current.x} / y${menuTileRef.current.y}`
+        : null) : tileLabel;
+
+    // Suppress the native browser context menu over the map and, when tile
+    // inspection is on, open our own menu at the pointer with the hovered
+    // tile's info. deck.gl's <DeckGL> does not forward onContextMenu to its
+    // canvas, so a React prop there is inert; attach a native listener on the
+    // wrapper we own. The native menu is always suppressed; the custom menu
+    // only appears when there is a tile under the cursor.
+    const wrapperRef = useRef(null);
+    useEffect(() => {
+        const el = wrapperRef.current;
+        if (!el) return undefined;
+        const onContextMenu = event => {
+            event.preventDefault();
+            if (inspectTiles && hoveredTileRef.current) {
+                menuTileRef.current = hoveredTileRef.current;
+                setMenu({ x: event.clientX, y: event.clientY });
+            }
+        };
+        el.addEventListener('contextmenu', onContextMenu);
+        return () => el.removeEventListener('contextmenu', onContextMenu);
+    }, [inspectTiles]);
+
+    // Dismiss the menu on Esc, on scroll, or on a left-click/tap outside it.
+    // `pointerdown` in the CAPTURE phase fires before deck.gl's map handlers,
+    // so a click on the map closes the menu without the click also being
+    // consumed by the map; a click inside the menu does not bubble to close.
+    useEffect(() => {
+        if (!menu) return undefined;
+        const onKey = event => { if (event.key === 'Escape') closeMenu(); };
+        const onPointerDown = event => {
+            if (event.button !== 0) return;
+            if (event.target.closest && event.target.closest('.tileserver-tile-menu')) return;
+            closeMenu();
+        };
+        window.addEventListener('keydown', onKey);
+        window.addEventListener('wheel', closeMenu, { passive: true });
+        window.addEventListener('pointerdown', onPointerDown, true);
+        return () => {
+            window.removeEventListener('keydown', onKey);
+            window.removeEventListener('wheel', closeMenu);
+            window.removeEventListener('pointerdown', onPointerDown, true);
+        };
+    }, [menu, closeMenu]);
 
     const {
         timingEnabled,
@@ -101,24 +182,40 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
         onTileLoad: handleTileLoad,
         renderSubLayers: props => {
             const { west, south, east, north } = props.tile.bbox;
+            // BitmapLayer must be pickable for deck.gl to report the picked
+            // tile at all; the TileLayer's getPickingInfo then enriches the
+            // pick with `info.tile`. No onHover here — the handler lives on
+            // <DeckGL> (deck.gl's own mechanism), see the hook's docs.
             return new BitmapLayer(props, {
                 data: null,
                 image: props.data,
-                bounds: [west, south, east, north]
+                bounds: [west, south, east, north],
+                pickable: inspectTiles,
             });
         }
     }));
 
+    // Outline layer last so it draws above the tiles/basemap. Uses the frozen
+    // tile while the menu is open so the outline does not vanish/change when
+    // the pointer moves off the map onto the menu.
+    if (inspectTiles) {
+        const outline = TileOutline({ tile: displayTile });
+        if (outline) layers.push(outline);
+    }
+
     return (
         <>
+            <div ref={wrapperRef} style={{ position: 'absolute', inset: 0 }}>
             <DeckGL
                 viewState={viewState}
                 onViewStateChange={handleViewStateChange}
                 controller={true}
                 layers={layers}
                 views={new MapView({ repeat: true })}
+                onHover={inspectTiles ? handleHover : undefined}
                 style={{ width: '100vw', height: '100vh' }}
             />
+            </div>
             <div className="titiler-endpoint-switch" role="group" aria-label="tileserver-rs endpoint">
                 <span className="titiler-endpoint-title">tileserver-rs endpoint</span>
                 <div className="titiler-endpoint-options">
@@ -156,6 +253,15 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
                     )}
                 </div>
             </div>
+            {inspectTiles && menu && createPortal(
+                <TileContextMenu
+                    tile={displayTile}
+                    label={displayLabel}
+                    position={menu}
+                    onClose={closeMenu}
+                />,
+                document.body,
+            )}
             {modal && (
                 <TileserverErrorModal
                     kind={modal.kind}

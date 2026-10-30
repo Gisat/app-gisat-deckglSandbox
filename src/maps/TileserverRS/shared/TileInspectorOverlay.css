@@ -1,0 +1,202 @@
+/* Custom right-click tile context menu (replaces the native browser menu) */
+.tileserver-tile-menu {
+    position: fixed;
+    z-index: 950; /* below the error modal (1000), above map + panels (900) */
+    min-width: 260px;
+    max-width: 360px;
+    background-color: rgba(255, 255, 255, 0.98);
+    padding: 8px;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+    border: 1px solid #e2e8f0;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 12px;
+    color: #2c3e50;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.tileserver-tile-menu-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px 6px 6px;
+}
+
+.tileserver-tile-menu-title {
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #333;
+}
+
+.tileserver-tile-menu-row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+}
+
+.tileserver-tile-menu-key {
+    flex: 0 0 46px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #999;
+}
+
+.tileserver-tile-menu-val {
+    font-family: 'Roboto Mono', 'SFMono-Regular', Consolas, monospace;
+    font-size: 12px;
+    color: #2c3e50;
+}
+
+.tileserver-tile-menu-url {
+    font-family: 'Roboto Mono', 'SFMono-Regular', Consolas, monospace;
+    font-size: 10px;
+    color: #1b6ec2;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+}
+
+.tileserver-tile-menu-sep {
+    height: 1px;
+    background-color: #e5e5e5;
+    margin: 4px 0;
+}
+
+.tileserver-tile-menu-item {
+    text-align: left;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    color: #2c3e50;
+    background-color: transparent;
+    border: none;
+    border-radius: 5px;
+    padding: 6px 8px;
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+}
+
+.tileserver-tile-menu-item:hover {
+    background-color: #eef2f7;
+}
+
+/* Small grey hint shown briefly after a menu action (auto-dismissed). */
+.tileserver-tile-menu-hint {
+    margin-top: 4px;
+    padding: 4px 8px;
+    font-size: 10px;
+    font-style: italic;
+    color: #27ae60;
+}
+
+
+.tileserver-tile-toast {
+    position: fixed;
+    left: 24px;
+    bottom: 24px;
+    z-index: 900; /* below the error modal overlay (z-index 1000) */
+    pointer-events: none; /* never swallow map drags */
+    max-width: 460px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background-color: rgba(255, 255, 255, 0.96);
+    padding: 10px 12px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 12px;
+    color: #2c3e50;
+}
+
+.tileserver-tile-toast-title {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #333;
+}
+
+.tileserver-tile-toast-row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+}
+
+.tileserver-tile-toast-key {
+    flex: 0 0 46px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #999;
+}
+
+.tileserver-tile-toast-val {
+    font-family: 'Roboto Mono', 'SFMono-Regular', Consolas, monospace;
+    font-size: 12px;
+    color: #2c3e50;
+}
+
+.tileserver-tile-toast-row-url {
+    align-items: flex-start;
+}
+
+.tileserver-tile-toast-copy {
+    pointer-events: auto; /* toast is pointer-events:none; re-enable for the button */
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 2px;
+    padding: 3px 8px;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    color: #2c3e50;
+    background-color: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.tileserver-tile-toast-copy:hover {
+    background-color: #e2e8f0;
+    border-color: #b8c4d0;
+}
+
+.tileserver-tile-toast-copy-done {
+    color: #fff;
+    background-color: #27ae60;
+    border-color: #27ae60;
+}
+
+.tileserver-tile-toast-copy-done:hover {
+    background-color: #229954;
+    border-color: #229954;
+}
+
+.tileserver-tile-toast-copy-label {
+    line-height: 1;
+}
+
+.tileserver-tile-toast-url {
+    font-family: 'Roboto Mono', 'SFMono-Regular', Consolas, monospace;
+    font-size: 11px;
+    color: #1b6ec2;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+}
+
+.tileserver-tile-toast-note {
+    margin-top: 2px;
+    padding-top: 4px;
+    border-top: 1px dashed #ddd;
+    font-size: 10px;
+    font-style: italic;
+    color: #b9770e;
+}

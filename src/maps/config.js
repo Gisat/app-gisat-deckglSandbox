@@ -36,6 +36,7 @@ import TerrariumTerrain from './3dTerrain/TerrariumTerrain';
 import Float32Terrain from './3dTerrain/Float32Terrain';
 import Fehmarnsundbrucke from './Fehmarnsundbrucke/index.jsx';
 import ManilaRGBTS from './TileserverRS/ManilaRGB';
+import IoLulcTS from './TileserverRS/IoLulc';
 
 const mapApps = [
     { category: '3DFLUS', name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
@@ -78,6 +79,7 @@ const mapApps = [
     { category: '3d Terrain', name: 'Mapzen 24-bit RGB enc. PNG', path: '/titiler-demo-terrarium-terrain', component: TerrariumTerrain, description: 'True Mapzen-style Terrarium-packed elevation tiles from a separate GDAL/rasterio encoder behind the caching-stack nginx' },
     { category: '3d Terrain', name: 'Raw float32 binary + gzip', path: '/titiler-demo-float32-terrain', component: Float32Terrain, description: 'Raw headerless little-endian float32 elevation tiles (512×512 → 1,048,576 bytes, metres) from a separate GDAL/rasterio encoder — bypasses the browser image pipeline, no needles' },
     { category: 'Tileserver-RS', name: 'Manila RGB', path: '/tileserver-manila-rgb', component: ManilaRGBTS, description: 'Same true-color RGB COG as the TiTiler Manila demo, rendered by Rust-native tileserver-rs (server-side COG warp + PNG encode) with in-process tile caching' },
+    { category: 'Tileserver-RS', name: 'STAC Mosaic (IO LULC)', path: '/tileserver-io-lulc', component: IoLulcTS, description: 'Dynamic STAC + mosaic: per-tile bbox search on the Impact Observatory STAC API (io-10m-annual-lulc land-cover supercells), adjacent UTM COGs composited server-side, 9-class colormap' },
 ];
 
 export default mapApps;
