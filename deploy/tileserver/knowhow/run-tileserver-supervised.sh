@@ -26,8 +26,13 @@ LOG="$RUNDIR/tileserver.log"
 PIDFILE="$RUNDIR/watchdog.pid"
 SERVERPID="$RUNDIR/server.pid"
 
-# 1 GiB budget: sized for the 20-asset io-lulc mosaic (20 x 16 MB = 320 MB
-# peak). Must be passed at launch — it is not durable in config.toml.
+# Dataset-cache byte budget. Each open COG handle is charged a flat 16 MiB
+# (BASE_COST_BYTES), so the budget / 16 MiB = max live handles (1 GiB -> 64).
+# Left at 1 GiB: this host has only ~3 GiB RAM available, so a larger cache
+# budget would risk OOM. LOW-ZOOM mosaics are instead bounded by the per-tile
+# fan-out cap (sources.stac.mosaic_max_assets in config.toml), which keeps the
+# live handle count under the budget without enlarging the cache.
+# Must be passed at launch — it is NOT durable in config.toml (env-only).
 export TILESERVER_DATASET_CACHE_MAX_BYTES="${TILESERVER_DATASET_CACHE_MAX_BYTES:-1073741824}"
 
 is_alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }

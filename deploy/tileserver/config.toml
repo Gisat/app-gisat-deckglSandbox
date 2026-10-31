@@ -158,6 +158,16 @@ dynamic = true
 # fetched per tile is bounded by max_total_items (default 64). 20 x 64
 # comfortably covers z>=9 in Bavaria.
 max_items = 20
+# mosaic_max_assets caps how many assets a SINGLE tile opens and composites.
+# Distinct from max_total_items (which bounds how many a tile fetches): each
+# open COG handle is charged a flat 16 MiB against the dataset-cache byte
+# budget (1 GiB here = 64 handles), and a low-zoom tile's bbox matches far
+# more items than that — a z6 io-lulc tile matches 32 (4 supercells x 8
+# years). Without a cap the mosaic saturates the budget, further opens are
+# refused ("byte budget exhausted") and the tile renders blank, which looks
+# like the server went down. 8 keeps a low-zoom tile's live handles bounded
+# on a small host. 0 = unlimited (previous behaviour).
+mosaic_max_assets = 8
 pixel_selection = "first"
 stac_bbox = [11.2, 47.9, 11.9, 48.4]
 resampling = "nearest"
