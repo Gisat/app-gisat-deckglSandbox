@@ -2,42 +2,34 @@
 # Tileserver-RS demo — local-development stack.
 #
 # Runs the PREBUILT native tileserver-rs binary in a thin Debian 12 runtime. It
-# does NOT compile anything: tileserver-runtime/Dockerfile copies the binary
-# that tileserver-rs/build-native.sh produced on a Debian 12 host, so the
-# container runs the exact same artifact as the no-Docker runner (run-native.sh).
+# does NOT compile anything: tileserver-runtime/Dockerfile DOWNLOADS the runtime
+# (binary + shared libs + GDAL/PROJ data + CA bundle) from a versioned GitHub
+# release on the fork, verifies its sha256, and installs it.
 #
-# PREREQUISITE — refresh the binary shipped in the build context:
-#   cp ../../../tileserver-rs/target/release/tileserver-rs \
-#      tileserver-runtime/tileserver-rs
-# then (from the repository root):
+# NO PREREQUISITE STEP — just build (from the repository root):
 #   docker compose -f deploy/tileserver/docker-compose.yml up -d --build
 #
-# The build is seconds, not minutes, and needs NO network (see the header note).
-# Full guide: USAGE.md.
+# The build is quick and needs NETWORK at build time (to fetch the release
+# asset). To pin a different release, pass:
+#   --build-arg TILESERVER_RELEASE_TAG=<tag> --build-arg TILESERVER_ASSET_SHA256=<sha256>
+# Full guide: USAGE.md. The demo sources are described in DEMOS.md.
 #
 # Health:  curl http://localhost:8080/health
 # Tiles:   http://localhost:8080/data/manila-rgb/{z}/{x}/{y}.png
 #
 # BUILD CONTEXT (mirrors deploy/titiler-caching/<encoder>/)
-#   ./tileserver-runtime/ is self-contained: the Dockerfile, the prebuilt
-#   binary, and the runtime shared libs. Nothing outside the app repo is read.
-#   Refresh the binary after a rebuild:
-#     cp ../../../tileserver-rs/target/release/tileserver-rs \
-#        tileserver-runtime/tileserver-rs
-#
-# OFFLINE vs ONLINE
-#   The image installs NOTHING from the network in the default (offline) path:
-#   the libs are shipped in tileserver-runtime/runtime-libs/ and COPYd in.
-#   To build online instead (smaller context), uncomment the apt-get block in
-#   tileserver-runtime/Dockerfile and delete runtime-libs/.
+#   ./tileserver-runtime/ holds the Dockerfile, .dockerignore, and
+#   nsswitch.conf. The vendored runtime inputs (binary, runtime-libs/,
+#   gdal-data/, ca-certs/) are NOT needed locally — they come from the release.
+#   Publish a new runtime release: pack the context with no wrapper dir, attach
+#   the tarball to a gisat-v<ver> release, bump the two build args (see USAGE.md).
 # =============================================================================
 
 services:
   tileserver:
-    # Self-contained build context — mirrors deploy/titiler-caching/<encoder>/.
-    # Everything the image needs lives in tileserver-runtime/ (the Dockerfile,
-    # the prebuilt binary, and — for offline builds — the runtime shared libs).
-    # No cross-repo context, no monorepo root: the app repo is self-sufficient.
+    # Build context = ./tileserver-runtime/ (the Dockerfile + .dockerignore +
+    # nsswitch.conf). The runtime is fetched from the GitHub release inside the
+    # build — nothing outside this directory is read.
     build:
       context: ./tileserver-runtime
     image: tileserver-rs-demo:local
@@ -53,8 +45,9 @@ services:
       # but RUST_LOG is kept here so it stays easy to flip at run time.
       - RUST_LOG=${RUST_LOG:-info}
     healthcheck:
-      # Must match what the image actually has: debian:12-slim ships no curl
-      # (see tileserver-runtime/Dockerfile), so probe with bash /dev/tcp.
+      # debian:12-slim ships no curl at runtime (curl is installed only
+      # transiently at build time to fetch the release asset), so probe with
+      # bash /dev/tcp.
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
       interval: 30s
       timeout: 5s

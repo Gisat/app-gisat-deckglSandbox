@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# collect-runtime-libs.sh — regenerate the OFFLINE build context for the
-# tileserver-rs runtime image.
+# collect-runtime-libs.sh — regenerate the vendored runtime inputs for the
+# tileserver-rs runtime image (and its published release tarball).
 #
 # WHY THIS EXISTS
-#   tileserver-runtime/Dockerfile builds a Debian 12 image with NO network
-#   access (the host we build on has no container egress). So the shared
-#   libraries the binary links against, plus the GDAL/PROJ DATA files, are
-#   shipped inside the build context and COPYd in — mirroring how
-#   deploy/titiler-caching/<encoder>/ ships its Python source.
+#   The runtime image ships a prebuilt binary plus the shared libraries it
+#   links against and the GDAL/PROJ DATA files it needs at runtime. Those are
+#   packaged into the `tileserver-gisat.tar.gz` release asset that the
+#   Dockerfile DOWNLOADS at build time (see tileserver-runtime/Dockerfile).
+#   This script regenerates the vendored inputs that the tarball is built from,
+#   mirroring how deploy/titiler-caching/<encoder>/ ships its Python source.
 #
 #   Those files are NOT committed (180+ MB of vendored .so/.db ages badly and
 #   bloats git). Regenerate them with this script on a Debian 12 host that has

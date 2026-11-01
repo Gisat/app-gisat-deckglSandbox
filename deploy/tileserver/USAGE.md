@@ -8,45 +8,12 @@ proven raster source.
 
 ## What it is
 
-- **Image:** built locally from `../../../tileserver-rs` (branch
-  `feat/identity-raster-cache`) — a single-binary Rust tile server (axum +
-  GDAL). The branch adds identity raster-tile caching to the global `[cache]`,
-  which upstream `main` does not have (there, only Accept-Encoding re-encode
-  variants are cached). The `stac` feature (implies `raster`/GDAL) stays
+- **Image:** built locally from `../../../tileserver-rs` — a single-binary Rust
+  tile server (axum + GDAL). The `stac` feature (implies `raster`/GDAL) stays
   enabled in the build args.
-- **Two sources** (see `config.toml`):
-  - `manila-rgb` — the **same true-color RGB COG** as the TiTiler "Manila
-    RGB" demo (`Manila_S2_Composite_2020022_Mercator_RGB_COG_DEFLATE.tif`,
-    uint8 3-band, EPSG:3857, ~500 MB, DEFLATE). True RGB → no colormap; the
-    Source renders the three bands straight to a PNG tile. This is the
-    simplest possible tileserver-rs COG demo.
-  - `eugw-lcmh` — the **true STAC + mosaic demo** (added 2026-10-27).
-    `EUGW_LCMH` on the openEO/VITO STAC API (`https://stac.openeo.vito.be`)
-    is a **spatial tile grid**: each item is one 1500×1500 COG (EPSG:3035,
-    1-band uint8 land-cover classes), ~146k items over Europe. `dynamic = true`
-    runs a per-tile bbox `POST /search`, renders the returned items
-    concurrently and composites them into a seamless class raster. Rendered
-    with the GHLC class colormap (`[sources.colormap]`, discrete,
-    `rescale_mode = "none"`, nodata 255 → transparent).
-
-  > **Why this STAC demo works where the retired one did not.** The previous
-  > `sentinel2-mosaic` source (Earth Search Sentinel-2 L2A, `dynamic = true` +
-  > `max_items = 5` + `pixel_selection = "first"`) served mostly-black tiles
-  > at low zoom: it was a **temporal** collection, the top-5 newest scenes
-  > for its region are 89–99 % cloud, and `first` composites by STAC order,
-  > not cloud cover. `EUGW_LCMH` is a **spatial** grid — every item shares one
-  > datetime and carries no `eo:cloud_cover`, so `first` simply means "the
-  > first adjacent tile", which is exactly what a mosaic wants. A
-  > `worldcereal` COG entry had also been removed earlier — it failed at
-  > startup registration (GDAL `GDALOpenEx` returned NULL, "Failure writing
-  > output to destination") and the public WorldCereal STAC API is dead.
-
-  > **Verified against the asset bytes 2026-10-27:** real COG (128×128 tiles,
-  > full overview pyramid 1500→750→375→188→94, IFD before data,
-  > `accept-ranges: bytes`, 206 on Range); 1-band uint8, `GDAL_NODATA=255`;
-  > asset role is `data` (NOT Earth Search's `visual`). Colormap values
-  > cross-checked against decoded pixels of a real item (values 1–7, 9, 255
-  > present, matching the GHLC value scheme).
+- **Two sources** (see `config.toml`): `manila-rgb`, a true-color RGB COG, and
+  `eugw-lcmh`, a STAC dynamic mosaic. See [`DEMOS.md`](DEMOS.md) for what each
+  source is, why it was chosen, and the asset verification notes.
 - **Caching:** `[cache]` enabled (512 MB, TTL 3600 s). With the local build
   the rendered PNG of every canonical tile request is cached in-process —
   repeat requests (same source/z/x/y) are served from memory.
@@ -62,22 +29,27 @@ the Vite dev-server proxy `/tileserver-api` → `http://localhost:8080`
 ## Quick start
 
 The container runs the **prebuilt native binary** — no compilation in Docker.
-The build context is [`./tileserver-runtime/`](tileserver-runtime/), which ships
-the binary and the runtime libs, so the build needs **no network**. Refresh the
-binary after a rebuild, then start:
+The runtime (binary + shared libs + GDAL/PROJ data + CA bundle) is downloaded at
+**build time** from a versioned GitHub release on the fork, then verified by
+sha256 before extraction:
+
+```
+https://github.com/twosix-code/tileserver-rs/releases/download/gisat-v2.39.0/tileserver-gisat.tar.gz
+```
+
+So from the repository root it is just:
 
 ```sh
-# from the repository root
-cp tileserver-rs/target/release/tileserver-rs \
-   deploy/tileserver/tileserver-runtime/tileserver-rs
 docker compose -f deploy/tileserver/docker-compose.yml up -d --build
 
 curl http://localhost:8080/health
 ```
 
 The image (`tileserver-rs-demo:local`) is `debian:12-slim` carrying the GDAL
-shared-library chain — seconds to build. See
-[Building the image](#building-the-image) for the online/offline split.
+shared-library chain. The build needs **network** (to fetch the release asset).
+To pin a different release, pass `--build-arg TILESERVER_RELEASE_TAG=<tag>`
+(and `TILESERVER_ASSET_SHA256=<sha256>`). See
+[Building the image](#building-the-image) for details.
 
 Stop / restart / logs / teardown:
 
@@ -170,8 +142,8 @@ container, so tile output and timing match the binary-variant container.
 Upstream tileserver-rs `main` (v2.38.0) does not consult the global `[cache]`
 for canonical raster tile requests — `get_raster_tile_with_params` called the
 COG/generic paths directly, bypassing the cache (only Accept-Encoding
-re-encoded variants were cached). The local `feat/identity-raster-cache`
-branch fixes this:
+re-encoded variants were cached). The local integration branch
+(`integration/demo-fixes`) fixes this:
 
 - COG branch: canonical requests (no `?resampling=`, 256 px tile) consult and
   populate `[cache]` with the same key shape/metrics as vector sources.
@@ -189,41 +161,70 @@ services:
 
 ## Building the image
 
-No compilation happens in Docker. The build context is
-[`./tileserver-runtime/`](tileserver-runtime/) — **self-contained**, mirroring
-`deploy/titiler-caching/<encoder>/`: it holds the Dockerfile plus the generated
-build inputs (binary, runtime libs, GDAL/PROJ data). Nothing outside the app
-repo is read.
+No compilation happens in Docker. The image is `debian:12-slim` plus the
+runtime fetched from the fork's GitHub release — the container runs the **exact
+binary** published for the pinned tag.
 
-**The generated inputs are NOT committed** (`.gitignore`d — ~219 MB of vendored
-`.so`/`.db` files that age badly). Regenerate them on a Debian 12 host that has
-GDAL — the same host that built the binary:
+**Build-time flow** (`tileserver-runtime/Dockerfile`):
+
+1. `apt-get install curl ca-certificates` (transient — only to download the
+   asset; removed with the apt lists).
+2. `curl` the release asset for `TILESERVER_RELEASE_TAG`, then
+   **verify its sha256** against `TILESERVER_ASSET_SHA256` (a bad/truncated
+   download fails the build loudly).
+3. Extract and install `runtime-libs/`, `gdal-data/`, `ca-certs/`,
+   `nsswitch.conf`, and the binary; `ldconfig`.
+
+The build context is [`./tileserver-runtime/`](tileserver-runtime/) — it holds
+only the `Dockerfile` and `nsswitch.conf`. The **vendored inputs are NOT in the
+context** (`.gitignore`d *and* `.dockerignore`d — ~219 MB of `.so`/`.db` files
+that age badly and are no longer needed locally).
+
+| Build arg | Default | Meaning |
+|---|---|---|
+| `TILESERVER_RELEASE_TAG` | `gisat-v2.39.0` | the release to fetch |
+| `TILESERVER_ASSET_SHA256` | `eb948886…831b8e` | expected sha256 of `tileserver-gisat.tar.gz` |
+
+Pin a different release:
+
+```sh
+docker compose -f deploy/tileserver/docker-compose.yml build \
+  --build-arg TILESERVER_RELEASE_TAG=gisat-v2.40.0 \
+  --build-arg TILESERVER_ASSET_SHA256=<sha256>
+```
+
+**The runtime is deliberately NOT the upstream Dockerfile's `ubuntu:24.04`**
+(glibc 2.39 / `libgdal34t64`): the binary is built against Debian 12's glibc
+2.36 / `libgdal32`, so the SONAMEs would not resolve there.
+
+### Publishing a new runtime release
+
+The release asset is the whole runtime context `tar`red up. On a Debian 12 host
+that has GDAL — the same host that built the binary:
 
 ```sh
 cd tileserver-rs && ./build-native.sh && cd -
-./deploy/tileserver/collect-runtime-libs.sh
+./deploy/tileserver/collect-runtime-libs.sh          # populates the context
+# pack the runtime context under a `tileserver-gisat/` top-level dir
+# (the Dockerfile extracts with --strip-components=1):
+tar -czf /tmp/tileserver-gisat.tar.gz \
+  -C deploy/tileserver --transform 's,^tileserver-runtime,tileserver-gisat,' \
+  tileserver-runtime
+sha256sum /tmp/tileserver-gisat.tar.gz               # -> TILESERVER_ASSET_SHA256
 ```
 
-The script collects, from `ldd` of the binary and `/usr/share`:
+`collect-runtime-libs.sh` collects, from `ldd` of the binary and `/usr/share`:
 
 | Into | From | Why |
 |---|---|---|
-| `runtime-libs/` | `ldd` (112 `.so`) | the shared libs the binary links |
+| `runtime-libs/` | `ldd` (114 `.so`) | the shared libs the binary links |
 | `gdal-data/gdal/` | `/usr/share/gdal` | GDAL data — pkg `gdal-data`, **not** a dep of `libgdal32` |
 | `gdal-data/proj/` | `/usr/share/proj` | `proj.db` CRS database — pkg `proj-data`, **not** a dep of `libproj25` |
 | `tileserver-rs` | the built binary | what the image runs |
 
-**Offline vs online:** the default path installs nothing from the network — the
-libs and data are `COPY`d from the context. To build online instead (smaller
-context), uncomment the `apt-get` block in `tileserver-runtime/Dockerfile`,
-delete `runtime-libs/` + `gdal-data/`, and add `gdal-data proj-data` to the
-install list.
-
-The image is `debian:12-slim` + those files, so the container runs the **exact
-binary** `run-native.sh` runs. Note the runtime is deliberately **not** the
-upstream Dockerfile's `ubuntu:24.04` (glibc 2.39 / `libgdal34t64`): the binary is
-built against Debian 12's glibc 2.36 / `libgdal32`, so the SONAMEs would not
-resolve there. Notes:
+Then create a GitHub release on `twosix-code/tileserver-rs` with tag
+`gisat-v<ver>`, attach `/tmp/tileserver-gisat.tar.gz`, and bump the two build
+args (`TILESERVER_RELEASE_TAG`, `TILESERVER_ASSET_SHA256`) in the Dockerfile.
 
 ## Performance notes
 
@@ -249,7 +250,8 @@ resolve there. Notes:
   only checks in-bounds tiles at sane zooms.
 - **No persistence:** the container is stateless; the `[cache]` is RAM-only
   (restart clears it — by design for this demo).
-- **Updating:** `git -C ../../../tileserver-rs fetch origin && git -C
-  ../../../tileserver-rs pull --ff-only` (on `feat/identity-raster-cache` or
-  `main`), then rebuild: `docker compose -f deploy/tileserver/docker-compose.yml up -d --build`
-  (or, for the binary variant, re-run `tileserver-rs/build-native.sh` first).
+- **Updating:** bump the Dockerfile's `TILESERVER_RELEASE_TAG` (and
+  `TILESERVER_ASSET_SHA256`) to a newer fork release, then
+  `docker compose -f deploy/tileserver/docker-compose.yml up -d --build`. To
+  rebuild the runtime from source, see
+  [Publishing a new runtime release](#publishing-a-new-runtime-release).

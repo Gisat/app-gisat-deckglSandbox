@@ -68,11 +68,12 @@ default_resampling = "bilinear"
 tile_size = 256
 
 # ---------------------------------------------------------------------------
-# In-process byte-weighted tile cache (moka). With the identity-raster-cache
-# patch (../tileserver-rs, branch feat/identity-raster-cache — built into the
-# compose image), this cache serves canonical /data/{id}/{z}/{x}/{y}.png
-# requests for the source below. Without the patch (published ghcr.io
-# image), only Accept-Encoding re-encode variants are cached.
+# In-process byte-weighted tile cache (moka). The container image is built
+# from the Gisat fork's integration release (../tileserver-rs, branch
+# integration/demo-fixes — see tileserver-runtime/Dockerfile), which serves
+# canonical /data/{id}/{z}/{x}/{y}.png requests from this cache for the
+# sources below. Without that patch (published ghcr.io image), only
+# Accept-Encoding re-encode variants are cached.
 # ---------------------------------------------------------------------------
 [cache]
 enabled = true

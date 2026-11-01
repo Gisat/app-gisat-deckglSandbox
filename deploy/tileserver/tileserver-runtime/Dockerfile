@@ -1,79 +1,84 @@
 # =============================================================================
 # Tileserver-RS runtime image — self-contained build context.
 #
-# Mirrors deploy/titiler-caching/<encoder>/Dockerfile: a small, local context
-# (this directory) that ships everything the image needs. Like the encoders,
-# which `COPY` their Python source, this `COPY`s the prebuilt native binary.
+# The image ships a PREBUILT native binary plus everything it needs at runtime
+# (the GDAL shared-library chain, a CA trust store, GDAL/PROJ data files and
+# the glibc NSS resolver config). Nothing is compiled here.
+#
+# WHERE THE BINARY COMES FROM — the Gisat fork's GitHub release
+#   The runtime files are published as a versioned tarball attached to a
+#   release on the fork:
+#
+#     https://github.com/twosix-code/tileserver-rs/releases/download/<TAG>/tileserver-gisat.tar.gz
+#
+#   The archive is the whole runtime build context (binary + runtime-libs/ +
+#   gdal-data/ + ca-certs/ + nsswitch.conf) under a single top-level
+#   `tileserver-gisat/` directory, so it is extracted with --strip-components=1
+#   to land the files directly at /tmp/tsr-runtime. Override the release with
+#   --build-arg TILESERVER_RELEASE_TAG=... (default: gisat-v2.39.0).
+#
+#   WHY DOWNLOAD INSTEAD OF COPY FROM A LOCAL CONTEXT
+#     - The vendored inputs (~219 MB of .so/.db files) are .gitignore'd and age
+#       badly; the release pins them to a tag the source commit is reachable at.
+#     - Mounting the built binary by hand is no longer required — the build is
+#       reproducible from the tag alone.
+#   The trade-off: this build needs NETWORK at build time (to fetch the asset).
+#   The release asset's sha256 is verified before extraction, so a truncated or
+#   tampered download fails the build loudly.
 #
 # WHY NOT APT-GET LIBGDAL HERE
 #   The upstream pattern (terrarium-encoder) relies on a prebuilt wheel that
 #   BUNDLES GDAL, so no system GDAL is installed. tileserver-rs is a dynamically
 #   linked binary against the system GDAL (libgdal.so.32), so it needs those
-#   shared libs present. Two ways to satisfy that are supported below:
-#
-#     (A) ONLINE BUILD — uncomment the apt-get block. Needs internet at build
-#         time (a normal Docker host).
-#     (B) OFFLINE BUILD — ship the libs in ./runtime-libs/ (populated by
-#         ../../../../tileserver-rs/build-native.sh --collect-libs or manually
-#         with `ldd` + cp). No network needed.
-#
-# The binary needs libgdal.so.32 + libsqlite3.so.0 (directly) and their
-# transitive chain — see the repo's ldd output. There is no RPATH, so the
-# loader searches the standard paths (and LD_LIBRARY_PATH).
+#   shared libs present — the tarball ships them under runtime-libs/.
+#   The binary needs libgdal.so.32 + libsqlite3.so.0 (directly) and their
+#   transitive chain. There is no RPATH, so the loader searches the standard
+#   paths (and LD_LIBRARY_PATH).
 # =============================================================================
 FROM debian:12-slim
 
+ARG TILESERVER_RELEASE_TAG=gisat-v2.39.0
+ARG TILESERVER_ASSET_SHA256=eb948886b81a2b00ac9548e7e7ee559c0eaf972c6bb80b28c0136eec5e831b8e
+
 ENV DEBIAN_FRONTEND=noninteractive
 
-# --- (A) ONLINE BUILD -------------------------------------------------------
-# Uncomment on a Docker host with internet access. Installs the runtime GDAL
-# stack (shared libs only — no -dev, no compiler).
-# RUN apt-get update && \
-#     apt-get install -y --no-install-recommends --no-install-suggests \
-#       libgdal32 libsqlite3-0 libcurl4 libpng16-16 libjpeg62-turbo libwebp7 \
-#       libtiff6 libproj25 libgeos-c1v5 libhdf5-103-1 libnetcdf19 \
-#       libpoppler126 libxerces-c3.2 libcfitsio10 libgomp1 libgcc-s1 \
-#       ca-certificates curl zlib1g libbz2-1.0 libexpat1 liblcms2-2 \
-#       libopenjp2-7 libdeflate0 \
-#     && apt-get clean && rm -rf /var/lib/apt/lists/*
-# ---------------------------------------------------------------------------
+# --- Fetch + verify + extract the runtime from the fork's release ------------
+# `ca-certificates` + `curl` are installed ONLY for this build step, then the
+# apt lists are wiped. They are not needed at runtime (the binary's own TLS for
+# /vsicurl/ comes from the libcurl/gnutls in runtime-libs/, and the healthcheck
+# uses bash /dev/tcp — see below).
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends --no-install-suggests \
+      curl ca-certificates && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# --- (B) OFFLINE BUILD ------------------------------------------------------
-# Ship the libs in the build context. Populate runtime-libs/ on a Debian 12
-# host that has GDAL (this repo's host does):
-#   mkdir -p runtime-libs
-#   ldd tileserver-rs | awk '/=> \//{print $3}' | sort -u \
-#     | xargs -I{} cp -Lv {} runtime-libs/
-# curl/ca-certificates would be needed for the HTTPS /vsicurl/ reads and an
-# HTTP healthcheck, but the OFFLINE path ships neither (curl is only in the
-# online apt block) — so the healthcheck below uses bash /dev/tcp instead.
-# The binary's own TLS for /vsicurl/ comes from the linked libcurl/gnutls in
-# runtime-libs/, and the remote COG is fetched over HTTPS from inside the
-# process, so no curl BINARY is required for tile serving.
-COPY runtime-libs/ /usr/lib/x86_64-linux-gnu/
-# CA trust store for libcurl-gnutls (TLS verification of remote /vsicurl/
-# COGs). The offline build installs nothing, so without this the handshake
-# aborts -> "HTTP response code: 0" -> GDALOpenEx NULL -> source never loads.
-# See collect-runtime-libs.sh section 3b.
-COPY ca-certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-RUN ldconfig
-# ---------------------------------------------------------------------------
+WORKDIR /tmp/tsr-runtime
+RUN curl -fsSL -o tileserver-gisat.tar.gz \
+      "https://github.com/twosix-code/tileserver-rs/releases/download/${TILESERVER_RELEASE_TAG}/tileserver-gisat.tar.gz" && \
+    echo "${TILESERVER_ASSET_SHA256}  tileserver-gisat.tar.gz" | sha256sum -c - && \
+    tar -xzf tileserver-gisat.tar.gz --strip-components=1 && \
+    rm -f tileserver-gisat.tar.gz
+
+# --- Runtime libs (GDAL shared-library chain + glibc NSS modules) ------------
+# Offline-style vendoring: the release ships every .so in runtime-libs/,
+# including libnss_dns.so.2 / libnss_files.so.2 (which glibc dlopen()s, so
+# `ldd` never lists them).
+RUN cp -a /tmp/tsr-runtime/runtime-libs/. /usr/lib/x86_64-linux-gnu/ && ldconfig
+
+# --- CA trust store for libcurl-gnutls ---------------------------------------
+# TLS verification of remote /vsicurl/ COGs. Without it the handshake aborts ->
+# "HTTP response code: 0" -> GDALOpenEx NULL -> source never loads.
+RUN cp /tmp/tsr-runtime/ca-certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # --- GDAL / PROJ DATA (required at runtime, NOT part of libgdal32/libproj25) --
-# The shared libs are useless for reprojection without their data files:
 #   /usr/share/gdal      ← GDAL data (drivers.ini, SRS tables)   — pkg gdal-data
 #   /usr/share/proj      ← PROJ database (proj.db: CRS defs)     — pkg proj-data
-# Debian ships these in `gdal-data` / `proj-data`, which are dependencies of the
-# -dev packages, NOT of libgdal32 / libproj25. Without them GDAL resolves most
-# CRS from cached state but FAILS intermittently on the code paths that read
-# proj.db → sporadic HTTP tile errors (probe also fails → app shows its tile
-# error modal). Verified: the same binary run where these exist (socat/native)
-# works; only the image lacked them.
-#
-# Collected from /usr/share on a Debian 12 host with GDAL 3.6.2 (see the
-# runtime-libs comment above for the collector pattern).
-COPY gdal-data/gdal/ /usr/share/gdal/
-COPY gdal-data/proj/ /usr/share/proj/
+# Without them GDAL resolves most CRS from cached state but FAILS intermittently
+# on the code paths that read proj.db → sporadic HTTP tile errors (probe also
+# fails → app shows its tile error modal).
+RUN cp -a /tmp/tsr-runtime/gdal-data/gdal/. /usr/share/gdal/ && \
+    cp -a /tmp/tsr-runtime/gdal-data/proj/. /usr/share/proj/
+
 # Point GDAL/PROJ explicitly, so this does not rely on compiled-in defaults
 # (which match here, but explicit is robust across GDAL rebuilds).
 ENV GDAL_DATA=/usr/share/gdal \
@@ -82,11 +87,21 @@ ENV GDAL_DATA=/usr/share/gdal \
     CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
+# --- glibc NSS resolver config (REQUIRED for HTTPS /vsicurl/) ----------------
+# debian:12-slim ships NO /etc/nsswitch.conf. Without it, getaddrinfo() inside
+# libcurl has no `hosts:` source and returns "Could not resolve host" even
+# though `getent hosts` still works (glibc uses its own fallbacks there).
+# That surfaces as "HTTP response code: 0" from GDAL, a NULL GDALOpenEx, the
+# remote COG failing to register ("Loaded 0 tile source(s)") and every
+# /data/{source}/... request 404ing.
+RUN cp /tmp/tsr-runtime/nsswitch.conf /etc/nsswitch.conf
+
 WORKDIR /app
 
-# The prebuilt binary (copied into this context — see README).
-COPY tileserver-rs ./tileserver-rs
-RUN chmod +x ./tileserver-rs
+# --- The prebuilt binary (from the release tarball) --------------------------
+RUN cp /tmp/tsr-runtime/tileserver-rs /app/tileserver-rs && \
+    chmod +x /app/tileserver-rs && \
+    rm -rf /tmp/tsr-runtime
 
 RUN mkdir -p /data
 
@@ -115,22 +130,12 @@ ENV GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR \
 EXPOSE 8080
 VOLUME ["/data"]
 
-# --- glibc NSS resolver config (REQUIRED for HTTPS /vsicurl/) ----------------
-# debian:12-slim ships NO /etc/nsswitch.conf. Without it, getaddrinfo() inside
-# libcurl has no `hosts:` source and returns "Could not resolve host" even
-# though `getent hosts` still works (glibc uses its own fallbacks there).
-# That surfaces as "HTTP response code: 0" from GDAL, a NULL GDALOpenEx, the
-# remote COG failing to register ("Loaded 0 tile source(s)") and every
-# /data/{source}/... request 404ing. Paired with libnss_dns.so.2, which
-# runtime-libs/ now ships (collect-runtime-libs.sh collects it explicitly,
-# since glibc dlopen()s it and `ldd` never lists it).
-COPY nsswitch.conf /etc/nsswitch.conf
-
 # Healthcheck: debian:12-slim ships NO curl/wget (only bash + coreutils), and
 # the binary has no self-check flag. bash's /dev/tcp needs no extra package, so
 # it is the reliable in-image probe. (An earlier revision used `curl -f`, which
-# could NEVER pass in the offline image — curl is only installed by the
-# commented-out online apt block. That made every container report unhealthy.)
+# could NEVER pass in the final image — curl is only installed transiently at
+# build time to fetch the release asset, then removed with the apt lists. That
+# made every container report unhealthy.)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080' || exit 1
 
