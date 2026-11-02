@@ -1,3 +1,16 @@
+## [1.17.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.16.0...v1.17.0) (2026-11-02)
+
+### Features
+
+* **chart:** add axis ticks, hover spikes and fix profile ribbons ([a694bb1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/a694bb1dbf3d4f865788916ef96598d4b45e9a23))
+* **chart:** orient deck.gl axis titles along their axes ([be85b53](https://github.com/Gisat/app-gisat-deckglSandbox/commit/be85b531ba36396edf029472f29e5949ba02befa))
+* **chart:** plotly-style deck.gl axes with constant label size ([e04441f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/e04441ff5e489bfc3c2cc9c04c2242283897064d))
+
+### Bug Fixes
+
+* **chart:** address deck.gl axis and marker review findings ([bf643d7](https://github.com/Gisat/app-gisat-deckglSandbox/commit/bf643d748e65729932e327f7ced30f7c455a82ff))
+* **map:** keep curtain line width constant and nodes above the line ([4b1aa88](https://github.com/Gisat/app-gisat-deckglSandbox/commit/4b1aa884ab9f8d5d2231c07a6d80b3ad49c7ff7e))
+
 ## [1.16.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.15.0...v1.16.0) (2026-10-26)
 
 ### Features
