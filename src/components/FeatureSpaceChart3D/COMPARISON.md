@@ -25,7 +25,7 @@ sharing the same data, axis, preset, colour and hover state.
 | Shaded 3D spheres | **No** built-in symbol; only via a merged `mesh3d` hack [C] | Yes — `SimpleMeshLayer` + `SphereGeometry` [C] | Yes — per-instance sphere [C] |
 | Custom per-point shape (OBJ / glTF) | **No** — `mesh3d` is a *single* mesh, not per-point [C] | **Yes** — `SimpleMeshLayer` + `OBJLoader`, or `ScenegraphLayer` (glTF) [C] | **Yes** — any geometry in an `InstancedMesh` [C] |
 | Per-point orientation (e.g. arrows) | No | Yes — `getOrientation` (Euler) [C] | Yes — per-instance quaternion [C] |
-| Axis lines / ticks / labels | **Built-in**, labelled [C] | Manual cube + `TextLayer` labels [C] | Manual cube + drei `<Html>` labels [C] |
+| Axis lines / ticks / labels | **Built-in**, labelled [C] | Manual cube, grid, ticks + `TextLayer` labels [C] | Manual cube + drei `<Html>` labels [C] |
 | Rotation | Built-in orbit [C] | `OrbitView` (must NOT use `OrthographicView`) [C] | `OrbitControls` [C] |
 | Hover tooltip | `hovertemplate` [C] | HTML overlay + `onHover` [C] | drei `<Html>` + instanced raycast [C] |
 | Map link (hover → `hoveredPointId`) | `onHover`/`onUnhover` [C] | `onHover` [C] | `instanceId` pick [C] |
@@ -43,17 +43,17 @@ Lazy chunks produced by `React.lazy` (minified / gzip):
 
 | Chunk | Size | Gzip |
 |---|---|---|
-| `PlotlyRenderer` (plotly.js) | **6,988.84 kB** | 1,645.86 kB |
-| `ThreeRenderer` (three + r3f + drei) | **1,081.25 kB** | 250.10 kB |
-| `DeckGLRenderer` | **28.68 kB** | 8.53 kB |
+| `PlotlyRenderer` (plotly.js) | **6,994.63 kB** | 1,644.72 kB |
+| `ThreeRenderer` (three + r3f + drei) | **1,086.07 kB** | 251.24 kB |
+| `DeckGLRenderer` | **38.11 kB** | 11.51 kB |
 | `PointTooltip` | 1.21 kB | 0.57 kB |
 
 Deck.gl's renderer chunk is tiny because `deck.gl` / `@deck.gl/core` / `@deck.gl/layers`
-were **already in the main bundle** (`index-GfAAvAjy.js`, 7,693.52 kB) used by the
-rest of the sandbox. Plotly and three.js are new, so they appear as their own large
-chunks. All three stay out of the initial load thanks to `React.lazy` + `Suspense`.
+were **already in the main bundle** (7,751.98 kB) used by the rest of the sandbox.
+Plotly and three.js are new, so they appear as their own large chunks. All three stay
+out of the initial load thanks to `React.lazy` + `Suspense`.
 
-**Takeaway:** choosing deck.gl adds ~28 kB of app code and ~0 new runtime; choosing
+**Takeaway:** choosing deck.gl adds ~38 kB of app code and ~0 new runtime; choosing
 Plotly adds ~7 MB (min) on demand; choosing three.js adds ~1.1 MB (min) on demand.
 
 ---
@@ -92,8 +92,10 @@ to a point. Viable as a hack, not as the primary approach.
 - Smallest delta in this repo (deck.gl already a dependency).
 
 **Limitations**
-- No axes, grid or ticks: the cube, axis shafts and 9 labels are hand-built
-  (~60 lines of geometry + a `TextLayer`). No automatic tick generation.
+- No built-in axes, grid or ticks: the cube, colored shafts, far-face grid,
+  numeric ticks, hover spikes and axis titles are hand-built (~500 lines of
+  geometry plus two `TextLayer`s). Ticks come from `d3-scale`; label size is
+  perspective-compensated so it stays constant while zooming/orbiting.
 - Must use `OrbitView`; `OrthographicView` is 2D-only and cannot rotate [C].
 - Tooltip is an HTML overlay that must be positioned from `info.x/info.y`.
 - Orbit zoom is in world units (`zoom ≈ 7.5` fits the normalised `[-1,1]³` cube);
@@ -269,10 +271,11 @@ ranges).
   `VEL_SD` pairing is confirmed.
 - **Renderer parity (units):** Plotly plots raw units on real axes; deck.gl and
   three.js normalise each axis into the equal `[-1,1]` cube, so mixed Y/Z units
-  look distorted there by design. Three/deck.gl label only the domain endpoints;
-  Plotly is the only renderer with real ticks and units. In the trend view the
-  window axis is a synthetic band coordinate in every renderer, labelled with the
-  window names (`90 d` … `730 d`) rather than a numeric range.
+  look distorted there by design. deck.gl now generates numeric ticks, a far-face
+  grid and hover spikes on the cube (Plotly-style placement); three.js still
+  labels only the domain endpoints. In the trend view the window axis is a
+  synthetic band coordinate in every renderer, labelled with the window names
+  (`90 d` … `730 d`) rather than a numeric range.
 - **Displacement colour (points):** three.js interpolates the line colour per
   vertex and deck.gl colours each segment; Plotly's `scatter3d` line cannot
   gradient, so there each point's (thin) line takes its mean-displacement colour
@@ -289,7 +292,7 @@ Rationale, weighted for the porting goal:
 1. **Only renderer that satisfies every required channel** — native per-point size,
    the exact map colour scale, and GPU scaling to large selections.
 2. **Near-zero cost in the target repo** if deck.gl is already present (it is in this
-   sandbox, and the port target is a deck.gl app): the renderer chunk is ~28 kB.
+   sandbox, and the port target is a deck.gl app): the renderer chunk is ~38 kB.
 3. The one real gap — axes/ticks — is a fixed, bounded cost of manual geometry that
    is already written here and ports unchanged.
 4. If the very largest selections still lag, the header's `circles` toggle swaps the
