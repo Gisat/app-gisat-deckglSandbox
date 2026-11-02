@@ -36,6 +36,8 @@ const TREND_WALL_ALPHA = 55;
 // Shared highlight colour for a selection: used both for the selected point
 // borders and for the persistent selection-boundary layer, so they always match.
 const SELECTION_COLOR = [66, 212, 244];
+/** Shared stroke width for the selection outline and the curtain edge/base. */
+const SELECTION_LINE_WIDTH = 2;
 
 /** One curtain per raw trend window, on a single shared Z domain. */
 function buildTrendCurtains(samples) {
@@ -426,7 +428,12 @@ export default function FeatureScatterChart3D() {
       getPath: (d) => d,
       getColor: lineColor,
       widthUnits: 'pixels',
-      getWidth: 2,
+      getWidth: SELECTION_LINE_WIDTH,
+      // Screen-space width: the default world-space ribbon foreshortens as the
+      // camera rotates, making parts of the upper line look thinner.
+      billboard: true,
+      jointRounded: true,
+      capRounded: true,
       pickable: false,
     }),
     new PathLayer({
@@ -435,7 +442,10 @@ export default function FeatureScatterChart3D() {
       getPath: (d) => d,
       getColor: lineColor,
       widthUnits: 'pixels',
-      getWidth: 2,
+      getWidth: SELECTION_LINE_WIDTH,
+      billboard: true,
+      jointRounded: true,
+      capRounded: true,
       pickable: false,
     }),
     new ScatterplotLayer({
@@ -448,6 +458,9 @@ export default function FeatureScatterChart3D() {
       radiusMaxPixels: 8,
       billboard: true,
       getFillColor: nodeColor,
+      // Keep the node markers above the curtain edge/line they sit on. Without
+      // this the coplanar line wins the depth test over half of each disc.
+      parameters: { depthTest: false, depthWrite: false },
       // Mirror the chart-hover highlight: a red outline on the node whose id the
       // chart reports via `onPointHover` (same ids as the InSAR points).
       stroked: true,
@@ -507,8 +520,8 @@ export default function FeatureScatterChart3D() {
         getFillColor: [...SELECTION_COLOR, 40],
         getLineColor: [...SELECTION_COLOR, 220],
         lineWidthUnits: 'pixels',
-        getLineWidth: 2,
-        lineWidthMinPixels: 2,
+        getLineWidth: SELECTION_LINE_WIDTH,
+        lineWidthMinPixels: SELECTION_LINE_WIDTH,
         pickable: false,
       })
     : null;
