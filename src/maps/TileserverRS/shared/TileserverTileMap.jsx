@@ -104,6 +104,26 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
         return () => el.removeEventListener('contextmenu', onContextMenu);
     }, [inspectTiles]);
 
+    // Dev-only test hook: expose a deterministic camera control on window so a
+    // CDP-driven harness can pan/zoom the map with REAL viewState changes.
+    // Synthetic pointer gestures are unreliable for deck.gl's controller (it
+    // tracks real gesture state), and the map instance is otherwise not
+    // reachable from the page. This makes burst tests reproducible: repeated
+    // window.__map.setCamera({longitude, latitude, zoom}) calls are exactly the
+    // "N tiles at one bbox" fan-out we need. Gated to DEV — the production
+    // bundle never defines window.__map.
+    useEffect(() => {
+        if (!import.meta.env.DEV) return undefined;
+        window.__map = {
+            sourceId,
+            tileUrl,
+            get: () => viewState,
+            setCamera: vs => setViewState(v => ({ ...v, ...vs })),
+            forceReload,
+        };
+        return () => { delete window.__map; };
+    }, [sourceId, tileUrl, viewState]);
+
     // Dismiss the menu on Esc, on scroll, or on a left-click/tap outside it.
     // `pointerdown` in the CAPTURE phase fires before deck.gl's map handlers,
     // so a click on the map closes the menu without the click also being
@@ -207,6 +227,7 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
         <>
             <div ref={wrapperRef} style={{ position: 'absolute', inset: 0 }}>
             <DeckGL
+                id="deck-map"
                 viewState={viewState}
                 onViewStateChange={handleViewStateChange}
                 controller={true}

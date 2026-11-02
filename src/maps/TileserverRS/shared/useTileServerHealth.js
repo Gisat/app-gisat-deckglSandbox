@@ -8,6 +8,20 @@ import {
 } from './endpoints';
 
 /**
+ * Reachability timeout for the STAC demo's health probe.
+ *
+ * Larger than the shared HEALTH_TIMEOUT_MS (5 s) because this demo shares the
+ * browser's ~6 HTTP/1.1 sockets with a burst of multi-second tile fetches
+ * (cold COG mosaics, 1.4-12 s each). The probe's request waits in the
+ * browser's socket queue behind those tiles; at 5 s it aborts, and the app
+ * falsely reports "tileserver-rs became unreachable" while the server is up
+ * (it answers /health in ~0.04 ms once a socket frees). 15 s clears the worst
+ * observed tile latency. TiTiler (single fast tile stack) keeps the 5 s
+ * default; only this hook opts into the longer budget.
+ */
+const STAC_REACHABILITY_TIMEOUT_MS = 15000;
+
+/**
  * Reachability + tile-error handling for the Tileserver-RS DEMO category.
  * Mirrors TiTilerDemo/shared/useTileHealth.js (same lifecycle and gating),
  * with tileserver-rs wording and its `{"error": ...}` JSON error shape
@@ -65,7 +79,7 @@ function useTileServerHealth({
     useEffect(() => {
         let cancelled = false;
         (async () => {
-            const ok = await isTileServerReachable(healthUrl);
+            const ok = await isTileServerReachable(healthUrl, { timeoutMs: STAC_REACHABILITY_TIMEOUT_MS });
             if (!cancelled && !ok) {
                 suppressedRef.current = false;
                 setModal({
@@ -82,7 +96,7 @@ function useTileServerHealth({
     // the server is back so the next outage reports.
     useEffect(() => {
         const interval = setInterval(async () => {
-            const reachable = await isTileServerReachable(healthUrl);
+            const reachable = await isTileServerReachable(healthUrl, { timeoutMs: STAC_REACHABILITY_TIMEOUT_MS });
             if (reachable) {
                 suppressedRef.current = false; // back up: a future outage should report again
                 return;
@@ -176,7 +190,7 @@ function useTileServerHealth({
         try {
             let ok = false;
             if (modal && modal.kind === 'unreachable') {
-                ok = await isTileServerReachable(healthUrl);
+                ok = await isTileServerReachable(healthUrl, { timeoutMs: STAC_REACHABILITY_TIMEOUT_MS });
             } else {
                 // tile-error: probe the actual tile endpoint.
                 try {
