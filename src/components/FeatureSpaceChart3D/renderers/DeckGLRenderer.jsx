@@ -5,8 +5,8 @@
  *  - scatter: points as shaded spheres (SimpleMeshLayer + luma.gl SphereGeometry)
  *    or billboarded discs (ScatterplotLayer), matching the map's marker style.
  *  - profile: one line per `frame.curves` entry (`PathLayer`), a translucent
- *    `z ± std` uncertainty ribbon per banded curve (`PolygonLayer` quads, not in
- *    trend points) and per-sample points.
+ *    `z ± std` uncertainty ribbon per banded curve (3D `SolidPolygonLayer` quads,
+ *    not in trend points) and per-sample points.
  *
  * A hand-built cube/axis overlay is needed because deck.gl ships no axes, grid
  * or ticks. Axis labels are TextLayer instances: deck.gl generates the SDF font
@@ -14,13 +14,14 @@
  * the app's COEP require-corp headers).
  */
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { OrbitView } from '@deck.gl/core';
-import { LineLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { LineLayer, PathLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { SphereGeometry } from '@luma.gl/engine';
-import { axisTitle, formatValue } from '../attributes';
+import { scaleLinear } from 'd3-scale';
+import { axisTitle, getAttribute } from '../attributes';
 import { colorToRgba, sizeForValue } from '../colorScale';
 import { computeAxisDomains, projectToCube } from '../transformPoints';
 import { buildProfileFrame, formatTick, hexToRgba } from '../profileGeometry';
@@ -39,9 +40,22 @@ const AXIS_COLORS = {
   z: [31, 119, 180],
 };
 
-/** 12 edges of the [-CUBE, CUBE]^3 wireframe. */
-function cubeSegments() {
+const GRID_COLOR = [232, 232, 232, 255];
+const TICK_LABEL_COLOR = [110, 110, 110];
+const TICK_LABEL_SIZE = 10;
+const TITLE_SIZE = 11;
+
+/** Static far-corner signs for the default camera (azimuth 225 / elevation 30). */
+const DEFAULT_SIGNS = [-1, -1, -1];
+
+/**
+ * The [-CUBE, CUBE]^3 wireframe, minus the far-corner edges that a colored axis
+ * shaft replaces. Drawing both would make the thin lines z-fight and hide the
+ * axis color.
+ */
+function cubeSegments(signs, enabled) {
   const c = CUBE;
+  const [sx, sy, sz] = signs;
   const corners = [
     [-c, -c, -c], [c, -c, -c], [c, c, -c], [-c, c, -c],
     [-c, -c, c], [c, -c, c], [c, c, c], [-c, c, c],
@@ -51,70 +65,172 @@ function cubeSegments() {
     [4, 5], [5, 6], [6, 7], [7, 4],
     [0, 4], [1, 5], [2, 6], [3, 7],
   ];
-  return pairs.map(([a, b]) => ({ source: corners[a], target: corners[b] }));
+  return pairs
+    .map(([a, b]) => ({ source: corners[a], target: corners[b] }))
+    .filter(({ source, target }) => {
+      const same = (i) => source[i] === target[i];
+      // Only drop the far edge when the matching colored shaft replaces it.
+      if (enabled.x && same(1) && same(2) && source[1] === sy * c && source[2] === sz * c) return false;
+      if (enabled.y && same(0) && same(2) && source[0] === sx * c && source[2] === sz * c) return false;
+      if (enabled.z && same(0) && same(1) && source[0] === sx * c && source[1] === sy * c) return false;
+      return true;
+    });
 }
 
-/** Three axis shafts from the low corner to the three high corners. */
-function axisSegments() {
+/**
+ * Far-corner signs for the current OrbitView camera. The colored axes and grid
+ * sit on the faces opposite the camera, behind the data, and flip as the view
+ * orbits.
+ */
+function farCornerSigns(rotationOrbit = 225, rotationX = 30) {
+  const rad = Math.PI / 180;
+  const cosX = Math.cos(rotationX * rad);
+  const camX = -cosX * Math.sin(rotationOrbit * rad);
+  const camY = -cosX * Math.cos(rotationOrbit * rad);
+  const camZ = Math.sin(rotationX * rad);
+  return [camX >= 0 ? -1 : 1, camY >= 0 ? -1 : 1, camZ >= 0 ? -1 : 1];
+}
+
+/** "Nice" numeric ticks for a domain, positioned in cube coordinates. */
+function makeTicks(domain, format) {
+  const [min, max] = domain;
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) return [];
+  return scaleLinear()
+    .domain([min, max])
+    .ticks(5)
+    .map((value) => ({
+      value,
+      t: ((value - min) / (max - min)) * 2 * CUBE - CUBE,
+      label: format(value),
+    }));
+}
+
+/**
+ * Tick formatter for the bare number (the unit lives in the axis title). The
+ * decimal count follows the tick step, not the attribute's tooltip precision,
+ * so a narrow domain does not collapse into identical labels.
+ */
+function axisTickFormatter(key, domain) {
+  const [min, max] = domain;
+  const span = Math.abs(max - min);
+  if (!Number.isFinite(span) || span === 0) return (value) => String(value);
+  const needed = Math.max(0, Math.ceil(-Math.log10(span / 5)));
+  // Lon/lat always keep at least 4 decimals; everything else is step-driven.
+  const decimals = getAttribute(key).coordinate
+    ? Math.max(4, Math.min(6, needed))
+    : Math.min(6, needed);
+  return (value) => (Number.isFinite(value) ? value.toFixed(decimals) : '');
+}
+
+/**
+ * Tick formatter for a profile axis. Lon/lat need their own precision, so they
+ * must not go through the generic `formatTick` (which rounds to 1 decimal above
+ * 10). Distance and trend axes keep the adaptive formatter.
+ */
+function profileTickFormatter(frame, slot) {
+  if (frame.view === 'aggregate') {
+    return slot === 'x'
+      ? formatTick
+      : axisTickFormatter(frame.valueKey, frame.axisDomains[slot]);
+  }
+  if (frame.view === 'attributes') {
+    if (frame.basis === 'plan') {
+      const key = slot === 'x' ? 'lon' : slot === 'y' ? 'lat' : frame.zKey;
+      return axisTickFormatter(key, frame.axisDomains[slot]);
+    }
+    if (slot === 'x') return formatTick;
+    return axisTickFormatter(slot === 'y' ? frame.yKey : frame.zKey, frame.axisDomains[slot]);
+  }
+  return formatTick; // trend: distance, window/step bands, settlement
+}
+
+/** Three axis shafts, at the far corner of the other two axes. */
+function axisSegments(signs, enabled) {
   const c = CUBE;
+  const [sx, sy, sz] = signs;
   return [
-    { source: [-c, -c, -c], target: [c, -c, -c], color: AXIS_COLORS.x },
-    { source: [-c, -c, -c], target: [-c, c, -c], color: AXIS_COLORS.y },
-    { source: [-c, -c, -c], target: [-c, -c, c], color: AXIS_COLORS.z },
-  ];
+    { key: 'x', source: [-c, sy * c, sz * c], target: [c, sy * c, sz * c], color: AXIS_COLORS.x },
+    { key: 'y', source: [sx * c, -c, sz * c], target: [sx * c, c, sz * c], color: AXIS_COLORS.y },
+    { key: 'z', source: [sx * c, sy * c, -c], target: [sx * c, sy * c, c], color: AXIS_COLORS.z },
+  ].filter((segment) => enabled[segment.key]);
 }
 
-function cubeLayers() {
+function cubeLayers(signs, enabled) {
   return [
     new LineLayer({
       id: 'feature-space-cube',
-      data: cubeSegments(),
+      data: cubeSegments(signs, enabled),
       getSourcePosition: (d) => d.source,
       getTargetPosition: (d) => d.target,
-      getColor: [220, 220, 220, 255],
+      getColor: [225, 225, 225, 255],
       widthUnits: 'pixels',
-      getWidth: 1,
-    }),
-    new LineLayer({
-      id: 'feature-space-axes',
-      data: axisSegments(),
-      getSourcePosition: (d) => d.source,
-      getTargetPosition: (d) => d.target,
-      getColor: (d) => d.color,
-      widthUnits: 'pixels',
-      getWidth: 2,
+      getWidth: 0.5,
+      pickable: false,
     }),
   ];
 }
 
-/** Axis-title + tick labels laid out around the cube, with explicit titles. */
-function profileLabels(frame) {
+/**
+ * Axis shafts, tick marks, light grid on the back faces, and the matching
+ * title/tick labels. All geometry is generated in cube space and stays
+ * depth-tested with the points.
+ */
+function axisOverlay({ signs, ticks, titles, enabled }) {
   const c = CUBE;
-  const off = c + 0.14;
-  const out = [
-    { position: [0, -off, -off], text: frame.titles.x, color: AXIS_COLORS.x },
-    { position: [-off, 0, -off], text: frame.titles.y, color: AXIS_COLORS.y },
-    { position: [-off, -off, 0], text: frame.titles.z, color: AXIS_COLORS.z },
-  ];
-  const ticks = [
-    ['x', [-c, -off - 0.05, -off - 0.05], [c, -off - 0.05, -off - 0.05]],
-    ['z', [-off - 0.05, -off - 0.05, -c], [-off - 0.05, -off - 0.05, c]],
-  ];
-  for (const [slot, minPos, maxPos] of ticks) {
-    out.push({ position: minPos, text: formatTick(frame.axisDomains[slot][0]), color: [110, 110, 110] });
-    out.push({ position: maxPos, text: formatTick(frame.axisDomains[slot][1]), color: [110, 110, 110] });
-  }
-  if (frame.yTicks) {
-    // Trend: label each Y band with its window instead of the -1..1 endpoints.
-    const t = off + 0.05;
-    for (const tick of frame.yTicks) {
-      out.push({ position: [-t, tick.value, -t], text: tick.label, color: [110, 110, 110] });
+  // Colored axes, grid and labels all sit on the far corner, behind the data.
+  const [sx, sy, sz] = signs;
+  const tickOff = c + 0.08;
+  const titleOff = c + 0.24;
+  const mark = 0.04;
+
+  const lines = axisSegments(signs, enabled);
+  const titleLabels = [];
+  const tickLabels = [];
+
+  const pushTitle = (slot, position) => {
+    if (!enabled[slot] || !titles[slot]) return;
+    titleLabels.push({ position, text: titles[slot], color: AXIS_COLORS[slot], size: TITLE_SIZE });
+  };
+  const pushTick = (slot, position, label) => {
+    if (!enabled[slot]) return;
+    tickLabels.push({ position, text: label, color: TICK_LABEL_COLOR, size: TICK_LABEL_SIZE });
+  };
+  const pushGrid = (source, target) => {
+    lines.push({ source, target, color: GRID_COLOR, width: 0.5 });
+  };
+  const pushMark = (slot, source, target) => {
+    lines.push({ source, target, color: [...AXIS_COLORS[slot], 190], width: 0.5 });
+  };
+
+  if (enabled.x) {
+    pushTitle('x', [0, sy * titleOff, sz * titleOff]);
+    for (const tick of ticks.x) {
+      pushTick('x', [tick.t, sy * tickOff, sz * tickOff], tick.label);
+      pushMark('x', [tick.t, sy * c, sz * c], [tick.t, sy * (c + mark), sz * (c + mark)]);
+      pushGrid([tick.t, -c, sz * c], [tick.t, c, sz * c]);
+      pushGrid([tick.t, sy * c, -c], [tick.t, sy * c, c]);
     }
-  } else {
-    out.push({ position: [-off - 0.05, -c, -off - 0.05], text: formatTick(frame.axisDomains.y[0]), color: [110, 110, 110] });
-    out.push({ position: [-off - 0.05, c, -off - 0.05], text: formatTick(frame.axisDomains.y[1]), color: [110, 110, 110] });
   }
-  return out;
+  if (enabled.y) {
+    pushTitle('y', [sx * titleOff, 0, sz * titleOff]);
+    for (const tick of ticks.y) {
+      pushTick('y', [sx * tickOff, tick.t, sz * tickOff], tick.label);
+      pushMark('y', [sx * c, tick.t, sz * c], [sx * (c + mark), tick.t, sz * (c + mark)]);
+      pushGrid([-c, tick.t, sz * c], [c, tick.t, sz * c]);
+      pushGrid([sx * c, tick.t, -c], [sx * c, tick.t, c]);
+    }
+  }
+  if (enabled.z) {
+    pushTitle('z', [sx * titleOff, sy * titleOff, 0]);
+    for (const tick of ticks.z) {
+      pushTick('z', [sx * tickOff, sy * tickOff, tick.t], tick.label);
+      pushMark('z', [sx * c, sy * c, tick.t], [sx * (c + mark), sy * (c + mark), tick.t]);
+      pushGrid([-c, sy * c, tick.t], [c, sy * c, tick.t]);
+      pushGrid([sx * c, -c, tick.t], [sx * c, c, tick.t]);
+    }
+  }
+
+  return { lines, titleLabels, tickLabels, enabled };
 }
 
 /**
@@ -153,27 +269,38 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     [points, axes, domains, colorScale, sizeDomain, sizeRange],
   );
 
-  const labels = useMemo(() => {
-    if (frame) return profileLabels(frame);
-    const c = CUBE;
-    const off = c + 0.14;
-    /** @type {Array<{ position: number[], text: string, color: number[] }>} */
-    const out = [
-      { position: [0, -off, -off], text: axisTitle(axes.x), color: AXIS_COLORS.x },
-      { position: [-off, 0, -off], text: axisTitle(axes.y), color: AXIS_COLORS.y },
-      { position: [-off, -off, 0], text: axisTitle(axes.z), color: AXIS_COLORS.z },
-    ];
-    const ticks = [
-      ['x', [-c, -off - 0.05, -off - 0.05], [c, -off - 0.05, -off - 0.05]],
-      ['y', [-off - 0.05, -c, -off - 0.05], [-off - 0.05, c, -off - 0.05]],
-      ['z', [-off - 0.05, -off - 0.05, -c], [-off - 0.05, -off - 0.05, c]],
-    ];
-    for (const [slot, minPos, maxPos] of ticks) {
-      out.push({ position: minPos, text: formatValue(axes[slot], domains[slot].min), color: [110, 110, 110] });
-      out.push({ position: maxPos, text: formatValue(axes[slot], domains[slot].max), color: [110, 110, 110] });
-    }
-    return out;
-  }, [axes, domains, frame]);
+  // Only the three far-corner signs are state: during an orbit the axis geometry
+  // is rebuilt only when the camera crosses a cube face, not on every frame.
+  const [signs, setSigns] = useState(DEFAULT_SIGNS);
+  const handleViewStateChange = useCallback(({ viewState }) => {
+    const next = farCornerSigns(viewState.rotationOrbit, viewState.rotationX);
+    setSigns((prev) => (
+      prev[0] === next[0] && prev[1] === next[1] && prev[2] === next[2] ? prev : next
+    ));
+  }, []);
+
+  const axis = useMemo(() => {
+    const titles = frame
+      ? frame.titles
+      : { x: axisTitle(axes.x), y: axisTitle(axes.y), z: axisTitle(axes.z) };
+    // Aggregate pins Y to zero and carries no Y title, so leave the axis out.
+    const enabled = { x: true, y: !(frame && frame.titles.y === ''), z: true };
+    const ticks = frame
+      ? {
+          x: makeTicks(frame.axisDomains.x, profileTickFormatter(frame, 'x')),
+          // Trend Y is categorical: reuse the band labels instead of numeric ticks.
+          y: frame.yTicks
+            ? frame.yTicks.map((tick) => ({ value: tick.value, t: tick.value, label: tick.label }))
+            : makeTicks(frame.axisDomains.y, profileTickFormatter(frame, 'y')),
+          z: makeTicks(frame.axisDomains.z, profileTickFormatter(frame, 'z')),
+        }
+      : {
+          x: makeTicks([domains.x.min, domains.x.max], axisTickFormatter(axes.x, [domains.x.min, domains.x.max])),
+          y: makeTicks([domains.y.min, domains.y.max], axisTickFormatter(axes.y, [domains.y.min, domains.y.max])),
+          z: makeTicks([domains.z.min, domains.z.max], axisTickFormatter(axes.z, [domains.z.min, domains.z.max])),
+        };
+    return axisOverlay({ signs, ticks, titles, enabled });
+  }, [axes, domains, frame, signs]);
 
   const view = useMemo(() => new OrbitView({ orbitAxis: 'Z', fovy: 45 }), []);
 
@@ -251,14 +378,22 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
 
     const out = [];
     if (ribbons.length > 0) {
+      // Ribbon quads differ only in Z (lo/hi share X/Y), so a normal PolygonLayer
+      // ear-cuts them in XY and emits no triangles. Tessellate in the largest-area
+      // plane instead, the same setup the map curtains use for vertical walls.
       out.push(
-        new PolygonLayer({
+        new SolidPolygonLayer({
           id: 'profile-ribbons',
           data: ribbons,
-          getPolygon: (d) => d.polygon,
+          getPolygon: (d) => d.polygon.flat(),
           getFillColor: (d) => d.fillColor,
-          stroked: false,
+          filled: true,
           extruded: false,
+          _normalize: false,
+          _full3d: true,
+          // Keep the translucent band from z-fighting with the median line that
+          // lies inside it (three.js also disables depth writes for the ribbon).
+          parameters: { depthWrite: false },
           pickable: false,
         }),
       );
@@ -271,7 +406,10 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           getPath: (d) => d.path,
           getColor: (d) => d.color,
           widthUnits: 'pixels',
-          getWidth: 2,
+          getWidth: 1,
+          // Screen-space extrusion: without this the stroke is a horizontal
+          // ribbon whose apparent width foreshortens as the chart rotates.
+          billboard: true,
           jointRounded: true,
           capRounded: true,
           pickable: false,
@@ -287,7 +425,8 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           getPath: (d) => d.path,
           getColor: (d) => [d.color[0], d.color[1], d.color[2], 140],
           widthUnits: 'pixels',
-          getWidth: 1,
+          getWidth: 0.75,
+          billboard: true,
           jointRounded: true,
           capRounded: true,
           pickable: false,
@@ -344,28 +483,59 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     return out;
   }, [frame, markerStyle]);
 
-  const layers = useMemo(() => {
-    const base = cubeLayers();
-    const labelLayer = new TextLayer({
-      id: 'feature-space-labels',
-      data: labels,
+  const staticLayers = useMemo(() => {
+    const base = cubeLayers(signs, axis.enabled);
+    const axisLineLayer = axis.lines.length > 0
+      ? new LineLayer({
+          id: 'feature-space-axes',
+          data: axis.lines,
+          getSourcePosition: (d) => d.source,
+          getTargetPosition: (d) => d.target,
+          getColor: (d) => d.color,
+          widthUnits: 'pixels',
+          getWidth: (d) => d.width ?? 0.5,
+          pickable: false,
+        })
+      : null;
+
+    const textProps = {
       getPosition: (d) => d.position,
       getText: (d) => d.text,
       getColor: (d) => d.color,
-      getSize: 11,
+      getSize: (d) => d.size,
       sizeUnits: 'pixels',
       billboard: true,
       fontFamily: 'system-ui, sans-serif',
-      fontWeight: 500,
       getTextAnchor: 'middle',
       getAlignmentBaseline: 'center',
-      characterSet: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-[]/()\u00b0\u2013\u00b1\u00b2',
+      // Axis text must stay readable even when a sphere sits in front of it;
+      // Plotly/three also keep labels above the marks.
+      parameters: { depthTest: false, depthWrite: false },
+      // Build the SDF atlas from the actual labels: the old fixed character set
+      // omitted spaces and non-ASCII (units, Czech text).
+      characterSet: 'auto',
+    };
+    const titleLayer = new TextLayer({
+      id: 'feature-space-axis-titles',
+      data: axis.titleLabels,
+      ...textProps,
+      fontWeight: 600,
+    });
+    const tickLayer = new TextLayer({
+      id: 'feature-space-axis-ticks',
+      data: axis.tickLabels,
+      ...textProps,
+      fontWeight: 400,
     });
 
-    if (frame) return [...base, ...(profileLayers || []), labelLayer];
+    const axisLines = axisLineLayer ? [axisLineLayer] : [];
+    const labels = [titleLayer, tickLayer];
+
+    if (frame) return [...base, ...axisLines, ...(profileLayers || []), ...labels];
 
     return [
       ...base,
+      ...axisLines,
       new ScatterplotLayer({
         id: 'feature-space-points',
         data: scatterData,
@@ -406,9 +576,46 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           getScale: [sizeDomain, sizeRange, axes.size],
         },
       }),
-      labelLayer,
+      ...labels,
     ];
-  }, [frame, profileLayers, labels, scatterData, colorScale, axes.color, axes.size, sizeDomain, sizeRange, markerStyle]);
+  }, [axis, frame, profileLayers, scatterData, colorScale, axes.color, axes.size, sizeDomain, sizeRange, markerStyle, signs]);
+
+  // Plotly-style hover spikes: one axis-parallel line from the hovered point to
+  // each far wall, plus the two cross-lines on each wall (`spikesides`). Kept in
+  // its own memo so hovering does not rebuild the point layers.
+  const hoveredPosition = tooltip?.object?.position ?? null;
+  const hoverLayer = useMemo(() => {
+    if (!hoveredPosition) return null;
+    const [x, y, z] = hoveredPosition;
+    const c = CUBE;
+    const [fx, fy, fz] = signs;
+    const data = [
+      { source: [x, y, z], target: [fx * c, y, z] },
+      { source: [x, y, z], target: [x, fy * c, z] },
+      { source: [x, y, z], target: [x, y, fz * c] },
+      { source: [fx * c, -c, z], target: [fx * c, c, z] },
+      { source: [fx * c, y, -c], target: [fx * c, y, c] },
+      { source: [-c, fy * c, z], target: [c, fy * c, z] },
+      { source: [x, fy * c, -c], target: [x, fy * c, c] },
+      { source: [-c, y, fz * c], target: [c, y, fz * c] },
+      { source: [x, -c, fz * c], target: [x, c, fz * c] },
+    ];
+    return new LineLayer({
+      id: 'feature-space-hover-spikes',
+      data,
+      getSourcePosition: (d) => d.source,
+      getTargetPosition: (d) => d.target,
+      getColor: [110, 110, 110, 220],
+      widthUnits: 'pixels',
+      getWidth: 1.5,
+      pickable: false,
+    });
+  }, [hoveredPosition, signs]);
+
+  const layers = useMemo(
+    () => [...staticLayers, hoverLayer].filter(Boolean),
+    [staticLayers, hoverLayer],
+  );
 
   return (
     <div style={{ position: 'absolute', inset: 0 }} onMouseLeave={() => setTooltip(null)}>
@@ -426,6 +633,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           maxZoom: 12,
         }}
         controller
+        onViewStateChange={handleViewStateChange}
         layers={layers}
         getCursor={() => 'crosshair'}
         onHover={(info) => {
