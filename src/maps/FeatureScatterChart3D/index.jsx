@@ -405,6 +405,21 @@ export default function FeatureScatterChart3D() {
   // One curtain = walls + top/base edges + nodes; callers supply the colours (a
   // value-driven scale for the attribute curtain, a flat window colour for the
   // trend curtains).
+  const curtainPathLayer = (id, path, color) => new PathLayer({
+    id,
+    data: [path],
+    getPath: (d) => d,
+    getColor: color,
+    widthUnits: 'pixels',
+    getWidth: SELECTION_LINE_WIDTH,
+    // Screen-space width: the default world-space ribbon foreshortens as the
+    // camera rotates, making parts of the upper line look thinner.
+    billboard: true,
+    jointRounded: true,
+    capRounded: true,
+    pickable: false,
+  });
+
   const curtainLayerSet = (id, geometry, { fillColor, nodeColor, lineColor }) => [
     new SolidPolygonLayer({
       id: `${id}-walls`,
@@ -422,32 +437,8 @@ export default function FeatureScatterChart3D() {
       _full3d: true,
       pickable: false,
     }),
-    new PathLayer({
-      id: `${id}-edge`,
-      data: [geometry.path],
-      getPath: (d) => d,
-      getColor: lineColor,
-      widthUnits: 'pixels',
-      getWidth: SELECTION_LINE_WIDTH,
-      // Screen-space width: the default world-space ribbon foreshortens as the
-      // camera rotates, making parts of the upper line look thinner.
-      billboard: true,
-      jointRounded: true,
-      capRounded: true,
-      pickable: false,
-    }),
-    new PathLayer({
-      id: `${id}-base`,
-      data: [geometry.base],
-      getPath: (d) => d,
-      getColor: lineColor,
-      widthUnits: 'pixels',
-      getWidth: SELECTION_LINE_WIDTH,
-      billboard: true,
-      jointRounded: true,
-      capRounded: true,
-      pickable: false,
-    }),
+    curtainPathLayer(`${id}-edge`, geometry.path, lineColor),
+    curtainPathLayer(`${id}-base`, geometry.base, lineColor),
     new ScatterplotLayer({
       id: `${id}-nodes`,
       data: geometry.nodes,
@@ -458,9 +449,12 @@ export default function FeatureScatterChart3D() {
       radiusMaxPixels: 8,
       billboard: true,
       getFillColor: nodeColor,
-      // Keep the node markers above the curtain edge/line they sit on. Without
-      // this the coplanar line wins the depth test over half of each disc.
-      parameters: { depthTest: false, depthWrite: false },
+      // The markers are coplanar with the wall top edge and the edge line, so
+      // pull them towards the camera with deck.gl's polygon offset instead of
+      // disabling the depth test: terrain in front still occludes them. Keep the
+      // default per-layer term and add a margin so the (earlier) edge line can
+      // never win the depth comparison.
+      getPolygonOffset: ({ layerIndex }) => [0, -layerIndex * 100 - 1000],
       // Mirror the chart-hover highlight: a red outline on the node whose id the
       // chart reports via `onPointHover` (same ids as the InSAR points).
       stroked: true,

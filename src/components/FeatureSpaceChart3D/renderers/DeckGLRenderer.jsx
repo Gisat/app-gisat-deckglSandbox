@@ -41,6 +41,9 @@ const AXIS_COLORS = {
 };
 
 const GRID_COLOR = [232, 232, 232, 255];
+const GRID_WIDTH = 0.5;
+/** Colored shafts are deliberately thicker than the grid/cube so the axis reads. */
+const AXIS_WIDTH = 1.5;
 const TICK_LABEL_COLOR = [110, 110, 110];
 const TICK_LABEL_SIZE = 11;
 const TITLE_SIZE = 12;
@@ -49,13 +52,6 @@ const TITLE_SIZE = 12;
 const DEFAULT_SIGNS = [-1, -1, -1];
 
 const DEFAULT_ZOOM = 7.5;
-
-/**
- * OrbitView maps one world unit at the target to 2^zoom pixels, so this
- * converts the shared world-space marker radius to billboard pixels. Both
- * marker styles therefore have the same on-screen size at the default view.
- */
-const PX_PER_WORLD = 2 ** DEFAULT_ZOOM;
 
 /**
  * Canonical default view (matches three.js / Plotly): Z up, camera at
@@ -236,25 +232,23 @@ function profileTickFormatter(frame, slot) {
 function axisSegments(edges, enabled) {
   const c = CUBE;
   return [
-    { key: 'x', source: [-c, edges.x.y * c, edges.x.z * c], target: [c, edges.x.y * c, edges.x.z * c], color: AXIS_COLORS.x },
-    { key: 'y', source: [edges.y.x * c, -c, edges.y.z * c], target: [edges.y.x * c, c, edges.y.z * c], color: AXIS_COLORS.y },
-    { key: 'z', source: [edges.z.x * c, edges.z.y * c, -c], target: [edges.z.x * c, edges.z.y * c, c], color: AXIS_COLORS.z },
+    { key: 'x', source: [-c, edges.x.y * c, edges.x.z * c], target: [c, edges.x.y * c, edges.x.z * c], color: AXIS_COLORS.x, width: AXIS_WIDTH },
+    { key: 'y', source: [edges.y.x * c, -c, edges.y.z * c], target: [edges.y.x * c, c, edges.y.z * c], color: AXIS_COLORS.y, width: AXIS_WIDTH },
+    { key: 'z', source: [edges.z.x * c, edges.z.y * c, -c], target: [edges.z.x * c, edges.z.y * c, c], color: AXIS_COLORS.z, width: AXIS_WIDTH },
   ].filter((segment) => enabled[segment.key]);
 }
 
-function cubeLayers(edges, enabled) {
-  return [
-    new LineLayer({
-      id: 'feature-space-cube',
-      data: cubeSegments(edges, enabled),
-      getSourcePosition: (d) => d.source,
-      getTargetPosition: (d) => d.target,
-      getColor: [225, 225, 225, 255],
-      widthUnits: 'pixels',
-      getWidth: 0.5,
-      pickable: false,
-    }),
-  ];
+function cubeLayer(edges, enabled) {
+  return new LineLayer({
+    id: 'feature-space-cube',
+    data: cubeSegments(edges, enabled),
+    getSourcePosition: (d) => d.source,
+    getTargetPosition: (d) => d.target,
+    getColor: [225, 225, 225, 255],
+    widthUnits: 'pixels',
+    getWidth: GRID_WIDTH,
+    pickable: false,
+  });
 }
 
 /**
@@ -290,13 +284,17 @@ function axisOverlay({ edges, far, ticks, titles, enabled }) {
     tickLabels.push({ position, text: label, color: TICK_LABEL_COLOR, size: TICK_LABEL_SIZE });
   };
   const pushGrid = (source, target) => {
-    lines.push({ source, target, color: GRID_COLOR, width: 0.5 });
+    lines.push({ source, target, color: GRID_COLOR, width: GRID_WIDTH });
   };
+  // A tick at the very end of the domain maps to ±CUBE, where its grid line
+  // would land exactly on a wireframe edge and z-fight with it.
+  const insideCube = (t) => Math.abs(t) < c - 1e-9;
 
   if (enabled.x) {
     pushTitle('x', [0, edges.x.y * titleOff, edges.x.z * titleOff]);
     for (const tick of ticks.x) {
       pushTick('x', [tick.t, edges.x.y * tickOff, edges.x.z * tickOff], tick.label);
+      if (!insideCube(tick.t)) continue;
       pushGrid([tick.t, -c, fz * c], [tick.t, c, fz * c]);
       pushGrid([tick.t, fy * c, -c], [tick.t, fy * c, c]);
     }
@@ -305,6 +303,7 @@ function axisOverlay({ edges, far, ticks, titles, enabled }) {
     pushTitle('y', [edges.y.x * titleOff, 0, edges.y.z * titleOff]);
     for (const tick of ticks.y) {
       pushTick('y', [edges.y.x * tickOff, tick.t, edges.y.z * tickOff], tick.label);
+      if (!insideCube(tick.t)) continue;
       pushGrid([-c, tick.t, fz * c], [c, tick.t, fz * c]);
       pushGrid([fx * c, tick.t, -c], [fx * c, tick.t, c]);
     }
@@ -313,12 +312,13 @@ function axisOverlay({ edges, far, ticks, titles, enabled }) {
     pushTitle('z', [edges.z.x * titleOff, edges.z.y * titleOff, 0]);
     for (const tick of ticks.z) {
       pushTick('z', [edges.z.x * tickOff, edges.z.y * tickOff, tick.t], tick.label);
+      if (!insideCube(tick.t)) continue;
       pushGrid([-c, fy * c, tick.t], [c, fy * c, tick.t]);
       pushGrid([fx * c, -c, tick.t], [fx * c, c, tick.t]);
     }
   }
 
-  return { lines, titleLabels, tickLabels, enabled, edges };
+  return { lines, titleLabels, tickLabels, enabled };
 }
 
 /**
@@ -336,8 +336,13 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
   const [tooltip, setTooltip] = useState(null);
 
   // Controlled camera: the axis labels are sized from the live clip-space depth
-  // (see `labelSizeFactor`), so a re-render per interaction is required.
-  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
+  // (see `labelSizeFactor`), so a re-render per interaction is required. Clone
+  // the module constant so no mount can mutate the shared default object.
+  const [viewState, setViewState] = useState(() => ({
+    ...INITIAL_VIEW_STATE,
+    target: [...INITIAL_VIEW_STATE.target],
+  }));
+  const viewStateRef = useRef(viewState);
   const containerRef = useRef(null);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
@@ -363,10 +368,11 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           ...p,
           position: projectToCube(p, axes, domains, CUBE),
           fillColor: colorToRgba(colorScale, p[axes.color]),
-          // Marker radius in world units (SphereGeometry has radius 1, so
-          // getScale is the sphere radius). The billboard path converts the same
-          // value to pixels, so both marker styles are the same size.
-          scale: 0.012 + t * 0.038,
+          // Billboard radius in pixels, matching the Plotly/three size channel,
+          // and sphere radius in world units (SphereGeometry has radius 1), using
+          // the same range as ThreeRenderer so the renderer switch keeps parity.
+          radius,
+          scale: 0.018 + t * 0.055,
         };
       }),
     [points, axes, domains, colorScale, sizeDomain, sizeRange],
@@ -378,23 +384,34 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
   // the perspective divide (1/w) would otherwise scale labels with zoom.
   const [signs, setSigns] = useState(DEFAULT_SIGNS);
   const handleViewStateChange = useCallback(({ viewState: next }) => {
-    setViewState((prev) => {
-      const target = next.target ?? prev.target;
-      const sameTarget = prev.target[0] === target[0]
-        && prev.target[1] === target[1]
-        && prev.target[2] === target[2];
-      if (
-        prev.zoom === next.zoom
-        && prev.rotationX === next.rotationX
-        && prev.rotationOrbit === next.rotationOrbit
-        && sameTarget
-      ) return prev;
-      // Merge so controller props (minZoom/maxZoom) survive the round trip.
-      return { ...prev, ...next, target };
-    });
-    const nextSigns = farCornerSigns(next.rotationOrbit, next.rotationX);
-    setSigns((prev) => (
-      prev[0] === nextSigns[0] && prev[1] === nextSigns[1] && prev[2] === nextSigns[2] ? prev : nextSigns
+    // Read the previous camera from a ref so a partial event (e.g. a pan that
+    // omits rotation) cannot snap the grid back to the default orientation.
+    const prev = viewStateRef.current;
+    const target = next.target ?? prev.target;
+    const merged = {
+      ...prev,
+      ...next,
+      target,
+      zoom: next.zoom ?? prev.zoom,
+      rotationX: next.rotationX ?? prev.rotationX,
+      rotationOrbit: next.rotationOrbit ?? prev.rotationOrbit,
+    };
+    // Ignore repeat events that do not move the camera.
+    if (
+      prev.zoom === merged.zoom
+      && prev.rotationX === merged.rotationX
+      && prev.rotationOrbit === merged.rotationOrbit
+      && prev.target[0] === target[0]
+      && prev.target[1] === target[1]
+      && prev.target[2] === target[2]
+    ) return;
+    viewStateRef.current = merged;
+    setViewState(merged);
+    const nextSigns = farCornerSigns(merged.rotationOrbit, merged.rotationX);
+    setSigns((current) => (
+      current[0] === nextSigns[0] && current[1] === nextSigns[1] && current[2] === nextSigns[2]
+        ? current
+        : nextSigns
     ));
   }, []);
 
@@ -428,15 +445,17 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     const titles = frame
       ? frame.titles
       : { x: axisTitle(axes.x), y: axisTitle(axes.y), z: axisTitle(axes.z) };
-    // Aggregate pins Y to zero and carries no Y title, so leave the axis out.
-    const enabled = { x: true, y: !(frame && frame.titles.y === ''), z: true };
+    // Aggregate pins Y to zero (no Y title), so leave the whole axis out.
+    const enabled = { x: true, y: !(frame && frame.view === 'aggregate'), z: true };
     const ticks = frame
       ? {
           x: makeTicks(frame.axisDomains.x, profileTickFormatter(frame, 'x')),
           // Trend Y is categorical: reuse the band labels instead of numeric ticks.
-          y: frame.yTicks
-            ? frame.yTicks.map((tick) => ({ value: tick.value, t: tick.value, label: tick.label }))
-            : makeTicks(frame.axisDomains.y, profileTickFormatter(frame, 'y')),
+          y: !enabled.y
+            ? []
+            : frame.yTicks
+              ? frame.yTicks.map((tick) => ({ value: tick.value, t: tick.value, label: tick.label }))
+              : makeTicks(frame.axisDomains.y, profileTickFormatter(frame, 'y')),
           z: makeTicks(frame.axisDomains.z, profileTickFormatter(frame, 'z')),
         }
       : {
@@ -457,7 +476,9 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     const pointsMode = frame.shape === 'points';
     const aggregateView = frame.view === 'aggregate';
     const sizeByOffset = frame.sizeByOffset;
-    const baseScale = pointsMode ? 0.012 : 0.018;
+    // Billboard radius (px) and sphere radius (world units) mirror ThreeRenderer.
+    const baseRadius = pointsMode ? 3 : 4;
+    const baseWorld = pointsMode ? 0.017 : 0.03;
 
     // Uniform-coloured curves use a PathLayer; settlement-coloured points are
     // split into per-segment lines so each segment shows its colour. Curves
@@ -509,10 +530,10 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
             id: p.id,
             position: p.position,
             fillColor: hexToRgba(p.color ?? c.color, 255),
-            // Marker world radius; the perpendicular offset grows the mark from
-            // the base size (bigger offset = bigger mark), never below it. The
-            // billboard path converts it to pixels.
-            scale: off == null ? baseScale : baseScale + off * 0.025,
+            // The perpendicular offset grows the mark from the base size (bigger
+            // offset = bigger mark), never below it.
+            radius: off == null ? baseRadius : baseRadius + off * 4,
+            scale: off == null ? baseWorld : baseWorld + off * 0.04,
             frameSample: p,
             curve: c,
           };
@@ -541,40 +562,29 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
         }),
       );
     }
+    // Screen-space extrusion: without it the stroke is a horizontal ribbon whose
+    // apparent width foreshortens as the chart rotates.
+    const curvePathLayer = (id, data, width, alpha) => new PathLayer({
+      id,
+      data,
+      getPath: (d) => d.path,
+      getColor: alpha == null
+        ? (d) => d.color
+        : (d) => [d.color[0], d.color[1], d.color[2], alpha],
+      widthUnits: 'pixels',
+      getWidth: width,
+      billboard: true,
+      jointRounded: true,
+      capRounded: true,
+      pickable: false,
+    });
+
     if (linePaths.length > 0) {
-      out.push(
-        new PathLayer({
-          id: 'profile-lines',
-          data: linePaths,
-          getPath: (d) => d.path,
-          getColor: (d) => d.color,
-          widthUnits: 'pixels',
-          getWidth: 1,
-          // Screen-space extrusion: without this the stroke is a horizontal
-          // ribbon whose apparent width foreshortens as the chart rotates.
-          billboard: true,
-          jointRounded: true,
-          capRounded: true,
-          pickable: false,
-        }),
-      );
+      out.push(curvePathLayer('profile-lines', linePaths, 1));
     }
     if (interpPaths.length > 0) {
       // Interpolated runs: thinner + translucent (deck.gl has no native dashes).
-      out.push(
-        new PathLayer({
-          id: 'profile-lines-interpolated',
-          data: interpPaths,
-          getPath: (d) => d.path,
-          getColor: (d) => [d.color[0], d.color[1], d.color[2], 140],
-          widthUnits: 'pixels',
-          getWidth: 0.75,
-          billboard: true,
-          jointRounded: true,
-          capRounded: true,
-          pickable: false,
-        }),
-      );
+      out.push(curvePathLayer('profile-lines-interpolated', interpPaths, 0.75, 140));
     }
     if (lineSegments.length > 0) {
       out.push(
@@ -586,6 +596,9 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           getColor: (d) => d.color,
           widthUnits: 'pixels',
           getWidth: 1,
+          // LineLayer has no screen-space extrusion, so the settlement-coloured
+          // segments still foreshorten with the camera; keeping them as lines
+          // avoids one PathLayer per segment.
           pickable: false,
         }),
       );
@@ -596,7 +609,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           id: 'profile-points',
           data: pointData,
           getPosition: (d) => d.position,
-          getRadius: (d) => d.scale * PX_PER_WORLD,
+          getRadius: (d) => d.radius,
           radiusUnits: 'pixels',
           radiusMinPixels: 1,
           radiusMaxPixels: 12,
@@ -627,7 +640,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
   }, [frame, markerStyle]);
 
   const staticLayers = useMemo(() => {
-    const base = cubeLayers(axis.edges, axis.enabled);
+    const base = [cubeLayer(axisEdgeSigns(signs), axis.enabled)];
     const axisLineLayer = axis.lines.length > 0
       ? new LineLayer({
           id: 'feature-space-axes',
@@ -636,7 +649,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           getTargetPosition: (d) => d.target,
           getColor: (d) => d.color,
           widthUnits: 'pixels',
-          getWidth: (d) => d.width ?? 0.5,
+          getWidth: (d) => d.width ?? GRID_WIDTH,
           pickable: false,
         })
       : null;
@@ -645,51 +658,48 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
 
     if (frame) return [...base, ...axisLines, ...(profileLayers || [])];
 
-    return [
-      ...base,
-      ...axisLines,
-      new ScatterplotLayer({
-        id: 'feature-space-points',
-        data: scatterData,
-        visible: markerStyle === 'billboard',
-        getPosition: (d) => d.position,
-        getRadius: (d) => d.scale * PX_PER_WORLD,
-        radiusUnits: 'pixels',
-        radiusMinPixels: 1,
-        radiusMaxPixels: 40,
-        // Face the camera (default false draws the disc in the common-space XY
-        // plane, which looks "up-facing" under OrbitView).
-        billboard: true,
-        getFillColor: (d) => d.fillColor,
-        pickable: true,
-        autoHighlight: true,
-        highlightColor: [255, 0, 0, 255],
-        updateTriggers: {
-          getFillColor: [colorScale, axes.color],
-          getRadius: [sizeDomain, sizeRange, axes.size],
-        },
-      }),
-      new SimpleMeshLayer({
-        id: 'feature-space-points-mesh',
-        data: scatterData,
-        visible: markerStyle === 'sphere',
-        mesh: sphereGeometry,
-        getPosition: (d) => d.position,
-        getColor: (d) => d.fillColor,
-        getScale: (d) => [d.scale, d.scale, d.scale],
-        // Matte spheres: no specular highlight, and ambient+diffuse <= 1 so the
-        // face colour is not washed out and still reads true to the scale.
-        material: { ambient: 0.35, diffuse: 0.6, shininess: 0, specularColor: [0, 0, 0] },
-        pickable: true,
-        autoHighlight: true,
-        highlightColor: [255, 0, 0, 255],
-        updateTriggers: {
-          getColor: [colorScale, axes.color],
-          getScale: [sizeDomain, sizeRange, axes.size],
-        },
-      }),
-    ];
-  }, [axis, frame, profileLayers, scatterData, colorScale, axes.color, axes.size, sizeDomain, sizeRange, markerStyle]);
+    const markerLayer = markerStyle === 'billboard'
+      ? new ScatterplotLayer({
+          id: 'feature-space-points',
+          data: scatterData,
+          getPosition: (d) => d.position,
+          getRadius: (d) => d.radius,
+          radiusUnits: 'pixels',
+          radiusMinPixels: 1,
+          radiusMaxPixels: 40,
+          // Face the camera (default false draws the disc in the common-space XY
+          // plane, which looks "up-facing" under OrbitView).
+          billboard: true,
+          getFillColor: (d) => d.fillColor,
+          pickable: true,
+          autoHighlight: true,
+          highlightColor: [255, 0, 0, 255],
+          updateTriggers: {
+            getFillColor: [colorScale, axes.color],
+            getRadius: [sizeDomain, sizeRange, axes.size],
+          },
+        })
+      : new SimpleMeshLayer({
+          id: 'feature-space-points-mesh',
+          data: scatterData,
+          mesh: sphereGeometry,
+          getPosition: (d) => d.position,
+          getColor: (d) => d.fillColor,
+          getScale: (d) => [d.scale, d.scale, d.scale],
+          // Matte spheres: no specular highlight, and ambient+diffuse <= 1 so the
+          // face colour is not washed out and still reads true to the scale.
+          material: { ambient: 0.35, diffuse: 0.6, shininess: 0, specularColor: [0, 0, 0] },
+          pickable: true,
+          autoHighlight: true,
+          highlightColor: [255, 0, 0, 255],
+          updateTriggers: {
+            getColor: [colorScale, axes.color],
+            getScale: [sizeDomain, sizeRange, axes.size],
+          },
+        });
+
+    return [...base, ...axisLines, markerLayer];
+  }, [axis, signs, frame, profileLayers, scatterData, colorScale, axes.color, axes.size, sizeDomain, sizeRange, markerStyle]);
 
   // Labels live in their own memo: only their sizes depend on the camera, so
   // orbiting/zooming refreshes ~20 glyphs instead of every point attribute.
@@ -699,9 +709,14 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     if (viewportSize.width === 0 || viewportSize.height === 0) return [];
 
     // Labels whose anchor is at/behind the camera have no valid perspective
-    // factor; drop them instead of drawing mirrored or zero-sized text.
-    const titleData = axis.titleLabels.filter((d) => labelSizeFactor(d.position) > 0);
-    const tickData = axis.tickLabels.filter((d) => labelSizeFactor(d.position) > 0);
+    // factor; drop them instead of drawing mirrored or zero-sized text. The
+    // compensated size is baked into the datum so `getSize` stays a read.
+    const scaleLabels = (labels) => labels.flatMap((d) => {
+      const factor = labelSizeFactor(d.position);
+      return factor > 0 ? [{ ...d, size: d.size * factor }] : [];
+    });
+    const titleData = scaleLabels(axis.titleLabels);
+    const tickData = scaleLabels(axis.tickLabels);
 
     const textProps = {
       getPosition: (d) => d.position,
@@ -709,7 +724,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
       getColor: (d) => d.color,
       // Perspective-compensated: keeps a single on-screen font size while
       // zooming and orbiting (see `labelSizeFactor`).
-      getSize: (d) => d.size * labelSizeFactor(d.position),
+      getSize: (d) => d.size,
       sizeUnits: 'pixels',
       billboard: true,
       fontFamily: 'system-ui, sans-serif',
@@ -776,8 +791,10 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     });
   }, [hoveredPosition, signs]);
 
+  // Labels are last: they disable the depth test, so drawing the hover spikes
+  // after them would paint the spikes over the axis text.
   const layers = useMemo(
-    () => [...staticLayers, ...labelLayers, hoverLayer].filter(Boolean),
+    () => [...staticLayers, hoverLayer, ...labelLayers].filter(Boolean),
     [staticLayers, labelLayers, hoverLayer],
   );
 
