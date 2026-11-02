@@ -48,6 +48,15 @@ const TITLE_SIZE = 12;
 /** Static far-corner signs for the default camera (azimuth 225 / elevation 30). */
 const DEFAULT_SIGNS = [-1, -1, -1];
 
+const DEFAULT_ZOOM = 7.5;
+
+/**
+ * OrbitView maps one world unit at the target to 2^zoom pixels, so this
+ * converts the shared world-space marker radius to billboard pixels. Both
+ * marker styles therefore have the same on-screen size at the default view.
+ */
+const PX_PER_WORLD = 2 ** DEFAULT_ZOOM;
+
 /**
  * Canonical default view (matches three.js / Plotly): Z up, camera at
  * azimuth 45deg / elevation 30deg. OrbitView puts the camera at
@@ -57,7 +66,7 @@ const INITIAL_VIEW_STATE = {
   target: [0, 0, 0],
   rotationX: 30,
   rotationOrbit: 225,
-  zoom: 7.5,
+  zoom: DEFAULT_ZOOM,
   minZoom: 4,
   maxZoom: 12,
 };
@@ -117,6 +126,57 @@ function axisEdgeSigns(far) {
     y: { x: nx, z: fz },
     z: { x: nx, y: fy },
   };
+}
+
+/**
+ * World direction of each axis, used to orient the title along its shaft.
+ * These stay axis-aligned: `axisEdgeSigns` only picks which edge a shaft sits
+ * on (fixing the other two coordinates), never which way the shaft runs.
+ */
+const AXIS_DIRECTIONS = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
+
+/**
+ * `getAngle` (degrees) that aligns text with an axis in the current view.
+ * TextLayer rotates the glyph quad counter-clockwise (the shader rotates, then
+ * flips pixelOffset.y for its y-down atlas frame), while `viewport.project`
+ * works in y-down screen coords, so the screen slope is negated. Titles are
+ * kept upright like Plotly's, hence the fold into [-90, 90].
+ */
+function axisTitleAngle(viewport, position, direction) {
+  // Half the cube half-extent: a long probe keeps the projected segment well
+  // above the noise floor even at `minZoom`, and a straight 3D line projects to
+  // a straight screen line, so the chord angle equals the line's angle.
+  const eps = 0.5;
+  const a = viewport.project([
+    position[0] - direction[0] * eps,
+    position[1] - direction[1] * eps,
+    position[2] - direction[2] * eps,
+  ]);
+  const b = viewport.project([
+    position[0] + direction[0] * eps,
+    position[1] + direction[1] * eps,
+    position[2] + direction[2] * eps,
+  ]);
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  // A probe landing exactly on the camera plane projects to Infinity (the
+  // camera can get very close at the top of the zoom range).
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return 0;
+  // An axis pointing almost straight at the camera projects onto a few pixels,
+  // where the angle is pure noise; leave that title horizontal instead.
+  if (Math.hypot(dx, dy) < 2) return 0;
+  // An axis can project to an exactly vertical line (the Z shaft at some
+  // azimuths), leaving only float dust in dx. Without the snap the noise picks
+  // between +90 and -90, flipping the reading direction; keep it bottom-to-top.
+  if (Math.abs(dx) < 0.01) return dy < 0 ? 90 : -90;
+  // Negate the y-down screen slope: positive `getAngle` turns text
+  // counter-clockwise, so it aligns with (cos, -sin) rather than (cos, sin).
+  let deg = -Math.atan2(dy, dx) * (180 / Math.PI);
+  // Fold past vertical by 180 degrees so text never reads right-to-left or
+  // upside down, matching Plotly's always-upright 3D titles.
+  if (deg > 90) deg -= 180;
+  if (deg < -90) deg += 180;
+  return deg;
 }
 
 /** "Nice" numeric ticks for a domain, positioned in cube coordinates. */
@@ -215,7 +275,15 @@ function axisOverlay({ edges, far, ticks, titles, enabled }) {
 
   const pushTitle = (slot, position) => {
     if (!enabled[slot] || !titles[slot]) return;
-    titleLabels.push({ position, text: titles[slot], color: AXIS_COLORS[slot], size: TITLE_SIZE });
+    // The direction lets the title layer derive its screen angle from the live
+    // camera; it is inert for every other consumer of the label datum.
+    titleLabels.push({
+      position,
+      text: titles[slot],
+      color: AXIS_COLORS[slot],
+      size: TITLE_SIZE,
+      direction: AXIS_DIRECTIONS[slot],
+    });
   };
   const pushTick = (slot, position, label) => {
     if (!enabled[slot]) return;
@@ -295,10 +363,9 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           ...p,
           position: projectToCube(p, axes, domains, CUBE),
           fillColor: colorToRgba(colorScale, p[axes.color]),
-          // Billboard circle radius in pixels.
-          radius,
-          // SphereGeometry has radius 1, so getScale is the sphere radius in
-          // world units (the cube spans [-1, 1]).
+          // Marker radius in world units (SphereGeometry has radius 1, so
+          // getScale is the sphere radius). The billboard path converts the same
+          // value to pixels, so both marker styles are the same size.
           scale: 0.012 + t * 0.038,
         };
       }),
@@ -390,7 +457,6 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     const pointsMode = frame.shape === 'points';
     const aggregateView = frame.view === 'aggregate';
     const sizeByOffset = frame.sizeByOffset;
-    const baseBillboard = pointsMode ? 3 : 4;
     const baseScale = pointsMode ? 0.012 : 0.018;
 
     // Uniform-coloured curves use a PathLayer; settlement-coloured points are
@@ -443,10 +509,9 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
             id: p.id,
             position: p.position,
             fillColor: hexToRgba(p.color ?? c.color, 255),
-            // Billboard circle radius (px) and sphere world radius; the
-            // perpendicular offset grows the mark from the base size (bigger
-            // offset = bigger mark), never below it.
-            radius: off == null ? baseBillboard : baseBillboard + off * 4,
+            // Marker world radius; the perpendicular offset grows the mark from
+            // the base size (bigger offset = bigger mark), never below it. The
+            // billboard path converts it to pixels.
             scale: off == null ? baseScale : baseScale + off * 0.025,
             frameSample: p,
             curve: c,
@@ -531,9 +596,9 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           id: 'profile-points',
           data: pointData,
           getPosition: (d) => d.position,
-          getRadius: (d) => d.radius,
+          getRadius: (d) => d.scale * PX_PER_WORLD,
           radiusUnits: 'pixels',
-          radiusMinPixels: 2,
+          radiusMinPixels: 1,
           radiusMaxPixels: 12,
           billboard: true,
           getFillColor: (d) => d.fillColor,
@@ -588,7 +653,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
         data: scatterData,
         visible: markerStyle === 'billboard',
         getPosition: (d) => d.position,
-        getRadius: (d) => d.radius,
+        getRadius: (d) => d.scale * PX_PER_WORLD,
         radiusUnits: 'pixels',
         radiusMinPixels: 1,
         radiusMaxPixels: 40,
@@ -663,15 +728,21 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
         data: titleData,
         ...textProps,
         fontWeight: 400,
+        // Titles run along their shaft (Plotly behaviour). `billboard: true`
+        // still draws them screen-facing; `getAngle` only spins them within
+        // that plane, so this is a screen-space rotation, not a 3D tilt.
+        getAngle: (d) => axisTitleAngle(labelViewport, d.position, d.direction),
       }),
       new TextLayer({
         id: 'feature-space-axis-ticks',
         data: tickData,
         ...textProps,
+        // Ticks stay horizontal like Plotly's 3D tick labels, so they keep the
+        // default angle; the rotation belongs to the title layer alone.
         fontWeight: 400,
       }),
     ];
-  }, [axis, labelSizeFactor, viewportSize]);
+  }, [axis, labelSizeFactor, labelViewport, viewportSize]);
 
   // Plotly-style hover spikes: one axis-parallel line from the hovered point to
   // each far wall, plus the two cross-lines on each wall (`spikesides`). Kept in
