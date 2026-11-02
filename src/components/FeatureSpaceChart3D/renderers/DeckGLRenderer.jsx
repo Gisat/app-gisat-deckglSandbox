@@ -14,9 +14,9 @@
  * the app's COEP require-corp headers).
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DeckGL } from '@deck.gl/react';
-import { OrbitView } from '@deck.gl/core';
+import { OrbitView, OrbitViewport } from '@deck.gl/core';
 import { LineLayer, PathLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { SphereGeometry } from '@luma.gl/engine';
@@ -42,20 +42,33 @@ const AXIS_COLORS = {
 
 const GRID_COLOR = [232, 232, 232, 255];
 const TICK_LABEL_COLOR = [110, 110, 110];
-const TICK_LABEL_SIZE = 10;
-const TITLE_SIZE = 11;
+const TICK_LABEL_SIZE = 11;
+const TITLE_SIZE = 12;
 
 /** Static far-corner signs for the default camera (azimuth 225 / elevation 30). */
 const DEFAULT_SIGNS = [-1, -1, -1];
 
 /**
- * The [-CUBE, CUBE]^3 wireframe, minus the far-corner edges that a colored axis
+ * Canonical default view (matches three.js / Plotly): Z up, camera at
+ * azimuth 45deg / elevation 30deg. OrbitView puts the camera at
+ * [-d cosX sinOrbit, -d cosX cosOrbit, d sinX], so 30/225 -> (+, +, +).
+ */
+const INITIAL_VIEW_STATE = {
+  target: [0, 0, 0],
+  rotationX: 30,
+  rotationOrbit: 225,
+  zoom: 7.5,
+  minZoom: 4,
+  maxZoom: 12,
+};
+
+/**
+ * The [-CUBE, CUBE]^3 wireframe, minus the near/left edges that a colored axis
  * shaft replaces. Drawing both would make the thin lines z-fight and hide the
  * axis color.
  */
-function cubeSegments(signs, enabled) {
+function cubeSegments(edges, enabled) {
   const c = CUBE;
-  const [sx, sy, sz] = signs;
   const corners = [
     [-c, -c, -c], [c, -c, -c], [c, c, -c], [-c, c, -c],
     [-c, -c, c], [c, -c, c], [c, c, c], [-c, c, c],
@@ -69,18 +82,17 @@ function cubeSegments(signs, enabled) {
     .map(([a, b]) => ({ source: corners[a], target: corners[b] }))
     .filter(({ source, target }) => {
       const same = (i) => source[i] === target[i];
-      // Only drop the far edge when the matching colored shaft replaces it.
-      if (enabled.x && same(1) && same(2) && source[1] === sy * c && source[2] === sz * c) return false;
-      if (enabled.y && same(0) && same(2) && source[0] === sx * c && source[2] === sz * c) return false;
-      if (enabled.z && same(0) && same(1) && source[0] === sx * c && source[1] === sy * c) return false;
+      // Only drop the shaft edge when the matching colored axis replaces it.
+      if (enabled.x && same(1) && same(2) && source[1] === edges.x.y * c && source[2] === edges.x.z * c) return false;
+      if (enabled.y && same(0) && same(2) && source[0] === edges.y.x * c && source[2] === edges.y.z * c) return false;
+      if (enabled.z && same(0) && same(1) && source[0] === edges.z.x * c && source[1] === edges.z.y * c) return false;
       return true;
     });
 }
 
 /**
- * Far-corner signs for the current OrbitView camera. The colored axes and grid
- * sit on the faces opposite the camera, behind the data, and flip as the view
- * orbits.
+ * Far-corner signs for the current OrbitView camera. The grid sits on the faces
+ * opposite the camera, behind the data, and flips as the view orbits.
  */
 function farCornerSigns(rotationOrbit = 225, rotationX = 30) {
   const rad = Math.PI / 180;
@@ -89,6 +101,22 @@ function farCornerSigns(rotationOrbit = 225, rotationX = 30) {
   const camY = -cosX * Math.cos(rotationOrbit * rad);
   const camZ = Math.sin(rotationX * rad);
   return [camX >= 0 ? -1 : 1, camY >= 0 ? -1 : 1, camZ >= 0 ? -1 : 1];
+}
+
+/**
+ * Plotly-style shaft edges, derived from the far-corner signs so they track the
+ * camera: X/Y run on the two near-bottom edges, Z on the left vertical edge.
+ * Grid lines stay on the far faces.
+ */
+function axisEdgeSigns(far) {
+  const [fx, fy, fz] = far;
+  const nx = -fx;
+  const ny = -fy;
+  return {
+    x: { y: ny, z: fz },
+    y: { x: nx, z: fz },
+    z: { x: nx, y: fy },
+  };
 }
 
 /** "Nice" numeric ticks for a domain, positioned in cube coordinates. */
@@ -144,22 +172,21 @@ function profileTickFormatter(frame, slot) {
   return formatTick; // trend: distance, window/step bands, settlement
 }
 
-/** Three axis shafts, at the far corner of the other two axes. */
-function axisSegments(signs, enabled) {
+/** Three axis shafts, on the near/left edges (Plotly placement). */
+function axisSegments(edges, enabled) {
   const c = CUBE;
-  const [sx, sy, sz] = signs;
   return [
-    { key: 'x', source: [-c, sy * c, sz * c], target: [c, sy * c, sz * c], color: AXIS_COLORS.x },
-    { key: 'y', source: [sx * c, -c, sz * c], target: [sx * c, c, sz * c], color: AXIS_COLORS.y },
-    { key: 'z', source: [sx * c, sy * c, -c], target: [sx * c, sy * c, c], color: AXIS_COLORS.z },
+    { key: 'x', source: [-c, edges.x.y * c, edges.x.z * c], target: [c, edges.x.y * c, edges.x.z * c], color: AXIS_COLORS.x },
+    { key: 'y', source: [edges.y.x * c, -c, edges.y.z * c], target: [edges.y.x * c, c, edges.y.z * c], color: AXIS_COLORS.y },
+    { key: 'z', source: [edges.z.x * c, edges.z.y * c, -c], target: [edges.z.x * c, edges.z.y * c, c], color: AXIS_COLORS.z },
   ].filter((segment) => enabled[segment.key]);
 }
 
-function cubeLayers(signs, enabled) {
+function cubeLayers(edges, enabled) {
   return [
     new LineLayer({
       id: 'feature-space-cube',
-      data: cubeSegments(signs, enabled),
+      data: cubeSegments(edges, enabled),
       getSourcePosition: (d) => d.source,
       getTargetPosition: (d) => d.target,
       getColor: [225, 225, 225, 255],
@@ -171,19 +198,18 @@ function cubeLayers(signs, enabled) {
 }
 
 /**
- * Axis shafts, tick marks, light grid on the back faces, and the matching
- * title/tick labels. All geometry is generated in cube space and stays
- * depth-tested with the points.
+ * Axis shafts, light grid on the back faces, and the matching title/tick
+ * labels. Shafts and labels sit on the near/left edges (Plotly placement); the
+ * grid stays on the far faces behind the data. All geometry is generated in
+ * cube space and stays depth-tested with the points.
  */
-function axisOverlay({ signs, ticks, titles, enabled }) {
+function axisOverlay({ edges, far, ticks, titles, enabled }) {
   const c = CUBE;
-  // Colored axes, grid and labels all sit on the far corner, behind the data.
-  const [sx, sy, sz] = signs;
+  const [fx, fy, fz] = far;
   const tickOff = c + 0.08;
   const titleOff = c + 0.24;
-  const mark = 0.04;
 
-  const lines = axisSegments(signs, enabled);
+  const lines = axisSegments(edges, enabled);
   const titleLabels = [];
   const tickLabels = [];
 
@@ -198,39 +224,33 @@ function axisOverlay({ signs, ticks, titles, enabled }) {
   const pushGrid = (source, target) => {
     lines.push({ source, target, color: GRID_COLOR, width: 0.5 });
   };
-  const pushMark = (slot, source, target) => {
-    lines.push({ source, target, color: [...AXIS_COLORS[slot], 190], width: 0.5 });
-  };
 
   if (enabled.x) {
-    pushTitle('x', [0, sy * titleOff, sz * titleOff]);
+    pushTitle('x', [0, edges.x.y * titleOff, edges.x.z * titleOff]);
     for (const tick of ticks.x) {
-      pushTick('x', [tick.t, sy * tickOff, sz * tickOff], tick.label);
-      pushMark('x', [tick.t, sy * c, sz * c], [tick.t, sy * (c + mark), sz * (c + mark)]);
-      pushGrid([tick.t, -c, sz * c], [tick.t, c, sz * c]);
-      pushGrid([tick.t, sy * c, -c], [tick.t, sy * c, c]);
+      pushTick('x', [tick.t, edges.x.y * tickOff, edges.x.z * tickOff], tick.label);
+      pushGrid([tick.t, -c, fz * c], [tick.t, c, fz * c]);
+      pushGrid([tick.t, fy * c, -c], [tick.t, fy * c, c]);
     }
   }
   if (enabled.y) {
-    pushTitle('y', [sx * titleOff, 0, sz * titleOff]);
+    pushTitle('y', [edges.y.x * titleOff, 0, edges.y.z * titleOff]);
     for (const tick of ticks.y) {
-      pushTick('y', [sx * tickOff, tick.t, sz * tickOff], tick.label);
-      pushMark('y', [sx * c, tick.t, sz * c], [sx * (c + mark), tick.t, sz * (c + mark)]);
-      pushGrid([-c, tick.t, sz * c], [c, tick.t, sz * c]);
-      pushGrid([sx * c, tick.t, -c], [sx * c, tick.t, c]);
+      pushTick('y', [edges.y.x * tickOff, tick.t, edges.y.z * tickOff], tick.label);
+      pushGrid([-c, tick.t, fz * c], [c, tick.t, fz * c]);
+      pushGrid([fx * c, tick.t, -c], [fx * c, tick.t, c]);
     }
   }
   if (enabled.z) {
-    pushTitle('z', [sx * titleOff, sy * titleOff, 0]);
+    pushTitle('z', [edges.z.x * titleOff, edges.z.y * titleOff, 0]);
     for (const tick of ticks.z) {
-      pushTick('z', [sx * tickOff, sy * tickOff, tick.t], tick.label);
-      pushMark('z', [sx * c, sy * c, tick.t], [sx * (c + mark), sy * (c + mark), tick.t]);
-      pushGrid([-c, sy * c, tick.t], [c, sy * c, tick.t]);
-      pushGrid([sx * c, -c, tick.t], [sx * c, c, tick.t]);
+      pushTick('z', [edges.z.x * tickOff, edges.z.y * tickOff, tick.t], tick.label);
+      pushGrid([-c, fy * c, tick.t], [c, fy * c, tick.t]);
+      pushGrid([fx * c, -c, tick.t], [fx * c, c, tick.t]);
     }
   }
 
-  return { lines, titleLabels, tickLabels, enabled };
+  return { lines, titleLabels, tickLabels, enabled, edges };
 }
 
 /**
@@ -246,6 +266,22 @@ function axisOverlay({ signs, ticks, titles, enabled }) {
  */
 export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover }) {
   const [tooltip, setTooltip] = useState(null);
+
+  // Controlled camera: the axis labels are sized from the live clip-space depth
+  // (see `labelSizeFactor`), so a re-render per interaction is required.
+  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
+  const containerRef = useRef(null);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return undefined;
+    const measure = () => setViewportSize({ width: el.clientWidth, height: el.clientHeight });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const domains = useMemo(() => computeAxisDomains(points, axes), [points, axes]);
   const frame = useMemo(() => (profile ? buildProfileFrame(profile, CUBE) : null), [profile]);
@@ -263,21 +299,63 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           radius,
           // SphereGeometry has radius 1, so getScale is the sphere radius in
           // world units (the cube spans [-1, 1]).
-          scale: 0.02 + t * 0.06,
+          scale: 0.012 + t * 0.038,
         };
       }),
     [points, axes, domains, colorScale, sizeDomain, sizeRange],
   );
 
-  // Only the three far-corner signs are state: during an orbit the axis geometry
-  // is rebuilt only when the camera crosses a cube face, not on every frame.
+  // Only the three far-corner signs are state for the axis geometry: it is
+  // rebuilt when the camera crosses a cube face, not on every frame. The camera
+  // itself is tracked separately because TextLayer renders in clip space, where
+  // the perspective divide (1/w) would otherwise scale labels with zoom.
   const [signs, setSigns] = useState(DEFAULT_SIGNS);
-  const handleViewStateChange = useCallback(({ viewState }) => {
-    const next = farCornerSigns(viewState.rotationOrbit, viewState.rotationX);
+  const handleViewStateChange = useCallback(({ viewState: next }) => {
+    setViewState((prev) => {
+      const target = next.target ?? prev.target;
+      const sameTarget = prev.target[0] === target[0]
+        && prev.target[1] === target[1]
+        && prev.target[2] === target[2];
+      if (
+        prev.zoom === next.zoom
+        && prev.rotationX === next.rotationX
+        && prev.rotationOrbit === next.rotationOrbit
+        && sameTarget
+      ) return prev;
+      // Merge so controller props (minZoom/maxZoom) survive the round trip.
+      return { ...prev, ...next, target };
+    });
+    const nextSigns = farCornerSigns(next.rotationOrbit, next.rotationX);
     setSigns((prev) => (
-      prev[0] === next[0] && prev[1] === next[1] && prev[2] === next[2] ? prev : next
+      prev[0] === nextSigns[0] && prev[1] === nextSigns[1] && prev[2] === nextSigns[2] ? prev : nextSigns
     ));
   }, []);
+
+  // Mirrors the OrbitView viewport so label anchors can be transformed into
+  // clip space and their perspective factor read off the w component.
+  const labelViewport = useMemo(() => new OrbitViewport({
+    width: Math.max(1, viewportSize.width),
+    height: Math.max(1, viewportSize.height),
+    zoom: viewState.zoom,
+    rotationX: viewState.rotationX,
+    rotationOrbit: viewState.rotationOrbit,
+    target: viewState.target,
+    orbitAxis: 'Z',
+    fovy: 45,
+  }), [viewportSize, viewState]);
+
+  // TextLayer offsets glyphs in clip space, so the perspective divide shrinks
+  // text nearer the camera and grows it farther away. Scaling the requested
+  // size by w / focalDistance cancels that and keeps one on-screen font size
+  // through zooming and orbiting.
+  const labelSizeFactor = useMemo(() => {
+    const matrix = labelViewport.viewProjectionMatrix;
+    const focal = labelViewport.focalDistance || 1;
+    return (position) => {
+      const w = matrix[3] * position[0] + matrix[7] * position[1] + matrix[11] * position[2] + matrix[15];
+      return Number.isFinite(w) && w > 0 ? w / focal : 0;
+    };
+  }, [labelViewport]);
 
   const axis = useMemo(() => {
     const titles = frame
@@ -299,7 +377,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           y: makeTicks([domains.y.min, domains.y.max], axisTickFormatter(axes.y, [domains.y.min, domains.y.max])),
           z: makeTicks([domains.z.min, domains.z.max], axisTickFormatter(axes.z, [domains.z.min, domains.z.max])),
         };
-    return axisOverlay({ signs, ticks, titles, enabled });
+    return axisOverlay({ edges: axisEdgeSigns(signs), far: signs, ticks, titles, enabled });
   }, [axes, domains, frame, signs]);
 
   const view = useMemo(() => new OrbitView({ orbitAxis: 'Z', fovy: 45 }), []);
@@ -313,7 +391,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     const aggregateView = frame.view === 'aggregate';
     const sizeByOffset = frame.sizeByOffset;
     const baseBillboard = pointsMode ? 3 : 4;
-    const baseScale = pointsMode ? 0.02 : 0.03;
+    const baseScale = pointsMode ? 0.012 : 0.018;
 
     // Uniform-coloured curves use a PathLayer; settlement-coloured points are
     // split into per-segment lines so each segment shows its colour. Curves
@@ -369,7 +447,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
             // perpendicular offset grows the mark from the base size (bigger
             // offset = bigger mark), never below it.
             radius: off == null ? baseBillboard : baseBillboard + off * 4,
-            scale: off == null ? baseScale : baseScale + off * 0.04,
+            scale: off == null ? baseScale : baseScale + off * 0.025,
             frameSample: p,
             curve: c,
           };
@@ -484,7 +562,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
   }, [frame, markerStyle]);
 
   const staticLayers = useMemo(() => {
-    const base = cubeLayers(signs, axis.enabled);
+    const base = cubeLayers(axis.edges, axis.enabled);
     const axisLineLayer = axis.lines.length > 0
       ? new LineLayer({
           id: 'feature-space-axes',
@@ -498,40 +576,9 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
         })
       : null;
 
-    const textProps = {
-      getPosition: (d) => d.position,
-      getText: (d) => d.text,
-      getColor: (d) => d.color,
-      getSize: (d) => d.size,
-      sizeUnits: 'pixels',
-      billboard: true,
-      fontFamily: 'system-ui, sans-serif',
-      getTextAnchor: 'middle',
-      getAlignmentBaseline: 'center',
-      // Axis text must stay readable even when a sphere sits in front of it;
-      // Plotly/three also keep labels above the marks.
-      parameters: { depthTest: false, depthWrite: false },
-      // Build the SDF atlas from the actual labels: the old fixed character set
-      // omitted spaces and non-ASCII (units, Czech text).
-      characterSet: 'auto',
-    };
-    const titleLayer = new TextLayer({
-      id: 'feature-space-axis-titles',
-      data: axis.titleLabels,
-      ...textProps,
-      fontWeight: 600,
-    });
-    const tickLayer = new TextLayer({
-      id: 'feature-space-axis-ticks',
-      data: axis.tickLabels,
-      ...textProps,
-      fontWeight: 400,
-    });
-
     const axisLines = axisLineLayer ? [axisLineLayer] : [];
-    const labels = [titleLayer, tickLayer];
 
-    if (frame) return [...base, ...axisLines, ...(profileLayers || []), ...labels];
+    if (frame) return [...base, ...axisLines, ...(profileLayers || [])];
 
     return [
       ...base,
@@ -576,9 +623,55 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           getScale: [sizeDomain, sizeRange, axes.size],
         },
       }),
-      ...labels,
     ];
-  }, [axis, frame, profileLayers, scatterData, colorScale, axes.color, axes.size, sizeDomain, sizeRange, markerStyle, signs]);
+  }, [axis, frame, profileLayers, scatterData, colorScale, axes.color, axes.size, sizeDomain, sizeRange, markerStyle]);
+
+  // Labels live in their own memo: only their sizes depend on the camera, so
+  // orbiting/zooming refreshes ~20 glyphs instead of every point attribute.
+  const labelLayers = useMemo(() => {
+    // Wait for the first container measurement: before it the mirrored viewport
+    // is a placeholder and the compensated sizes would be wrong.
+    if (viewportSize.width === 0 || viewportSize.height === 0) return [];
+
+    // Labels whose anchor is at/behind the camera have no valid perspective
+    // factor; drop them instead of drawing mirrored or zero-sized text.
+    const titleData = axis.titleLabels.filter((d) => labelSizeFactor(d.position) > 0);
+    const tickData = axis.tickLabels.filter((d) => labelSizeFactor(d.position) > 0);
+
+    const textProps = {
+      getPosition: (d) => d.position,
+      getText: (d) => d.text,
+      getColor: (d) => d.color,
+      // Perspective-compensated: keeps a single on-screen font size while
+      // zooming and orbiting (see `labelSizeFactor`).
+      getSize: (d) => d.size * labelSizeFactor(d.position),
+      sizeUnits: 'pixels',
+      billboard: true,
+      fontFamily: 'system-ui, sans-serif',
+      getTextAnchor: 'middle',
+      getAlignmentBaseline: 'center',
+      // Axis text must stay readable even when a sphere sits in front of it;
+      // Plotly/three also keep labels above the marks.
+      parameters: { depthTest: false, depthWrite: false },
+      // Build the SDF atlas from the actual labels: the old fixed character set
+      // omitted spaces and non-ASCII (units, Czech text).
+      characterSet: 'auto',
+    };
+    return [
+      new TextLayer({
+        id: 'feature-space-axis-titles',
+        data: titleData,
+        ...textProps,
+        fontWeight: 400,
+      }),
+      new TextLayer({
+        id: 'feature-space-axis-ticks',
+        data: tickData,
+        ...textProps,
+        fontWeight: 400,
+      }),
+    ];
+  }, [axis, labelSizeFactor, viewportSize]);
 
   // Plotly-style hover spikes: one axis-parallel line from the hovered point to
   // each far wall, plus the two cross-lines on each wall (`spikesides`). Kept in
@@ -607,31 +700,21 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
       getTargetPosition: (d) => d.target,
       getColor: [110, 110, 110, 220],
       widthUnits: 'pixels',
-      getWidth: 1.5,
+      getWidth: 1,
       pickable: false,
     });
   }, [hoveredPosition, signs]);
 
   const layers = useMemo(
-    () => [...staticLayers, hoverLayer].filter(Boolean),
-    [staticLayers, hoverLayer],
+    () => [...staticLayers, ...labelLayers, hoverLayer].filter(Boolean),
+    [staticLayers, labelLayers, hoverLayer],
   );
 
   return (
-    <div style={{ position: 'absolute', inset: 0 }} onMouseLeave={() => setTooltip(null)}>
+    <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} onMouseLeave={() => setTooltip(null)}>
       <DeckGL
         views={view}
-        initialViewState={{
-          target: [0, 0, 0],
-          // Canonical default view (matches three.js / Plotly): Z up, camera at
-          // azimuth 45deg / elevation 30deg. OrbitView puts the camera at
-          // [-d cosX sinOrbit, -d cosX cosOrbit, d sinX], so 30/225 -> (+, +, +).
-          rotationX: 30,
-          rotationOrbit: 225,
-          zoom: 7.5,
-          minZoom: 4,
-          maxZoom: 12,
-        }}
+        viewState={viewState}
         controller
         onViewStateChange={handleViewStateChange}
         layers={layers}
