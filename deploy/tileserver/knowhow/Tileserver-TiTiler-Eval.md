@@ -1,34 +1,25 @@
-# Tileserver-TiTiler-Eval.md — reinterpretation for this deployment
+# Tileserver-TiTiler-Eval.md — app design and deployment considerations
 
-> **Purpose:** reinterpretation of `tileserver-rs-deploy/TITILER_VS_TILESERVER_RS.md`
-> through the lens of the **deployment actually sitting in this directory**
-> (`deploy/tileserver/`, the sandbox `Tileserver-RS` demo) and of the
-> **caching ladder** — i.e. what the static comparison means once you ask "how
+> **Purpose:** what a tiler comparison means once you ask "how
 > do I cache this, and up to what load?"
 >
 > **Status:** analysis / knowhow. Not an implementation plan. No code change is
 > proposed here; where a change would be needed it is marked **→ ACTION**.
 >
-> **Author context:** written 2026-11-01 from the pinned commit set in the
-> parent comparison (`tileserver-rs` @ `fd3fb73b`, TiTiler @ `2.2.1-10-g0c7c8429`).
-> Verify time-sensitive facts against the live tree before relying on them ⏱.
->
-> **Supersedes nothing.** The parent doc is the evidence base; this file is the
-> deployment-specific reading of it. See also:
-> [`../../../../tileserver-rs-deploy/TITILER_VS_TILESERVER_RS.md`](../../../../tileserver-rs-deploy/TITILER_VS_TILESERVER_RS.md),
+> **Supersedes nothing.** This file is app design and deployment-specific reading. See also:
 > [`USAGE.md`](../USAGE.md), [`DEMOS.md`](../DEMOS.md).
 
 ---
 
 ## 0. TL;DR
 
-1. The parent comparison's **only asymmetric raster gap** — TiTiler exposes
+1. TiTiler exposes
    per-request `indexes` / `rescale` / `colormap` / `expression`; tileserver-rs
-   does not — is not a defect. It is the **cacheability precondition**.
+   does not. It is the **cacheability precondition**  not a defect.
 2. Params **live** (chosen per request) ⇒ keys explode ⇒ any *shared* cache above
    rung 1 thrashes. Params **frozen** (baked in config) ⇒ keys are stable ⇒ the
    whole ladder above rung 1 is available.
-3. **This deployment chose frozen.** Both demo sources bake their rendering
+3. **This Demo deployment chose frozen.** Both demo sources bake their rendering
    decision into `config.toml` (`resampling`, `minzoom`/`maxzoom`, and for
    `io-lulc` a full `[sources.colormap]` + `rescale_mode = "none"`). The only
    thing the client varies is `z/x/y` — which is exactly a stable key.
@@ -41,10 +32,9 @@
 
 ---
 
-## 1. How to read the parent doc's decision point
+## 1. App with a given band/rescale/colormap decision.
 
-The parent doc states the fork as *"where do I want the band/rescale/colormap
-decision made — in every request, or once at deploy?"* For this deployment the
+*"where do I want the band/rescale/colormap decision made — in every request, or once at deploy?"* For this deployment the
 answer is unambiguous and already written in config:
 
 | Capability | Who decides, this deployment | Where |
@@ -103,7 +93,7 @@ permit.
 
 ## 3. The caching ladder, applied to this container
 
-Rungs from the parent analysis, with this deployment's specifics:
+Rungs from the analysis, with this deployment's specifics:
 
 | Rung | Mechanism | This demo | Notes |
 |---|---|---|---|
@@ -264,7 +254,7 @@ ever breaks, the culprit will be scope creep, not the cache.
 
 ---
 
-## 5. The real bottlenecks in THIS deployment (not cache keys)
+## 5. The real bottlenecks in this STAC deployment (not cache keys)
 
 These are where the demo actually costs time, and they are **orthogonal to the
 TiTiler-vs-tileserver caching question**:
@@ -428,10 +418,10 @@ Does the request need to vary band / rescale / colormap / expression?
         │         rungs 2+ remain open.  ← THIS DEPLOYMENT'S DEFAULT
         │
         └── YES → you are choosing a LIVE parameter surface.
-                  Accept: rung 1 only; no shared/disk/edge cache above it
+                  Accept: TiTiler only; no shared/disk/edge cache above it
                   (thrash — see §2). OR materialise the variants as
                   separate sources with stable ids (pre-render / pre-extract)
-                  and stay on the frozen path.
+                  and stay on the frozen path using Rung 1 tileserver-rs.
 ```
 
 **The two coherent architectures again, as a one-liner:** *live params ⇒
@@ -439,15 +429,3 @@ in-process cache only; frozen params ⇒ the whole ladder is yours.* You cannot
 buy rung 5 caching for a knob-turning UI.
 
 ---
-
-## 8. Open questions to verify against the live tree ⏱
-
-1. Does the deployed `integration/demo-fixes` runtime cache **canonical**
-   `z/x/y` requests (not just re-encode variants)? `config.toml` says yes; confirm
-   against the running image.
-2. Actual `dataset_cache` byte budget in the built binary — source says 256 MB
-   default, config comment says 1 GiB. Reconcile.
-3. Measured cold vs warm tile latency for `manila-rgb` and `io-lulc` at a
-   representative viewport, to size whether rung 2 is worth adding.
-4. Is per-request `?resampling=` used by any demo client code? If yes, note the
-   cache-fragmentation effect (§1) — harmless at demo scale, worth knowing.
