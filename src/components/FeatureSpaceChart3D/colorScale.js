@@ -27,6 +27,21 @@ const GENERIC_PALETTE = ['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725'];
 export const SIZE_PIXEL_RANGE = [3, 14];
 
 /**
+ * Marker size when the profile "Size by offset" encoding is enabled. `offsetT`
+ * maps 0 (on the line) -> the first value and 1 (at the buffer edge) -> the
+ * second. The ranges are shifted down from the old fixed base + `offsetT * 4`
+ * so offset-sized marks start smaller and the far-line marks stay compact.
+ * The `points*` ranges keep the Trend ▸ points shape smaller still.
+ */
+export const OFFSET_MARKER_SIZE = {
+  radius: [2, 4.5],
+  world: [0.014, 0.034],
+  pointsRadius: [1.5, 3.5],
+  pointsWorld: [0.01, 0.026],
+  plotly: [1.5, 4],
+};
+
+/**
  * Domain to map colour values over. `VEL_REL` is pinned to the map's [-3, 3]
  * so colours stay comparable; other attributes auto-fit their data.
  *

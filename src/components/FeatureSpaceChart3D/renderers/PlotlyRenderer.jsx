@@ -23,7 +23,7 @@ import { useMemo } from 'react';
 import Plotly from 'plotly.js-dist-min';
 import createPlotlyComponent from 'react-plotly.js/factory';
 import { axisTitle, getAttribute } from '../attributes';
-import { buildPlotlyColorscale, sizeForValue } from '../colorScale';
+import { OFFSET_MARKER_SIZE, buildPlotlyColorscale, sizeForValue } from '../colorScale';
 import { buildProfileFrame, DISPLACEMENT_COLORSCALE, displacementColor, formatTick } from '../profileGeometry';
 
 const Plot = createPlotlyComponent(Plotly);
@@ -270,8 +270,9 @@ function buildProfileTraces(frame) {
     // cannot gradient a line, so the line takes the station's mean displacement
     // colour (thin) and the markers carry the full ramp. Marker size encodes the
     // perpendicular offset in both the Attribute and Trend views.
+    const [minSize, maxSize] = OFFSET_MARKER_SIZE.plotly;
     const sizes = frame.sizeByOffset
-      ? samples.map((p) => 3 + (p.offsetT ?? 0) * 4)
+      ? samples.map((p) => minSize + (p.offsetT ?? 0) * (maxSize - minSize))
       : 3;
     const marker = curve.colored
       ? {
