@@ -1,3 +1,9 @@
+## [1.18.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.17.0...v1.18.0) (2026-11-04)
+
+### Features
+
+* **chart:** update trend palette and compact offset marker sizing ([c47fe29](https://github.com/Gisat/app-gisat-deckglSandbox/commit/c47fe29e470dd8908f4705d69646dadd0b0a58fb))
+
 ## [1.17.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.16.0...v1.17.0) (2026-11-02)
 
 ### Features
