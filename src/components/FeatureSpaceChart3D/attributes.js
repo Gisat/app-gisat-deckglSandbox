@@ -108,16 +108,16 @@ export const PROFILE_BASES = ['along', 'plan'];
 
 /**
  * Raw trend windows: cumulative trend displacement over 90/180/365/730 days, in
- * ascending window order with a light->dark sequential colour ramp. These are
- * the source fields for the Trend view's `windows ±σ` shape, which keeps the
- * original per-window `TD_x ± STD_x` reading (the one place the uncertainty is
- * genuinely per-series). Each window's uncertainty field is its paired `STD_*`.
+ * ascending window order with a categorical colour ramp. These are the source
+ * fields for the Trend view's `windows ±σ` shape, which keeps the original
+ * per-window `TD_x ± STD_x` reading (the one place the uncertainty is genuinely
+ * per-series). Each window's uncertainty field is its paired `STD_*`.
  */
 export const TREND_WINDOWS = [
-  { key: 'TD_90', stdKey: 'STD_90', days: 90, color: '#c6dbef' },
-  { key: 'TD_180', stdKey: 'STD_180', days: 180, color: '#6baed6' },
-  { key: 'TD_365', stdKey: 'STD_365', days: 365, color: '#2171b5' },
-  { key: 'TD_730', stdKey: 'STD_730', days: 730, color: '#08306b' },
+  { key: 'TD_90', stdKey: 'STD_90', days: 90, color: '#1abc9c' },
+  { key: 'TD_180', stdKey: 'STD_180', days: 180, color: '#2b6cb0' },
+  { key: 'TD_365', stdKey: 'STD_365', days: 365, color: '#e05353' },
+  { key: 'TD_730', stdKey: 'STD_730', days: 730, color: '#eba947' },
 ];
 
 /**
@@ -142,7 +142,7 @@ export const SETTLEMENT_REF_KEY = 'TD_730';
  * @property {string} label    axis/tooltip label, e.g. `T-90` or `now`
  * @property {string|null} tdKey   cumulative window subtracted from the reference
  * @property {string} stdKey   paired uncertainty field (before propagation)
- * @property {string} color    light->dark sequential colour (oldest -> now)
+ * @property {string} color    categorical colour (oldest -> now)
  * @property {'initial'|'now'} [anchor]  derived endpoint (value 0 / `TD_730`)
  */
 
@@ -164,19 +164,19 @@ export const SETTLEMENT_REF_KEY = 'TD_730';
  *   T-90            = TD_730 - TD_90
  *   T0   (now)      = TD_730
  *
- * Ordered oldest -> now; the light -> dark blue ramp tracks time since the
- * initial state. The `initial` and `now` anchors are derived from the reference
+ * Ordered oldest -> now; the categorical palette distinguishes each step. The
+ * `initial` and `now` anchors are derived from the reference
  * window rather than a `TD_*` field (see `settlement.js`). These are ordered
  * categorical steps, not a linear time scale.
  *
  * @type {TrendStep[]}
  */
 export const TREND_TIMELINE = [
-  { daysAgo: 730, label: 'T-730', tdKey: 'TD_730', stdKey: 'STD_730', color: '#eff3ff', anchor: 'initial' },
-  { daysAgo: 365, label: 'T-365', tdKey: 'TD_365', stdKey: 'STD_365', color: '#bdd7e7' },
-  { daysAgo: 180, label: 'T-180', tdKey: 'TD_180', stdKey: 'STD_180', color: '#6baed6' },
-  { daysAgo: 90, label: 'T-90', tdKey: 'TD_90', stdKey: 'STD_90', color: '#3182bd' },
-  { daysAgo: 0, label: 'now', tdKey: null, stdKey: 'STD_730', color: '#08519c', anchor: 'now' },
+  { daysAgo: 730, label: 'T-730', tdKey: 'TD_730', stdKey: 'STD_730', color: '#1abc9c', anchor: 'initial' },
+  { daysAgo: 365, label: 'T-365', tdKey: 'TD_365', stdKey: 'STD_365', color: '#2b6cb0' },
+  { daysAgo: 180, label: 'T-180', tdKey: 'TD_180', stdKey: 'STD_180', color: '#e05353' },
+  { daysAgo: 90, label: 'T-90', tdKey: 'TD_90', stdKey: 'STD_90', color: '#eba947' },
+  { daysAgo: 0, label: 'now', tdKey: null, stdKey: 'STD_730', color: '#9b51e0', anchor: 'now' },
 ];
 
 /**

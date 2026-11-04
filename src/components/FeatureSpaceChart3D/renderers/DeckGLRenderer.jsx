@@ -22,7 +22,7 @@ import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { SphereGeometry } from '@luma.gl/engine';
 import { scaleLinear } from 'd3-scale';
 import { axisTitle, getAttribute } from '../attributes';
-import { colorToRgba, sizeForValue } from '../colorScale';
+import { OFFSET_MARKER_SIZE, colorToRgba, sizeForValue } from '../colorScale';
 import { computeAxisDomains, projectToCube } from '../transformPoints';
 import { buildProfileFrame, formatTick, hexToRgba } from '../profileGeometry';
 import { PointTooltip } from '../PointTooltip';
@@ -479,6 +479,8 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     // Billboard radius (px) and sphere radius (world units) mirror ThreeRenderer.
     const baseRadius = pointsMode ? 3 : 4;
     const baseWorld = pointsMode ? 0.017 : 0.03;
+    const [minRadius, maxRadius] = pointsMode ? OFFSET_MARKER_SIZE.pointsRadius : OFFSET_MARKER_SIZE.radius;
+    const [minWorld, maxWorld] = pointsMode ? OFFSET_MARKER_SIZE.pointsWorld : OFFSET_MARKER_SIZE.world;
 
     // Uniform-coloured curves use a PathLayer; settlement-coloured points are
     // split into per-segment lines so each segment shows its colour. Curves
@@ -530,10 +532,10 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
             id: p.id,
             position: p.position,
             fillColor: hexToRgba(p.color ?? c.color, 255),
-            // The perpendicular offset grows the mark from the base size (bigger
-            // offset = bigger mark), never below it.
-            radius: off == null ? baseRadius : baseRadius + off * 4,
-            scale: off == null ? baseWorld : baseWorld + off * 0.04,
+            // The perpendicular offset maps the mark across the compact
+            // OFFSET_MARKER_SIZE range (bigger offset = bigger mark).
+            radius: off == null ? baseRadius : minRadius + off * (maxRadius - minRadius),
+            scale: off == null ? baseWorld : minWorld + off * (maxWorld - minWorld),
             frameSample: p,
             curve: c,
           };

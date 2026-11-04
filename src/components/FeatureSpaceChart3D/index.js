@@ -51,6 +51,7 @@ export {
   MAP_VELOCITY_COLORS,
   MAP_VELOCITY_DOMAIN,
   SIZE_PIXEL_RANGE,
+  OFFSET_MARKER_SIZE,
   getColorDomain,
   getSizeDomain,
   buildColorScale,
