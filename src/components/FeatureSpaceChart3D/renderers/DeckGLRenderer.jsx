@@ -46,8 +46,9 @@ const GRID_WIDTH = 0.5;
 /** Colored shafts are deliberately thicker than the grid/cube so the axis reads. */
 const AXIS_WIDTH = 1.5;
 const TICK_LABEL_COLOR = [110, 110, 110];
-const TICK_LABEL_SIZE = 11;
-const TITLE_SIZE = 12;
+// Match the 2D timeline card's nivo theme: 10 px tick text, 11 px axis titles.
+const TICK_LABEL_SIZE = 10;
+const TITLE_SIZE = 11;
 
 /** Static far-corner signs for the default camera (azimuth 225 / elevation 30). */
 const DEFAULT_SIGNS = [-1, -1, -1];
@@ -360,8 +361,9 @@ function axisOverlay({ edges, far, ticks, titles, enabled }) {
  * @param {(id: string|null) => void} props.onHover
  * @param {(id: string) => void} [props.onPointClick]  select a picked point (map sphere + 2D timeline)
  * @param {boolean} [props.zoomOutScatter]  give the scatter/Custom view extra margin (compact embedded card)
+ * @param {string[]} [props.velAvgPalette]  map-supplied ramp for the timeline curve colour
  */
-export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover, onPointClick, zoomOutScatter = false }) {
+export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover, onPointClick, zoomOutScatter = false, velAvgPalette = null }) {
   const [tooltip, setTooltip] = useState(null);
 
   // Controlled camera: the axis labels are sized from the live clip-space depth
@@ -407,7 +409,10 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
   }, [viewportSize, fitKey, zoomOutScatter]);
 
   const domains = useMemo(() => computeAxisDomains(points, axes), [points, axes]);
-  const frame = useMemo(() => (profile ? buildProfileFrame(profile, CUBE) : null), [profile]);
+  const frame = useMemo(
+    () => (profile ? buildProfileFrame(profile, CUBE, velAvgPalette) : null),
+    [profile, velAvgPalette],
+  );
 
   const scatterData = useMemo(
     () =>

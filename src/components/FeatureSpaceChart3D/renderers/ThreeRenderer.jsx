@@ -116,12 +116,16 @@ function buildRibbonGeometry(samples) {
  * @param {'billboard'|'sphere'} props.markerStyle
  * @param {{view:'attributes'|'trend', yKey:string, zKey:string, trendLines:string, samples:Array<any>}} [props.profile]
  * @param {(id: string|null) => void} props.onHover
+ * @param {string[]} [props.velAvgPalette]  map-supplied ramp for the profile curve colour
  */
-export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover }) {
+export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover, velAvgPalette = null }) {
   const domains = useMemo(() => computeAxisDomains(points, axes), [points, axes]);
   const [hovered, setHovered] = useState(null);
 
-  const frame = useMemo(() => (profile ? buildProfileFrame(profile, CUBE) : null), [profile]);
+  const frame = useMemo(
+    () => (profile ? buildProfileFrame(profile, CUBE, velAvgPalette) : null),
+    [profile, velAvgPalette],
+  );
 
   const scatterData = useMemo(
     () =>

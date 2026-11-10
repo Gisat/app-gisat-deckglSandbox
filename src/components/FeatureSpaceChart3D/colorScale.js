@@ -21,8 +21,10 @@ export const MAP_VELOCITY_COLORS = [[215, 25, 28], [254, 254, 191], [65, 182, 19
 export const MAP_VELOCITY_DOMAIN = [-3, 3];
 
 /**
- * `VEL_AVG` keeps the Poláky map's fixed ±1 mm/yr ramp so the chart and the map
- * spheres read the same. Chroma clips out-of-domain values to the endpoints.
+ * `VEL_AVG` keeps a fixed ±1 mm/yr domain so the chart and the map symbols read
+ * the same range. Maps with a custom `VEL_AVG` ramp pass it as `velAvgPalette`;
+ * without one the default `MAP_VELOCITY_COLORS` ramp is used. Chroma clips
+ * out-of-domain values to the endpoints.
  */
 export const MAP_VEL_AVG_DOMAIN = [-1, 1];
 
@@ -86,9 +88,15 @@ export function getColorDomain(key, points) {
 /**
  * @param {string} key
  * @param {[number, number]} domain
+ * @param {string[]} [palette]  palette for non-velocity attributes
+ * @param {string[]|null} [velAvgPalette]  map-supplied ramp for `VEL_AVG`
  * @returns {import('chroma-js').Scale}
  */
-export function buildColorScale(key, domain, palette = GENERIC_PALETTE) {
+export function buildColorScale(key, domain, palette = GENERIC_PALETTE, velAvgPalette = null) {
+  if (key === 'VEL_AVG' && Array.isArray(velAvgPalette) && velAvgPalette.length >= 2) {
+    // Map-supplied continuous ramp (Poláky/Hradec); other maps keep the default.
+    return chroma.scale(velAvgPalette).domain(domain);
+  }
   if (key === 'VEL_REL' || key === 'VEL_AVG') {
     // Exact match with the map scale (default rgb interpolation).
     return chroma.scale(MAP_VELOCITY_COLORS).domain(domain);

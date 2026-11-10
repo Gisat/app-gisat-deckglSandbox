@@ -38,7 +38,7 @@ import Fehmarnsundbrucke from './Fehmarnsundbrucke/index.jsx';
 import PolakyHradec from './PolakyHradec/index.jsx';
 
 const mapApps = [
-    { category: 'ČEPS', name: 'Poláky, Hradec', path: '/polaky-hradec', component: PolakyHradec, description: 'Poláky (Hradec) InSAR spheres coloured by VEL_AVG on satellite-draped 3D terrain with per-point displacement timelines; clickable 3D pylon meshes (kocka/dunaj/portal) group their linked InSAR points into a 3D feature-space chart' },
+    { category: 'ČEPS', name: 'Poláky, Hradec', path: '/polaky-hradec', component: PolakyHradec, description: 'Poláky (Hradec) InSAR arrows / near-zero spheres coloured by VEL_AVG on satellite-draped 3D terrain with per-point displacement timelines; clickable 3D pylon meshes (kocka/dunaj/portal) group their linked InSAR points into a 3D feature-space chart' },
     { category: '3DFLUS', name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
     { category: '3DFLUS', name: 'P1 Metro D: Google 3D Tiles', path: '/metro-d-google-3d-tiles', component: MetroD_Google3DTiles },
     { category: '3DFLUS', name: 'P1 Metro D: 3D arrows', path: '/metro-d-3d-arrows', component: MetroDarrows3D },

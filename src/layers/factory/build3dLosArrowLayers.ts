@@ -47,7 +47,7 @@ interface LosArrowAttributes {
 export interface Build3dLosArrowLayersProps {
   /** Stable prefix for the seven sublayer ids. */
   idPrefix: string;
-  /** LOS point features (every feature is rendered as an arrow). */
+  /** LOS point features to render as arrows (near-zero velocities are spheres). */
   data: LosArrowFeature[];
   /** Shared selection-aware colour accessor applied to all seven parts. */
   getColor: (feature: LosArrowFeature) => Color;
@@ -121,7 +121,8 @@ const scaleVec = (
  * Builds the seven `SimpleMeshLayer`s of the 3D LOS round-cap arrow composite:
  * rear cap, straight body, two wing rods, two wing-tip caps and the arrow tip.
  *
- * Every feature renders as an arrow — there is no near-zero sphere split. All
+ * Every feature passed in renders as an arrow; near-zero `|VEL_AVG|` points are
+ * split out by the caller and drawn with `build3dLosSphereLayer` instead. All
  * seven parts share one data set, one `getColor` accessor, one anchor and one
  * `arrowScale` (floor-only 3D zoom band × `ARROW_MAP_SIZE_SCALE`), so the cap /
  * body / wing seams stay glued.

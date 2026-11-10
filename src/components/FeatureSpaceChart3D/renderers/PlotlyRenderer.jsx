@@ -38,9 +38,13 @@ const Plot = createPlotlyComponent(Plotly);
  * @param {[number, number]} props.sizeRange
  * @param {{view:'attributes'|'trend', yKey:string, zKey:string, trendLines:string, samples:Array<any>}} [props.profile]
  * @param {(id: string|null) => void} props.onHover
+ * @param {string[]} [props.velAvgPalette]  map-supplied ramp for the profile curve colour
  */
-export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDomain, sizeRange, profile, onHover }) {
-  const frame = useMemo(() => (profile ? buildProfileFrame(profile) : null), [profile]);
+export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDomain, sizeRange, profile, onHover, velAvgPalette = null }) {
+  const frame = useMemo(
+    () => (profile ? buildProfileFrame(profile, 1, velAvgPalette) : null),
+    [profile, velAvgPalette],
+  );
 
   const traces = useMemo(() => {
     if (frame) return buildProfileTraces(frame);
@@ -100,7 +104,7 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: 'rgba(0,0,0,0)',
       showlegend: false,
-      font: { family: 'system-ui, sans-serif', size: 10, color: '#333' },
+      font: { family: 'system-ui, sans-serif', size: 11, color: '#333' },
       scene: {
         bgcolor: 'rgba(0,0,0,0)',
         aspectmode: 'cube',
@@ -448,7 +452,7 @@ function axisStyle(key) {
     gridcolor: '#eee',
     zerolinecolor: '#ddd',
     color: '#555',
-    tickfont: { size: 9 },
+    tickfont: { size: 10 },
   };
 }
 
@@ -458,7 +462,7 @@ function axisStyleText(title) {
     gridcolor: '#eee',
     zerolinecolor: '#ddd',
     color: '#555',
-    tickfont: { size: 9 },
+    tickfont: { size: 10 },
   };
 }
 
