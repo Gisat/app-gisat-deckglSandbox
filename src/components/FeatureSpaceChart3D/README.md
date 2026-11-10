@@ -24,6 +24,8 @@ in `src/components/FeatureSpaceChart3D/` imports from `src/maps/`.
 | Feature → normalised point | `src/components/FeatureSpaceChart3D/transformPoints.js` |
 | Colour + size encodings | `src/components/FeatureSpaceChart3D/colorScale.js` |
 | Profile frame (curves, ribbons, ticks) | `src/components/FeatureSpaceChart3D/profileGeometry.js` |
+| Displacement timeline samples (`d_*`) | `src/components/FeatureSpaceChart3D/timelineGeometry.js` |
+| Timeline hover tooltip | `src/components/FeatureSpaceChart3D/TimelineTooltip.jsx` |
 | Curtain geometry (pure) | `src/components/FeatureSpaceChart3D/curtainGeometry.js` |
 | Settlement timeline transform | `src/components/FeatureSpaceChart3D/settlement.js` |
 | Map integration, curtain deck.gl layers | `src/maps/FeatureScatterChart3D/index.jsx` |
@@ -66,11 +68,14 @@ Assumptions made by this implementation:
 ```
 GeoJSON FeatureCollection
         │
-        ├──► transformPoints(collection, activeFields)
+        ├──► transformPoints(collection, activeFields, attributeKeys?)
         │       • one point per feature, numeric attributes only
         │       • drops features missing an active axis/color/size field
         │
         ├──► computeAxisDomains(points, axes)  (per-slot min/max, degenerate padded)
+        │
+        ├──► extractTimelineSamples(collection)  (embedded Timeline chart only)
+        │       • one point per `d_YYYYMMDD` epoch, UTC
         │
         └──► buildProfileSamples(selectedFeatures, drawnLine)
                 • project each point onto the drawn line
@@ -82,7 +87,9 @@ GeoJSON FeatureCollection
         • preset / custom axes, color scale, size domain
         • scatter mode ──► DeckGLRenderer(points, axes, colorScale, …)
         • profile mode ──► buildProfileFrame(profile) ──► DeckGLRenderer(profile=…)
+        • embedded timeline ──► buildProfileFrame({view:'timeline'}) ──► DeckGLRenderer
         • onPointHover(id) ──► map highlights the same feature
+        • onPointClick(id) ──► map selects the same feature (deck.gl renderer only)
         • onStateChange({mode, view, basis, zKey, …}) ──► map builds curtains
                         │
                         ▼
@@ -198,6 +205,15 @@ Notes:
   `profileDisabled` forces scatter.
 - In profile mode the app passes an ordered sample array; the chart never re-reads the
   GeoJSON for profile geometry.
+- `embedded` switches to the compact card: deck.gl spheres only, Custom preset,
+  scatter plus an optional **Timeline** chart type. Timeline is deck.gl-only and
+  embedded-only: it reduces the `d_*` epochs to five smoothed settlement steps per
+  point (`T-730`, `T-365`, `T-180`, `T-90`, `now`) and colours each curve by
+  `VEL_AVG`. Pass `showTimeline` to add the toggle and `defaultChartType="timeline"`
+  to open on it.
+- `attributeKeys` overrides the picker/attribute set for embedded callers (for
+  example the loaded GeoJSON's numeric properties) and `colorPalette` overrides the
+  non-velocity palette.
 - `onStateChange` reports only primitives (`mode`, `view`, `basis`, `zKey`, …). This is
   what the map uses to decide which curtain to build. It fires `null` on unmount so the
   curtain disappears when the panel closes.
@@ -601,6 +617,7 @@ Views:
 | `trend` / `windows` | distance | ordered window band | `TD_*` | paired `STD_*` |
 | `trend` / `profiles` | distance | ordered timeline band | `TD_730 − TD_x` | none |
 | `trend` / `points` | distance | ordered timeline band | settlement | none, colour by settlement |
+| `timeline` (embedded) | one band per linked point | ordered trend-step band | smoothed settlement (mm) | none, colour by `VEL_AVG` |
 
 deck.gl rendering specifics for profiles:
 
@@ -976,6 +993,10 @@ trendCurtains    = mode === 'profile' && view === 'trend'
 
 Also gate on `lineActive`: the Trend view can retain a stale `basis` from a previous
 Attribute view, so check `view` before using `basis`.
+
+Timeline mode is chart-only (there is no map curtain) and is therefore not reported
+through `onStateChange`; it is also gated to `embedded` because Plotly/Three do not
+implement the timeline frame.
 
 ### 5.7 Hover synchronisation
 

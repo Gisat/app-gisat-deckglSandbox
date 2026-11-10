@@ -27,9 +27,15 @@
  * - `trend` / `points`: one settlement-vs-time curve per point, stepping across
  *   the timeline bands (Y) against that point's cumulative settlement (Z); no
  *   ribbon.
+ * - `timeline`: the Trend ▸ points model transposed. One settlement curve per
+ *   point across the five ordered trend steps (X), with one categorical band per
+ *   point (Y) and cumulative settlement (Z), smoothed over ~90-day windows.
+ *   Curve colour comes from the map's `VEL_AVG` ramp; no ribbon, bands or
+ *   per-epoch marks.
  */
 
 import { ATTRIBUTES, axisTitle, TREND_TIMELINE, TREND_WINDOWS, trendWindowLabel } from './attributes';
+import { MAP_VEL_AVG_DOMAIN, buildColorScale, colorToHex } from './colorScale';
 import { settlementOf } from './settlement';
 
 /** Colour used for the attribute curve and the (uniform) per-point curves. */
@@ -479,25 +485,211 @@ function settlementPoints(samples, cube) {
 }
 
 /**
+ * Timeline view: the `Trend ▸ points` model — one settlement curve per point
+ * across the five ordered trend steps (`T-730` … `now`), instead of drawing all
+ * ~443 epochs. X = the point's own categorical band, Y = step band
+ * (T-730 … now), Z = cumulative settlement in mm (from the oldest available
+ * snapshot, so that step reads 0). Curves are coloured by the point's `VEL_AVG`
+ * on the map ramp (values outside ±1 clip to the endpoints).
+ *
+ * Each point is anchored to its own latest epoch. The shared T-* band labels
+ * therefore assume the linked points share one record period (true for the
+ * Poláky stack); mixed record periods would need per-curve labels.
+ *
+ * @param {Array<any>} samples  `extractTimelineSamples` output
+ * @param {number} [cube] half-extent of the normalised cube
+ * @returns {Array<{ key:string, id:string|null, label:string, color:string,
+ *   stdKey:null, banded:false, rows:Array<any>, velAvg:number|null,
+ *   minD:number, maxD:number, tMin:number, tMax:number }>}
+ */
+function timelineCurves(samples, cube) {
+  const groups = new Map();
+  for (const s of samples) {
+    const key = s.pointKey ?? (s.id == null ? '__unknown' : String(s.id));
+    if (!groups.has(key)) groups.set(key, { id: s.id ?? null, samples: [] });
+    groups.get(key).samples.push(s);
+  }
+
+  const velScale = buildColorScale('VEL_AVG', [...MAP_VEL_AVG_DOMAIN]);
+  const stepCount = TREND_TIMELINE.length;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  // Each step reads a smoothed ~90-day window around its target epoch instead
+  // of a single noisy epoch (the raw series swings by ~10 mm between epochs).
+  const WINDOW_MS = 45 * DAY_MS;
+  // Nearest-epoch fallback when a window has no samples: the series is
+  // ~3-weekly, so 90 days comfortably covers a gap.
+  const TOLERANCE_MS = 90 * DAY_MS;
+
+  const median = (values) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+
+  // First collect the drawable groups, then assign the evenly spaced Y bands
+  // over that count so a point with too few steps does not leave a gap.
+  const prepared = [];
+  for (const group of groups.values()) {
+    const sorted = group.samples
+      .filter((s) => isNum(s.t) && isNum(s.d))
+      .sort((a, b) => a.t - b.t);
+    if (sorted.length < 2) continue;
+
+    // The `T-*` lookback labels mirror TREND_TIMELINE, but the five `TD_*`
+    // attributes are cumulative windows that all end "now" (TD_365 contains
+    // TD_180, etc.), so they are never plotted as independent time points.
+    // Plotting settlement from the oldest step instead:
+    //   settlement(x) = D(now-x) - D(T-730)
+    // which is algebraically the Trend view's `TD_730 - TD_x`
+    // (`settlementOf`), re-anchored on the raw `d_*` series because the `TD_*`
+    // fields are missing for part of the dataset.
+    const tRef = sorted[sorted.length - 1].t;
+    const picked = TREND_TIMELINE.map((step) => {
+      const target = tRef - step.daysAgo * DAY_MS;
+      const window = [];
+      let nearest = null;
+      let nearestDt = Infinity;
+      for (const s of sorted) {
+        const dt = Math.abs(s.t - target);
+        if (dt <= WINDOW_MS) window.push(s.d);
+        if (dt < nearestDt) {
+          nearestDt = dt;
+          nearest = s;
+        }
+      }
+      let value;
+      if (window.length > 0) {
+        value = median(window);
+      } else if (nearest && nearestDt <= TOLERANCE_MS) {
+        value = nearest.d;
+      } else {
+        return null;
+      }
+      return { step, target, value, nearest };
+    });
+    const valid = picked.filter(Boolean);
+    if (valid.length < 2) continue;
+
+    // Settlement is measured from the oldest available snapshot, mirroring the
+    // Trend view's "cumulative settlement from the initial state". `valid` skips
+    // steps without a sample, so anchor on its first entry (not necessarily T-730).
+    const base = valid.length > 0 ? valid[0].value : 0;
+    let velAvg = null;
+    for (const s of sorted) {
+      if (isNum(s.velAvg)) {
+        velAvg = s.velAvg;
+        break;
+      }
+    }
+
+    const rows = valid.map(({ step, value, nearest }) => {
+      const z = value - base;
+      const stepIndex = TREND_TIMELINE.indexOf(step);
+      return {
+        s: nearest,
+        x: 0,
+        y: bandY(stepIndex, stepCount, cube),
+        z,
+        lo: z,
+        hi: z,
+        std: null,
+        banded: false,
+        stepKey: step.label,
+        stepLabel: step.label,
+      };
+    });
+
+    let minD = Infinity;
+    let maxD = -Infinity;
+    for (const r of rows) {
+      if (r.z < minD) minD = r.z;
+      if (r.z > maxD) maxD = r.z;
+    }
+    prepared.push({
+      id: group.id,
+      rows,
+      velAvg,
+      minD,
+      maxD,
+      tMin: valid[0].target,
+      tMax: valid[valid.length - 1].target,
+    });
+  }
+
+  const count = prepared.length;
+  return prepared.map((p, index) => {
+    const x = bandY(index, count, cube);
+    return {
+      key: `point-${index}`,
+      id: p.id,
+      label: p.id == null ? `point ${index + 1}` : String(p.id),
+      color: p.velAvg == null ? PROFILE_COLOR : colorToHex(velScale, p.velAvg),
+      stdKey: null,
+      banded: false,
+      rows: p.rows.map((r) => ({ ...r, x })),
+      velAvg: p.velAvg,
+      minD: p.minD,
+      maxD: p.maxD,
+      tMin: p.tMin,
+      tMax: p.tMax,
+    };
+  });
+}
+
+/**
+ * Y-band labels for the Timeline: the ordered trend steps.
+ *
+ * @param {number} cube
+ * @returns {Array<{ value:number, label:string }>}
+ */
+function timelineTimeTicks(cube) {
+  return TREND_TIMELINE.map((step, i) => ({
+    value: bandY(i, TREND_TIMELINE.length, cube),
+    label: step.label,
+  }));
+}
+
+/**
+ * X-band labels for the Timeline: one per point, thinned to a readable subset
+ * (always keeping the first and last) when a pylon links many points.
+ *
+ * @param {Array<{ rows:Array<{ x:number }>, label:string }>} curves
+ * @returns {Array<{ value:number, label:string }>}
+ */
+function timelineBandTicks(curves) {
+  const ticks = curves.map((c) => ({ value: c.rows[0].x, label: c.label }));
+  const MAX_TICKS = 10;
+  if (ticks.length <= MAX_TICKS) return ticks;
+  const stride = Math.ceil(ticks.length / MAX_TICKS);
+  const out = ticks.filter((_, i) => i % stride === 0);
+  const last = ticks[ticks.length - 1];
+  if (out[out.length - 1].value !== last.value) out.push(last);
+  return out;
+}
+
+/**
  * Build the render-ready profile frame (one or more curves).
  *
- * @param {{view?:'attributes'|'trend'|'aggregate', basis?:'along'|'plan',
+ * @param {{view?:'attributes'|'trend'|'aggregate'|'timeline', basis?:'along'|'plan',
  *   yKey?:string, zKey?:string, trendLines?:'windows'|'profiles'|'points',
  *   valueKey?:string, step?:number, interpolate?:boolean,
  *   bufferDistance?:number, sizeByOffset?:boolean,
  *   samples?:Array<any>}} profile
  * @param {number} [cube] half-extent of the normalised cube
  * @returns {{
- *   view:'attributes'|'trend'|'aggregate', shape:'windows'|'profiles'|'points'|null,
+ *   view:'attributes'|'trend'|'aggregate'|'timeline', shape:'windows'|'profiles'|'points'|null,
  *   basis:'along'|'plan', yKey:string|null, zKey:string|null,
  *   valueKey:string|null, sizeByOffset:boolean,
  *   titles:{x:string,y:string,z:string},
  *   domains:{x:[number,number],y:[number,number],z:[number,number]},
  *   axisDomains:{x:[number,number],y:[number,number],z:[number,number]},
  *   colorDomain:[number,number]|null,
+ *   xTicks:Array<{value:number,label:string}>|null,
  *   yTicks:Array<{value:number,label:string}>|null,
  *   curves:Array<{ key:string, label:string, color:string, stdKey:string|null,
  *     banded:boolean, colored:boolean,
+ *     id:string|null, velAvg:number|null, minD:number|null, maxD:number|null,
+ *     tMin:number|null, tMax:number|null,
  *     samples:Array<{
  *       id:any, position:[number,number,number],
  *       ribbon:{lo:[number,number,number],hi:[number,number,number]}|null,
@@ -508,7 +700,13 @@ function settlementPoints(samples, cube) {
  */
 export function buildProfileFrame(profile, cube = 1) {
   const view =
-    profile?.view === 'aggregate' ? 'aggregate' : profile?.view === 'trend' ? 'trend' : 'attributes';
+    profile?.view === 'timeline'
+      ? 'timeline'
+      : profile?.view === 'aggregate'
+        ? 'aggregate'
+        : profile?.view === 'trend'
+          ? 'trend'
+          : 'attributes';
   const samples = profile?.samples ?? [];
   const yKey = profile?.yKey ?? 'H';
   const zKey = profile?.zKey ?? 'VEL_REL';
@@ -521,7 +719,7 @@ export function buildProfileFrame(profile, cube = 1) {
   const aggValueKey = profile?.valueKey ?? zKey;
   const aggStep = profile?.step;
   const aggInterpolate = profile?.interpolate === true;
-  const sizeByOffset = profile?.sizeByOffset !== false;
+  const sizeByOffset = view !== 'timeline' && profile?.sizeByOffset !== false;
 
   // Offset normaliser (Attribute/Trend views): the corridor half-width when
   // known, else the selection's own max |offset| so the encoding still spans the
@@ -538,15 +736,17 @@ export function buildProfileFrame(profile, cube = 1) {
   }
 
   const rawCurves =
-    view === 'aggregate'
-      ? aggregateCurve(samples, aggValueKey, aggStep, aggInterpolate)
-      : view === 'trend'
-        ? shape === 'windows'
-          ? windowCurves(samples, cube)
-          : shape === 'points'
-            ? settlementPoints(samples, cube)
-            : settlementProfiles(samples, cube)
-        : attributeCurves(yKey, zKey, samples, basis);
+    view === 'timeline'
+      ? timelineCurves(samples, cube)
+      : view === 'aggregate'
+        ? aggregateCurve(samples, aggValueKey, aggStep, aggInterpolate)
+        : view === 'trend'
+          ? shape === 'windows'
+            ? windowCurves(samples, cube)
+            : shape === 'points'
+              ? settlementPoints(samples, cube)
+              : settlementProfiles(samples, cube)
+          : attributeCurves(yKey, zKey, samples, basis);
 
   let xMin = Infinity;
   let xMax = -Infinity;
@@ -590,6 +790,11 @@ export function buildProfileFrame(profile, cube = 1) {
     // Trend Y is an ordered categorical axis: pin the domain to the band range so
     // the bands keep fixed, even spacing regardless of which steps are present.
     yd = [-cube, cube];
+  } else if (view === 'timeline') {
+    // Both axes are categorical: five ordered trend steps (X) and one band per
+    // point (Y), so the frame does not depend on the raw epoch range.
+    xd = [-cube, cube];
+    yd = [-cube, cube];
   } else {
     xd = resolveDomain(xMin, xMax);
     yd = resolveDomain(yMin, yMax);
@@ -617,6 +822,14 @@ export function buildProfileFrame(profile, cube = 1) {
     stdKey: c.stdKey ?? null,
     banded: c.banded ?? !!c.stdKey,
     colored: colorByDisplacement,
+    // Timeline extras (null for the other views): the point ID drives the map
+    // highlight and the summary/tooltip reads the velocity and value range.
+    id: c.id ?? null,
+    velAvg: c.velAvg ?? null,
+    minD: c.minD ?? null,
+    maxD: c.maxD ?? null,
+    tMin: c.tMin ?? null,
+    tMax: c.tMax ?? null,
     samples: c.rows.map((r) => {
       const xn = normalize(r.x, xd, cube);
       const yn = normalize(r.y, yd, cube);
@@ -655,21 +868,26 @@ export function buildProfileFrame(profile, cube = 1) {
   // The `windows` shape reads the raw per-window displacement; the cumulative
   // shapes read settlement from the initial state.
   const titles =
-    view === 'aggregate'
-      ? { x: 'Distance along profile [m]', y: '', z: axisTitle(aggValueKey) }
-      : view === 'trend'
-        ? shape === 'windows'
-          ? { x: 'Distance along profile [m]', y: 'Trend window', z: 'Trend displacement [mm]' }
-          : { x: 'Distance along profile [m]', y: 'Time', z: 'Cumulative settlement [mm]' }
-        : isPlan
-          ? { x: 'Longitude [\u00b0]', y: 'Latitude [\u00b0]', z: axisTitle(zKey) }
-          : { x: 'Distance along profile [m]', y: axisTitle(yKey), z: axisTitle(zKey) };
+    view === 'timeline'
+      ? { x: 'Point', y: 'Time', z: 'Cumulative settlement [mm]' }
+      : view === 'aggregate'
+        ? { x: 'Distance along profile [m]', y: '', z: axisTitle(aggValueKey) }
+        : view === 'trend'
+          ? shape === 'windows'
+            ? { x: 'Distance along profile [m]', y: 'Trend window', z: 'Trend displacement [mm]' }
+            : { x: 'Distance along profile [m]', y: 'Time', z: 'Cumulative settlement [mm]' }
+          : isPlan
+            ? { x: 'Longitude [\u00b0]', y: 'Latitude [\u00b0]', z: axisTitle(zKey) }
+            : { x: 'Distance along profile [m]', y: axisTitle(yKey), z: axisTitle(zKey) };
 
   // Trend Y is categorical: label each band position with its window/timeline
-  // step, else the numeric -1..1 band coordinate is meaningless.
+  // step, else the numeric -1..1 band coordinate is meaningless. Timeline Y is
+  // the ordered trend-step axis and X is one band per point.
   const yTicks =
-    view === 'trend'
-      ? shape === 'windows'
+    view === 'timeline'
+      ? timelineTimeTicks(cube)
+      : view === 'trend'
+        ? shape === 'windows'
         ? TREND_WINDOWS.map((w, i) => ({
             value: bandY(i, TREND_WINDOWS.length, cube),
             label: trendWindowLabel(w.days),
@@ -679,6 +897,9 @@ export function buildProfileFrame(profile, cube = 1) {
             label: step.label,
           }))
       : null;
+
+  // Timeline X is the per-point axis (categorical); Y is the trend-step axis.
+  const xTicks = view === 'timeline' ? timelineBandTicks(rawCurves) : null;
 
   return {
     view,
@@ -692,6 +913,7 @@ export function buildProfileFrame(profile, cube = 1) {
     domains: { x: xd, y: yd, z: zd },
     axisDomains,
     colorDomain: colorByDisplacement ? [...DISPLACEMENT_DOMAIN] : null,
+    xTicks,
     yTicks,
     curves,
   };

@@ -2,7 +2,6 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react
 import {
   ATTRIBUTES,
   AXIS_KEYS,
-  COLOR_KEYS,
   DEFAULT_CUSTOM_AXES,
   DEFAULT_PRESET,
   PRESET_KEYS,
@@ -11,11 +10,12 @@ import {
   PROFILE_DEFAULTS,
   PROFILE_VIEW_DEFAULT,
   TREND_LINES_DEFAULT,
-  SIZE_KEYS,
+  TREND_TIMELINE,
   formatValue,
   resolveAxes,
 } from './attributes';
 import { activeFieldsFor, transformPoints } from './transformPoints';
+import { extractTimelineSamples } from './timelineGeometry';
 import { SIZE_PIXEL_RANGE, buildColorScale, getColorDomain, getSizeDomain } from './colorScale';
 import {
   DISPLACEMENT_DOMAIN,
@@ -59,9 +59,19 @@ const RENDERER_COMPONENTS = {
  * @param {boolean} [props.profileDisabled]  disable the mode toggle (a polygon/circle selection is in use)
  * @param {number} [props.bufferDistance]  selection corridor half-width (m), for normalising the offset size encoding
  * @param {(id: string|null) => void} [props.onPointHover]  map-link hover callback
+ * @param {(id: string) => void} [props.onPointClick]  map-link click callback (3D chart point selection)
  * @param {(state: {mode:'scatter'|'profile', view:'attributes'|'trend'|'aggregate', zKey:string, basis:'along'|'plan', trendLines:'windows'|'profiles'|'points', valueKey:string, step:number, interpolate:boolean}|null) => void} [props.onStateChange]  reports the effective mode/view/zKey/basis/trend shape (plus the aggregate value/step/interpolate), or null on unmount
  * @param {'plotly'|'deckgl'|'three'} [props.defaultRenderer]
+ * @param {'kinematic'|'topographic'|'custom'} [props.defaultPreset]  initial axis preset
+ * @param {import('./attributes').PresetAxes} [props.defaultCustomAxes]  initial Custom axes
+ * @param {string[]} [props.attributeKeys]  override the scatter picker attributes (e.g. the loaded GeoJSON's numeric properties)
+ * @param {string[]} [props.colorPalette]  palette for non-velocity colour attributes (defaults to viridis)
+ * @param {boolean} [props.embedded]  compact card mode: deck.gl spheres, Custom preset, scatter only, no renderer/mode/marker/preset rows
+ * @param {boolean} [props.showTimeline]  embedded only: offer a Timeline chart type (one time-series line per `d_*` point)
+ * @param {'timeline'|'custom'} [props.defaultChartType]  initial chart type when `showTimeline` is on
  * @param {string} [props.title]
+ * @param {() => void} [props.onClose]  when provided, renders a close button at the end of the header
+ * @param {string} [props.emptyHint]  copy shown when the collection has no points (defaults to the drawing hint)
  */
 export function FeatureSpaceChart({
   featureCollection,
@@ -70,14 +80,31 @@ export function FeatureSpaceChart({
   profileDisabled = false,
   bufferDistance,
   onPointHover,
+  onPointClick,
   onStateChange,
   defaultRenderer = 'plotly',
+  defaultPreset = DEFAULT_PRESET,
+  defaultCustomAxes = DEFAULT_CUSTOM_AXES,
+  attributeKeys = null,
+  colorPalette,
+  embedded = false,
+  showTimeline = false,
+  defaultChartType = 'custom',
   title = '3D feature space',
+  onClose,
+  emptyHint,
 }) {
   const [renderer, setRenderer] = useState(defaultRenderer);
-  const [presetKey, setPresetKey] = useState(DEFAULT_PRESET);
-  const [customAxes, setCustomAxes] = useState(DEFAULT_CUSTOM_AXES);
+  const [presetKey, setPresetKey] = useState(defaultPreset);
+  const [customAxes, setCustomAxes] = useState(defaultCustomAxes);
   const [markerStyle, setMarkerStyle] = useState('sphere');
+  // Timeline is a deck.gl-only, embedded-card mode: outside it the timeline
+  // frame cannot be rendered by Plotly/Three, so keep the feature off.
+  const supportsTimeline = embedded && showTimeline;
+  // Embedded chart type: `timeline` (d_* time series) or the point cloud.
+  const [chartType, setChartType] = useState(
+    () => (supportsTimeline && defaultChartType === 'timeline' ? 'timeline' : 'custom'),
+  );
 
   const [mode, setMode] = useState(showProfile ? 'profile' : 'scatter');
   const [profileView, setProfileView] = useState(PROFILE_VIEW_DEFAULT);
@@ -103,14 +130,29 @@ export function FeatureSpaceChart({
   const axes = useMemo(() => resolveAxes(presetKey, customAxes), [presetKey, customAxes]);
   const activeFields = useMemo(() => activeFieldsFor(axes), [axes]);
 
+  // Treat an empty `attributeKeys` array as "not provided" everywhere: the
+  // renderer falls back to the curated keys, and `transformPoints` must carry
+  // those keys instead of an empty set (which would skip every point).
+  const effectiveAttributeKeys = attributeKeys && attributeKeys.length > 0 ? attributeKeys : null;
+
   const { points, skipped, total } = useMemo(
-    () => transformPoints(featureCollection, activeFields),
-    [featureCollection, activeFields],
+    () => transformPoints(featureCollection, activeFields, effectiveAttributeKeys ?? undefined),
+    [featureCollection, activeFields, effectiveAttributeKeys],
   );
 
   const colorDomain = useMemo(() => getColorDomain(axes.color, points), [axes.color, points]);
-  const colorScale = useMemo(() => buildColorScale(axes.color, colorDomain), [axes.color, colorDomain]);
+  const colorScale = useMemo(
+    () => buildColorScale(axes.color, colorDomain, colorPalette),
+    [axes.color, colorDomain, colorPalette],
+  );
   const sizeDomain = useMemo(() => getSizeDomain(axes.size, points), [axes.size, points]);
+
+  // Embedded mode lists the caller's GeoJSON attributes by name; otherwise the
+  // module's curated labels.
+  const scatterKeys = effectiveAttributeKeys ?? AXIS_KEYS;
+  const attributeLabel = (key) => (
+    effectiveAttributeKeys ? key : (ATTRIBUTES[key]?.label ?? key)
+  );
 
   // The mode toggle is always shown, but a polygon/circle selection has no line
   // to profile, so the profile mode is disabled and the panel falls back to
@@ -138,9 +180,26 @@ export function FeatureSpaceChart({
     [profileView, profileSamples, aggValueKey, effectiveAggStep, aggInterpolate],
   );
 
+  // Timeline data is extracted once per selection; the frame only rebuilds when
+  // the selection or the Lon/Lat toggle changes, never on a map hover.
+  const timelineData = useMemo(
+    () => (supportsTimeline ? extractTimelineSamples(featureCollection) : null),
+    [supportsTimeline, featureCollection],
+  );
+  const hasTimelineData = (timelineData?.samples.length ?? 0) > 0;
+  const effectiveType = chartType === 'timeline' && hasTimelineData ? 'timeline' : 'custom';
+
+  const timelineProfile = useMemo(
+    () => (effectiveType === 'timeline'
+      ? { view: 'timeline', samples: timelineData.samples }
+      : null),
+    [effectiveType, timelineData],
+  );
+
   const profile = useMemo(
     () =>
-      activeMode === 'profile' && profileSamples.length > 0
+      timelineProfile
+      ?? (activeMode === 'profile' && profileSamples.length > 0
         ? {
             view: profileView,
             basis,
@@ -154,8 +213,9 @@ export function FeatureSpaceChart({
             sizeByOffset,
             samples: profileSamples,
           }
-        : null,
+        : null),
     [
+      timelineProfile,
       activeMode,
       profileView,
       basis,
@@ -220,10 +280,13 @@ export function FeatureSpaceChart({
     setCustomAxes((prev) => ({ ...prev, [slot]: key }));
   };
 
-  const Renderer = RENDERER_COMPONENTS[renderer];
+  // Embedded mode is deck.gl spheres only.
+  const activeRenderer = embedded ? 'deckgl' : renderer;
+  const Renderer = RENDERER_COMPONENTS[activeRenderer];
+  const markerStyleForRenderer = embedded ? 'sphere' : markerStyle;
 
   // Plotly has no sphere marker, so its effective style is always billboards.
-  const effectiveMarker = renderer === 'plotly' ? 'billboard' : markerStyle;
+  const effectiveMarker = activeRenderer === 'plotly' ? 'billboard' : markerStyleForRenderer;
 
   const rendererProps = {
     points,
@@ -232,37 +295,24 @@ export function FeatureSpaceChart({
     colorDomain,
     sizeDomain,
     sizeRange: SIZE_PIXEL_RANGE,
-    markerStyle,
+    markerStyle: markerStyleForRenderer,
     onHover: handleHover,
+    onPointClick,
+    // The compact embedded card has less room, so give the Custom point cloud
+    // a little more margin.
+    zoomOutScatter: embedded,
   };
 
-  const headerBadge = activeMode === 'profile'
-    ? profileView === 'aggregate'
-      ? `${aggregateBins} bins`
-      : `${profileSampleCount} samples`
-    : `${points.length} pts`;
+  const headerBadge = effectiveType === 'timeline'
+    ? `${timelineData.pointCount} pts \u00b7 ${TREND_TIMELINE.length} steps`
+    : activeMode === 'profile'
+      ? profileView === 'aggregate'
+        ? `${aggregateBins} bins`
+        : `${profileSampleCount} samples`
+      : `${points.length} pts`;
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: 'min(45%, 720px)',
-        minWidth: '380px',
-        background: 'rgba(255, 255, 255, 0.97)',
-        borderLeft: '1px solid #ddd',
-        boxShadow: '-2px 0 12px rgba(0,0,0,0.12)',
-        zIndex: 1100,
-        display: 'flex',
-        flexDirection: 'column',
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '12px',
-        color: '#333',
-        pointerEvents: 'auto',
-      }}
-    >
+    <div style={embedded ? embeddedPanelStyle : panelStyle}>
       <div
         style={{
           display: 'flex',
@@ -286,7 +336,7 @@ export function FeatureSpaceChart({
         >
           {headerBadge}
         </span>
-        {activeMode === 'scatter' && skipped > 0 && (
+        {effectiveType === 'custom' && activeMode === 'scatter' && skipped > 0 && (
           <span
             title={`${skipped} of ${total} points skipped (missing value for an active axis/color/size field)`}
             style={{ color: '#b45309', fontSize: '11px' }}
@@ -294,8 +344,31 @@ export function FeatureSpaceChart({
             {skipped} skipped
           </span>
         )}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close chart"
+            style={{
+              marginLeft: 'auto',
+              width: '22px',
+              height: '22px',
+              lineHeight: '18px',
+              padding: 0,
+              fontSize: '16px',
+              color: '#555',
+              background: 'none',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              cursor: 'pointer',
+            }}
+          >
+            ×
+          </button>
+        )}
       </div>
 
+      {!embedded && (
       <div
         style={{
           display: 'flex',
@@ -324,7 +397,9 @@ export function FeatureSpaceChart({
           3D line profile
         </button>
       </div>
+      )}
 
+      {!embedded && (
       <div
         style={{
           display: 'flex',
@@ -371,8 +446,9 @@ export function FeatureSpaceChart({
           </button>
         </div>
       </div>
+      )}
 
-      {activeMode === 'scatter' && (
+      {!embedded && activeMode === 'scatter' && (
         <div
           style={{
             display: 'flex',
@@ -393,6 +469,41 @@ export function FeatureSpaceChart({
               {key === 'custom' ? 'Custom' : PRESETS[key].label}
             </button>
           ))}
+        </div>
+      )}
+
+      {supportsTimeline && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '3px',
+            padding: '6px 12px',
+            borderBottom: '1px solid #eee',
+            flexWrap: 'wrap',
+          }}
+          title="Chart type"
+        >
+          <button
+            type="button"
+            disabled={!hasTimelineData}
+            onClick={() => setChartType('timeline')}
+            title={
+              hasTimelineData
+                ? 'One displacement time series per linked point'
+                : 'No d_* timeline data in this selection'
+            }
+            style={buttonStyle(effectiveType === 'timeline', !hasTimelineData)}
+          >
+            Timeline
+          </button>
+          <button
+            type="button"
+            onClick={() => setChartType('custom')}
+            style={buttonStyle(effectiveType === 'custom')}
+          >
+            Custom
+          </button>
         </div>
       )}
 
@@ -613,7 +724,7 @@ export function FeatureSpaceChart({
         </div>
       )}
 
-      {activeMode === 'scatter' && presetKey === 'custom' && (
+      {effectiveType === 'custom' && activeMode === 'scatter' && presetKey === 'custom' && (
         <div
           style={{
             display: 'grid',
@@ -625,11 +736,11 @@ export function FeatureSpaceChart({
           }}
         >
           {[
-            ['x', AXIS_KEYS],
-            ['y', AXIS_KEYS],
-            ['z', AXIS_KEYS],
-            ['color', COLOR_KEYS],
-            ['size', SIZE_KEYS],
+            ['x', scatterKeys],
+            ['y', scatterKeys],
+            ['z', scatterKeys],
+            ['color', scatterKeys],
+            ['size', scatterKeys],
           ].map(([slot, keys]) => (
             <label key={slot} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
               <span style={{ fontSize: '10px', color: '#666', textTransform: 'uppercase' }}>{slot}</span>
@@ -640,7 +751,7 @@ export function FeatureSpaceChart({
               >
                 {keys.map((key) => (
                   <option key={key} value={key}>
-                    {ATTRIBUTES[key].label}
+                    {attributeLabel(key)}
                   </option>
                 ))}
               </select>
@@ -650,7 +761,11 @@ export function FeatureSpaceChart({
       )}
 
       <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-        {activeMode === 'profile' ? (
+        {effectiveType === 'timeline' ? (
+          <Suspense fallback={<LoadingState renderer={activeRenderer} />}>
+            <Renderer {...rendererProps} profile={timelineProfile} />
+          </Suspense>
+        ) : activeMode === 'profile' ? (
           profileSamples.length === 0 ? (
             <ProfileEmptyState />
           ) : (
@@ -659,7 +774,7 @@ export function FeatureSpaceChart({
             </Suspense>
           )
         ) : points.length === 0 ? (
-          <EmptyState total={total} skipped={skipped} />
+          <EmptyState total={total} skipped={skipped} emptyHint={emptyHint} />
         ) : (
           <Suspense fallback={<LoadingState renderer={renderer} />}>
             <Renderer {...rendererProps} />
@@ -667,7 +782,20 @@ export function FeatureSpaceChart({
         )}
       </div>
 
-      {activeMode === 'scatter' && (
+      {effectiveType === 'timeline' && (
+        <div
+          style={{
+            padding: '6px 12px',
+            borderTop: '1px solid #eee',
+            color: '#888',
+            fontSize: '10px',
+          }}
+        >
+          {'Lines: one per point \u00b7 Markers: 5 trend steps \u00b7 Color: VEL_AVG \u00b7 Z: settlement [mm]'}
+        </div>
+      )}
+
+      {effectiveType === 'custom' && activeMode === 'scatter' && (
         <div
           style={{
             padding: '6px 12px',
@@ -680,11 +808,11 @@ export function FeatureSpaceChart({
           }}
         >
           <span>
-            Color: {ATTRIBUTES[axes.color].label}
-            {axes.color === 'VEL_REL' ? ' (map scale)' : ` (${formatValue(axes.color, colorDomain[0])} \u2013 ${formatValue(axes.color, colorDomain[1])})`}
+            Color: {attributeLabel(axes.color)}
+            {axes.color === 'VEL_REL' || axes.color === 'VEL_AVG' ? ' (map scale)' : ` (${formatValue(axes.color, colorDomain[0])} \u2013 ${formatValue(axes.color, colorDomain[1])})`}
           </span>
           <span>
-            Size: {ATTRIBUTES[axes.size].label}
+            Size: {attributeLabel(axes.size)}
             {axes.size === 'COH' ? ' (fixed 0\u20131)' : ''}
           </span>
         </div>
@@ -701,13 +829,13 @@ function LoadingState({ renderer }) {
   );
 }
 
-function EmptyState({ total, skipped }) {
+function EmptyState({ total, skipped, emptyHint }) {
   return (
     <div style={centeredState}>
       <div style={{ fontWeight: 600, marginBottom: '6px', color: '#666' }}>No points to plot</div>
       <div style={{ color: '#999', fontSize: '11px', textAlign: 'center', maxWidth: '260px' }}>
         {total === 0
-          ? 'Draw a polygon, circle or line selection on the map.'
+          ? (emptyHint ?? 'Draw a polygon, circle or line selection on the map.')
           : `All ${total} selected points lack a value for an active axis/color/size field${skipped ? ` (${skipped} skipped)` : ''}.`}
       </div>
     </div>
@@ -737,6 +865,43 @@ const centeredState = {
   fontSize: '12px',
   textAlign: 'center',
   padding: '16px',
+};
+
+const panelStyle = {
+  position: 'absolute',
+  top: 0,
+  right: 0,
+  bottom: 0,
+  width: 'min(45%, 720px)',
+  minWidth: '380px',
+  background: 'rgba(255, 255, 255, 0.97)',
+  borderLeft: '1px solid #ddd',
+  boxShadow: '-2px 0 12px rgba(0,0,0,0.12)',
+  zIndex: 1100,
+  display: 'flex',
+  flexDirection: 'column',
+  fontFamily: 'system-ui, sans-serif',
+  fontSize: '12px',
+  color: '#333',
+  pointerEvents: 'auto',
+};
+
+/** Compact card used when embedded in another map (fills its positioned parent). */
+const embeddedPanelStyle = {
+  position: 'relative',
+  width: '100%',
+  height: '100%',
+  background: 'rgba(255, 255, 255, 0.97)',
+  border: '1px solid #ddd',
+  borderRadius: '8px',
+  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25)',
+  overflow: 'hidden',
+  display: 'flex',
+  flexDirection: 'column',
+  fontFamily: 'system-ui, sans-serif',
+  fontSize: '12px',
+  color: '#333',
+  pointerEvents: 'auto',
 };
 
 function buttonStyle(active, disabled = false) {

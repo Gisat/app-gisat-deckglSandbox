@@ -27,6 +27,7 @@ import { computeAxisDomains, projectToCube } from '../transformPoints';
 import { buildProfileFrame, formatTick, hexToRgba } from '../profileGeometry';
 import { PointTooltip } from '../PointTooltip';
 import { ProfileTooltip } from '../ProfileTooltip';
+import { TimelineTooltip } from '../TimelineTooltip';
 
 /** Half-extent of the normalised cube the points are projected into. */
 const CUBE = 1;
@@ -51,7 +52,28 @@ const TITLE_SIZE = 12;
 /** Static far-corner signs for the default camera (azimuth 225 / elevation 30). */
 const DEFAULT_SIGNS = [-1, -1, -1];
 
+/** Starting zoom, used only until the container is measured (see fitZoom below). */
 const DEFAULT_ZOOM = 7.5;
+
+/**
+ * Projected extent of the [-1, 1]^3 cube at the default camera, in cube units.
+ * Yawing 45deg makes the XY diagonal dominate: 2 * sqrt(2).
+ */
+const CUBE_PROJECTED_EXTENT = 2 * Math.SQRT2;
+/** Fraction of the smallest viewport side the projected cube may occupy. */
+const CUBE_FIT_FRACTION = 0.7;
+/** Scatter/Custom gets extra margin so the sphere cloud and labels breathe. */
+const SCATTER_FIT_FRACTION = 0.6;
+
+/**
+ * Zoom that fits the cube to the viewport with room for the axis titles/ticks.
+ * Zoom is log2(px per world unit), so the cube spans extent * 2^zoom pixels.
+ */
+function fitZoom(width, height, fraction = CUBE_FIT_FRACTION) {
+  const side = Math.min(width, height);
+  if (!(side > 0)) return DEFAULT_ZOOM;
+  return Math.log2((side * fraction) / CUBE_PROJECTED_EXTENT);
+}
 
 /**
  * Canonical default view (matches three.js / Plotly): Z up, camera at
@@ -212,6 +234,11 @@ function axisTickFormatter(key, domain) {
  * 10). Distance and trend axes keep the adaptive formatter.
  */
 function profileTickFormatter(frame, slot) {
+  if (frame.view === 'timeline') {
+    // X uses the per-point band labels from `frame.xTicks` and Y the trend-step
+    // labels from `frame.yTicks`; only Z (settlement, mm) remains here.
+    return formatTick;
+  }
   if (frame.view === 'aggregate') {
     return slot === 'x'
       ? formatTick
@@ -329,10 +356,12 @@ function axisOverlay({ edges, far, ticks, titles, enabled }) {
  * @param {[number, number]} props.sizeDomain
  * @param {[number, number]} props.sizeRange
  * @param {'billboard'|'sphere'} props.markerStyle
- * @param {{view:'attributes'|'trend', yKey:string, zKey:string, trendLines:string, samples:Array<any>}} [props.profile]
+ * @param {{view:'attributes'|'trend'|'aggregate'|'timeline', yKey:string, zKey:string, trendLines:string, samples:Array<any>}} [props.profile]
  * @param {(id: string|null) => void} props.onHover
+ * @param {(id: string) => void} [props.onPointClick]  select a picked point (map sphere + 2D timeline)
+ * @param {boolean} [props.zoomOutScatter]  give the scatter/Custom view extra margin (compact embedded card)
  */
-export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover }) {
+export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover, onPointClick, zoomOutScatter = false }) {
   const [tooltip, setTooltip] = useState(null);
 
   // Controlled camera: the axis labels are sized from the live clip-space depth
@@ -345,6 +374,9 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
   const viewStateRef = useRef(viewState);
   const containerRef = useRef(null);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  // Refit when the chart type or the card height changes (e.g. the 2D timeline
+  // opening below), while keeping user camera changes within one layout.
+  const fitKey = profile ? `profile:${profile.view}` : 'scatter';
 
   useEffect(() => {
     const el = containerRef.current;
@@ -355,6 +387,24 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // Fit the cube to the measured container, so a compact card does not open with
+  // the axis box cropped. The scatter/Custom view is zoomed out a little more.
+  useEffect(() => {
+    const { width, height } = viewportSize;
+    if (!width || !height) return;
+    const fraction = fitKey === 'scatter' && zoomOutScatter
+      ? SCATTER_FIT_FRACTION
+      : CUBE_FIT_FRACTION;
+    const nextZoom = Math.max(
+      INITIAL_VIEW_STATE.minZoom,
+      Math.min(INITIAL_VIEW_STATE.maxZoom, fitZoom(width, height, fraction)),
+    );
+    if (Math.abs(nextZoom - viewStateRef.current.zoom) < 0.01) return;
+    const merged = { ...viewStateRef.current, zoom: nextZoom };
+    viewStateRef.current = merged;
+    setViewState(merged);
+  }, [viewportSize, fitKey, zoomOutScatter]);
 
   const domains = useMemo(() => computeAxisDomains(points, axes), [points, axes]);
   const frame = useMemo(() => (profile ? buildProfileFrame(profile, CUBE) : null), [profile]);
@@ -449,7 +499,9 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     const enabled = { x: true, y: !(frame && frame.view === 'aggregate'), z: true };
     const ticks = frame
       ? {
-          x: makeTicks(frame.axisDomains.x, profileTickFormatter(frame, 'x')),
+          x: frame.xTicks
+            ? frame.xTicks.map((tick) => ({ value: tick.value, t: tick.value, label: tick.label }))
+            : makeTicks(frame.axisDomains.x, profileTickFormatter(frame, 'x')),
           // Trend Y is categorical: reuse the band labels instead of numeric ticks.
           y: !enabled.y
             ? []
@@ -470,6 +522,71 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
 
   const profileLayers = useMemo(() => {
     if (!frame) return null;
+
+    // Timeline: one pickable path per point with a marker at each trend step,
+    // no ribbons. Hovering a path or marker highlights it red and forwards the
+    // point ID to the map.
+    if (frame.view === 'timeline') {
+      const pathData = frame.curves.map((c) => ({
+        path: c.samples.map((p) => p.position),
+        color: hexToRgba(c.color, 255),
+        id: c.id,
+        label: c.label,
+        curve: c,
+      }));
+      const markerData = frame.curves.flatMap((c) => c.samples.map((p) => ({
+        id: c.id,
+        label: c.label,
+        curve: c,
+        position: p.position,
+        fillColor: hexToRgba(c.color, 255),
+      })));
+
+      const pathLayer = new PathLayer({
+        id: 'profile-timeline-lines',
+        data: pathData,
+        getPath: (d) => d.path,
+        getColor: (d) => d.color,
+        widthUnits: 'pixels',
+        getWidth: 1.5,
+        billboard: true,
+        jointRounded: true,
+        capRounded: true,
+        pickable: true,
+        autoHighlight: true,
+        highlightColor: [255, 0, 0, 255],
+      });
+
+      const markerLayer = markerStyle === 'billboard'
+        ? new ScatterplotLayer({
+            id: 'profile-timeline-points',
+            data: markerData,
+            getPosition: (d) => d.position,
+            getRadius: 2.5,
+            radiusUnits: 'pixels',
+            radiusMinPixels: 1,
+            radiusMaxPixels: 10,
+            billboard: true,
+            getFillColor: (d) => d.fillColor,
+            pickable: true,
+            autoHighlight: true,
+            highlightColor: [255, 0, 0, 255],
+          })
+        : new SimpleMeshLayer({
+            id: 'profile-timeline-points-mesh',
+            data: markerData,
+            mesh: sphereGeometry,
+            getPosition: (d) => d.position,
+            getColor: (d) => d.fillColor,
+            getScale: () => [0.014, 0.014, 0.014],
+            material: { ambient: 0.35, diffuse: 0.6, shininess: 0, specularColor: [0, 0, 0] },
+            pickable: true,
+            autoHighlight: true,
+            highlightColor: [255, 0, 0, 255],
+          });
+
+      return [pathLayer, markerLayer];
+    }
 
     // Trend ▸ points uses thinner lines and smaller marks; the other profile
     // views keep their current weight.
@@ -763,7 +880,9 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
 
   // Plotly-style hover spikes: one axis-parallel line from the hovered point to
   // each far wall, plus the two cross-lines on each wall (`spikesides`). Kept in
-  // its own memo so hovering does not rebuild the point layers.
+  // its own memo so hovering does not rebuild the point layers. Timeline path
+  // objects carry no `position`, but its step markers do, so hovering a marker
+  // shows the same helper axes as the other views.
   const hoveredPosition = tooltip?.object?.position ?? null;
   const hoverLayer = useMemo(() => {
     if (!hoveredPosition) return null;
@@ -786,7 +905,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
       data,
       getSourcePosition: (d) => d.source,
       getTargetPosition: (d) => d.target,
-      getColor: [110, 110, 110, 220],
+      getColor: [175, 175, 175, 235],
       widthUnits: 'pixels',
       getWidth: 1,
       pickable: false,
@@ -818,10 +937,20 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           }
           onHover(object ? object.id : null);
         }}
+        onClick={(info) => {
+          const object = info.object ?? null;
+          if (onPointClick && object && object.id != null) onPointClick(object.id);
+        }}
       />
       {tooltip && (
         <div style={{ position: 'absolute', left: tooltip.x + 14, top: tooltip.y + 14, zIndex: 5 }}>
-          {frame ? <ProfileTooltip sample={tooltip.object.frameSample} curve={tooltip.object.curve} frame={frame} /> : <PointTooltip point={tooltip.object} axes={axes} />}
+          {frame?.view === 'timeline' ? (
+            <TimelineTooltip curve={tooltip.object.curve} />
+          ) : frame ? (
+            <ProfileTooltip sample={tooltip.object.frameSample} curve={tooltip.object.curve} frame={frame} />
+          ) : (
+            <PointTooltip point={tooltip.object} axes={axes} />
+          )}
         </div>
       )}
     </div>
