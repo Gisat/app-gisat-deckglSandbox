@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
@@ -52,6 +52,13 @@ const EMPTY = [];
 
 // Layer-id prefix shared by the seven 3D LOS arrow sublayers.
 const ARROW_LAYER_PREFIX = 'vel-avg-arrows';
+
+// Pre-selection opened once on mount: Pylon 10 and one of its linked InSAR
+// points, so the map highlight and both charts are visible without a click.
+// The pylon is resolved by its business id and then mapped to the join key;
+// the join key itself (currently "0") is never hardcoded.
+const DEFAULT_PYLON_ID = 10;
+const DEFAULT_POINT_ID = 59054;
 
 // Exact 3d-feature-charts ramp (red -> yellow -> teal) on the VEL_AVG domain.
 const colorScale = chroma
@@ -147,6 +154,9 @@ export default function PolakyHradec() {
   const [features, setFeatures] = useState([]);
   const [pylonFeatures, setPylonFeatures] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Pylons load independently of the points; the default selection waits for
+  // both loaders to settle so the pylon chart never flashes its empty hint.
+  const [pylonsLoaded, setPylonsLoaded] = useState(false);
   const [error, setError] = useState(null);
   // Selected point (arrow click → 2D timeline) and selected pylon (pylon click
   // → grouped 3D feature chart) are independent and can both stay open.
@@ -158,6 +168,9 @@ export default function PolakyHradec() {
   const [hoveredPylonKey, setHoveredPylonKey] = useState(null);
   // Drive the 3D arrow size band; the map still starts from INITIAL_VIEW_STATE.
   const [zoom, setZoom] = useState(INITIAL_VIEW_STATE.zoom);
+  // Defaults apply once per mount: a user who clears a card must not have it
+  // reopened by a later effect run.
+  const didApplyDefaultSelection = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -202,6 +215,9 @@ export default function PolakyHradec() {
         if (!cancelled) setPylonFeatures(loaded);
       } catch (err) {
         console.error('❌ Failed to load Poláky pylons:', err);
+      } finally {
+        // Also on failure: the point default must not wait on decorative data.
+        if (!cancelled) setPylonsLoaded(true);
       }
     };
 
@@ -210,6 +226,22 @@ export default function PolakyHradec() {
       cancelled = true;
     };
   }, []);
+
+  // Open the default pylon chart and point timeline once, after both datasets
+  // have settled. Both setters run in the same pass so React 18 batches them
+  // into one render and the panel mounts straight into its two-card layout.
+  useEffect(() => {
+    if (isLoading || !pylonsLoaded || didApplyDefaultSelection.current) return;
+    // Set the guard before the setters: a re-render caused by these updates
+    // must not re-enter and clobber a very fast user click.
+    didApplyDefaultSelection.current = true;
+    const pylon = pylonFeatures.find(f => Number(f?.properties?.id) === DEFAULT_PYLON_ID);
+    const pylonKey = pylon ? getPylonJoinKey(pylon) : null;
+    const point = features.find(f => String(f?.properties?.ID) === String(DEFAULT_POINT_ID));
+    // A missing pylon or point is skipped silently; the other default still applies.
+    if (pylonKey != null) setSelectedPylonKey(pylonKey);
+    if (point) setSelectedId(point.properties.ID);
+  }, [features, isLoading, pylonFeatures, pylonsLoaded]);
 
   const pylonGroups = useMemo(() => {
     const groups = { kocka: [], dunaj: [], portal: [] };
