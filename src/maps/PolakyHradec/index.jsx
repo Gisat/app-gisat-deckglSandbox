@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
-import { BitmapLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { BitmapLayer, GeoJsonLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { SphereGeometry } from '@luma.gl/engine';
-import { CogTerrainLayer } from '@gisatcz/deckgl-geolib';
+import { CogTerrainLayer, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
 import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
 import chroma from 'chroma-js';
+import { scaleLinear } from 'd3-scale';
+import { DrawingOverlay, normalizeGeometry, pointInPolygon } from '../../components/PointSelection';
+import { BLUE_PALETTE, FeatureSpaceChart } from '../../components/FeatureSpaceChart3D';
 import TimelineChart from './TimelineChart';
+import SelectionToolbar from './SelectionToolbar';
 
 const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/polaky_95D_PS.geojson';
 const TERRAIN_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/EL-GRID_COGeoN.tif';
@@ -22,8 +26,13 @@ const colorScale = chroma
 
 const sphereGeometry = new SphereGeometry();
 
-// Sphere radius in metres (LNGLAT positions are world units, i.e. metres).
-const SPHERE_RADIUS = 4;
+// Sphere radius in metres (LNGLAT positions are world units, i.e. metres),
+// scaled by coherence: larger sphere = more coherent point.
+const SPHERE_RADIUS_FALLBACK = 4;
+const coherenceSizeScale = scaleLinear([0.5, 1], [2, 6]).clamp(true);
+
+// Shared cyan for every "selected" highlight on the map.
+const SELECTION_COLOR = [66, 212, 244];
 
 const INITIAL_VIEW_STATE = {
   longitude: 13.3607,
@@ -48,6 +57,11 @@ const TERRAIN_OPTIONS = {
 // Spheres use the measured ellipsoidal height H as-is, with no datum conversion.
 // H is 368.5-452.5 m across the site while the orthometric EL-GRID terrain is
 // ~45 m lower, so spheres intentionally float above the draped surface.
+function getSphereRadius(feature) {
+  const coherence = Number(feature?.properties?.COH);
+  return Number.isFinite(coherence) ? coherenceSizeScale(coherence) : SPHERE_RADIUS_FALLBACK;
+}
+
 function getElevation(feature) {
   const height = Number(feature?.properties?.H);
   return Number.isFinite(height) ? height : 0;
@@ -73,6 +87,15 @@ export default function PolakyHradec() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
+
+  // 3D chart panel + drawing state.
+  const [showChart, setShowChart] = useState(true);
+  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
+  const [selectionMode, setSelectionMode] = useState(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [drawnGeometry, setDrawnGeometry] = useState(null);
+  const [selectedFeatures, setSelectedFeatures] = useState(null);
+  const [hoveredPointId, setHoveredPointId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +131,82 @@ export default function PolakyHradec() {
     return features.find(f => String(f.properties?.ID) === String(selectedId)) ?? null;
   }, [features, selectedId]);
 
+  // Attributes offered by the 3D chart: the geometry-derived position, then
+  // every numeric GeoJSON property except LON/LAT (duplicates of the geometry)
+  // and the flat `d_YYYYMMDD` displacement timeline.
+  const chartAttributeKeys = useMemo(() => {
+    const keys = new Set();
+    for (const feature of features) {
+      for (const [key, value] of Object.entries(feature.properties ?? {})) {
+        if (key === 'LON' || key === 'LAT') continue;
+        if (!/^d_\d{8}$/.test(key) && typeof value === 'number' && Number.isFinite(value)) {
+          keys.add(key);
+        }
+      }
+    }
+    return ['lon', 'lat', ...[...keys].sort()];
+  }, [features]);
+
+  const hoveredFeature = useMemo(() => {
+    if (hoveredPointId == null) return null;
+    return features.find(f => String(f.properties?.ID) === String(hoveredPointId)) ?? null;
+  }, [features, hoveredPointId]);
+
+  // Circle/polygon selection for the 3D feature-space chart.
+  const applySelection = useCallback((geometry) => {
+    const selected = features.filter(feature => {
+      const [lon, lat] = feature.geometry?.coordinates ?? [];
+      return Number.isFinite(lon) && Number.isFinite(lat) && pointInPolygon([lon, lat], geometry);
+    });
+
+    setSelectedFeatures({
+      type: 'FeatureCollection',
+      features: selected.map(feature => ({
+        type: 'Feature',
+        id: feature.properties?.ID ?? null,
+        geometry: feature.geometry,
+        properties: {
+          ...feature.properties,
+          point_id: feature.properties?.ID ?? null,
+        },
+      })),
+    });
+  }, [features]);
+
+  // Re-run when the drawn geometry changes and again once the GeoJSON arrives
+  // (a selection drawn before the fetch resolves would otherwise stay empty).
+  useEffect(() => {
+    if (drawnGeometry) applySelection(drawnGeometry);
+  }, [applySelection, drawnGeometry]);
+
+  const handleModeChange = useCallback((mode) => {
+    if (selectionMode === mode) {
+      setSelectionMode(null);
+      setIsDrawing(false);
+    } else {
+      setSelectionMode(mode);
+      setIsDrawing(true);
+    }
+  }, [selectionMode]);
+
+  const handleGeometryComplete = useCallback((mode, coords) => {
+    const geoCoords = coords
+      .map(c => (Array.isArray(c) ? c : c?.geo))
+      .filter(c => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]));
+
+    const geometry = normalizeGeometry(mode, geoCoords, 0);
+    setIsDrawing(false);
+    // The selection itself is applied by the effect above.
+    if (geometry) setDrawnGeometry(geometry);
+  }, []);
+
+  const handleClear = useCallback(() => {
+    setSelectionMode(null);
+    setIsDrawing(false);
+    setDrawnGeometry(null);
+    setSelectedFeatures(null);
+  }, []);
+
   const layers = useMemo(() => {
     const terrainLayer = new CogTerrainLayer({
       id: 'terrain-elevation',
@@ -118,7 +217,9 @@ export default function PolakyHradec() {
       maxZoom: 15,
       operation: 'terrain+draw',
       onZRangeUpdate,
-      pickable: false,
+      // Picking the terrain is only needed while drawing a selection: it yields
+      // the true 3D click coordinate (pickable: '3d').
+      pickable: isDrawing ? '3d' : false,
       terrainOptions: TERRAIN_OPTIONS,
     });
 
@@ -141,6 +242,22 @@ export default function PolakyHradec() {
       },
     });
 
+    // Persistent outline of the circle/polygon used for the chart selection.
+    const selectionBoundaryLayer = drawnGeometry
+      ? new GeoJsonLayer({
+          id: 'selection-boundary',
+          data: { type: 'Feature', properties: {}, geometry: drawnGeometry },
+          filled: true,
+          stroked: true,
+          getFillColor: [...SELECTION_COLOR, 40],
+          getLineColor: [...SELECTION_COLOR, 220],
+          lineWidthUnits: 'pixels',
+          getLineWidth: 2,
+          lineWidthMinPixels: 2,
+          pickable: false,
+        })
+      : null;
+
     const sphereLayer = new SimpleMeshLayer({
       id: 'vel-avg-spheres',
       data: features,
@@ -153,8 +270,11 @@ export default function PolakyHradec() {
         getElevation(d),
       ],
       getColor: getRgba,
-      // Constant size; selection is shown by the ring, not by scaling the mesh.
-      getScale: () => [SPHERE_RADIUS, SPHERE_RADIUS, SPHERE_RADIUS],
+      // Selection is shown by the ring, not by scaling the mesh.
+      getScale: (d) => {
+        const radius = getSphereRadius(d);
+        return [radius, radius, radius];
+      },
     });
 
     // SimpleMeshLayer has no outline, so mark the selection with a billboard ring.
@@ -177,8 +297,65 @@ export default function PolakyHradec() {
       getLineColor: [66, 212, 244, 255],
     });
 
-    return [terrainLayer, satelliteLayer, sphereLayer, selectionRing];
-  }, [zRange, onZRangeUpdate, features, selectedFeature]);
+    // Ring around every point selected by the circle/polygon drawing.
+    const selectedPointsRing = new ScatterplotLayer({
+      id: 'selected-points-rings',
+      data: selectedFeatures?.features ?? [],
+      pickable: false,
+      filled: false,
+      stroked: true,
+      billboard: true,
+      radiusUnits: 'pixels',
+      lineWidthUnits: 'pixels',
+      getPosition: (d) => [
+        d.geometry.coordinates[0],
+        d.geometry.coordinates[1],
+        getElevation(d),
+      ],
+      getRadius: 5,
+      getLineWidth: 1.5,
+      getLineColor: [...SELECTION_COLOR, 255],
+    });
+
+    // Chart hover -> map highlight (red, matching the other sandbox maps).
+    const hoveredRing = new ScatterplotLayer({
+      id: 'hovered-point-ring',
+      data: hoveredFeature ? [hoveredFeature] : [],
+      pickable: false,
+      filled: false,
+      stroked: true,
+      billboard: true,
+      radiusUnits: 'pixels',
+      lineWidthUnits: 'pixels',
+      getPosition: (d) => [
+        d.geometry.coordinates[0],
+        d.geometry.coordinates[1],
+        getElevation(d),
+      ],
+      getRadius: 7,
+      getLineWidth: 2,
+      getLineColor: [255, 0, 0, 255],
+    });
+
+    return [
+      terrainLayer,
+      satelliteLayer,
+      selectionBoundaryLayer,
+      sphereLayer,
+      selectedPointsRing,
+      selectionRing,
+      hoveredRing,
+    ].filter(Boolean);
+  }, [
+    zRange,
+    onZRangeUpdate,
+    features,
+    selectedFeature,
+    hoveredFeature,
+    isDrawing,
+    drawnGeometry,
+    selectedFeatures,
+  ]);
 
   const legendGradient = `linear-gradient(to right, ${colorScale.colors(10).join(', ')})`;
 
@@ -193,22 +370,55 @@ export default function PolakyHradec() {
     }}>
       <DeckGL
         initialViewState={INITIAL_VIEW_STATE}
+        onViewStateChange={({ viewState: next }) => setViewState(next)}
+        getCursor={() => (isDrawing ? 'crosshair' : 'grab')}
         controller={{
-          dragRotate: true,
-          touchRotate: true,
-          dragPan: true,
-          scrollZoom: true,
-          keyboard: true,
+          dragRotate: !isDrawing,
+          touchRotate: !isDrawing,
+          dragPan: !isDrawing,
+          scrollZoom: !isDrawing,
+          keyboard: !isDrawing,
         }}
         layers={layers}
-        onClick={({ object }) => setSelectedId(object?.properties?.ID ?? null)}
+        onClick={(info) => {
+          if (isDrawing) {
+            // The 3D overlay listens for these events (DrawingOverlay is3D).
+            const terrain = extractTerrainCoordinate(info);
+            const lon = terrain?.longitude ?? info.coordinate?.[0];
+            const lat = terrain?.latitude ?? info.coordinate?.[1];
+            if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+            window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
+              detail: {
+                geo: [lon, lat],
+                screenPos: [info.x, info.y],
+                elevation: terrain?.elevation ?? info.coordinate?.[2],
+              },
+            }));
+            return;
+          }
+          setSelectedId(info.object?.properties?.ID ?? null);
+        }}
+        onDoubleClick={(info) => {
+          if (isDrawing) {
+            // Finish the polygon without deck.gl zooming on the double-click.
+            info.isPrimary = false;
+            info.rightButton = false;
+            info.leftButton = false;
+            info.middleButton = false;
+            // deck.gl swallows the native dblclick on its canvas, so finalize
+            // through the same event DrawingOverlay uses for its finish button.
+            window.dispatchEvent(new CustomEvent('finalizeDrawing'));
+          }
+        }}
         getTooltip={({ object }) => {
+          if (isDrawing) return null;
           const props = object?.properties;
           if (!props) return null;
           return {
             text: [
               `ID: ${props.ID ?? '–'}`,
               `VEL_AVG: ${formatNumber(props.VEL_AVG, 2)} mm/yr`,
+              `COH: ${formatNumber(props.COH, 2)}`,
               `H_dem: ${formatNumber(props.H_dem, 1)} m`,
             ].join('\n'),
           };
@@ -217,17 +427,78 @@ export default function PolakyHradec() {
         className="deckgl-map"
       />
 
+      <DrawingOverlay
+        viewState={viewState}
+        selectionMode={selectionMode}
+        isDrawing={isDrawing}
+        onGeometryComplete={handleGeometryComplete}
+        bufferDistance={0}
+        is3D
+      />
+
       {isLoading && (
-        <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(0,0,0,0.7)', color: 'white', padding: '10px', borderRadius: '4px' }}>
+        <div style={{
+          position: 'absolute',
+          top: 10,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(0,0,0,0.7)',
+          color: 'white',
+          padding: '10px',
+          borderRadius: '4px',
+        }}>
           Loading data...
         </div>
       )}
 
       {error && (
-        <div style={{ position: 'absolute', top: 10, left: 10, maxWidth: '60%', background: 'rgba(160,0,0,0.85)', color: 'white', padding: '10px', borderRadius: '4px', fontFamily: 'system-ui, sans-serif', fontSize: '12px' }}>
+        <div style={{
+          position: 'absolute',
+          top: 10,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          maxWidth: '60%',
+          background: 'rgba(160,0,0,0.85)',
+          color: 'white',
+          padding: '10px',
+          borderRadius: '4px',
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '12px',
+        }}>
           Failed to load Poláky data: {error}
         </div>
       )}
+
+      <SelectionToolbar
+        selectionMode={selectionMode}
+        isDrawing={isDrawing}
+        selectedCount={selectedFeatures?.features.length ?? 0}
+        onModeChange={handleModeChange}
+        onClear={handleClear}
+      />
+
+      <button
+        type="button"
+        onClick={() => setShowChart(v => !v)}
+        style={{
+          position: 'absolute',
+          top: 10,
+          right: 10,
+          zIndex: 1200,
+          padding: '6px 12px',
+          border: '1px solid #ccc',
+          borderRadius: '6px',
+          background: showChart ? '#0066cc' : 'rgba(255, 255, 255, 0.95)',
+          color: showChart ? '#fff' : '#333',
+          cursor: 'pointer',
+          fontSize: '12px',
+          fontFamily: 'system-ui, sans-serif',
+          fontWeight: 600,
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+        }}
+      >
+        {showChart ? 'Hide 3D chart' : '3D chart'}
+      </button>
 
       <div style={{
         position: 'absolute',
@@ -251,10 +522,35 @@ export default function PolakyHradec() {
           <span>0</span>
           <span>+1</span>
         </div>
+        <div style={{ marginTop: '4px', color: '#555' }}>Sphere size = COH</div>
       </div>
 
       {selectedFeature && (
         <TimelineChart feature={selectedFeature} onClose={() => setSelectedId(null)} />
+      )}
+
+      {showChart && (
+        <div style={{
+          position: 'absolute',
+          right: 12,
+          bottom: 344,
+          width: '460px',
+          maxWidth: 'calc(100% - 24px)',
+          height: '380px',
+          zIndex: 1100,
+        }}>
+          <FeatureSpaceChart
+            featureCollection={selectedFeatures}
+            embedded
+            profileDisabled
+            defaultPreset="custom"
+            defaultCustomAxes={{ x: 'lon', y: 'lat', z: 'H_REF', color: 'VEL_AVG', size: 'COH' }}
+            attributeKeys={chartAttributeKeys}
+            colorPalette={BLUE_PALETTE}
+            onPointHover={setHoveredPointId}
+            title="Poláky · 3D feature space"
+          />
+        </div>
       )}
     </div>
   );

@@ -2,7 +2,6 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react
 import {
   ATTRIBUTES,
   AXIS_KEYS,
-  COLOR_KEYS,
   DEFAULT_CUSTOM_AXES,
   DEFAULT_PRESET,
   PRESET_KEYS,
@@ -11,7 +10,6 @@ import {
   PROFILE_DEFAULTS,
   PROFILE_VIEW_DEFAULT,
   TREND_LINES_DEFAULT,
-  SIZE_KEYS,
   formatValue,
   resolveAxes,
 } from './attributes';
@@ -61,6 +59,11 @@ const RENDERER_COMPONENTS = {
  * @param {(id: string|null) => void} [props.onPointHover]  map-link hover callback
  * @param {(state: {mode:'scatter'|'profile', view:'attributes'|'trend'|'aggregate', zKey:string, basis:'along'|'plan', trendLines:'windows'|'profiles'|'points', valueKey:string, step:number, interpolate:boolean}|null) => void} [props.onStateChange]  reports the effective mode/view/zKey/basis/trend shape (plus the aggregate value/step/interpolate), or null on unmount
  * @param {'plotly'|'deckgl'|'three'} [props.defaultRenderer]
+ * @param {'kinematic'|'topographic'|'custom'} [props.defaultPreset]  initial axis preset
+ * @param {import('./attributes').PresetAxes} [props.defaultCustomAxes]  initial Custom axes
+ * @param {string[]} [props.attributeKeys]  override the scatter picker attributes (e.g. the loaded GeoJSON's numeric properties)
+ * @param {string[]} [props.colorPalette]  palette for non-velocity colour attributes (defaults to viridis)
+ * @param {boolean} [props.embedded]  compact card mode: deck.gl spheres, Custom preset, scatter only, no renderer/mode/marker/preset rows
  * @param {string} [props.title]
  */
 export function FeatureSpaceChart({
@@ -72,11 +75,16 @@ export function FeatureSpaceChart({
   onPointHover,
   onStateChange,
   defaultRenderer = 'plotly',
+  defaultPreset = DEFAULT_PRESET,
+  defaultCustomAxes = DEFAULT_CUSTOM_AXES,
+  attributeKeys = null,
+  colorPalette,
+  embedded = false,
   title = '3D feature space',
 }) {
   const [renderer, setRenderer] = useState(defaultRenderer);
-  const [presetKey, setPresetKey] = useState(DEFAULT_PRESET);
-  const [customAxes, setCustomAxes] = useState(DEFAULT_CUSTOM_AXES);
+  const [presetKey, setPresetKey] = useState(defaultPreset);
+  const [customAxes, setCustomAxes] = useState(defaultCustomAxes);
   const [markerStyle, setMarkerStyle] = useState('sphere');
 
   const [mode, setMode] = useState(showProfile ? 'profile' : 'scatter');
@@ -104,13 +112,23 @@ export function FeatureSpaceChart({
   const activeFields = useMemo(() => activeFieldsFor(axes), [axes]);
 
   const { points, skipped, total } = useMemo(
-    () => transformPoints(featureCollection, activeFields),
-    [featureCollection, activeFields],
+    () => transformPoints(featureCollection, activeFields, attributeKeys ?? undefined),
+    [featureCollection, activeFields, attributeKeys],
   );
 
   const colorDomain = useMemo(() => getColorDomain(axes.color, points), [axes.color, points]);
-  const colorScale = useMemo(() => buildColorScale(axes.color, colorDomain), [axes.color, colorDomain]);
+  const colorScale = useMemo(
+    () => buildColorScale(axes.color, colorDomain, colorPalette),
+    [axes.color, colorDomain, colorPalette],
+  );
   const sizeDomain = useMemo(() => getSizeDomain(axes.size, points), [axes.size, points]);
+
+  // Embedded mode lists the caller's GeoJSON attributes by name; otherwise the
+  // module's curated labels.
+  const scatterKeys = attributeKeys && attributeKeys.length > 0 ? attributeKeys : AXIS_KEYS;
+  const attributeLabel = (key) => (
+    attributeKeys && attributeKeys.length > 0 ? key : (ATTRIBUTES[key]?.label ?? key)
+  );
 
   // The mode toggle is always shown, but a polygon/circle selection has no line
   // to profile, so the profile mode is disabled and the panel falls back to
@@ -220,10 +238,13 @@ export function FeatureSpaceChart({
     setCustomAxes((prev) => ({ ...prev, [slot]: key }));
   };
 
-  const Renderer = RENDERER_COMPONENTS[renderer];
+  // Embedded mode is deck.gl spheres only.
+  const activeRenderer = embedded ? 'deckgl' : renderer;
+  const Renderer = RENDERER_COMPONENTS[activeRenderer];
+  const markerStyleForRenderer = embedded ? 'sphere' : markerStyle;
 
   // Plotly has no sphere marker, so its effective style is always billboards.
-  const effectiveMarker = renderer === 'plotly' ? 'billboard' : markerStyle;
+  const effectiveMarker = activeRenderer === 'plotly' ? 'billboard' : markerStyleForRenderer;
 
   const rendererProps = {
     points,
@@ -232,7 +253,7 @@ export function FeatureSpaceChart({
     colorDomain,
     sizeDomain,
     sizeRange: SIZE_PIXEL_RANGE,
-    markerStyle,
+    markerStyle: markerStyleForRenderer,
     onHover: handleHover,
   };
 
@@ -243,26 +264,7 @@ export function FeatureSpaceChart({
     : `${points.length} pts`;
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: 'min(45%, 720px)',
-        minWidth: '380px',
-        background: 'rgba(255, 255, 255, 0.97)',
-        borderLeft: '1px solid #ddd',
-        boxShadow: '-2px 0 12px rgba(0,0,0,0.12)',
-        zIndex: 1100,
-        display: 'flex',
-        flexDirection: 'column',
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '12px',
-        color: '#333',
-        pointerEvents: 'auto',
-      }}
-    >
+    <div style={embedded ? embeddedPanelStyle : panelStyle}>
       <div
         style={{
           display: 'flex',
@@ -296,6 +298,7 @@ export function FeatureSpaceChart({
         )}
       </div>
 
+      {!embedded && (
       <div
         style={{
           display: 'flex',
@@ -324,7 +327,9 @@ export function FeatureSpaceChart({
           3D line profile
         </button>
       </div>
+      )}
 
+      {!embedded && (
       <div
         style={{
           display: 'flex',
@@ -371,8 +376,9 @@ export function FeatureSpaceChart({
           </button>
         </div>
       </div>
+      )}
 
-      {activeMode === 'scatter' && (
+      {!embedded && activeMode === 'scatter' && (
         <div
           style={{
             display: 'flex',
@@ -625,11 +631,11 @@ export function FeatureSpaceChart({
           }}
         >
           {[
-            ['x', AXIS_KEYS],
-            ['y', AXIS_KEYS],
-            ['z', AXIS_KEYS],
-            ['color', COLOR_KEYS],
-            ['size', SIZE_KEYS],
+            ['x', scatterKeys],
+            ['y', scatterKeys],
+            ['z', scatterKeys],
+            ['color', scatterKeys],
+            ['size', scatterKeys],
           ].map(([slot, keys]) => (
             <label key={slot} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
               <span style={{ fontSize: '10px', color: '#666', textTransform: 'uppercase' }}>{slot}</span>
@@ -640,7 +646,7 @@ export function FeatureSpaceChart({
               >
                 {keys.map((key) => (
                   <option key={key} value={key}>
-                    {ATTRIBUTES[key].label}
+                    {attributeLabel(key)}
                   </option>
                 ))}
               </select>
@@ -680,11 +686,11 @@ export function FeatureSpaceChart({
           }}
         >
           <span>
-            Color: {ATTRIBUTES[axes.color].label}
-            {axes.color === 'VEL_REL' ? ' (map scale)' : ` (${formatValue(axes.color, colorDomain[0])} \u2013 ${formatValue(axes.color, colorDomain[1])})`}
+            Color: {attributeLabel(axes.color)}
+            {axes.color === 'VEL_REL' || axes.color === 'VEL_AVG' ? ' (map scale)' : ` (${formatValue(axes.color, colorDomain[0])} \u2013 ${formatValue(axes.color, colorDomain[1])})`}
           </span>
           <span>
-            Size: {ATTRIBUTES[axes.size].label}
+            Size: {attributeLabel(axes.size)}
             {axes.size === 'COH' ? ' (fixed 0\u20131)' : ''}
           </span>
         </div>
@@ -737,6 +743,43 @@ const centeredState = {
   fontSize: '12px',
   textAlign: 'center',
   padding: '16px',
+};
+
+const panelStyle = {
+  position: 'absolute',
+  top: 0,
+  right: 0,
+  bottom: 0,
+  width: 'min(45%, 720px)',
+  minWidth: '380px',
+  background: 'rgba(255, 255, 255, 0.97)',
+  borderLeft: '1px solid #ddd',
+  boxShadow: '-2px 0 12px rgba(0,0,0,0.12)',
+  zIndex: 1100,
+  display: 'flex',
+  flexDirection: 'column',
+  fontFamily: 'system-ui, sans-serif',
+  fontSize: '12px',
+  color: '#333',
+  pointerEvents: 'auto',
+};
+
+/** Compact card used when embedded in another map (fills its positioned parent). */
+const embeddedPanelStyle = {
+  position: 'relative',
+  width: '100%',
+  height: '100%',
+  background: 'rgba(255, 255, 255, 0.97)',
+  border: '1px solid #ddd',
+  borderRadius: '8px',
+  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25)',
+  overflow: 'hidden',
+  display: 'flex',
+  flexDirection: 'column',
+  fontFamily: 'system-ui, sans-serif',
+  fontSize: '12px',
+  color: '#333',
+  pointerEvents: 'auto',
 };
 
 function buttonStyle(active, disabled = false) {

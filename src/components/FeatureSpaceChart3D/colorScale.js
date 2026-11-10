@@ -20,8 +20,25 @@ import chroma from 'chroma-js';
 export const MAP_VELOCITY_COLORS = [[215, 25, 28], [254, 254, 191], [65, 182, 196]];
 export const MAP_VELOCITY_DOMAIN = [-3, 3];
 
+/**
+ * `VEL_AVG` keeps the Poláky map's fixed ±1 mm/yr ramp so the chart and the map
+ * spheres read the same. Chroma clips out-of-domain values to the endpoints.
+ */
+export const MAP_VEL_AVG_DOMAIN = [-1, 1];
+
 /** Viridis, for non-velocity attributes. */
 const GENERIC_PALETTE = ['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725'];
+
+/** Blue shades, for non-velocity attributes in the Poláky 3D chart. */
+export const BLUE_PALETTE = [
+  '#2D5A81',
+  '#2B72B1',
+  '#228be6',
+  '#509FE3',
+  '#7BB3E4',
+  '#A2C7E7',
+  '#C7DCED',
+];
 
 /** Per-point pixel-radius range for the size channel. */
 export const SIZE_PIXEL_RANGE = [3, 14];
@@ -51,6 +68,7 @@ export const OFFSET_MARKER_SIZE = {
  */
 export function getColorDomain(key, points) {
   if (key === 'VEL_REL') return [...MAP_VELOCITY_DOMAIN];
+  if (key === 'VEL_AVG') return [...MAP_VEL_AVG_DOMAIN];
 
   let min = Infinity;
   let max = -Infinity;
@@ -70,12 +88,12 @@ export function getColorDomain(key, points) {
  * @param {[number, number]} domain
  * @returns {import('chroma-js').Scale}
  */
-export function buildColorScale(key, domain) {
-  if (key === 'VEL_REL') {
+export function buildColorScale(key, domain, palette = GENERIC_PALETTE) {
+  if (key === 'VEL_REL' || key === 'VEL_AVG') {
     // Exact match with the map scale (default rgb interpolation).
     return chroma.scale(MAP_VELOCITY_COLORS).domain(domain);
   }
-  return chroma.scale(GENERIC_PALETTE).mode('lab').domain(domain);
+  return chroma.scale(palette).mode('lab').domain(domain);
 }
 
 /**

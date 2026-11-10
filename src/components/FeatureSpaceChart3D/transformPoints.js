@@ -56,9 +56,10 @@ const NUMERIC_KEYS = Object.keys(ATTRIBUTES).filter((key) => !ATTRIBUTES[key].co
 /**
  * Transform a single GeoJSON feature into a normalized point.
  * @param {any} feature
+ * @param {string[]} [keys]  numeric attribute keys to carry (defaults to the curated set)
  * @returns {FeatureSpacePoint}
  */
-export function transformFeature(feature) {
+export function transformFeature(feature, keys = NUMERIC_KEYS) {
   const p = (feature && feature.properties) || {};
   const coords = feature && feature.geometry && Array.isArray(feature.geometry.coordinates)
     ? feature.geometry.coordinates
@@ -66,7 +67,10 @@ export function transformFeature(feature) {
 
   /** @type {Record<string, number|null>} */
   const values = {};
-  for (const key of NUMERIC_KEYS) values[key] = toNumber(p[key]);
+  for (const key of keys) values[key] = toNumber(p[key]);
+  // `lon` / `lat` are geometry-derived pseudo-attributes (see ATTRIBUTES).
+  if (coords && keys.includes('lon')) values.lon = toNumber(coords[0]);
+  if (coords && keys.includes('lat')) values.lat = toNumber(coords[1]);
 
   const id = p.ID ?? p.fid ?? (feature && feature.id) ?? null;
 
@@ -96,9 +100,10 @@ function isComplete(point, activeFields) {
  *
  * @param {any} featureCollection
  * @param {string[]} [activeFields] attribute keys; only these gate skipping
+ * @param {string[]} [keys] numeric attribute keys to carry (defaults to the curated set)
  * @returns {{ points: FeatureSpacePoint[], skipped: number, total: number }}
  */
-export function transformPoints(featureCollection, activeFields = []) {
+export function transformPoints(featureCollection, activeFields = [], keys = NUMERIC_KEYS) {
   const features = Array.isArray(featureCollection)
     ? featureCollection
     : (featureCollection && featureCollection.features) || [];
@@ -107,7 +112,7 @@ export function transformPoints(featureCollection, activeFields = []) {
   let skipped = 0;
 
   for (const feature of features) {
-    const point = transformFeature(feature);
+    const point = transformFeature(feature, keys);
     if (activeFields.length > 0 && !isComplete(point, activeFields)) {
       skipped += 1;
       continue;
