@@ -22,7 +22,7 @@ const SATELLITE_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services
 const PYLONS_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/sloupy.geojson';
 const PYLON_ASSET_BASE = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets';
 
-const PYLON_COLOR = [150, 155, 160, 255];
+const PYLON_COLOR = [183, 188, 193, 255];
 // Native heights come from the OBJ headers (metres, Z-up, base centre at origin).
 // Each instance is scaled to its GeoJSON `height`; see getPylonHeight below.
 const PYLON_MODELS = [
@@ -349,7 +349,7 @@ export default function PolakyHradec() {
         // The data carries no bearing, so pylons stay axis-aligned.
         getOrientation: () => [0, 0, 0],
         getColor: () => PYLON_COLOR,
-        material: { ambient: 0.35, diffuse: 0.6, shininess: 24, specularColor: [60, 64, 70] },
+        material: { ambient: 0.42, diffuse: 0.65, shininess: 24, specularColor: [60, 64, 70] },
         extensions: [new TerrainExtension()],
         terrainDrawMode: 'offset',
         pickable: false,
