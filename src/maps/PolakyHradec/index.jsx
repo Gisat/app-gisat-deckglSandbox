@@ -2,19 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
-import { BitmapLayer, GeoJsonLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { BitmapLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { OBJLoader } from '@loaders.gl/obj';
 import { SphereGeometry } from '@luma.gl/engine';
-import { CogTerrainLayer, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
+import { CogTerrainLayer } from '@gisatcz/deckgl-geolib';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
 import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
 import chroma from 'chroma-js';
 import { scaleLinear } from 'd3-scale';
-import { DrawingOverlay, normalizeGeometry, pointInPolygon } from '../../components/PointSelection';
 import { BLUE_PALETTE, FeatureSpaceChart } from '../../components/FeatureSpaceChart3D';
 import TimelineChart from './TimelineChart';
-import SelectionToolbar from './SelectionToolbar';
 
 const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/polaky_95D_PS.geojson';
 const TERRAIN_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/EL-GRID_COGeoN.tif';
@@ -38,6 +36,21 @@ const PYLON_MODELS = [
   { typ: 'portal', nativeHeight: 29.169, mesh: `${PYLON_ASSET_BASE}/portal.obj` },
 ];
 
+// Pylon <-> InSAR join. The pylon GeoJSON spells the join property `index_righ`
+// (no trailing "t"), while the points use `index_right`; support both.
+function getPylonJoinKey(feature) {
+  const raw = feature?.properties?.index_right ?? feature?.properties?.index_righ;
+  return raw == null || raw === '' ? null : String(raw);
+}
+
+function getPointJoinKey(feature) {
+  const raw = feature?.properties?.index_right;
+  return raw == null || raw === '' ? null : String(raw);
+}
+
+// Stable empty array so memoised selections do not retrigger chart transforms.
+const EMPTY = [];
+
 // Exact 3d-feature-charts ramp (red -> yellow -> teal) on the VEL_AVG domain.
 const colorScale = chroma
   .scale([[215, 25, 28], [254, 254, 191], [65, 182, 196]])
@@ -52,6 +65,8 @@ const coherenceSizeScale = scaleLinear([0.5, 1], [2, 6]).clamp(true);
 
 // Shared cyan for every "selected" or hovered highlight on the map.
 const SELECTION_COLOR = [66, 212, 244];
+// Chart hover highlight, matching the chart's own red point highlight.
+const CHART_HOVER_COLOR = [255, 0, 0, 255];
 
 const INITIAL_VIEW_STATE = {
   longitude: 13.3607,
@@ -118,6 +133,9 @@ function getRgba(feature) {
 }
 
 function formatNumber(value, digits) {
+  // Number(null) is 0, so reject empty values before coercing: a missing
+  // attribute must read as "no data", not as a real zero.
+  if (value == null || value === '') return '–';
   const num = Number(value);
   return Number.isFinite(num) ? num.toFixed(digits) : '–';
 }
@@ -128,19 +146,14 @@ export default function PolakyHradec() {
   const [pylonFeatures, setPylonFeatures] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  // Pre-selected on load so the click-to-open timeline is discoverable.
-  const [selectedId, setSelectedId] = useState(58931);
-
-  // 3D chart panel + drawing state.
-  const [showChart, setShowChart] = useState(true);
-  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
-  const [selectionMode, setSelectionMode] = useState(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [drawnGeometry, setDrawnGeometry] = useState(null);
-  const [selectedFeatures, setSelectedFeatures] = useState(null);
+  // Selected point (sphere click → timeline) and selected pylon (pylon click →
+  // grouped 3D feature chart) are mutually exclusive.
+  const [selectedId, setSelectedId] = useState(null);
+  const [selectedPylonKey, setSelectedPylonKey] = useState(null);
   const [hoveredPointId, setHoveredPointId] = useState(null);
   // Hover on the map itself, separate from the 3D chart's hover.
   const [hoveredSphereId, setHoveredSphereId] = useState(null);
+  const [hoveredPylonKey, setHoveredPylonKey] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -242,21 +255,44 @@ export default function PolakyHradec() {
     return ['lon', 'lat', ...[...keys].sort()];
   }, [features]);
 
-  const hoveredFeature = useMemo(() => {
-    if (hoveredPointId == null) return null;
-    return features.find(f => String(f.properties?.ID) === String(hoveredPointId)) ?? null;
-  }, [features, hoveredPointId]);
+  // InSAR points grouped by their pylon join key (`index_right`).
+  const pointsByPylonKey = useMemo(() => {
+    const map = new Map();
+    for (const feature of features) {
+      const key = getPointJoinKey(feature);
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(feature);
+    }
+    return map;
+  }, [features]);
 
-  // Circle/polygon selection for the 3D feature-space chart.
-  const applySelection = useCallback((geometry) => {
-    const selected = features.filter(feature => {
-      const [lon, lat] = feature.geometry?.coordinates ?? [];
-      return Number.isFinite(lon) && Number.isFinite(lat) && pointInPolygon([lon, lat], geometry);
-    });
+  const selectedPylonPoints = useMemo(
+    () => (selectedPylonKey ? pointsByPylonKey.get(selectedPylonKey) ?? EMPTY : EMPTY),
+    [pointsByPylonKey, selectedPylonKey],
+  );
 
-    setSelectedFeatures({
+  const selectedPylonPointIds = useMemo(() => {
+    const ids = new Set();
+    for (const feature of selectedPylonPoints) {
+      const id = feature?.properties?.ID;
+      if (id != null) ids.add(String(id));
+    }
+    return ids;
+  }, [selectedPylonPoints]);
+
+  const selectedPylon = useMemo(() => {
+    if (selectedPylonKey == null) return null;
+    return pylonFeatures.find(f => getPylonJoinKey(f) === selectedPylonKey) ?? null;
+  }, [pylonFeatures, selectedPylonKey]);
+
+  // Chart input for the selected pylon, in the shape the chart already expects
+  // (with `point_id`, mirroring the old drawing selection).
+  const pylonFeatureCollection = useMemo(() => {
+    if (selectedPylonKey == null) return null;
+    return {
       type: 'FeatureCollection',
-      features: selected.map(feature => ({
+      features: selectedPylonPoints.map(feature => ({
         type: 'Feature',
         id: feature.properties?.ID ?? null,
         geometry: feature.geometry,
@@ -265,47 +301,18 @@ export default function PolakyHradec() {
           point_id: feature.properties?.ID ?? null,
         },
       })),
-    });
-  }, [features]);
+    };
+  }, [selectedPylonKey, selectedPylonPoints]);
 
-  // Re-run when the drawn geometry changes and again once the GeoJSON arrives
-  // (a selection drawn before the fetch resolves would otherwise stay empty).
-  useEffect(() => {
-    if (drawnGeometry) applySelection(drawnGeometry);
-  }, [applySelection, drawnGeometry]);
-
-  const handleModeChange = useCallback((mode) => {
-    if (selectionMode === mode) {
-      setSelectionMode(null);
-      setIsDrawing(false);
-    } else {
-      setSelectionMode(mode);
-      setIsDrawing(true);
-    }
-  }, [selectionMode]);
-
-  const handleGeometryComplete = useCallback((mode, coords) => {
-    const geoCoords = coords
-      .map(c => (Array.isArray(c) ? c : c?.geo))
-      .filter(c => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]));
-
-    const geometry = normalizeGeometry(mode, geoCoords, 0);
-    setIsDrawing(false);
-    // The selection itself is applied by the effect above.
-    if (geometry) setDrawnGeometry(geometry);
-  }, []);
-
-  const handleClear = useCallback(() => {
-    setSelectionMode(null);
-    setIsDrawing(false);
-    setDrawnGeometry(null);
-    setSelectedFeatures(null);
-  }, []);
-
-  // Only re-render when the hovered sphere actually changes.
+  // Only re-render when the hovered object actually changes.
   const handleHover = useCallback((info) => {
-    const nextId = info.object?.properties?.ID ?? null;
-    setHoveredSphereId(prev => (prev === nextId ? prev : nextId));
+    const layerId = info.layer?.id ?? '';
+    const nextPylonKey = layerId.startsWith('pylons-') ? getPylonJoinKey(info.object) : null;
+    const nextSphereId = layerId === 'vel-avg-spheres'
+      ? (info.object?.properties?.ID ?? null)
+      : null;
+    setHoveredPylonKey(prev => (prev === nextPylonKey ? prev : nextPylonKey));
+    setHoveredSphereId(prev => (prev === nextSphereId ? prev : nextSphereId));
   }, []);
 
   const layers = useMemo(() => {
@@ -318,9 +325,7 @@ export default function PolakyHradec() {
       maxZoom: 15,
       operation: 'terrain+draw',
       onZRangeUpdate,
-      // Picking the terrain is only needed while drawing a selection: it yields
-      // the true 3D click coordinate (pickable: '3d').
-      pickable: isDrawing ? '3d' : false,
+      pickable: false,
       terrainOptions: TERRAIN_OPTIONS,
     });
 
@@ -343,22 +348,6 @@ export default function PolakyHradec() {
       },
     });
 
-    // Persistent outline of the circle/polygon used for the chart selection.
-    const selectionBoundaryLayer = drawnGeometry
-      ? new GeoJsonLayer({
-          id: 'selection-boundary',
-          data: { type: 'Feature', properties: {}, geometry: drawnGeometry },
-          filled: true,
-          stroked: true,
-          getFillColor: [...SELECTION_COLOR, 40],
-          getLineColor: [...SELECTION_COLOR, 220],
-          lineWidthUnits: 'pixels',
-          getLineWidth: 2,
-          lineWidthMinPixels: 2,
-          pickable: false,
-        })
-      : null;
-
     // One layer per pylon type: SimpleMeshLayer takes a single mesh, so the typ
     // has to be expressed as separate layers with stable ids and mesh URLs.
     // Anchoring at z=0 lets TerrainExtension offset mode snap the base to the
@@ -379,11 +368,17 @@ export default function PolakyHradec() {
         },
         // Bearing-driven yaw: per-feature `azimuth`, default otherwise.
         getOrientation: getPylonOrientation,
-        getColor: () => PYLON_COLOR,
+        getColor: (d) => {
+          const key = getPylonJoinKey(d);
+          const highlighted = key != null
+            && (key === selectedPylonKey || key === hoveredPylonKey);
+          return highlighted ? [...SELECTION_COLOR, 255] : PYLON_COLOR;
+        },
+        updateTriggers: { getColor: [selectedPylonKey, hoveredPylonKey] },
         material: { ambient: 0.42, diffuse: 0.65, shininess: 24, specularColor: [60, 64, 70] },
         extensions: [new TerrainExtension()],
         terrainDrawMode: 'offset',
-        pickable: false,
+        pickable: true,
       });
     });
 
@@ -398,82 +393,52 @@ export default function PolakyHradec() {
         d.geometry.coordinates[1],
         getElevation(d),
       ],
-      // Selected and hovered spheres both get the highlight cyan. Driven by
-      // `selectedId` directly, so the default point highlights on load.
+      // Chart hover paints the matching sphere red; selected/hovered spheres and
+      // every sphere linked to the selected pylon get the shared highlight cyan.
       getColor: (d) => {
         const id = d.properties?.ID;
-        const isHighlighted = [selectedId, hoveredSphereId].some(
+        if (hoveredPointId != null && String(id) === String(hoveredPointId)) {
+          return CHART_HOVER_COLOR;
+        }
+        const isLinked = selectedPylonPointIds.size > 0
+          && selectedPylonPointIds.has(String(id));
+        const isHighlighted = isLinked || [selectedId, hoveredSphereId].some(
           other => other != null && String(id) === String(other),
         );
         return isHighlighted ? [...SELECTION_COLOR, 255] : getRgba(d);
       },
-      updateTriggers: { getColor: [selectedId, hoveredSphereId] },
+      updateTriggers: {
+        getColor: [
+          selectedId,
+          hoveredSphereId,
+          hoveredPointId,
+          selectedPylonKey,
+          selectedPylonPointIds,
+        ],
+      },
       getScale: (d) => {
         const radius = getSphereRadius(d);
         return [radius, radius, radius];
       },
     });
 
-    // Ring around every point selected by the circle/polygon drawing.
-    const selectedPointsRing = new ScatterplotLayer({
-      id: 'selected-points-rings',
-      data: selectedFeatures?.features ?? [],
-      pickable: false,
-      filled: false,
-      stroked: true,
-      billboard: true,
-      radiusUnits: 'pixels',
-      lineWidthUnits: 'pixels',
-      getPosition: (d) => [
-        d.geometry.coordinates[0],
-        d.geometry.coordinates[1],
-        getElevation(d),
-      ],
-      getRadius: 5,
-      getLineWidth: 1.5,
-      getLineColor: [...SELECTION_COLOR, 255],
-    });
-
-    // Chart hover -> map highlight (red, matching the other sandbox maps).
-    const hoveredRing = new ScatterplotLayer({
-      id: 'hovered-point-ring',
-      data: hoveredFeature ? [hoveredFeature] : [],
-      pickable: false,
-      filled: false,
-      stroked: true,
-      billboard: true,
-      radiusUnits: 'pixels',
-      lineWidthUnits: 'pixels',
-      getPosition: (d) => [
-        d.geometry.coordinates[0],
-        d.geometry.coordinates[1],
-        getElevation(d),
-      ],
-      getRadius: 7,
-      getLineWidth: 2,
-      getLineColor: [255, 0, 0, 255],
-    });
-
     return [
       terrainLayer,
       satelliteLayer,
-      selectionBoundaryLayer,
       ...pylonLayers,
       sphereLayer,
-      selectedPointsRing,
-      hoveredRing,
-    ].filter(Boolean);
+    ];
   }, [
     zRange,
     onZRangeUpdate,
     features,
     pylonGroups,
     selectedId,
-    hoveredFeature,
+    hoveredPointId,
     hoveredSphereId,
-    isDrawing,
-    drawnGeometry,
-    selectedFeatures,
+    selectedPylonKey,
+    hoveredPylonKey,
+    selectedPylonPointIds,
   ]);
 
   const legendGradient = `linear-gradient(to right, ${colorScale.colors(10).join(', ')})`;
@@ -489,71 +454,63 @@ export default function PolakyHradec() {
     }}>
       <DeckGL
         initialViewState={INITIAL_VIEW_STATE}
-        onViewStateChange={({ viewState: next }) => setViewState(next)}
-        getCursor={() => (isDrawing ? 'crosshair' : 'grab')}
-        controller={{
-          dragRotate: !isDrawing,
-          touchRotate: !isDrawing,
-          dragPan: !isDrawing,
-          scrollZoom: !isDrawing,
-          keyboard: !isDrawing,
-        }}
+        getCursor={() => (hoveredPylonKey != null || hoveredSphereId != null ? 'pointer' : 'grab')}
+        controller
         layers={layers}
         onHover={handleHover}
         onClick={(info) => {
-          if (isDrawing) {
-            // The 3D overlay listens for these events (DrawingOverlay is3D).
-            const terrain = extractTerrainCoordinate(info);
-            const lon = terrain?.longitude ?? info.coordinate?.[0];
-            const lat = terrain?.latitude ?? info.coordinate?.[1];
-            if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
-            window.dispatchEvent(new CustomEvent('map3dDrawingClick', {
-              detail: {
-                geo: [lon, lat],
-                screenPos: [info.x, info.y],
-                elevation: terrain?.elevation ?? info.coordinate?.[2],
-              },
-            }));
+          const layerId = info.layer?.id ?? '';
+          if (layerId.startsWith('pylons-')) {
+            const key = getPylonJoinKey(info.object);
+            if (key == null) return;
+            setSelectedId(null);
+            setHoveredPointId(null);
+            setSelectedPylonKey(key);
             return;
           }
-          setSelectedId(info.object?.properties?.ID ?? null);
-        }}
-        onDoubleClick={(info) => {
-          if (isDrawing) {
-            // Finish the polygon without deck.gl zooming on the double-click.
-            info.isPrimary = false;
-            info.rightButton = false;
-            info.leftButton = false;
-            info.middleButton = false;
-            // deck.gl swallows the native dblclick on its canvas, so finalize
-            // through the same event DrawingOverlay uses for its finish button.
-            window.dispatchEvent(new CustomEvent('finalizeDrawing'));
+          if (layerId === 'vel-avg-spheres') {
+            setSelectedPylonKey(null);
+            setHoveredPointId(null);
+            setSelectedId(info.object?.properties?.ID ?? null);
+            return;
           }
+          setSelectedId(null);
+          setSelectedPylonKey(null);
+          setHoveredPointId(null);
         }}
-        getTooltip={({ object }) => {
-          if (isDrawing) return null;
-          const props = object?.properties;
-          if (!props) return null;
-          return {
-            text: [
-              `ID: ${props.ID ?? '–'}`,
-              `VEL_AVG: ${formatNumber(props.VEL_AVG, 2)} mm/yr`,
-              `COH: ${formatNumber(props.COH, 2)}`,
-              `H_dem: ${formatNumber(props.H_dem, 1)} m`,
-            ].join('\n'),
-          };
+        getTooltip={({ object, layer }) => {
+          const layerId = layer?.id ?? '';
+          if (layerId.startsWith('pylons-')) {
+            const props = object?.properties;
+            if (!props) return null;
+            const key = getPylonJoinKey(object);
+            const height = props.height == null || props.height === ''
+              ? '–'
+              : formatNumber(props.height, 1);
+            return {
+              text: [
+                `Pylon ${props.id ?? '–'} (${props.typ ?? '–'})`,
+                `Height: ${height} m`,
+                `InSAR points: ${pointsByPylonKey.get(key)?.length ?? 0}`,
+              ].join('\n'),
+            };
+          }
+          if (layerId === 'vel-avg-spheres') {
+            const props = object?.properties;
+            if (!props) return null;
+            return {
+              text: [
+                `ID: ${props.ID ?? '–'}`,
+                `VEL_AVG: ${formatNumber(props.VEL_AVG, 2)} mm/yr`,
+                `COH: ${formatNumber(props.COH, 2)}`,
+                `H_dem: ${formatNumber(props.H_dem, 1)} m`,
+              ].join('\n'),
+            };
+          }
+          return null;
         }}
         deviceProps={{ waitForPageLoad: false }}
         className="deckgl-map"
-      />
-
-      <DrawingOverlay
-        viewState={viewState}
-        selectionMode={selectionMode}
-        isDrawing={isDrawing}
-        onGeometryComplete={handleGeometryComplete}
-        bufferDistance={0}
-        is3D
       />
 
       {isLoading && (
@@ -589,37 +546,6 @@ export default function PolakyHradec() {
         </div>
       )}
 
-      <SelectionToolbar
-        selectionMode={selectionMode}
-        isDrawing={isDrawing}
-        selectedCount={selectedFeatures?.features.length ?? 0}
-        onModeChange={handleModeChange}
-        onClear={handleClear}
-      />
-
-      <button
-        type="button"
-        onClick={() => setShowChart(v => !v)}
-        style={{
-          position: 'absolute',
-          top: 10,
-          right: 10,
-          zIndex: 1200,
-          padding: '6px 12px',
-          border: '1px solid #ccc',
-          borderRadius: '6px',
-          background: showChart ? '#0066cc' : 'rgba(255, 255, 255, 0.95)',
-          color: showChart ? '#fff' : '#333',
-          cursor: 'pointer',
-          fontSize: '12px',
-          fontFamily: 'system-ui, sans-serif',
-          fontWeight: 600,
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-        }}
-      >
-        {showChart ? 'Hide 3D chart' : '3D chart'}
-      </button>
-
       <div style={{
         position: 'absolute',
         left: 12,
@@ -645,22 +571,23 @@ export default function PolakyHradec() {
         <div style={{ marginTop: '4px', color: '#555' }}>Sphere size = COH</div>
       </div>
 
-      {selectedFeature && (
+      {selectedFeature && selectedPylonKey == null && (
         <TimelineChart feature={selectedFeature} onClose={() => setSelectedId(null)} />
       )}
 
-      {showChart && (
+      {selectedPylonKey != null && (
         <div style={{
           position: 'absolute',
           right: 12,
-          bottom: 344,
+          bottom: 12,
           width: '460px',
           maxWidth: 'calc(100% - 24px)',
-          height: '380px',
-          zIndex: 1100,
+          height: '560px',
+          maxHeight: 'calc(100% - 24px)',
+          zIndex: 1200,
         }}>
           <FeatureSpaceChart
-            featureCollection={selectedFeatures}
+            featureCollection={pylonFeatureCollection}
             embedded
             profileDisabled
             defaultPreset="custom"
@@ -668,7 +595,12 @@ export default function PolakyHradec() {
             attributeKeys={chartAttributeKeys}
             colorPalette={BLUE_PALETTE}
             onPointHover={setHoveredPointId}
-            title="Poláky · 3D feature space"
+            onClose={() => {
+              setSelectedPylonKey(null);
+              setHoveredPointId(null);
+            }}
+            emptyHint="No InSAR points are linked to this pylon."
+            title={`Poláky · Pylon ${selectedPylon?.properties?.id ?? selectedPylonKey} · 3D feature space`}
           />
         </div>
       )}

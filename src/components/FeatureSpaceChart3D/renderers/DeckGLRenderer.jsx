@@ -51,7 +51,26 @@ const TITLE_SIZE = 12;
 /** Static far-corner signs for the default camera (azimuth 225 / elevation 30). */
 const DEFAULT_SIGNS = [-1, -1, -1];
 
+/** Starting zoom, used only until the container is measured (see fitZoom below). */
 const DEFAULT_ZOOM = 7.5;
+
+/**
+ * Projected extent of the [-1, 1]^3 cube at the default camera, in cube units.
+ * Yawing 45deg makes the XY diagonal dominate: 2 * sqrt(2).
+ */
+const CUBE_PROJECTED_EXTENT = 2 * Math.SQRT2;
+/** Fraction of the smallest viewport side the projected cube may occupy. */
+const CUBE_FIT_FRACTION = 0.7;
+
+/**
+ * Zoom that fits the cube to the viewport with room for the axis titles/ticks.
+ * Zoom is log2(px per world unit), so the cube spans extent * 2^zoom pixels.
+ */
+function fitZoom(width, height) {
+  const side = Math.min(width, height);
+  if (!(side > 0)) return DEFAULT_ZOOM;
+  return Math.log2((side * CUBE_FIT_FRACTION) / CUBE_PROJECTED_EXTENT);
+}
 
 /**
  * Canonical default view (matches three.js / Plotly): Z up, camera at
@@ -344,6 +363,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
   }));
   const viewStateRef = useRef(viewState);
   const containerRef = useRef(null);
+  const fittedRef = useRef(false);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
@@ -355,6 +375,23 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // Fit the cube to the measured container once, so a compact card does not open
+  // with the axis box cropped. Later camera changes (user zoom/pan) are kept.
+  useEffect(() => {
+    if (fittedRef.current) return;
+    const { width, height } = viewportSize;
+    if (!width || !height) return;
+    fittedRef.current = true;
+    const nextZoom = Math.max(
+      INITIAL_VIEW_STATE.minZoom,
+      Math.min(INITIAL_VIEW_STATE.maxZoom, fitZoom(width, height)),
+    );
+    if (Math.abs(nextZoom - viewStateRef.current.zoom) < 0.01) return;
+    const merged = { ...viewStateRef.current, zoom: nextZoom };
+    viewStateRef.current = merged;
+    setViewState(merged);
+  }, [viewportSize]);
 
   const domains = useMemo(() => computeAxisDomains(points, axes), [points, axes]);
   const frame = useMemo(() => (profile ? buildProfileFrame(profile, CUBE) : null), [profile]);

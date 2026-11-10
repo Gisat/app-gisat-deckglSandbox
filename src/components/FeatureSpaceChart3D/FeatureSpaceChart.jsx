@@ -65,6 +65,8 @@ const RENDERER_COMPONENTS = {
  * @param {string[]} [props.colorPalette]  palette for non-velocity colour attributes (defaults to viridis)
  * @param {boolean} [props.embedded]  compact card mode: deck.gl spheres, Custom preset, scatter only, no renderer/mode/marker/preset rows
  * @param {string} [props.title]
+ * @param {() => void} [props.onClose]  when provided, renders a close button at the end of the header
+ * @param {string} [props.emptyHint]  copy shown when the collection has no points (defaults to the drawing hint)
  */
 export function FeatureSpaceChart({
   featureCollection,
@@ -81,6 +83,8 @@ export function FeatureSpaceChart({
   colorPalette,
   embedded = false,
   title = '3D feature space',
+  onClose,
+  emptyHint,
 }) {
   const [renderer, setRenderer] = useState(defaultRenderer);
   const [presetKey, setPresetKey] = useState(defaultPreset);
@@ -295,6 +299,28 @@ export function FeatureSpaceChart({
           >
             {skipped} skipped
           </span>
+        )}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close chart"
+            style={{
+              marginLeft: 'auto',
+              width: '22px',
+              height: '22px',
+              lineHeight: '18px',
+              padding: 0,
+              fontSize: '16px',
+              color: '#555',
+              background: 'none',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              cursor: 'pointer',
+            }}
+          >
+            ×
+          </button>
         )}
       </div>
 
@@ -665,7 +691,7 @@ export function FeatureSpaceChart({
             </Suspense>
           )
         ) : points.length === 0 ? (
-          <EmptyState total={total} skipped={skipped} />
+          <EmptyState total={total} skipped={skipped} emptyHint={emptyHint} />
         ) : (
           <Suspense fallback={<LoadingState renderer={renderer} />}>
             <Renderer {...rendererProps} />
@@ -707,13 +733,13 @@ function LoadingState({ renderer }) {
   );
 }
 
-function EmptyState({ total, skipped }) {
+function EmptyState({ total, skipped, emptyHint }) {
   return (
     <div style={centeredState}>
       <div style={{ fontWeight: 600, marginBottom: '6px', color: '#666' }}>No points to plot</div>
       <div style={{ color: '#999', fontSize: '11px', textAlign: 'center', maxWidth: '260px' }}>
         {total === 0
-          ? 'Draw a polygon, circle or line selection on the map.'
+          ? (emptyHint ?? 'Draw a polygon, circle or line selection on the map.')
           : `All ${total} selected points lack a value for an active axis/color/size field${skipped ? ` (${skipped} skipped)` : ''}.`}
       </div>
     </div>
