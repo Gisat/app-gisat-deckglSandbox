@@ -673,7 +673,7 @@ export default function PolakyHradec() {
       >
         <div style={{ marginBottom: '4px', fontWeight: 600 }}>VEL_AVG (mm/yr)</div>
         <div style={{ width: '180px', height: '10px', borderRadius: '2px', background: legendGradient }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px', color: '#555' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', width: '180px', marginTop: '2px', color: '#555' }}>
           <span>-1</span>
           <span>0</span>
           <span>+1</span>
