@@ -18,6 +18,15 @@
 const TIMELINE_KEY_RE = /^d_(\d{4})(\d{2})(\d{2})$/;
 
 /**
+ * Test whether a property key is a `d_YYYYMMDD` epoch.
+ * @param {unknown} key
+ * @returns {boolean}
+ */
+export function isTimelineKey(key) {
+  return TIMELINE_KEY_RE.test(String(key));
+}
+
+/**
  * `d_YYYYMMDD` -> UTC milliseconds at midnight (UTC, not local, so year ticks
  * never shift by a day).
  * @param {string} key
@@ -34,8 +43,12 @@ export function epochKeyToUtc(key) {
   return Number.isFinite(t) ? t : NaN;
 }
 
-/** @param {unknown} v */
-function toNumber(v) {
+/**
+ * Coerce a possibly-null/empty value to a finite number.
+ * @param {unknown} v
+ * @returns {number|null}
+ */
+export function toNumber(v) {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
   if (typeof v === 'string' && v.trim() !== '') {
     const n = Number(v);
@@ -64,7 +77,7 @@ export function extractTimelineSamples(featureCollection) {
   for (const feature of features) {
     const props = (feature && feature.properties) || {};
     for (const key of Object.keys(props)) {
-      if (TIMELINE_KEY_RE.test(key)) epochKeys.add(key);
+      if (isTimelineKey(key)) epochKeys.add(key);
     }
   }
   const epochs = [...epochKeys]

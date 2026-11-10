@@ -1,15 +1,6 @@
 import { useMemo } from 'react';
 import { ResponsiveLine } from '@nivo/line';
-
-const DATE_KEY_RE = /^d_\d{8}$/;
-
-function toDate(key) {
-  return new Date(Date.UTC(
-    +key.slice(2, 6),
-    +key.slice(6, 8) - 1,
-    +key.slice(8, 10),
-  ));
-}
+import { epochKeyToUtc, isTimelineKey, toNumber } from '../../components/FeatureSpaceChart3D';
 
 function formatDate(value) {
   if (!(value instanceof Date) || Number.isNaN(value.getTime())) return String(value);
@@ -19,6 +10,7 @@ function formatDate(value) {
 }
 
 function formatNumber(value, digits) {
+  if (value == null || value === '') return '–';
   const num = Number(value);
   return Number.isFinite(num) ? num.toFixed(digits) : '–';
 }
@@ -37,8 +29,12 @@ export default function TimelineChart({ feature, onClose }) {
 
   const series = useMemo(() => {
     const samples = Object.entries(feature?.properties ?? {})
-      .filter(([key, value]) => DATE_KEY_RE.test(key) && Number.isFinite(value))
-      .map(([key, value]) => ({ x: toDate(key), y: value }))
+      .filter(([key]) => isTimelineKey(key))
+      .map(([key, value]) => ({
+        x: new Date(epochKeyToUtc(key)),
+        y: toNumber(value),
+      }))
+      .filter(({ x, y }) => y != null && !Number.isNaN(x.getTime()))
       .sort((a, b) => a.x - b.x);
     return samples.length ? [{ id: 'displacement', data: samples }] : [];
   }, [feature]);

@@ -488,9 +488,13 @@ function settlementPoints(samples, cube) {
  * Timeline view: the `Trend ▸ points` model — one settlement curve per point
  * across the five ordered trend steps (`T-730` … `now`), instead of drawing all
  * ~443 epochs. X = the point's own categorical band, Y = step band
- * (T-730 … now), Z = cumulative settlement in mm (from the `T-730` snapshot, so
- * the oldest step reads 0). Curves are coloured by the point's `VEL_AVG` on the
- * map ramp (values outside ±1 clip to the endpoints).
+ * (T-730 … now), Z = cumulative settlement in mm (from the oldest available
+ * snapshot, so that step reads 0). Curves are coloured by the point's `VEL_AVG`
+ * on the map ramp (values outside ±1 clip to the endpoints).
+ *
+ * Each point is anchored to its own latest epoch. The shared T-* band labels
+ * therefore assume the linked points share one record period (true for the
+ * Poláky stack); mixed record periods would need per-curve labels.
  *
  * @param {Array<any>} samples  `extractTimelineSamples` output
  * @param {number} [cube] half-extent of the normalised cube
@@ -567,8 +571,9 @@ function timelineCurves(samples, cube) {
     if (valid.length < 2) continue;
 
     // Settlement is measured from the oldest available snapshot, mirroring the
-    // Trend view's "cumulative settlement from the initial state".
-    const base = picked[0] ? picked[0].value : 0;
+    // Trend view's "cumulative settlement from the initial state". `valid` skips
+    // steps without a sample, so anchor on its first entry (not necessarily T-730).
+    const base = valid.length > 0 ? valid[0].value : 0;
     let velAvg = null;
     for (const s of sorted) {
       if (isNum(s.velAvg)) {

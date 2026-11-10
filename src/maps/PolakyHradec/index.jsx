@@ -9,9 +9,14 @@ import { OBJLoader } from '@loaders.gl/obj';
 import { CogTerrainLayer } from '@gisatcz/deckgl-geolib';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
 import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
-import chroma from 'chroma-js';
 import { build3dLosArrowLayers } from '../../layers/factory/build3dLosArrowLayers';
-import { BLUE_PALETTE, FeatureSpaceChart } from '../../components/FeatureSpaceChart3D';
+import {
+  BLUE_PALETTE,
+  FeatureSpaceChart,
+  MAP_VEL_AVG_DOMAIN,
+  buildColorScale,
+  isTimelineKey,
+} from '../../components/FeatureSpaceChart3D';
 import TimelineChart from './TimelineChart';
 
 const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/polaky_95D_PS.geojson';
@@ -85,10 +90,24 @@ const ARROW_LAYER_PREFIX = 'vel-avg-arrows';
 const DEFAULT_PYLON_ID = 10;
 const DEFAULT_POINT_ID = 59054;
 
-// Exact 3d-feature-charts ramp (red -> yellow -> teal) on the VEL_AVG domain.
-const colorScale = chroma
-  .scale([[215, 25, 28], [254, 254, 191], [65, 182, 196]])
-  .domain([-1, 1]);
+// The chart's VEL_AVG ramp, shared with the map legend and the 3D chart.
+const colorScale = buildColorScale('VEL_AVG', MAP_VEL_AVG_DOMAIN);
+
+// Numeric GeoJSON properties that identify/join features or carry generic
+// index/descriptive statistics rather than measurements; keep them out of the
+// chart's axis/colour/size pickers.
+const NON_CHART_ATTRIBUTE_KEYS = new Set([
+  'ID',
+  'id_pp',
+  'index_right',
+  'index_righ',
+  '__index_level_0__',
+  '_count',
+  '_max',
+  '_median',
+  '_min',
+  '_range',
+]);
 
 // Shared cyan for every "selected" or hovered highlight on the map.
 const SELECTION_COLOR = [66, 212, 244];
@@ -136,7 +155,7 @@ function getPointElevation(feature) {
 }
 
 // GeoJSON height is the real tower height in metres, so it is used to scale the
-// native-size OBJ; six features have height: null and fall back to a type mean.
+// native-size OBJ; features without a height fall back to their type mean.
 function getPylonHeight(feature) {
   const height = Number(feature?.properties?.height);
   return Number.isFinite(height) && height > 0 ? height : null;
@@ -303,7 +322,7 @@ export default function PolakyHradec() {
 
   // Per-pylon pick targets: the feature plus the height and radius its hit
   // volume needs. Height falls back GeoJSON -> type mean -> OBJ native height so
-  // the six features with height: null still get a correctly sized cylinder.
+  // features with no height still get a correctly sized cylinder.
   const pylonHitData = useMemo(() => {
     const items = [];
     for (const feature of pylonFeatures) {
@@ -323,14 +342,15 @@ export default function PolakyHradec() {
   }, [features, selectedId]);
 
   // Attributes offered by the 3D chart: the geometry-derived position, then
-  // every numeric GeoJSON property except LON/LAT (duplicates of the geometry)
-  // and the flat `d_YYYYMMDD` displacement timeline.
+  // every numeric GeoJSON property except LON/LAT (duplicates of the geometry),
+  // feature IDs/join keys, and the flat `d_YYYYMMDD` displacement timeline.
   const chartAttributeKeys = useMemo(() => {
     const keys = new Set();
     for (const feature of features) {
       for (const [key, value] of Object.entries(feature.properties ?? {})) {
         if (key === 'LON' || key === 'LAT') continue;
-        if (!/^d_\d{8}$/.test(key) && typeof value === 'number' && Number.isFinite(value)) {
+        if (NON_CHART_ATTRIBUTE_KEYS.has(key)) continue;
+        if (!isTimelineKey(key) && typeof value === 'number' && Number.isFinite(value)) {
           keys.add(key);
         }
       }

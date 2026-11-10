@@ -945,7 +945,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
       {tooltip && (
         <div style={{ position: 'absolute', left: tooltip.x + 14, top: tooltip.y + 14, zIndex: 5 }}>
           {frame?.view === 'timeline' ? (
-            <TimelineTooltip curve={tooltip.object.curve} frame={frame} />
+            <TimelineTooltip curve={tooltip.object.curve} />
           ) : frame ? (
             <ProfileTooltip sample={tooltip.object.frameSample} curve={tooltip.object.curve} frame={frame} />
           ) : (

@@ -24,6 +24,7 @@ import {
   ARROW_MODEL_PEN_WIDTH,
   ARROW_TAIL_UNIT_DIAMETER,
   ARROW_TAIL_UNIT_HEIGHT,
+  ARROW_TAIL_UNIT_THICKNESS,
 } from './arrowMeshDimensions';
 import {
   clamp,
@@ -59,9 +60,6 @@ export const ARROW_HEAD_SIZE_METERS = ARROW_HEAD_WING_LENGTH_RATIO * ARROW_HEAD_
 export const ARROW_HEAD_HALF_WIDTH_METERS =
   ARROW_HEAD_WING_LENGTH_RATIO * Math.tan((ARROW_HEAD_WING_ANGLE_DEG * Math.PI) / 180) * ARROW_HEAD_PEN_METERS;
 
-/** Fixed 3D head full width (map meters). */
-export const ARROW_HEAD_WIDTH_METERS = 2 * ARROW_HEAD_HALF_WIDTH_METERS;
-
 /** Fixed length of each straight wing rod (map meters) — the head size. */
 export const ARROW_HEAD_WING_ROD_LENGTH_METERS = Math.hypot(
   ARROW_HEAD_SIZE_METERS,
@@ -73,12 +71,6 @@ export const ARROW_HEAD_WING_ROD_LENGTH_METERS = Math.hypot(
  * length depends only on displacement: `1.5 × 1.5 + 3.36` (= 5.61 m).
  */
 export const ARROW_TAIL_RESERVE_METERS = 1.5 * ARROW_HEAD_PEN_METERS + ARROW_HEAD_SIZE_METERS;
-
-/** Lower clamp bound for the `REL_LEN` attribute. */
-export const REL_LEN_MIN = 0.4;
-
-/** Upper clamp bound for the `REL_LEN` attribute. */
-export const REL_LEN_MAX = 1;
 
 /**
  * Computes the arrow pen width in map meters from the reliability length rate.
@@ -170,13 +162,14 @@ export const computeWingScale = (relLen: number | null): [number, number, number
 
 /**
  * Computes the terrain raise (map meters) for the flat composite arrow:
- * `0.8 × pen`, lifting the whole pen thickness above the anchor.
+ * `ARROW_TAIL_UNIT_THICKNESS × pen`, lifting the whole pen thickness above the
+ * anchor.
  *
  * @param relLen - `REL_LEN` attribute value driving the pen width, or null.
  * @returns The vertical (model Y) thickness in map meters.
  */
 export const computeVectorRaiseMeters = (relLen: number | null): number =>
-  0.8 * computePenWidthMeters(relLen);
+  ARROW_TAIL_UNIT_THICKNESS * computePenWidthMeters(relLen);
 
 /**
  * Unit direction vector of a compass heading, as `[x = East, y = North, z]`.

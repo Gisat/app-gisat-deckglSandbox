@@ -48,6 +48,13 @@ export {
 } from './transformPoints';
 
 export {
+  extractTimelineSamples,
+  epochKeyToUtc,
+  isTimelineKey,
+  toNumber,
+} from './timelineGeometry';
+
+export {
   MAP_VELOCITY_COLORS,
   MAP_VELOCITY_DOMAIN,
   MAP_VEL_AVG_DOMAIN,

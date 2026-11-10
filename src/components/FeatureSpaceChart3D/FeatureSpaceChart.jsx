@@ -98,9 +98,12 @@ export function FeatureSpaceChart({
   const [presetKey, setPresetKey] = useState(defaultPreset);
   const [customAxes, setCustomAxes] = useState(defaultCustomAxes);
   const [markerStyle, setMarkerStyle] = useState('sphere');
+  // Timeline is a deck.gl-only, embedded-card mode: outside it the timeline
+  // frame cannot be rendered by Plotly/Three, so keep the feature off.
+  const supportsTimeline = embedded && showTimeline;
   // Embedded chart type: `timeline` (d_* time series) or the point cloud.
   const [chartType, setChartType] = useState(
-    () => (showTimeline && defaultChartType === 'timeline' ? 'timeline' : 'custom'),
+    () => (supportsTimeline && defaultChartType === 'timeline' ? 'timeline' : 'custom'),
   );
 
   const [mode, setMode] = useState(showProfile ? 'profile' : 'scatter');
@@ -127,9 +130,14 @@ export function FeatureSpaceChart({
   const axes = useMemo(() => resolveAxes(presetKey, customAxes), [presetKey, customAxes]);
   const activeFields = useMemo(() => activeFieldsFor(axes), [axes]);
 
+  // Treat an empty `attributeKeys` array as "not provided" everywhere: the
+  // renderer falls back to the curated keys, and `transformPoints` must carry
+  // those keys instead of an empty set (which would skip every point).
+  const effectiveAttributeKeys = attributeKeys && attributeKeys.length > 0 ? attributeKeys : null;
+
   const { points, skipped, total } = useMemo(
-    () => transformPoints(featureCollection, activeFields, attributeKeys ?? undefined),
-    [featureCollection, activeFields, attributeKeys],
+    () => transformPoints(featureCollection, activeFields, effectiveAttributeKeys ?? undefined),
+    [featureCollection, activeFields, effectiveAttributeKeys],
   );
 
   const colorDomain = useMemo(() => getColorDomain(axes.color, points), [axes.color, points]);
@@ -141,9 +149,9 @@ export function FeatureSpaceChart({
 
   // Embedded mode lists the caller's GeoJSON attributes by name; otherwise the
   // module's curated labels.
-  const scatterKeys = attributeKeys && attributeKeys.length > 0 ? attributeKeys : AXIS_KEYS;
+  const scatterKeys = effectiveAttributeKeys ?? AXIS_KEYS;
   const attributeLabel = (key) => (
-    attributeKeys && attributeKeys.length > 0 ? key : (ATTRIBUTES[key]?.label ?? key)
+    effectiveAttributeKeys ? key : (ATTRIBUTES[key]?.label ?? key)
   );
 
   // The mode toggle is always shown, but a polygon/circle selection has no line
@@ -175,8 +183,8 @@ export function FeatureSpaceChart({
   // Timeline data is extracted once per selection; the frame only rebuilds when
   // the selection or the Lon/Lat toggle changes, never on a map hover.
   const timelineData = useMemo(
-    () => (showTimeline ? extractTimelineSamples(featureCollection) : null),
-    [showTimeline, featureCollection],
+    () => (supportsTimeline ? extractTimelineSamples(featureCollection) : null),
+    [supportsTimeline, featureCollection],
   );
   const hasTimelineData = (timelineData?.samples.length ?? 0) > 0;
   const effectiveType = chartType === 'timeline' && hasTimelineData ? 'timeline' : 'custom';
@@ -464,7 +472,7 @@ export function FeatureSpaceChart({
         </div>
       )}
 
-      {embedded && showTimeline && (
+      {supportsTimeline && (
         <div
           style={{
             display: 'flex',
@@ -754,13 +762,9 @@ export function FeatureSpaceChart({
 
       <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
         {effectiveType === 'timeline' ? (
-          timelineProfile ? (
-            <Suspense fallback={<LoadingState renderer={activeRenderer} />}>
-              <Renderer {...rendererProps} profile={timelineProfile} />
-            </Suspense>
-          ) : (
-            <TimelineEmptyState />
-          )
+          <Suspense fallback={<LoadingState renderer={activeRenderer} />}>
+            <Renderer {...rendererProps} profile={timelineProfile} />
+          </Suspense>
         ) : activeMode === 'profile' ? (
           profileSamples.length === 0 ? (
             <ProfileEmptyState />
@@ -844,17 +848,6 @@ function ProfileEmptyState() {
       <div style={{ fontWeight: 600, marginBottom: '6px', color: '#666' }}>No line profile yet</div>
       <div style={{ color: '#999', fontSize: '11px', textAlign: 'center', maxWidth: '260px' }}>
         Draw a line selection on the map to see the profile.
-      </div>
-    </div>
-  );
-}
-
-function TimelineEmptyState() {
-  return (
-    <div style={centeredState}>
-      <div style={{ fontWeight: 600, marginBottom: '6px', color: '#666' }}>No timeline data</div>
-      <div style={{ color: '#999', fontSize: '11px', textAlign: 'center', maxWidth: '260px' }}>
-        No d_* timeline data in this selection.
       </div>
     </div>
   );

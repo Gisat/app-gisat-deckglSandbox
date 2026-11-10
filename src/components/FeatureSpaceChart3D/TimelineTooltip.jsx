@@ -8,10 +8,10 @@ import { formatTick } from './profileGeometry';
  * tooltip summarises the hovered point: its ID, velocity, displacement range
  * and record period.
  *
- * @param {{ curve: any, frame: any }} props
+ * @param {{ curve: any }} props
  */
-export function TimelineTooltip({ curve, frame }) {
-  if (!curve || !frame) return null;
+export function TimelineTooltip({ curve }) {
+  if (!curve) return null;
 
   const rows = [];
   if (Number.isFinite(curve.velAvg)) rows.push(['VEL_AVG', formatValue('VEL_AVG', curve.velAvg)]);
