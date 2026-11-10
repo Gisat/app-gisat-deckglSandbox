@@ -4,6 +4,7 @@ import { COORDINATE_SYSTEM } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
+import { CylinderGeometry } from '@luma.gl/engine';
 import { OBJLoader } from '@loaders.gl/obj';
 import { CogTerrainLayer } from '@gisatcz/deckgl-geolib';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
@@ -35,6 +36,23 @@ const PYLON_MODELS = [
   { typ: 'portal', nativeHeight: 29.169, mesh: `${PYLON_ASSET_BASE}/portal.obj` },
 ];
 
+// Invisible pick target. SimpleMeshLayer picks per triangle, so the gaps between
+// lattice members are not hit-testable; a solid cylinder around the tower
+// silhouette makes the whole body clickable.
+const PYLON_HIT_RADIUS_FACTOR = 0.25;
+const PYLON_HIT_RADIUS_MIN_M = 5;
+// Unit cylinder, Z-up, centred on the origin. Scaled per instance to
+// [radius, radius, height]. Caps make the top face clickable too.
+const PYLON_HIT_MESH = new CylinderGeometry({
+  radius: 1,
+  height: 1,
+  verticalAxis: 'z',
+  nradial: 12,
+  nvertical: 1,
+  topCap: true,
+  bottomCap: true,
+});
+
 // Pylon <-> InSAR join. The pylon GeoJSON spells the join property `index_righ`
 // (no trailing "t"), while the points use `index_right`; support both.
 function getPylonJoinKey(feature) {
@@ -45,6 +63,13 @@ function getPylonJoinKey(feature) {
 function getPointJoinKey(feature) {
   const raw = feature?.properties?.index_right;
   return raw == null || raw === '' ? null : String(raw);
+}
+
+// Pick callbacks receive a raw feature from the pylon mesh layers and a
+// {feature, height, radius} wrapper from the invisible hit-volume layer, so
+// unwrap before reading join keys or tooltip properties.
+function getPylonPickFeature(object) {
+  return object?.feature ?? object ?? null;
 }
 
 // Stable empty array so memoised selections do not retrigger chart transforms.
@@ -115,6 +140,12 @@ function getPointElevation(feature) {
 function getPylonHeight(feature) {
   const height = Number(feature?.properties?.height);
   return Number.isFinite(height) && height > 0 ? height : null;
+}
+
+// Hit volume radius: wide enough to cover the lattice legs plus a small margin,
+// scaled with the tower so tall pylons stay proportionate.
+function getPylonHitRadius(height) {
+  return Math.max(PYLON_HIT_RADIUS_MIN_M, height * PYLON_HIT_RADIUS_FACTOR);
 }
 
 // Per-feature azimuth from the GeoJSON, normalised to 0-360; only features
@@ -270,6 +301,22 @@ export default function PolakyHradec() {
     return { groups, meanHeight };
   }, [pylonFeatures]);
 
+  // Per-pylon pick targets: the feature plus the height and radius its hit
+  // volume needs. Height falls back GeoJSON -> type mean -> OBJ native height so
+  // the six features with height: null still get a correctly sized cylinder.
+  const pylonHitData = useMemo(() => {
+    const items = [];
+    for (const feature of pylonFeatures) {
+      const typ = feature?.properties?.typ;
+      const model = PYLON_MODELS.find(m => m.typ === typ);
+      if (!model) continue;
+      const height = getPylonHeight(feature) ?? pylonGroups.meanHeight[typ] ?? model.nativeHeight;
+      if (!Number.isFinite(height) || height <= 0) continue;
+      items.push({ feature, height, radius: getPylonHitRadius(height) });
+    }
+    return items;
+  }, [pylonFeatures, pylonGroups]);
+
   const selectedFeature = useMemo(() => {
     if (selectedId == null) return null;
     return features.find(f => String(f.properties?.ID) === String(selectedId)) ?? null;
@@ -334,7 +381,9 @@ export default function PolakyHradec() {
   // Only re-render when the hovered object actually changes.
   const handleHover = useCallback((info) => {
     const layerId = info.layer?.id ?? '';
-    const nextPylonKey = layerId.startsWith('pylons-') ? getPylonJoinKey(info.object) : null;
+    const nextPylonKey = layerId.startsWith('pylons-')
+      ? getPylonJoinKey(getPylonPickFeature(info.object))
+      : null;
     const nextSphereId = layerId.startsWith(ARROW_LAYER_PREFIX)
       ? (info.object?.properties?.ID ?? null)
       : null;
@@ -409,6 +458,35 @@ export default function PolakyHradec() {
       });
     });
 
+    // Invisible pick target per pylon: one solid cylinder covering the tower
+    // footprint and full height, so clicks/hover land anywhere on the silhouette
+    // instead of only on the steel triangles.
+    const pylonHitLayer = new SimpleMeshLayer({
+      id: 'pylons-hitbox',
+      data: pylonHitData,
+      mesh: PYLON_HIT_MESH,
+      coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
+      // Geometry spans z = -0.5..0.5, so lifting by height / 2 puts the base at
+      // 0 and the top at `height`; TerrainExtension offset adds the ground height.
+      getPosition: (d) => [
+        d.feature.geometry.coordinates[0],
+        d.feature.geometry.coordinates[1],
+        d.height / 2,
+      ],
+      getScale: (d) => [d.radius, d.radius, d.height],
+      getOrientation: () => [0, 0, 0],
+      // Invisible in the color pass; still drawn into the picking buffer, because
+      // picking colors are encoded independently of getColor's alpha.
+      getColor: () => [0, 0, 0, 0],
+      // Picked normally (terrain still occludes it) but never writes depth, so the
+      // arrow layers drawn afterwards overwrite its pick pixels wherever an
+      // arrow renders and keep click priority.
+      parameters: { depthWriteEnabled: false },
+      extensions: [new TerrainExtension()],
+      terrainDrawMode: 'offset',
+      pickable: true,
+    });
+
     // Every point renders as a 3D LOS round-cap arrow composite (rear cap, body,
     // two wing rods, two wing-tip caps, arrow tip). Chart hover paints the
     // matching arrow red; a directly selected/hovered arrow keeps the shared
@@ -452,6 +530,8 @@ export default function PolakyHradec() {
       terrainLayer,
       satelliteLayer,
       ...pylonLayers,
+      // Before the arrows on purpose: later layers win overlapping pick pixels.
+      pylonHitLayer,
       ...arrowLayers,
     ];
   }, [
@@ -459,6 +539,7 @@ export default function PolakyHradec() {
     onZRangeUpdate,
     features,
     pylonGroups,
+    pylonHitData,
     zoom,
     selectedId,
     hoveredPointId,
@@ -484,11 +565,13 @@ export default function PolakyHradec() {
         getCursor={() => (hoveredPylonKey != null || hoveredSphereId != null ? 'pointer' : 'grab')}
         controller
         layers={layers}
+        // Small tolerance so near-misses on thin steel and arrow tips still hit.
+        pickingRadius={6}
         onHover={handleHover}
         onClick={(info) => {
           const layerId = info.layer?.id ?? '';
           if (layerId.startsWith('pylons-')) {
-            const key = getPylonJoinKey(info.object);
+            const key = getPylonJoinKey(getPylonPickFeature(info.object));
             if (key == null) return;
             setHoveredPointId(null);
             setSelectedPylonKey(key);
@@ -506,9 +589,10 @@ export default function PolakyHradec() {
         getTooltip={({ object, layer }) => {
           const layerId = layer?.id ?? '';
           if (layerId.startsWith('pylons-')) {
-            const props = object?.properties;
+            const pickedPylon = getPylonPickFeature(object);
+            const props = pickedPylon?.properties;
             if (!props) return null;
-            const key = getPylonJoinKey(object);
+            const key = getPylonJoinKey(pickedPylon);
             const height = props.height == null || props.height === ''
               ? '–'
               : formatNumber(props.height, 1);
