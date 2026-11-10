@@ -128,7 +128,8 @@ export default function PolakyHradec() {
   const [pylonFeatures, setPylonFeatures] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedId, setSelectedId] = useState(null);
+  // Pre-selected on load so the click-to-open timeline is discoverable.
+  const [selectedId, setSelectedId] = useState(58931);
 
   // 3D chart panel + drawing state.
   const [showChart, setShowChart] = useState(true);
@@ -386,8 +387,6 @@ export default function PolakyHradec() {
       });
     });
 
-    const selectedPointId = selectedFeature?.properties?.ID ?? null;
-
     const sphereLayer = new SimpleMeshLayer({
       id: 'vel-avg-spheres',
       data: features,
@@ -399,15 +398,16 @@ export default function PolakyHradec() {
         d.geometry.coordinates[1],
         getElevation(d),
       ],
-      // Selected and hovered spheres both get the highlight cyan.
+      // Selected and hovered spheres both get the highlight cyan. Driven by
+      // `selectedId` directly, so the default point highlights on load.
       getColor: (d) => {
         const id = d.properties?.ID;
-        const isHighlighted = [selectedPointId, hoveredSphereId].some(
+        const isHighlighted = [selectedId, hoveredSphereId].some(
           other => other != null && String(id) === String(other),
         );
         return isHighlighted ? [...SELECTION_COLOR, 255] : getRgba(d);
       },
-      updateTriggers: { getColor: [selectedPointId, hoveredSphereId] },
+      updateTriggers: { getColor: [selectedId, hoveredSphereId] },
       getScale: (d) => {
         const radius = getSphereRadius(d);
         return [radius, radius, radius];
@@ -468,7 +468,7 @@ export default function PolakyHradec() {
     onZRangeUpdate,
     features,
     pylonGroups,
-    selectedFeature,
+    selectedId,
     hoveredFeature,
     hoveredSphereId,
     isDrawing,
