@@ -23,6 +23,13 @@ const PYLONS_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST
 const PYLON_ASSET_BASE = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets';
 
 const PYLON_COLOR = [183, 188, 193, 255];
+// Fallback bearing (degrees clockwise from north) for features without
+// `azimuth`; the current GeoJSON provides it for every tower.
+const PYLON_DEFAULT_AZIMUTH = 60;
+// Compasses measure clockwise from north, deck.gl yaw rotates counter-clockwise
+// from +X (east), hence yaw = 90 - azimuth. Adjust this offset if a model's
+// local forward axis turns out not to be +X after checking it on the imagery.
+const PYLON_OBJ_YAW_OFFSET = 0;
 // Native heights come from the OBJ headers (metres, Z-up, base centre at origin).
 // Each instance is scaled to its GeoJSON `height`; see getPylonHeight below.
 const PYLON_MODELS = [
@@ -84,6 +91,21 @@ function getElevation(feature) {
 function getPylonHeight(feature) {
   const height = Number(feature?.properties?.height);
   return Number.isFinite(height) && height > 0 ? height : null;
+}
+
+// Per-feature azimuth from the GeoJSON, normalised to 0-360; only features
+// missing the value fall back to the default bearing.
+function getPylonAzimuth(feature) {
+  const raw = feature?.properties?.azimuth;
+  if (raw === null || raw === undefined || raw === '') return PYLON_DEFAULT_AZIMUTH;
+  const azimuth = Number(raw);
+  return Number.isFinite(azimuth) ? ((azimuth % 360) + 360) % 360 : PYLON_DEFAULT_AZIMUTH;
+}
+
+// deck.gl orientation is [pitch, yaw, roll] in degrees, so the compass bearing
+// only drives yaw.
+function getPylonOrientation(feature) {
+  return [0, 90 - getPylonAzimuth(feature) + PYLON_OBJ_YAW_OFFSET, 0];
 }
 
 function getRgba(feature) {
@@ -346,8 +368,8 @@ export default function PolakyHradec() {
           const s = (getPylonHeight(d) ?? fallbackHeight) / nativeHeight;
           return [s, s, s];
         },
-        // The data carries no bearing, so pylons stay axis-aligned.
-        getOrientation: () => [0, 0, 0],
+        // Bearing-driven yaw: per-feature `azimuth`, default otherwise.
+        getOrientation: getPylonOrientation,
         getColor: () => PYLON_COLOR,
         material: { ambient: 0.42, diffuse: 0.65, shininess: 24, specularColor: [60, 64, 70] },
         extensions: [new TerrainExtension()],
