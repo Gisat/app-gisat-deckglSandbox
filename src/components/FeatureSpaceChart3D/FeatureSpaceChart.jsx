@@ -10,10 +10,12 @@ import {
   PROFILE_DEFAULTS,
   PROFILE_VIEW_DEFAULT,
   TREND_LINES_DEFAULT,
+  TREND_TIMELINE,
   formatValue,
   resolveAxes,
 } from './attributes';
 import { activeFieldsFor, transformPoints } from './transformPoints';
+import { extractTimelineSamples } from './timelineGeometry';
 import { SIZE_PIXEL_RANGE, buildColorScale, getColorDomain, getSizeDomain } from './colorScale';
 import {
   DISPLACEMENT_DOMAIN,
@@ -57,6 +59,7 @@ const RENDERER_COMPONENTS = {
  * @param {boolean} [props.profileDisabled]  disable the mode toggle (a polygon/circle selection is in use)
  * @param {number} [props.bufferDistance]  selection corridor half-width (m), for normalising the offset size encoding
  * @param {(id: string|null) => void} [props.onPointHover]  map-link hover callback
+ * @param {(id: string) => void} [props.onPointClick]  map-link click callback (3D chart point selection)
  * @param {(state: {mode:'scatter'|'profile', view:'attributes'|'trend'|'aggregate', zKey:string, basis:'along'|'plan', trendLines:'windows'|'profiles'|'points', valueKey:string, step:number, interpolate:boolean}|null) => void} [props.onStateChange]  reports the effective mode/view/zKey/basis/trend shape (plus the aggregate value/step/interpolate), or null on unmount
  * @param {'plotly'|'deckgl'|'three'} [props.defaultRenderer]
  * @param {'kinematic'|'topographic'|'custom'} [props.defaultPreset]  initial axis preset
@@ -64,6 +67,8 @@ const RENDERER_COMPONENTS = {
  * @param {string[]} [props.attributeKeys]  override the scatter picker attributes (e.g. the loaded GeoJSON's numeric properties)
  * @param {string[]} [props.colorPalette]  palette for non-velocity colour attributes (defaults to viridis)
  * @param {boolean} [props.embedded]  compact card mode: deck.gl spheres, Custom preset, scatter only, no renderer/mode/marker/preset rows
+ * @param {boolean} [props.showTimeline]  embedded only: offer a Timeline chart type (one time-series line per `d_*` point)
+ * @param {'timeline'|'custom'} [props.defaultChartType]  initial chart type when `showTimeline` is on
  * @param {string} [props.title]
  * @param {() => void} [props.onClose]  when provided, renders a close button at the end of the header
  * @param {string} [props.emptyHint]  copy shown when the collection has no points (defaults to the drawing hint)
@@ -75,6 +80,7 @@ export function FeatureSpaceChart({
   profileDisabled = false,
   bufferDistance,
   onPointHover,
+  onPointClick,
   onStateChange,
   defaultRenderer = 'plotly',
   defaultPreset = DEFAULT_PRESET,
@@ -82,6 +88,8 @@ export function FeatureSpaceChart({
   attributeKeys = null,
   colorPalette,
   embedded = false,
+  showTimeline = false,
+  defaultChartType = 'custom',
   title = '3D feature space',
   onClose,
   emptyHint,
@@ -90,6 +98,10 @@ export function FeatureSpaceChart({
   const [presetKey, setPresetKey] = useState(defaultPreset);
   const [customAxes, setCustomAxes] = useState(defaultCustomAxes);
   const [markerStyle, setMarkerStyle] = useState('sphere');
+  // Embedded chart type: `timeline` (d_* time series) or the point cloud.
+  const [chartType, setChartType] = useState(
+    () => (showTimeline && defaultChartType === 'timeline' ? 'timeline' : 'custom'),
+  );
 
   const [mode, setMode] = useState(showProfile ? 'profile' : 'scatter');
   const [profileView, setProfileView] = useState(PROFILE_VIEW_DEFAULT);
@@ -160,9 +172,26 @@ export function FeatureSpaceChart({
     [profileView, profileSamples, aggValueKey, effectiveAggStep, aggInterpolate],
   );
 
+  // Timeline data is extracted once per selection; the frame only rebuilds when
+  // the selection or the Lon/Lat toggle changes, never on a map hover.
+  const timelineData = useMemo(
+    () => (showTimeline ? extractTimelineSamples(featureCollection) : null),
+    [showTimeline, featureCollection],
+  );
+  const hasTimelineData = (timelineData?.samples.length ?? 0) > 0;
+  const effectiveType = chartType === 'timeline' && hasTimelineData ? 'timeline' : 'custom';
+
+  const timelineProfile = useMemo(
+    () => (effectiveType === 'timeline'
+      ? { view: 'timeline', samples: timelineData.samples }
+      : null),
+    [effectiveType, timelineData],
+  );
+
   const profile = useMemo(
     () =>
-      activeMode === 'profile' && profileSamples.length > 0
+      timelineProfile
+      ?? (activeMode === 'profile' && profileSamples.length > 0
         ? {
             view: profileView,
             basis,
@@ -176,8 +205,9 @@ export function FeatureSpaceChart({
             sizeByOffset,
             samples: profileSamples,
           }
-        : null,
+        : null),
     [
+      timelineProfile,
       activeMode,
       profileView,
       basis,
@@ -259,13 +289,19 @@ export function FeatureSpaceChart({
     sizeRange: SIZE_PIXEL_RANGE,
     markerStyle: markerStyleForRenderer,
     onHover: handleHover,
+    onPointClick,
+    // The compact embedded card has less room, so give the Custom point cloud
+    // a little more margin.
+    zoomOutScatter: embedded,
   };
 
-  const headerBadge = activeMode === 'profile'
-    ? profileView === 'aggregate'
-      ? `${aggregateBins} bins`
-      : `${profileSampleCount} samples`
-    : `${points.length} pts`;
+  const headerBadge = effectiveType === 'timeline'
+    ? `${timelineData.pointCount} pts \u00b7 ${TREND_TIMELINE.length} steps`
+    : activeMode === 'profile'
+      ? profileView === 'aggregate'
+        ? `${aggregateBins} bins`
+        : `${profileSampleCount} samples`
+      : `${points.length} pts`;
 
   return (
     <div style={embedded ? embeddedPanelStyle : panelStyle}>
@@ -292,7 +328,7 @@ export function FeatureSpaceChart({
         >
           {headerBadge}
         </span>
-        {activeMode === 'scatter' && skipped > 0 && (
+        {effectiveType === 'custom' && activeMode === 'scatter' && skipped > 0 && (
           <span
             title={`${skipped} of ${total} points skipped (missing value for an active axis/color/size field)`}
             style={{ color: '#b45309', fontSize: '11px' }}
@@ -425,6 +461,41 @@ export function FeatureSpaceChart({
               {key === 'custom' ? 'Custom' : PRESETS[key].label}
             </button>
           ))}
+        </div>
+      )}
+
+      {embedded && showTimeline && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '3px',
+            padding: '6px 12px',
+            borderBottom: '1px solid #eee',
+            flexWrap: 'wrap',
+          }}
+          title="Chart type"
+        >
+          <button
+            type="button"
+            disabled={!hasTimelineData}
+            onClick={() => setChartType('timeline')}
+            title={
+              hasTimelineData
+                ? 'One displacement time series per linked point'
+                : 'No d_* timeline data in this selection'
+            }
+            style={buttonStyle(effectiveType === 'timeline', !hasTimelineData)}
+          >
+            Timeline
+          </button>
+          <button
+            type="button"
+            onClick={() => setChartType('custom')}
+            style={buttonStyle(effectiveType === 'custom')}
+          >
+            Custom
+          </button>
         </div>
       )}
 
@@ -645,7 +716,7 @@ export function FeatureSpaceChart({
         </div>
       )}
 
-      {activeMode === 'scatter' && presetKey === 'custom' && (
+      {effectiveType === 'custom' && activeMode === 'scatter' && presetKey === 'custom' && (
         <div
           style={{
             display: 'grid',
@@ -682,7 +753,15 @@ export function FeatureSpaceChart({
       )}
 
       <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-        {activeMode === 'profile' ? (
+        {effectiveType === 'timeline' ? (
+          timelineProfile ? (
+            <Suspense fallback={<LoadingState renderer={activeRenderer} />}>
+              <Renderer {...rendererProps} profile={timelineProfile} />
+            </Suspense>
+          ) : (
+            <TimelineEmptyState />
+          )
+        ) : activeMode === 'profile' ? (
           profileSamples.length === 0 ? (
             <ProfileEmptyState />
           ) : (
@@ -699,7 +778,20 @@ export function FeatureSpaceChart({
         )}
       </div>
 
-      {activeMode === 'scatter' && (
+      {effectiveType === 'timeline' && (
+        <div
+          style={{
+            padding: '6px 12px',
+            borderTop: '1px solid #eee',
+            color: '#888',
+            fontSize: '10px',
+          }}
+        >
+          {'Lines: one per point \u00b7 Markers: 5 trend steps \u00b7 Color: VEL_AVG \u00b7 Z: settlement [mm]'}
+        </div>
+      )}
+
+      {effectiveType === 'custom' && activeMode === 'scatter' && (
         <div
           style={{
             padding: '6px 12px',
@@ -752,6 +844,17 @@ function ProfileEmptyState() {
       <div style={{ fontWeight: 600, marginBottom: '6px', color: '#666' }}>No line profile yet</div>
       <div style={{ color: '#999', fontSize: '11px', textAlign: 'center', maxWidth: '260px' }}>
         Draw a line selection on the map to see the profile.
+      </div>
+    </div>
+  );
+}
+
+function TimelineEmptyState() {
+  return (
+    <div style={centeredState}>
+      <div style={{ fontWeight: 600, marginBottom: '6px', color: '#666' }}>No timeline data</div>
+      <div style={{ color: '#999', fontSize: '11px', textAlign: 'center', maxWidth: '260px' }}>
+        No d_* timeline data in this selection.
       </div>
     </div>
   );

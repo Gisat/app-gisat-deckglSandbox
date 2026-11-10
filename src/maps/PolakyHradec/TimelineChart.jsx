@@ -24,10 +24,11 @@ function formatNumber(value, digits) {
 }
 
 /**
- * Floating displacement timeline for a single Poláky point.
+ * Displacement timeline card for a single Poláky point.
  *
  * Plots every `d_YYYYMMDD` property (displacement in mm) against its date in
- * UTC. Non-finite / null samples are skipped.
+ * UTC. Non-finite / null samples are skipped. The card fills its positioned
+ * parent, which owns the floating placement.
  *
  * @param {{ feature: any, onClose: () => void }} props
  */
@@ -43,13 +44,9 @@ export default function TimelineChart({ feature, onClose }) {
   }, [feature]);
 
   const cardStyle = {
-    position: 'absolute',
-    right: '12px',
-    bottom: '12px',
-    width: '460px',
-    maxWidth: 'calc(100% - 24px)',
-    height: '320px',
-    zIndex: 1200,
+    position: 'relative',
+    width: '100%',
+    height: '100%',
     display: 'flex',
     flexDirection: 'column',
     boxSizing: 'border-box',
@@ -144,7 +141,7 @@ export default function TimelineChart({ feature, onClose }) {
             tickPadding: 6,
           }}
           colors={['#1f77b4']}
-          lineWidth={2}
+          lineWidth={1.25}
           pointSize={2.5}
           pointColor={{ theme: 'background' }}
           pointBorderWidth={1.5}

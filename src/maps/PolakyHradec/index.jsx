@@ -146,8 +146,8 @@ export default function PolakyHradec() {
   const [pylonFeatures, setPylonFeatures] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  // Selected point (sphere click → timeline) and selected pylon (pylon click →
-  // grouped 3D feature chart) are mutually exclusive.
+  // Selected point (sphere click → 2D timeline) and selected pylon (pylon click
+  // → grouped 3D feature chart) are independent and can both stay open.
   const [selectedId, setSelectedId] = useState(null);
   const [selectedPylonKey, setSelectedPylonKey] = useState(null);
   const [hoveredPointId, setHoveredPointId] = useState(null);
@@ -272,15 +272,6 @@ export default function PolakyHradec() {
     [pointsByPylonKey, selectedPylonKey],
   );
 
-  const selectedPylonPointIds = useMemo(() => {
-    const ids = new Set();
-    for (const feature of selectedPylonPoints) {
-      const id = feature?.properties?.ID;
-      if (id != null) ids.add(String(id));
-    }
-    return ids;
-  }, [selectedPylonPoints]);
-
   const selectedPylon = useMemo(() => {
     if (selectedPylonKey == null) return null;
     return pylonFeatures.find(f => getPylonJoinKey(f) === selectedPylonKey) ?? null;
@@ -393,16 +384,16 @@ export default function PolakyHradec() {
         d.geometry.coordinates[1],
         getElevation(d),
       ],
-      // Chart hover paints the matching sphere red; selected/hovered spheres and
-      // every sphere linked to the selected pylon get the shared highlight cyan.
+      // Chart hover paints the matching sphere red; a directly selected/hovered
+      // sphere keeps the shared highlight cyan. Points linked to a selected
+      // pylon keep their original VEL_AVG colour so the pylon remains the only
+      // selection cue.
       getColor: (d) => {
         const id = d.properties?.ID;
         if (hoveredPointId != null && String(id) === String(hoveredPointId)) {
           return CHART_HOVER_COLOR;
         }
-        const isLinked = selectedPylonPointIds.size > 0
-          && selectedPylonPointIds.has(String(id));
-        const isHighlighted = isLinked || [selectedId, hoveredSphereId].some(
+        const isHighlighted = [selectedId, hoveredSphereId].some(
           other => other != null && String(id) === String(other),
         );
         return isHighlighted ? [...SELECTION_COLOR, 255] : getRgba(d);
@@ -412,8 +403,6 @@ export default function PolakyHradec() {
           selectedId,
           hoveredSphereId,
           hoveredPointId,
-          selectedPylonKey,
-          selectedPylonPointIds,
         ],
       },
       getScale: (d) => {
@@ -438,7 +427,6 @@ export default function PolakyHradec() {
     hoveredSphereId,
     selectedPylonKey,
     hoveredPylonKey,
-    selectedPylonPointIds,
   ]);
 
   const legendGradient = `linear-gradient(to right, ${colorScale.colors(10).join(', ')})`;
@@ -463,13 +451,11 @@ export default function PolakyHradec() {
           if (layerId.startsWith('pylons-')) {
             const key = getPylonJoinKey(info.object);
             if (key == null) return;
-            setSelectedId(null);
             setHoveredPointId(null);
             setSelectedPylonKey(key);
             return;
           }
           if (layerId === 'vel-avg-spheres') {
-            setSelectedPylonKey(null);
             setHoveredPointId(null);
             setSelectedId(info.object?.properties?.ID ?? null);
             return;
@@ -571,37 +557,62 @@ export default function PolakyHradec() {
         <div style={{ marginTop: '4px', color: '#555' }}>Sphere size = COH</div>
       </div>
 
-      {selectedFeature && selectedPylonKey == null && (
-        <TimelineChart feature={selectedFeature} onClose={() => setSelectedId(null)} />
-      )}
-
-      {selectedPylonKey != null && (
+      {(selectedPylonKey != null || selectedFeature) && (
         <div style={{
           position: 'absolute',
           right: 12,
           bottom: 12,
           width: '460px',
           maxWidth: 'calc(100% - 24px)',
-          height: '560px',
-          maxHeight: 'calc(100% - 24px)',
+          // One card keeps its natural height; both split the available height
+          // in the same 560:320 proportion as their standalone sizes.
+          height: selectedPylonKey != null && selectedFeature
+            ? 'calc(100% - 24px)'
+            : selectedPylonKey != null
+              ? 'min(560px, calc(100% - 24px))'
+              : 'min(320px, calc(100% - 24px))',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
           zIndex: 1200,
         }}>
-          <FeatureSpaceChart
-            featureCollection={pylonFeatureCollection}
-            embedded
-            profileDisabled
-            defaultPreset="custom"
-            defaultCustomAxes={{ x: 'lon', y: 'lat', z: 'H_REF', color: 'VEL_AVG', size: 'COH' }}
-            attributeKeys={chartAttributeKeys}
-            colorPalette={BLUE_PALETTE}
-            onPointHover={setHoveredPointId}
-            onClose={() => {
-              setSelectedPylonKey(null);
-              setHoveredPointId(null);
-            }}
-            emptyHint="No InSAR points are linked to this pylon."
-            title={`Poláky · Pylon ${selectedPylon?.properties?.id ?? selectedPylonKey} · 3D feature space`}
-          />
+          {selectedPylonKey != null && (
+            <div style={{
+              position: 'relative',
+              flex: selectedFeature ? '5 1 0' : '1 1 auto',
+              minHeight: 0,
+            }}>
+              <FeatureSpaceChart
+                featureCollection={pylonFeatureCollection}
+                embedded
+                showTimeline
+                defaultChartType="timeline"
+                profileDisabled
+                defaultPreset="custom"
+                defaultCustomAxes={{ x: 'lon', y: 'lat', z: 'H_REF', color: 'VEL_AVG', size: 'COH' }}
+                attributeKeys={chartAttributeKeys}
+                colorPalette={BLUE_PALETTE}
+                onPointHover={setHoveredPointId}
+                onPointClick={setSelectedId}
+                onClose={() => {
+                  setSelectedPylonKey(null);
+                  setHoveredPointId(null);
+                }}
+                emptyHint="No InSAR points are linked to this pylon."
+                title={`Poláky · Pylon ${selectedPylon?.properties?.id ?? selectedPylonKey} · 3D feature space`}
+              />
+            </div>
+          )}
+
+          {selectedFeature && (
+            <div style={{
+              position: 'relative',
+              flex: selectedPylonKey != null ? '3 1 0' : '1 1 auto',
+              minHeight: 0,
+            }}>
+              <TimelineChart feature={selectedFeature} onClose={() => setSelectedId(null)} />
+            </div>
+          )}
         </div>
       )}
     </div>
