@@ -5,12 +5,11 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { OBJLoader } from '@loaders.gl/obj';
-import { SphereGeometry } from '@luma.gl/engine';
 import { CogTerrainLayer } from '@gisatcz/deckgl-geolib';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
 import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
 import chroma from 'chroma-js';
-import { scaleLinear } from 'd3-scale';
+import { build3dLosArrowLayers } from '../../layers/factory/build3dLosArrowLayers';
 import { BLUE_PALETTE, FeatureSpaceChart } from '../../components/FeatureSpaceChart3D';
 import TimelineChart from './TimelineChart';
 
@@ -51,17 +50,13 @@ function getPointJoinKey(feature) {
 // Stable empty array so memoised selections do not retrigger chart transforms.
 const EMPTY = [];
 
+// Layer-id prefix shared by the seven 3D LOS arrow sublayers.
+const ARROW_LAYER_PREFIX = 'vel-avg-arrows';
+
 // Exact 3d-feature-charts ramp (red -> yellow -> teal) on the VEL_AVG domain.
 const colorScale = chroma
   .scale([[215, 25, 28], [254, 254, 191], [65, 182, 196]])
   .domain([-1, 1]);
-
-const sphereGeometry = new SphereGeometry();
-
-// Sphere radius in metres (LNGLAT positions are world units, i.e. metres),
-// scaled by coherence: larger sphere = more coherent point.
-const SPHERE_RADIUS_FALLBACK = 4;
-const coherenceSizeScale = scaleLinear([0.5, 1], [2, 6]).clamp(true);
 
 // Shared cyan for every "selected" or hovered highlight on the map.
 const SELECTION_COLOR = [66, 212, 244];
@@ -88,14 +83,10 @@ const TERRAIN_OPTIONS = {
   color: [200, 200, 200, 255],
 };
 
-// Spheres use the measured ellipsoidal height H as-is, with no datum conversion.
-// H is 368.5-452.5 m across the site while the orthometric EL-GRID terrain is
-// ~45 m lower, so spheres intentionally float above the draped surface.
-function getSphereRadius(feature) {
-  const coherence = Number(feature?.properties?.COH);
-  return Number.isFinite(coherence) ? coherenceSizeScale(coherence) : SPHERE_RADIUS_FALLBACK;
-}
-
+// Arrows use the measured ellipsoidal height H as their anchor, with no datum
+// conversion. H is 368.5-452.5 m across the site while the orthometric EL-GRID
+// terrain is ~45 m lower, so the arrows intentionally float above the draped
+// surface. The arrow builder adds the small per-feature vector raise above H.
 function getElevation(feature) {
   const height = Number(feature?.properties?.H);
   return Number.isFinite(height) ? height : 0;
@@ -146,7 +137,7 @@ export default function PolakyHradec() {
   const [pylonFeatures, setPylonFeatures] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  // Selected point (sphere click → 2D timeline) and selected pylon (pylon click
+  // Selected point (arrow click → 2D timeline) and selected pylon (pylon click
   // → grouped 3D feature chart) are independent and can both stay open.
   const [selectedId, setSelectedId] = useState(null);
   const [selectedPylonKey, setSelectedPylonKey] = useState(null);
@@ -154,6 +145,8 @@ export default function PolakyHradec() {
   // Hover on the map itself, separate from the 3D chart's hover.
   const [hoveredSphereId, setHoveredSphereId] = useState(null);
   const [hoveredPylonKey, setHoveredPylonKey] = useState(null);
+  // Drive the 3D arrow size band; the map still starts from INITIAL_VIEW_STATE.
+  const [zoom, setZoom] = useState(INITIAL_VIEW_STATE.zoom);
 
   useEffect(() => {
     let cancelled = false;
@@ -299,7 +292,7 @@ export default function PolakyHradec() {
   const handleHover = useCallback((info) => {
     const layerId = info.layer?.id ?? '';
     const nextPylonKey = layerId.startsWith('pylons-') ? getPylonJoinKey(info.object) : null;
-    const nextSphereId = layerId === 'vel-avg-spheres'
+    const nextSphereId = layerId.startsWith(ARROW_LAYER_PREFIX)
       ? (info.object?.properties?.ID ?? null)
       : null;
     setHoveredPylonKey(prev => (prev === nextPylonKey ? prev : nextPylonKey));
@@ -373,21 +366,22 @@ export default function PolakyHradec() {
       });
     });
 
-    const sphereLayer = new SimpleMeshLayer({
-      id: 'vel-avg-spheres',
+    // Every point renders as a 3D LOS round-cap arrow composite (rear cap, body,
+    // two wing rods, two wing-tip caps, arrow tip). Chart hover paints the
+    // matching arrow red; a directly selected/hovered arrow keeps the shared
+    // highlight cyan. The accessor is shared by all seven arrow parts, so the
+    // pylon-linked selection highlight applies to the whole composite too.
+    const arrowLayers = build3dLosArrowLayers({
+      idPrefix: ARROW_LAYER_PREFIX,
       data: features,
-      mesh: sphereGeometry,
-      coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
+      zoom,
+      orbit: 'D',
       pickable: true,
       getPosition: (d) => [
         d.geometry.coordinates[0],
         d.geometry.coordinates[1],
         getElevation(d),
       ],
-      // Chart hover paints the matching sphere red; a directly selected/hovered
-      // sphere keeps the shared highlight cyan. Points linked to a selected
-      // pylon keep their original VEL_AVG colour so the pylon remains the only
-      // selection cue.
       getColor: (d) => {
         const id = d.properties?.ID;
         if (hoveredPointId != null && String(id) === String(hoveredPointId)) {
@@ -405,23 +399,20 @@ export default function PolakyHradec() {
           hoveredPointId,
         ],
       },
-      getScale: (d) => {
-        const radius = getSphereRadius(d);
-        return [radius, radius, radius];
-      },
     });
 
     return [
       terrainLayer,
       satelliteLayer,
       ...pylonLayers,
-      sphereLayer,
+      ...arrowLayers,
     ];
   }, [
     zRange,
     onZRangeUpdate,
     features,
     pylonGroups,
+    zoom,
     selectedId,
     hoveredPointId,
     hoveredSphereId,
@@ -442,6 +433,7 @@ export default function PolakyHradec() {
     }}>
       <DeckGL
         initialViewState={INITIAL_VIEW_STATE}
+        onViewStateChange={({ viewState }) => setZoom(viewState.zoom)}
         getCursor={() => (hoveredPylonKey != null || hoveredSphereId != null ? 'pointer' : 'grab')}
         controller
         layers={layers}
@@ -455,7 +447,7 @@ export default function PolakyHradec() {
             setSelectedPylonKey(key);
             return;
           }
-          if (layerId === 'vel-avg-spheres') {
+          if (layerId.startsWith(ARROW_LAYER_PREFIX)) {
             setHoveredPointId(null);
             setSelectedId(info.object?.properties?.ID ?? null);
             return;
@@ -481,7 +473,7 @@ export default function PolakyHradec() {
               ].join('\n'),
             };
           }
-          if (layerId === 'vel-avg-spheres') {
+          if (layerId.startsWith(ARROW_LAYER_PREFIX)) {
             const props = object?.properties;
             if (!props) return null;
             return {
@@ -554,7 +546,7 @@ export default function PolakyHradec() {
           <span>0</span>
           <span>+1</span>
         </div>
-        <div style={{ marginTop: '4px', color: '#555' }}>Sphere size = COH</div>
+        <div style={{ marginTop: '4px', color: '#555' }}>Arrow length = |VEL_REL| · thickness = REL_LEN</div>
       </div>
 
       {(selectedPylonKey != null || selectedFeature) && (

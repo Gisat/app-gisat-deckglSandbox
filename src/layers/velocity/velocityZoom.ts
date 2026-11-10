@@ -32,3 +32,16 @@ export const computeVelocitySizeZoomScale = (zoom: number): number => {
   }
   return 1;
 };
+
+/**
+ * Computes the floor-only zoom-adaptive size scale used by the 3D LOS arrows.
+ *
+ * The 3D arrow composite uses plain map meters above the floor zoom, and holds a
+ * fixed on-screen size at/below it (`2^(floor − zoom)`); there is no ceiling
+ * clamp. Ported from the sibling project's `compute3dVelocitySizeZoomScale`.
+ *
+ * @param zoom - Current map zoom level.
+ * @returns Scale factor for the absolute meter arrow dimensions.
+ */
+export const compute3dVelocitySizeZoomScale = (zoom: number): number =>
+  zoom <= VELOCITY_LOS_SIZE_FLOOR_ZOOM ? Math.pow(2, VELOCITY_LOS_SIZE_FLOOR_ZOOM - zoom) : 1;
