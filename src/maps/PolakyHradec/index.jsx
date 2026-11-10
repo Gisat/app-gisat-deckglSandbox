@@ -50,7 +50,7 @@ const sphereGeometry = new SphereGeometry();
 const SPHERE_RADIUS_FALLBACK = 4;
 const coherenceSizeScale = scaleLinear([0.5, 1], [2, 6]).clamp(true);
 
-// Shared cyan for every "selected" highlight on the map.
+// Shared cyan for every "selected" or hovered highlight on the map.
 const SELECTION_COLOR = [66, 212, 244];
 
 const INITIAL_VIEW_STATE = {
@@ -138,6 +138,8 @@ export default function PolakyHradec() {
   const [drawnGeometry, setDrawnGeometry] = useState(null);
   const [selectedFeatures, setSelectedFeatures] = useState(null);
   const [hoveredPointId, setHoveredPointId] = useState(null);
+  // Hover on the map itself, separate from the 3D chart's hover.
+  const [hoveredSphereId, setHoveredSphereId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -299,6 +301,12 @@ export default function PolakyHradec() {
     setSelectedFeatures(null);
   }, []);
 
+  // Only re-render when the hovered sphere actually changes.
+  const handleHover = useCallback((info) => {
+    const nextId = info.object?.properties?.ID ?? null;
+    setHoveredSphereId(prev => (prev === nextId ? prev : nextId));
+  }, []);
+
   const layers = useMemo(() => {
     const terrainLayer = new CogTerrainLayer({
       id: 'terrain-elevation',
@@ -378,6 +386,8 @@ export default function PolakyHradec() {
       });
     });
 
+    const selectedPointId = selectedFeature?.properties?.ID ?? null;
+
     const sphereLayer = new SimpleMeshLayer({
       id: 'vel-avg-spheres',
       data: features,
@@ -389,32 +399,19 @@ export default function PolakyHradec() {
         d.geometry.coordinates[1],
         getElevation(d),
       ],
-      getColor: getRgba,
-      // Selection is shown by the ring, not by scaling the mesh.
+      // Selected and hovered spheres both get the highlight cyan.
+      getColor: (d) => {
+        const id = d.properties?.ID;
+        const isHighlighted = [selectedPointId, hoveredSphereId].some(
+          other => other != null && String(id) === String(other),
+        );
+        return isHighlighted ? [...SELECTION_COLOR, 255] : getRgba(d);
+      },
+      updateTriggers: { getColor: [selectedPointId, hoveredSphereId] },
       getScale: (d) => {
         const radius = getSphereRadius(d);
         return [radius, radius, radius];
       },
-    });
-
-    // SimpleMeshLayer has no outline, so mark the selection with a billboard ring.
-    const selectionRing = new ScatterplotLayer({
-      id: 'selected-point-ring',
-      data: selectedFeature ? [selectedFeature] : [],
-      pickable: false,
-      filled: false,
-      stroked: true,
-      billboard: true,
-      radiusUnits: 'pixels',
-      lineWidthUnits: 'pixels',
-      getPosition: (d) => [
-        d.geometry.coordinates[0],
-        d.geometry.coordinates[1],
-        getElevation(d),
-      ],
-      getRadius: 8,
-      getLineWidth: 2,
-      getLineColor: [66, 212, 244, 255],
     });
 
     // Ring around every point selected by the circle/polygon drawing.
@@ -464,7 +461,6 @@ export default function PolakyHradec() {
       ...pylonLayers,
       sphereLayer,
       selectedPointsRing,
-      selectionRing,
       hoveredRing,
     ].filter(Boolean);
   }, [
@@ -474,6 +470,7 @@ export default function PolakyHradec() {
     pylonGroups,
     selectedFeature,
     hoveredFeature,
+    hoveredSphereId,
     isDrawing,
     drawnGeometry,
     selectedFeatures,
@@ -502,6 +499,7 @@ export default function PolakyHradec() {
           keyboard: !isDrawing,
         }}
         layers={layers}
+        onHover={handleHover}
         onClick={(info) => {
           if (isDrawing) {
             // The 3D overlay listens for these events (DrawingOverlay is3D).
