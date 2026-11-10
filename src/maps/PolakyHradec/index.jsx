@@ -4,6 +4,7 @@ import { COORDINATE_SYSTEM } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer, GeoJsonLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
+import { OBJLoader } from '@loaders.gl/obj';
 import { SphereGeometry } from '@luma.gl/engine';
 import { CogTerrainLayer, extractTerrainCoordinate } from '@gisatcz/deckgl-geolib';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
@@ -18,6 +19,17 @@ import SelectionToolbar from './SelectionToolbar';
 const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/polaky_95D_PS.geojson';
 const TERRAIN_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/EL-GRID_COGeoN.tif';
 const SATELLITE_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const PYLONS_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/sloupy.geojson';
+const PYLON_ASSET_BASE = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets';
+
+const PYLON_COLOR = [150, 155, 160, 255];
+// Native heights come from the OBJ headers (metres, Z-up, base centre at origin).
+// Each instance is scaled to its GeoJSON `height`; see getPylonHeight below.
+const PYLON_MODELS = [
+  { typ: 'dunaj', nativeHeight: 40.0, mesh: `${PYLON_ASSET_BASE}/dunaj.obj` },
+  { typ: 'kocka', nativeHeight: 26.7, mesh: `${PYLON_ASSET_BASE}/kocka.obj` },
+  { typ: 'portal', nativeHeight: 29.169, mesh: `${PYLON_ASSET_BASE}/portal.obj` },
+];
 
 // Exact 3d-feature-charts ramp (red -> yellow -> teal) on the VEL_AVG domain.
 const colorScale = chroma
@@ -67,6 +79,13 @@ function getElevation(feature) {
   return Number.isFinite(height) ? height : 0;
 }
 
+// GeoJSON height is the real tower height in metres, so it is used to scale the
+// native-size OBJ; six features have height: null and fall back to a type mean.
+function getPylonHeight(feature) {
+  const height = Number(feature?.properties?.height);
+  return Number.isFinite(height) && height > 0 ? height : null;
+}
+
 function getRgba(feature) {
   // chroma 2.x scales extrapolate outside the domain; clamp so the few stations
   // past ±1 stay at the ramp endpoints instead of producing bad channels.
@@ -84,6 +103,7 @@ function formatNumber(value, digits) {
 export default function PolakyHradec() {
   const { zRange, onZRangeUpdate } = useTerrainZRange();
   const [features, setFeatures] = useState([]);
+  const [pylonFeatures, setPylonFeatures] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
@@ -125,6 +145,56 @@ export default function PolakyHradec() {
       cancelled = true;
     };
   }, []);
+
+  // Pylons are decorative: a failure here must not raise the map-level error
+  // banner, because the InSAR visualisation still works without them.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPylons = async () => {
+      try {
+        const res = await fetch(PYLONS_URL);
+        if (!res.ok) throw new Error(`HTTP ${res.status} for ${PYLONS_URL}`);
+        const data = await res.json();
+        const loaded = Array.isArray(data) ? data : (data.features || []);
+        if (!cancelled) setPylonFeatures(loaded);
+      } catch (err) {
+        console.error('❌ Failed to load Poláky pylons:', err);
+      }
+    };
+
+    loadPylons();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const pylonGroups = useMemo(() => {
+    const groups = { kocka: [], dunaj: [], portal: [] };
+    const heightSums = { kocka: 0, dunaj: 0, portal: 0 };
+    const heightCounts = { kocka: 0, dunaj: 0, portal: 0 };
+    let skipped = 0;
+    for (const f of pylonFeatures) {
+      const typ = f?.properties?.typ;
+      if (!groups[typ]) {
+        skipped++;
+        continue;
+      }
+      groups[typ].push(f);
+      const height = getPylonHeight(f);
+      if (height != null) {
+        heightSums[typ] += height;
+        heightCounts[typ] += 1;
+      }
+    }
+    if (skipped) console.warn(`Skipped ${skipped} pylon feature(s) with unknown typ`);
+    // Mean of the features that do carry a height, for those that do not.
+    const meanHeight = {};
+    for (const typ of Object.keys(groups)) {
+      meanHeight[typ] = heightCounts[typ] ? heightSums[typ] / heightCounts[typ] : null;
+    }
+    return { groups, meanHeight };
+  }, [pylonFeatures]);
 
   const selectedFeature = useMemo(() => {
     if (selectedId == null) return null;
@@ -258,6 +328,34 @@ export default function PolakyHradec() {
         })
       : null;
 
+    // One layer per pylon type: SimpleMeshLayer takes a single mesh, so the typ
+    // has to be expressed as separate layers with stable ids and mesh URLs.
+    // Anchoring at z=0 lets TerrainExtension offset mode snap the base to the
+    // COG terrain height map written by the terrain layer above.
+    const pylonLayers = PYLON_MODELS.map(({ typ, nativeHeight, mesh }) => {
+      const fallbackHeight = pylonGroups.meanHeight[typ] ?? nativeHeight;
+      return new SimpleMeshLayer({
+        id: `pylons-${typ}`,
+        data: pylonGroups.groups[typ],
+        mesh,
+        loaders: [OBJLoader],
+        coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
+        getPosition: (d) => [d.geometry.coordinates[0], d.geometry.coordinates[1], 0],
+        // Scale the native-size OBJ up to the tower's real height.
+        getScale: (d) => {
+          const s = (getPylonHeight(d) ?? fallbackHeight) / nativeHeight;
+          return [s, s, s];
+        },
+        // The data carries no bearing, so pylons stay axis-aligned.
+        getOrientation: () => [0, 0, 0],
+        getColor: () => PYLON_COLOR,
+        material: { ambient: 0.35, diffuse: 0.6, shininess: 24, specularColor: [60, 64, 70] },
+        extensions: [new TerrainExtension()],
+        terrainDrawMode: 'offset',
+        pickable: false,
+      });
+    });
+
     const sphereLayer = new SimpleMeshLayer({
       id: 'vel-avg-spheres',
       data: features,
@@ -341,6 +439,7 @@ export default function PolakyHradec() {
       terrainLayer,
       satelliteLayer,
       selectionBoundaryLayer,
+      ...pylonLayers,
       sphereLayer,
       selectedPointsRing,
       selectionRing,
@@ -350,6 +449,7 @@ export default function PolakyHradec() {
     zRange,
     onZRangeUpdate,
     features,
+    pylonGroups,
     selectedFeature,
     hoveredFeature,
     isDrawing,
