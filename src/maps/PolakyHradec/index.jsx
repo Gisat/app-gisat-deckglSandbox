@@ -83,13 +83,24 @@ const TERRAIN_OPTIONS = {
   color: [200, 200, 200, 255],
 };
 
-// Arrows use the measured ellipsoidal height H as their anchor, with no datum
-// conversion. H is 368.5-452.5 m across the site while the orthometric EL-GRID
-// terrain is ~45 m lower, so the arrows intentionally float above the draped
-// surface. The arrow builder adds the small per-feature vector raise above H.
-function getElevation(feature) {
-  const height = Number(feature?.properties?.H);
-  return Number.isFinite(height) ? height : 0;
+// InSAR arrows are anchored on the displayed orthometric terrain (EL-GRID) and
+// lifted by H_REF, the point height above the local ground surface. The
+// ellipsoidal H stays available to the chart and tooltip but no longer drives
+// z. TerrainExtension offset mode adds the terrain height under the anchor, so
+// the arrow centre renders at terrain + H_REF; the builder still adds the small
+// per-feature vector raise on top.
+function getPointElevation(feature) {
+  const hRef = feature?.properties?.H_REF;
+  if (hRef != null && hRef !== '') {
+    const value = Number(hRef);
+    if (Number.isFinite(value)) return value;
+  }
+  // Legacy fallback for datasets without H_REF. On the current data H - H_dem
+  // is ~2.5 m lower than the real H_REF, so use it only as a last resort.
+  const h = Number(feature?.properties?.H);
+  const hDem = Number(feature?.properties?.H_dem);
+  if (Number.isFinite(h) && Number.isFinite(hDem)) return h - hDem;
+  return 0;
 }
 
 // GeoJSON height is the real tower height in metres, so it is used to scale the
@@ -380,8 +391,12 @@ export default function PolakyHradec() {
       getPosition: (d) => [
         d.geometry.coordinates[0],
         d.geometry.coordinates[1],
-        getElevation(d),
+        getPointElevation(d),
       ],
+      // Offset mode shifts every arrow part by the terrain height sampled under
+      // its anchor, keeping the composite rigid while grounding it.
+      extensions: [new TerrainExtension()],
+      terrainDrawMode: 'offset',
       getColor: (d) => {
         const id = d.properties?.ID;
         if (hoveredPointId != null && String(id) === String(hoveredPointId)) {
@@ -481,6 +496,7 @@ export default function PolakyHradec() {
                 `ID: ${props.ID ?? '–'}`,
                 `VEL_AVG: ${formatNumber(props.VEL_AVG, 2)} mm/yr`,
                 `COH: ${formatNumber(props.COH, 2)}`,
+                `H_REF: ${formatNumber(props.H_REF, 2)} m`,
                 `H_dem: ${formatNumber(props.H_dem, 1)} m`,
               ].join('\n'),
             };

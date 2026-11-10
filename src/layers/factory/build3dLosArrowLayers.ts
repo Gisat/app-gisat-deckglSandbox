@@ -1,5 +1,5 @@
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
-import type { Color, Layer } from '@deck.gl/core';
+import type { Color, Layer, LayerExtension } from '@deck.gl/core';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { OBJLoader } from '@loaders.gl/obj';
 import {
@@ -54,6 +54,8 @@ export interface Build3dLosArrowLayersProps {
   /**
    * Anchor accessor `[lon, lat, z]` **without** the vertical raise; the builder
    * adds `computeVectorRaiseMeters(relLen) × arrowScale` to the z coordinate.
+   * z is in metres, i.e. a height above the anchor's local surface when the
+   * layer uses `TerrainExtension` offset mode.
    * Defaults to the geometry coordinates (or `LON`/`LAT`) with `H` as z.
    */
   getPosition?: (feature: LosArrowFeature) => [number, number, number];
@@ -64,6 +66,17 @@ export interface Build3dLosArrowLayersProps {
   pickable?: boolean;
   /** Extra update triggers, e.g. `{ getColor: [selectedId, hoveredId] }`. */
   updateTriggers?: Record<string, unknown[]>;
+  /**
+   * Layer extensions applied to all seven sublayers. Add
+   * `new TerrainExtension()` together with `terrainDrawMode: 'offset'` to
+   * anchor the composite on the terrain height map.
+   */
+  extensions?: LayerExtension[];
+  /**
+   * Terrain draw mode provided by `TerrainExtension`. `'offset'` shifts the
+   * whole arrow by the terrain height under its anchor instead of draping it.
+   */
+  terrainDrawMode?: 'offset' | 'drape';
 }
 
 const readNumber = (
@@ -130,6 +143,8 @@ export const build3dLosArrowLayers = ({
   zoom,
   pickable = true,
   updateTriggers,
+  extensions,
+  terrainDrawMode,
 }: Build3dLosArrowLayersProps): Layer[] => {
   const arrowScale = compute3dVelocitySizeZoomScale(zoom) * ARROW_MAP_SIZE_SCALE;
 
@@ -175,6 +190,7 @@ export const build3dLosArrowLayers = ({
     getPosition: getArrowPosition,
     getColor,
     updateTriggers: sharedUpdateTriggers,
+    ...(extensions ? { extensions, terrainDrawMode } : {}),
   };
 
   // Rear cap: the cap dome points rearward (opposite the arrow heading).
