@@ -23,8 +23,7 @@ const colorScale = chroma
 const sphereGeometry = new SphereGeometry();
 
 // Sphere radius in metres (LNGLAT positions are world units, i.e. metres).
-const SPHERE_RADIUS = 6;
-const SELECTED_SPHERE_RADIUS = 9;
+const SPHERE_RADIUS = 4;
 
 const INITIAL_VIEW_STATE = {
   longitude: 13.3607,
@@ -154,15 +153,8 @@ export default function PolakyHradec() {
         getElevation(d),
       ],
       getColor: getRgba,
-      getScale: (d) => {
-        const size = String(d.properties?.ID) === String(selectedId)
-          ? SELECTED_SPHERE_RADIUS
-          : SPHERE_RADIUS;
-        return [size, size, size];
-      },
-      updateTriggers: {
-        getScale: [selectedId],
-      },
+      // Constant size; selection is shown by the ring, not by scaling the mesh.
+      getScale: () => [SPHERE_RADIUS, SPHERE_RADIUS, SPHERE_RADIUS],
     });
 
     // SimpleMeshLayer has no outline, so mark the selection with a billboard ring.
@@ -180,13 +172,13 @@ export default function PolakyHradec() {
         d.geometry.coordinates[1],
         getElevation(d),
       ],
-      getRadius: 14,
+      getRadius: 8,
       getLineWidth: 2,
-      getLineColor: [255, 255, 255, 255],
+      getLineColor: [66, 212, 244, 255],
     });
 
     return [terrainLayer, satelliteLayer, sphereLayer, selectionRing];
-  }, [zRange, onZRangeUpdate, features, selectedId, selectedFeature]);
+  }, [zRange, onZRangeUpdate, features, selectedFeature]);
 
   const legendGradient = `linear-gradient(to right, ${colorScale.colors(10).join(', ')})`;
 
