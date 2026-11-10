@@ -1,3 +1,27 @@
+## [1.19.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.18.0...v1.19.0) (2026-11-10)
+
+### Features
+
+* **map:** add 3D pylon meshes to Poláky, Hradec ([bb8561c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/bb8561c96acaf64c2ce16f7050986f077496d512))
+* **map:** add ČEPS Poláky, Hradec map ([746cfe7](https://github.com/Gisat/app-gisat-deckglSandbox/commit/746cfe74acb57faab00cdd177c9b2a9905ffece9))
+* **map:** add point-selection 3D chart to Poláky map ([0167bd4](https://github.com/Gisat/app-gisat-deckglSandbox/commit/0167bd48161dad6ff7d402866a8a72357be6353a))
+* **map:** add timeline chart type and dual point/pylon selection ([5ab0599](https://github.com/Gisat/app-gisat-deckglSandbox/commit/5ab059979a29d6c256e46555d29d772ed72744a0))
+* **map:** ground Poláky InSAR arrows on terrain via H_REF ([454d119](https://github.com/Gisat/app-gisat-deckglSandbox/commit/454d11914db46584e09d2fd2193818412ae67e25))
+* **map:** highlight Poláky spheres with cyan on selection and hover ([8f4b673](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8f4b67377337ef09bfd21054111026f11ae154d0))
+* **map:** make Poláky pylons selectable across their full silhouette ([22f4d0e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/22f4d0e57454f31c4bddb692af5ceb9b269d2978))
+* **map:** orient Poláky pylons by azimuth ([6e2a6ae](https://github.com/Gisat/app-gisat-deckglSandbox/commit/6e2a6ae023533862c3522befaaa46e9672aa098c))
+* **map:** pre-select Poláky point 58931 to showcase the timeline ([c72dfda](https://github.com/Gisat/app-gisat-deckglSandbox/commit/c72dfdaa0353a116a3a5bf200b66cb445ff39362))
+* **map:** pre-select Poláky pylon 10 and point 59054 on load ([e64aa9d](https://github.com/Gisat/app-gisat-deckglSandbox/commit/e64aa9d2868baf093056958afe6e73ca7ee141df))
+* **map:** render Poláky points as 3D LOS arrows ([d95c303](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d95c30332c3d080d992bae9f22e58a4c8217102d))
+* **map:** select Poláky pylons to chart their linked InSAR points ([d165736](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d16573662c4c460bcaeb487c24f347e2e753dce5))
+* **map:** stretch Poláky legend color ramp to full width ([eb48d45](https://github.com/Gisat/app-gisat-deckglSandbox/commit/eb48d457da846a022ef9aaac14e5c82d2d60c272))
+
+### Bug Fixes
+
+* **map:** address Poláky review findings ([f8abac9](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f8abac93c2b1e7817d673314f88e5a291e1aa0e8))
+* **map:** align Poláky legend labels with color bar ([69fc1c8](https://github.com/Gisat/app-gisat-deckglSandbox/commit/69fc1c815e614e85215fd04be9efd4addccee45a))
+* **map:** shrink Poláky spheres and use a cyan selection ring ([e04df12](https://github.com/Gisat/app-gisat-deckglSandbox/commit/e04df12f29c8e749355d2172ebc17772177cb9b4))
+
 ## [1.18.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.17.0...v1.18.0) (2026-11-04)
 
 ### Features
