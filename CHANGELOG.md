@@ -1,3 +1,9 @@
+## [1.20.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.20.0...v1.20.1) (2026-11-11)
+
+### Bug Fixes
+
+* **map:** load arrow OBJ meshes from hashed Vite assets ([281a513](https://github.com/Gisat/app-gisat-deckglSandbox/commit/281a513895a6a0d9501f4e57590dba7b5717e50a))
+
 ## [1.20.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.19.0...v1.20.0) (2026-11-11)
 
 ### Features
