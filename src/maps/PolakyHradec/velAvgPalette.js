@@ -7,9 +7,8 @@
  */
 
 import chroma from 'chroma-js';
-import { MAP_VEL_AVG_DOMAIN } from '../../components/FeatureSpaceChart3D/colorScale';
 
-/** Ordered ramp stops, red (-1) → orange → yellow → green → cyan → blue (+1). */
+/** Ordered ramp stops, red (-2.5) → orange → yellow → green → cyan → blue (+2.5). */
 export const POLAKY_VEL_AVG_COLORS = [
   '#B1001D',
   '#D3512C',
@@ -25,10 +24,10 @@ export const POLAKY_VEL_AVG_COLORS = [
 ];
 
 /** Colour domain shared with the chart so the map and chart cannot diverge. */
-export const POLAKY_VEL_AVG_DOMAIN = MAP_VEL_AVG_DOMAIN;
+export const POLAKY_VEL_AVG_DOMAIN = [-2.5, 2.5];
 
 /**
- * Builds the continuous Poláky `VEL_AVG` scale over ±1 mm/yr.
+ * Builds the continuous Poláky `VEL_AVG` scale over the map's ±2.5 mm/yr domain.
  *
  * @returns {import('chroma-js').Scale} Chroma scale for `VEL_AVG`.
  */

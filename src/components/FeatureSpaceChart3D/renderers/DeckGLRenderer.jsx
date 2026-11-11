@@ -45,8 +45,9 @@ const GRID_COLOR = [232, 232, 232, 255];
 const GRID_WIDTH = 0.5;
 /** Colored shafts are deliberately thicker than the grid/cube so the axis reads. */
 const AXIS_WIDTH = 1.5;
-const TICK_LABEL_COLOR = [110, 110, 110];
-// Match the 2D timeline card's nivo theme: 10 px tick text, 11 px axis titles.
+// Match the 2D timeline card's nivo theme: #555 10 px ticks, #333 11 px titles.
+const TICK_LABEL_COLOR = [85, 85, 85];
+const TITLE_LABEL_COLOR = [51, 51, 51];
 const TICK_LABEL_SIZE = 10;
 const TITLE_SIZE = 11;
 
@@ -302,7 +303,7 @@ function axisOverlay({ edges, far, ticks, titles, enabled }) {
     titleLabels.push({
       position,
       text: titles[slot],
-      color: AXIS_COLORS[slot],
+      color: TITLE_LABEL_COLOR,
       size: TITLE_SIZE,
       direction: AXIS_DIRECTIONS[slot],
     });
@@ -362,8 +363,11 @@ function axisOverlay({ edges, far, ticks, titles, enabled }) {
  * @param {(id: string) => void} [props.onPointClick]  select a picked point (map sphere + 2D timeline)
  * @param {boolean} [props.zoomOutScatter]  give the scatter/Custom view extra margin (compact embedded card)
  * @param {string[]} [props.velAvgPalette]  map-supplied ramp for the timeline curve colour
+ * @param {[number, number]} [props.velAvgDomain]  map-supplied `VEL_AVG` colour domain
+ * @param {{ by?: 'velAvg'|'settlement', domain?: [number, number] }} [props.timelineColor]  timeline colour key
+ * @param {boolean} [props.symmetricTimelineZ]  pin the timeline Z domain symmetrically around 0
  */
-export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover, onPointClick, zoomOutScatter = false, velAvgPalette = null }) {
+export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover, onPointClick, zoomOutScatter = false, velAvgPalette = null, velAvgDomain = null, timelineColor = null, symmetricTimelineZ = false }) {
   const [tooltip, setTooltip] = useState(null);
 
   // Controlled camera: the axis labels are sized from the live clip-space depth
@@ -410,8 +414,8 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
 
   const domains = useMemo(() => computeAxisDomains(points, axes), [points, axes]);
   const frame = useMemo(
-    () => (profile ? buildProfileFrame(profile, CUBE, velAvgPalette) : null),
-    [profile, velAvgPalette],
+    () => (profile ? buildProfileFrame(profile, CUBE, velAvgPalette, velAvgDomain, timelineColor, symmetricTimelineZ) : null),
+    [profile, velAvgPalette, velAvgDomain, timelineColor, symmetricTimelineZ],
   );
 
   const scatterData = useMemo(

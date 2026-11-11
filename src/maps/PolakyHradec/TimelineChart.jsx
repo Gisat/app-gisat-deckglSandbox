@@ -60,14 +60,11 @@ export default function TimelineChart({ feature, onClose }) {
 
   const header = (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '4px' }}>
-      <div style={{ fontSize: '13px', fontWeight: 700, color: '#333' }}>
-        Point {props.ID ?? '–'}
+      <div style={{ fontSize: '11px', fontWeight: 600, color: '#333' }}>
+        Point {props.ID ?? '–'} · {POINT_TRACK}
       </div>
       <div style={{ fontSize: '11px', color: '#555' }}>
         VEL_AVG <b>{formatNumber(props.VEL_AVG, 2)}</b> mm/yr
-      </div>
-      <div style={{ fontSize: '11px', color: '#555' }}>
-        Track: <b>{POINT_TRACK}</b>
       </div>
       <button
         type="button"
