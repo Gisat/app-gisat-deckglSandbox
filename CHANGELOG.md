@@ -1,3 +1,18 @@
+## [1.21.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.20.1...v1.21.0) (2026-11-11)
+
+### Features
+
+* **polaky:** add 95D/44A/146A track selector to v2 map ([6cce96c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/6cce96cb614f833b2e914811ba86729bd65cc495))
+* **polaky:** align v1 chart headings with v2 ([b4b75ab](https://github.com/Gisat/app-gisat-deckglSandbox/commit/b4b75abf1dcb47c38816012384623e1d74c1427c))
+* **polaky:** colour v2 3D timeline by cumulative settlement ([cd0d518](https://github.com/Gisat/app-gisat-deckglSandbox/commit/cd0d518c7bd79de12e665b769b2cbb0680120b84))
+* **polaky:** compact chart axis selectors and per-orbit VEL_AVG colours ([5dc608c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/5dc608ce281acf8cf7ef51a99979b8334bb496a6))
+* **polaky:** fork Poláky/Hradec v2 route ([32a3567](https://github.com/Gisat/app-gisat-deckglSandbox/commit/32a3567ffc6e48c19f4530bb1aaf9f815d366dda))
+* **polaky:** tune VEL_AVG scale, sphere threshold and chart palette ([58523bc](https://github.com/Gisat/app-gisat-deckglSandbox/commit/58523bc9078f0605b70d8209b8939d5b67f45b33))
+
+### Bug Fixes
+
+* **polaky:** harden v2 track loading and settlement colouring ([8582e03](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8582e036595893b4afcb31c85ddc63010551d6aa))
+
 ## [1.20.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.20.0...v1.20.1) (2026-11-11)
 
 ### Bug Fixes
