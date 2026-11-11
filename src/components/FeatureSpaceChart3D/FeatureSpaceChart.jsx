@@ -68,7 +68,7 @@ const RENDERER_COMPONENTS = {
  * @param {string[]} [props.colorPalette]  palette for non-velocity colour attributes (defaults to viridis)
  * @param {string[]} [props.velAvgPalette]  map-supplied continuous ramp for the `VEL_AVG` colour channel
  * @param {[number, number]} [props.velAvgDomain]  map-supplied `VEL_AVG` colour domain (defaults to the fixed ±1)
- * @param {{ by?: 'velAvg'|'settlement', domain?: [number, number] }} [props.timelineColor]  colour timeline curves by `VEL_AVG` (default) or their final cumulative settlement
+ * @param {{ by?: 'velAvg'|'settlement', domain?: [number, number], palette?: string[] }} [props.timelineColor]  colour timeline curves by `VEL_AVG` (default) or their final cumulative settlement
  * @param {boolean} [props.symmetricTimelineZ]  pin the timeline Z domain symmetrically around 0
  * @param {boolean} [props.timelineColorPicker]  embedded timeline only: show a dropdown to switch the timeline colour between settlement (default) and `VEL_AVG`
  * @param {boolean} [props.embedded]  compact card mode: deck.gl spheres, Custom preset, scatter only, no renderer/mode/marker/preset rows
@@ -310,7 +310,7 @@ export function FeatureSpaceChart({
   // The embedded picker can override the host's default timeline colour key.
   const effectiveTimelineColor = useMemo(
     () => (timelineColorPicker
-      ? { by: timelineColorBy, domain: timelineColor?.domain }
+      ? { by: timelineColorBy, domain: timelineColor?.domain, palette: timelineColor?.palette }
       : timelineColor),
     [timelineColorPicker, timelineColorBy, timelineColor],
   );
@@ -540,18 +540,18 @@ export function FeatureSpaceChart({
             Custom
           </button>
           {timelineColorPicker && effectiveType === 'timeline' && (
-            <>
-              <span style={{ marginLeft: '8px', color: '#666', fontSize: '11px' }}>Color</span>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginLeft: '8px' }}>
+              <span aria-hidden="true" style={selectPrefixStyle}>color:</span>
               <select
                 aria-label="Timeline color attribute"
                 value={timelineColorBy}
                 onChange={(e) => setTimelineColorBy(e.target.value)}
-                style={selectStyle}
+                style={{ ...selectStyle, paddingLeft: selectPrefixPadding('color') }}
               >
                 <option value="settlement">Settlement</option>
                 <option value="velAvg">VEL_AVG</option>
               </select>
-            </>
+            </div>
           )}
         </div>
       )}
@@ -791,12 +791,16 @@ export function FeatureSpaceChart({
             ['color', scatterKeys],
             ['size', scatterKeys],
           ].map(([slot, keys]) => (
-            <label key={slot} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <span style={{ fontSize: '11px', color: '#666', textTransform: 'uppercase' }}>{slot}</span>
+            <div
+              key={slot}
+              style={{ position: 'relative', display: 'flex', alignItems: 'center' }}
+            >
+              <span aria-hidden="true" style={selectPrefixStyle}>{slot}:</span>
               <select
+                aria-label={SLOT_ARIA_LABELS[slot]}
                 value={customAxes[slot]}
                 onChange={(e) => setAxis(slot, e.target.value)}
-                style={selectStyle}
+                style={{ ...selectStyle, width: '100%', paddingLeft: selectPrefixPadding(slot) }}
               >
                 {keys.map((key) => (
                   <option key={key} value={key}>
@@ -804,7 +808,7 @@ export function FeatureSpaceChart({
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
           ))}
         </div>
       )}
@@ -978,6 +982,31 @@ const selectStyle = {
   fontSize: '11px',
   cursor: 'pointer',
 };
+
+/** Slot label rendered inside the select, so no caption row is needed. */
+const selectPrefixStyle = {
+  position: 'absolute',
+  left: '7px',
+  top: '50%',
+  transform: 'translateY(-50%)',
+  fontFamily: 'system-ui, sans-serif',
+  fontSize: '11px',
+  fontWeight: 600,
+  lineHeight: 1,
+  color: '#666',
+  pointerEvents: 'none',
+};
+
+const SLOT_ARIA_LABELS = {
+  x: 'X axis',
+  y: 'Y axis',
+  z: 'Z axis',
+  color: 'Color attribute',
+  size: 'Size attribute',
+};
+
+/** Room for the inline prefix: one `ch` per label character plus padding. */
+const selectPrefixPadding = (slot) => `calc(7px + ${slot.length}ch + 4px)`;
 
 const axisPickerStyle = {
   display: 'flex',

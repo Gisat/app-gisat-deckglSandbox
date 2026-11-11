@@ -501,9 +501,9 @@ function settlementPoints(samples, cube) {
  * @param {number} [cube] half-extent of the normalised cube
  * @param {string[]|null} [velAvgPalette]  map-supplied ramp for the curve colour
  * @param {[number, number]|null} [velAvgDomain]  map-supplied `VEL_AVG` colour domain
- * @param {{ by?: 'velAvg'|'settlement', domain?: [number, number] }|null} [timelineColor]
+ * @param {{ by?: 'velAvg'|'settlement', domain?: [number, number], palette?: string[] }|null} [timelineColor]
  *   colour key for the timeline curves; `settlement` uses the final cumulative
- *   settlement over `domain`
+ *   settlement over `domain` (and `palette` when supplied)
  * @returns {Array<{ key:string, id:string|null, label:string, color:string,
  *   stdKey:null, banded:false, rows:Array<any>, velAvg:number|null,
  *   minD:number, maxD:number, tMin:number, tMax:number }>}
@@ -523,7 +523,10 @@ function timelineCurves(samples, cube, velAvgPalette = null, velAvgDomain = null
   const velDomain = colorBySettlement
     ? (settlementDomain ?? MAP_VEL_AVG_DOMAIN)
     : (Array.isArray(velAvgDomain) && velAvgDomain.length === 2 ? velAvgDomain : MAP_VEL_AVG_DOMAIN);
-  const velScale = buildColorScale('VEL_AVG', [...velDomain], undefined, velAvgPalette);
+  // Settlement colouring has its own fixed ramp; VEL_AVG colouring keeps the
+  // host palette (the active map ramp) so chart and map cannot diverge.
+  const palette = colorBySettlement ? (timelineColor?.palette ?? velAvgPalette) : velAvgPalette;
+  const velScale = buildColorScale('VEL_AVG', [...velDomain], undefined, palette);
   const stepCount = TREND_TIMELINE.length;
   const DAY_MS = 24 * 60 * 60 * 1000;
   // Each step reads a smoothed ~90-day window around its target epoch instead

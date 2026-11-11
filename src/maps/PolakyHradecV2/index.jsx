@@ -22,8 +22,9 @@ import {
   isTimelineKey,
 } from '../../components/FeatureSpaceChart3D';
 import {
-  POLAKY_VEL_AVG_CHART_COLORS,
+  POLAKY_SETTLEMENT_COLORS,
   buildPolakyVelAvgScale,
+  getPolakyVelAvgColors,
   POLAKY_VEL_AVG_DOMAIN,
 } from './velAvgPalette';
 import TimelineChart from './TimelineChart';
@@ -134,8 +135,12 @@ const DESCENDING_VEL_AVG_SCALE = buildPolakyVelAvgScale('D');
 const NEAR_ZERO_VEL_AVG = 0.5;
 
 // 3D timeline curves are coloured by the point's cumulative settlement (mm),
-// on the same chart ramp but a settlement-specific domain.
-const SETTLEMENT_COLOR = { by: 'settlement', domain: [-25, 25] };
+// on a fixed settlement ramp; VEL_AVG colouring uses the per-orbit map ramp.
+const SETTLEMENT_COLOR = {
+  by: 'settlement',
+  domain: [-25, 25],
+  palette: POLAKY_SETTLEMENT_COLORS,
+};
 
 // Missing / non-finite VEL_AVG keeps the arrow behaviour.
 function isNearZeroVelAvg(feature) {
@@ -336,6 +341,9 @@ export default function PolakyHradecV2() {
   const colorScale = activeTrack.orbit === 'D'
     ? DESCENDING_VEL_AVG_SCALE
     : ASCENDING_VEL_AVG_SCALE;
+  // Same per-orbit ramp for the chart's VEL_AVG colouring, so it matches the
+  // map symbols and legend. Settlement colouring uses its own fixed ramp.
+  const velAvgPalette = getPolakyVelAvgColors(activeTrack.orbit);
 
   // Fetch a track once and cache it; later switches are instant. The cache is
   // cleared on failure so the selector's retry starts a fresh request.
@@ -929,7 +937,7 @@ export default function PolakyHradecV2() {
                 defaultCustomAxes={{ x: 'lon', y: 'lat', z: 'H_REF', color: 'VEL_AVG', size: 'COH' }}
                 attributeKeys={chartAttributeKeys}
                 colorPalette={BLUE_PALETTE}
-                velAvgPalette={POLAKY_VEL_AVG_CHART_COLORS}
+                velAvgPalette={velAvgPalette}
                 velAvgDomain={POLAKY_VEL_AVG_DOMAIN}
                 timelineColor={SETTLEMENT_COLOR}
                 symmetricTimelineZ

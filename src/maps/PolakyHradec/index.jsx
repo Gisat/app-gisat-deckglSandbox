@@ -97,6 +97,9 @@ const DEFAULT_POINT_ID = 59054;
 // The chart's VEL_AVG ramp, shared with the map legend and the 3D chart.
 const colorScale = buildPolakyVelAvgScale();
 
+// 3D timeline colour modes: cumulative settlement by default, VEL_AVG optional.
+const TIMELINE_COLOR = { by: 'settlement', domain: [-25, 25] };
+
 // |VEL_AVG| at/below which a point renders as a sphere instead of an arrow.
 const NEAR_ZERO_VEL_AVG = 0.5;
 
@@ -785,6 +788,9 @@ export default function PolakyHradec() {
                 colorPalette={BLUE_PALETTE}
                 velAvgPalette={POLAKY_VEL_AVG_COLORS}
                 velAvgDomain={POLAKY_VEL_AVG_DOMAIN}
+                timelineColor={TIMELINE_COLOR}
+                timelineColorPicker
+                symmetricTimelineZ
                 onPointHover={setHoveredPointId}
                 onPointClick={setSelectedId}
                 onClose={() => {

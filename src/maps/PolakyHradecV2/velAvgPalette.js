@@ -48,11 +48,11 @@ export const POLAKY_VEL_AVG_COLORS_DESCENDING = [
 export const POLAKY_VEL_AVG_DOMAIN = [-2.5, 2.5];
 
 /**
- * Chart palette: one rainbow ramp for every orbit, negative red → positive blue,
- * so the 3D chart keeps the same colour reading on ascending and descending
- * tracks. The map keeps its per-orbit ramps above.
+ * Fixed settlement ramp for the 3D timeline: one rainbow for every orbit so
+ * settlement colours stay comparable across tracks. VEL_AVG colouring keeps
+ * the per-orbit map ramp so it matches the map and legend.
  */
-export const POLAKY_VEL_AVG_CHART_COLORS = POLAKY_VEL_AVG_COLORS_DESCENDING;
+export const POLAKY_SETTLEMENT_COLORS = POLAKY_VEL_AVG_COLORS_DESCENDING;
 
 /**
  * Ordered ramp for one orbit (`'D'` inverts the ascending ramp).
