@@ -1,3 +1,9 @@
+## [1.20.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.19.0...v1.20.0) (2026-11-11)
+
+### Features
+
+* **polaky:** refresh Poláky/Hradec symbol and chart visuals ([4b75237](https://github.com/Gisat/app-gisat-deckglSandbox/commit/4b7523726038d18f27db1dd054a04f3bf0b514e8))
+
 ## [1.19.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.18.0...v1.19.0) (2026-11-10)
 
 ### Features
