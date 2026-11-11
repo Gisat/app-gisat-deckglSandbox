@@ -68,6 +68,9 @@ const RENDERER_COMPONENTS = {
  * @param {string[]} [props.colorPalette]  palette for non-velocity colour attributes (defaults to viridis)
  * @param {string[]} [props.velAvgPalette]  map-supplied continuous ramp for the `VEL_AVG` colour channel
  * @param {[number, number]} [props.velAvgDomain]  map-supplied `VEL_AVG` colour domain (defaults to the fixed ±1)
+ * @param {{ by?: 'velAvg'|'settlement', domain?: [number, number] }} [props.timelineColor]  colour timeline curves by `VEL_AVG` (default) or their final cumulative settlement
+ * @param {boolean} [props.symmetricTimelineZ]  pin the timeline Z domain symmetrically around 0
+ * @param {boolean} [props.timelineColorPicker]  embedded timeline only: show a dropdown to switch the timeline colour between settlement (default) and `VEL_AVG`
  * @param {boolean} [props.embedded]  compact card mode: deck.gl spheres, Custom preset, scatter only, no renderer/mode/marker/preset rows
  * @param {boolean} [props.showTimeline]  embedded only: offer a Timeline chart type (one time-series line per `d_*` point)
  * @param {'timeline'|'custom'} [props.defaultChartType]  initial chart type when `showTimeline` is on
@@ -91,6 +94,9 @@ export function FeatureSpaceChart({
   colorPalette,
   velAvgPalette,
   velAvgDomain = null,
+  timelineColor = null,
+  symmetricTimelineZ = false,
+  timelineColorPicker = false,
   embedded = false,
   showTimeline = false,
   defaultChartType = 'custom',
@@ -111,6 +117,10 @@ export function FeatureSpaceChart({
   );
 
   const [mode, setMode] = useState(showProfile ? 'profile' : 'scatter');
+  // Timeline colour attribute when the host enables the picker (settlement default).
+  const [timelineColorBy, setTimelineColorBy] = useState(
+    () => (timelineColor?.by === 'settlement' ? 'settlement' : 'velAvg'),
+  );
   const [profileView, setProfileView] = useState(PROFILE_VIEW_DEFAULT);
   const [basis, setBasis] = useState(PROFILE_DEFAULTS.basis);
   const [trendLines, setTrendLines] = useState(TREND_LINES_DEFAULT);
@@ -297,6 +307,14 @@ export function FeatureSpaceChart({
   // Plotly has no sphere marker, so its effective style is always billboards.
   const effectiveMarker = activeRenderer === 'plotly' ? 'billboard' : markerStyleForRenderer;
 
+  // The embedded picker can override the host's default timeline colour key.
+  const effectiveTimelineColor = useMemo(
+    () => (timelineColorPicker
+      ? { by: timelineColorBy, domain: timelineColor?.domain }
+      : timelineColor),
+    [timelineColorPicker, timelineColorBy, timelineColor],
+  );
+
   const rendererProps = {
     points,
     axes,
@@ -311,6 +329,10 @@ export function FeatureSpaceChart({
     velAvgPalette,
     // Map-supplied VEL_AVG domain for the profile/timeline curves.
     velAvgDomain,
+    // Optional timeline colour key (VEL_AVG by default, cumulative settlement opt-in).
+    timelineColor: effectiveTimelineColor,
+    // Optional symmetric timeline Z domain (settlement 0 centred).
+    symmetricTimelineZ,
     // The compact embedded card has less room, so give the Custom point cloud
     // a little more margin.
     zoomOutScatter: embedded,
@@ -517,6 +539,20 @@ export function FeatureSpaceChart({
           >
             Custom
           </button>
+          {timelineColorPicker && effectiveType === 'timeline' && (
+            <>
+              <span style={{ marginLeft: '8px', color: '#666', fontSize: '11px' }}>Color</span>
+              <select
+                aria-label="Timeline color attribute"
+                value={timelineColorBy}
+                onChange={(e) => setTimelineColorBy(e.target.value)}
+                style={selectStyle}
+              >
+                <option value="settlement">Settlement</option>
+                <option value="velAvg">VEL_AVG</option>
+              </select>
+            </>
+          )}
         </div>
       )}
 
@@ -804,7 +840,9 @@ export function FeatureSpaceChart({
             fontSize: '11px',
           }}
         >
-          {'Lines: one per point \u00b7 Markers: 5 trend steps \u00b7 Color: VEL_AVG \u00b7 Z: settlement [mm]'}
+          {effectiveTimelineColor?.by === 'settlement'
+            ? 'Lines: one per point \u00b7 Markers: 5 trend steps \u00b7 Color: cumulative settlement [mm]'
+            : 'Lines: one per point \u00b7 Markers: 5 trend steps \u00b7 Color: VEL_AVG'}
         </div>
       )}
 

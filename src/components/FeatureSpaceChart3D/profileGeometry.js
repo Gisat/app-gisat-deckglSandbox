@@ -501,11 +501,14 @@ function settlementPoints(samples, cube) {
  * @param {number} [cube] half-extent of the normalised cube
  * @param {string[]|null} [velAvgPalette]  map-supplied ramp for the curve colour
  * @param {[number, number]|null} [velAvgDomain]  map-supplied `VEL_AVG` colour domain
+ * @param {{ by?: 'velAvg'|'settlement', domain?: [number, number] }|null} [timelineColor]
+ *   colour key for the timeline curves; `settlement` uses the final cumulative
+ *   settlement over `domain`
  * @returns {Array<{ key:string, id:string|null, label:string, color:string,
  *   stdKey:null, banded:false, rows:Array<any>, velAvg:number|null,
  *   minD:number, maxD:number, tMin:number, tMax:number }>}
  */
-function timelineCurves(samples, cube, velAvgPalette = null, velAvgDomain = null) {
+function timelineCurves(samples, cube, velAvgPalette = null, velAvgDomain = null, timelineColor = null) {
   const groups = new Map();
   for (const s of samples) {
     const key = s.pointKey ?? (s.id == null ? '__unknown' : String(s.id));
@@ -513,9 +516,13 @@ function timelineCurves(samples, cube, velAvgPalette = null, velAvgDomain = null
     groups.get(key).samples.push(s);
   }
 
-  const velDomain = Array.isArray(velAvgDomain) && velAvgDomain.length === 2
-    ? velAvgDomain
-    : MAP_VEL_AVG_DOMAIN;
+  const colorBySettlement = timelineColor?.by === 'settlement';
+  const settlementDomain = Array.isArray(timelineColor?.domain) && timelineColor.domain.length === 2
+    ? timelineColor.domain
+    : null;
+  const velDomain = colorBySettlement
+    ? (settlementDomain ?? MAP_VEL_AVG_DOMAIN)
+    : (Array.isArray(velAvgDomain) && velAvgDomain.length === 2 ? velAvgDomain : MAP_VEL_AVG_DOMAIN);
   const velScale = buildColorScale('VEL_AVG', [...velDomain], undefined, velAvgPalette);
   const stepCount = TREND_TIMELINE.length;
   const DAY_MS = 24 * 60 * 60 * 1000;
@@ -625,11 +632,18 @@ function timelineCurves(samples, cube, velAvgPalette = null, velAvgDomain = null
   const count = prepared.length;
   return prepared.map((p, index) => {
     const x = bandY(index, count, cube);
+    // One colour per curve: either the point's VEL_AVG or its final cumulative
+    // settlement (the newest trend step, relative to the oldest available one).
+    const colorValue = colorBySettlement
+      ? (p.rows.length ? p.rows[p.rows.length - 1].z : null)
+      : p.velAvg;
     return {
       key: `point-${index}`,
       id: p.id,
       label: p.id == null ? `point ${index + 1}` : String(p.id),
-      color: p.velAvg == null ? PROFILE_COLOR : colorToHex(velScale, p.velAvg),
+      color: colorValue == null || !Number.isFinite(colorValue)
+        ? PROFILE_COLOR
+        : colorToHex(velScale, colorValue),
       stdKey: null,
       banded: false,
       rows: p.rows.map((r) => ({ ...r, x })),
@@ -704,7 +718,7 @@ function timelineBandTicks(curves) {
  *       stepKey:string|null, stepLabel:string|null, sample:any }> }>,
  * }}
  */
-export function buildProfileFrame(profile, cube = 1, velAvgPalette = null, velAvgDomain = null) {
+export function buildProfileFrame(profile, cube = 1, velAvgPalette = null, velAvgDomain = null, timelineColor = null, symmetricTimelineZ = false) {
   const view =
     profile?.view === 'timeline'
       ? 'timeline'
@@ -743,7 +757,7 @@ export function buildProfileFrame(profile, cube = 1, velAvgPalette = null, velAv
 
   const rawCurves =
     view === 'timeline'
-      ? timelineCurves(samples, cube, velAvgPalette, velAvgDomain)
+      ? timelineCurves(samples, cube, velAvgPalette, velAvgDomain, timelineColor)
       : view === 'aggregate'
         ? aggregateCurve(samples, aggValueKey, aggStep, aggInterpolate)
         : view === 'trend'
@@ -805,7 +819,12 @@ export function buildProfileFrame(profile, cube = 1, velAvgPalette = null, velAv
     xd = resolveDomain(xMin, xMax);
     yd = resolveDomain(yMin, yMax);
   }
-  const zd = resolveDomain(zMin, zMax);
+  // Timeline can pin its Z domain symmetrically so settlement 0 sits in the
+  // middle of the cube and negative/positive extremes keep the same scale.
+  const zHalf = Math.max(Math.abs(zMin), Math.abs(zMax));
+  const zd = view === 'timeline' && symmetricTimelineZ && Number.isFinite(zHalf) && zHalf > 0
+    ? [-zHalf, zHalf]
+    : resolveDomain(zMin, zMax);
 
   // Display tick domains (what the axes are labelled with): distance/attribute,
   // or real lon/lat in the Plan basis.

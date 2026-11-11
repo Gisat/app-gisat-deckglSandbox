@@ -133,6 +133,10 @@ const DESCENDING_VEL_AVG_SCALE = buildPolakyVelAvgScale('D');
 // |VEL_AVG| at/below which a point renders as a sphere instead of an arrow.
 const NEAR_ZERO_VEL_AVG = 0.5;
 
+// 3D timeline curves are coloured by the point's cumulative settlement (mm),
+// on the same chart ramp but a settlement-specific domain.
+const SETTLEMENT_COLOR = { by: 'settlement', domain: [-25, 25] };
+
 // Missing / non-finite VEL_AVG keeps the arrow behaviour.
 function isNearZeroVelAvg(feature) {
   const raw = feature?.properties?.VEL_AVG;
@@ -927,6 +931,9 @@ export default function PolakyHradecV2() {
                 colorPalette={BLUE_PALETTE}
                 velAvgPalette={POLAKY_VEL_AVG_CHART_COLORS}
                 velAvgDomain={POLAKY_VEL_AVG_DOMAIN}
+                timelineColor={SETTLEMENT_COLOR}
+                symmetricTimelineZ
+                timelineColorPicker
                 onPointHover={setHoveredPointId}
                 onPointClick={setSelectedId}
                 onClose={() => {

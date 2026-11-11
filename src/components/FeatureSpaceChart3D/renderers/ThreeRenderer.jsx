@@ -118,14 +118,16 @@ function buildRibbonGeometry(samples) {
  * @param {(id: string|null) => void} props.onHover
  * @param {string[]} [props.velAvgPalette]  map-supplied ramp for the profile curve colour
  * @param {[number, number]} [props.velAvgDomain]  map-supplied `VEL_AVG` colour domain
+ * @param {{ by?: 'velAvg'|'settlement', domain?: [number, number] }} [props.timelineColor]  timeline colour key
+ * @param {boolean} [props.symmetricTimelineZ]  pin the timeline Z domain symmetrically around 0
  */
-export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover, velAvgPalette = null, velAvgDomain = null }) {
+export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover, velAvgPalette = null, velAvgDomain = null, timelineColor = null, symmetricTimelineZ = false }) {
   const domains = useMemo(() => computeAxisDomains(points, axes), [points, axes]);
   const [hovered, setHovered] = useState(null);
 
   const frame = useMemo(
-    () => (profile ? buildProfileFrame(profile, CUBE, velAvgPalette, velAvgDomain) : null),
-    [profile, velAvgPalette, velAvgDomain],
+    () => (profile ? buildProfileFrame(profile, CUBE, velAvgPalette, velAvgDomain, timelineColor, symmetricTimelineZ) : null),
+    [profile, velAvgPalette, velAvgDomain, timelineColor, symmetricTimelineZ],
   );
 
   const scatterData = useMemo(
