@@ -100,6 +100,10 @@ const colorScale = buildPolakyVelAvgScale();
 // 3D timeline colour modes: cumulative settlement by default, VEL_AVG optional.
 const TIMELINE_COLOR = { by: 'settlement', domain: [-25, 25] };
 
+// The shared chart header renders `title` inside a 13px <strong>; wrapping the
+// text keeps the v1 headline at the same 11px/600 size as v2.
+const CHART_TITLE_STYLE = { fontSize: '11px', fontWeight: 600 };
+
 // |VEL_AVG| at/below which a point renders as a sphere instead of an arrow.
 const NEAR_ZERO_VEL_AVG = 0.5;
 
@@ -798,7 +802,11 @@ export default function PolakyHradec() {
                   setHoveredPointId(null);
                 }}
                 emptyHint="No InSAR points are linked to this pylon."
-                title={`Poláky · Pylon ${selectedPylon?.properties?.id ?? selectedPylonKey} · 3D feature space`}
+                title={(
+                  <span style={CHART_TITLE_STYLE}>
+                    {`Pylon ${selectedPylon?.properties?.id ?? selectedPylonKey} · 95D`}
+                  </span>
+                )}
               />
             </div>
           )}
