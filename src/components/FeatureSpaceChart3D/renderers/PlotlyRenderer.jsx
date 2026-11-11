@@ -39,11 +39,12 @@ const Plot = createPlotlyComponent(Plotly);
  * @param {{view:'attributes'|'trend', yKey:string, zKey:string, trendLines:string, samples:Array<any>}} [props.profile]
  * @param {(id: string|null) => void} props.onHover
  * @param {string[]} [props.velAvgPalette]  map-supplied ramp for the profile curve colour
+ * @param {[number, number]} [props.velAvgDomain]  map-supplied `VEL_AVG` colour domain
  */
-export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDomain, sizeRange, profile, onHover, velAvgPalette = null }) {
+export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDomain, sizeRange, profile, onHover, velAvgPalette = null, velAvgDomain = null }) {
   const frame = useMemo(
-    () => (profile ? buildProfileFrame(profile, 1, velAvgPalette) : null),
-    [profile, velAvgPalette],
+    () => (profile ? buildProfileFrame(profile, 1, velAvgPalette, velAvgDomain) : null),
+    [profile, velAvgPalette, velAvgDomain],
   );
 
   const traces = useMemo(() => {

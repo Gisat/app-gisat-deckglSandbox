@@ -67,6 +67,7 @@ const RENDERER_COMPONENTS = {
  * @param {string[]} [props.attributeKeys]  override the scatter picker attributes (e.g. the loaded GeoJSON's numeric properties)
  * @param {string[]} [props.colorPalette]  palette for non-velocity colour attributes (defaults to viridis)
  * @param {string[]} [props.velAvgPalette]  map-supplied continuous ramp for the `VEL_AVG` colour channel
+ * @param {[number, number]} [props.velAvgDomain]  map-supplied `VEL_AVG` colour domain (defaults to the fixed ±1)
  * @param {boolean} [props.embedded]  compact card mode: deck.gl spheres, Custom preset, scatter only, no renderer/mode/marker/preset rows
  * @param {boolean} [props.showTimeline]  embedded only: offer a Timeline chart type (one time-series line per `d_*` point)
  * @param {'timeline'|'custom'} [props.defaultChartType]  initial chart type when `showTimeline` is on
@@ -89,6 +90,7 @@ export function FeatureSpaceChart({
   attributeKeys = null,
   colorPalette,
   velAvgPalette,
+  velAvgDomain = null,
   embedded = false,
   showTimeline = false,
   defaultChartType = 'custom',
@@ -142,7 +144,12 @@ export function FeatureSpaceChart({
     [featureCollection, activeFields, effectiveAttributeKeys],
   );
 
-  const colorDomain = useMemo(() => getColorDomain(axes.color, points), [axes.color, points]);
+  const colorDomain = useMemo(
+    () => (axes.color === 'VEL_AVG' && Array.isArray(velAvgDomain) && velAvgDomain.length === 2
+      ? [...velAvgDomain]
+      : getColorDomain(axes.color, points)),
+    [axes.color, points, velAvgDomain],
+  );
   const colorScale = useMemo(
     () => buildColorScale(axes.color, colorDomain, colorPalette, velAvgPalette),
     [axes.color, colorDomain, colorPalette, velAvgPalette],
@@ -302,6 +309,8 @@ export function FeatureSpaceChart({
     onPointClick,
     // Map-supplied VEL_AVG ramp for the profile/timeline curves.
     velAvgPalette,
+    // Map-supplied VEL_AVG domain for the profile/timeline curves.
+    velAvgDomain,
     // The compact embedded card has less room, so give the Custom point cloud
     // a little more margin.
     zoomOutScatter: embedded,

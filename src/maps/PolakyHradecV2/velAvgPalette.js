@@ -7,10 +7,30 @@
  */
 
 import chroma from 'chroma-js';
-import { MAP_VEL_AVG_DOMAIN } from '../../components/FeatureSpaceChart3D/colorScale';
 
-/** Ordered ramp stops, red (-1) → orange → yellow → green → cyan → blue (+1). */
-export const POLAKY_VEL_AVG_COLORS = [
+/**
+ * Ascending tracks: ordered ramp stops, blue (-2.5) → cyan → green → yellow →
+ * orange → red (+2.5).
+ */
+export const POLAKY_VEL_AVG_COLORS_ASCENDING = [
+  '#003E8A',
+  '#1960AA',
+  '#2D84C8',
+  '#44ABDD',
+  '#58D3F0',
+  '#70E000',
+  '#FFFF00',
+  '#FBC423',
+  '#F18831',
+  '#D3512C',
+  '#B1001D',
+];
+
+/**
+ * Descending tracks: the same ramp inverted, red (-2.5) → orange → yellow →
+ * green → cyan → blue (+2.5).
+ */
+export const POLAKY_VEL_AVG_COLORS_DESCENDING = [
   '#B1001D',
   '#D3512C',
   '#F18831',
@@ -25,12 +45,32 @@ export const POLAKY_VEL_AVG_COLORS = [
 ];
 
 /** Colour domain shared with the chart so the map and chart cannot diverge. */
-export const POLAKY_VEL_AVG_DOMAIN = MAP_VEL_AVG_DOMAIN;
+export const POLAKY_VEL_AVG_DOMAIN = [-2.5, 2.5];
 
 /**
- * Builds the continuous Poláky `VEL_AVG` scale over ±1 mm/yr.
+ * Chart palette: one rainbow ramp for every orbit, negative red → positive blue,
+ * so the 3D chart keeps the same colour reading on ascending and descending
+ * tracks. The map keeps its per-orbit ramps above.
+ */
+export const POLAKY_VEL_AVG_CHART_COLORS = POLAKY_VEL_AVG_COLORS_DESCENDING;
+
+/**
+ * Ordered ramp for one orbit (`'D'` inverts the ascending ramp).
  *
+ * @param {'A'|'D'|null|undefined} [orbit]
+ * @returns {string[]} Chroma palette stops.
+ */
+export const getPolakyVelAvgColors = (orbit) =>
+  (orbit === 'D'
+    ? POLAKY_VEL_AVG_COLORS_DESCENDING
+    : POLAKY_VEL_AVG_COLORS_ASCENDING);
+
+/**
+ * Builds the continuous Poláky `VEL_AVG` scale over the map's ±2.5 mm/yr domain
+ * for one orbit.
+ *
+ * @param {'A'|'D'|null|undefined} [orbit] Track orbit; `'D'` uses the inverted ramp.
  * @returns {import('chroma-js').Scale} Chroma scale for `VEL_AVG`.
  */
-export const buildPolakyVelAvgScale = () =>
-  chroma.scale(POLAKY_VEL_AVG_COLORS).domain([...POLAKY_VEL_AVG_DOMAIN]);
+export const buildPolakyVelAvgScale = (orbit = 'A') =>
+  chroma.scale(getPolakyVelAvgColors(orbit)).domain([...POLAKY_VEL_AVG_DOMAIN]);

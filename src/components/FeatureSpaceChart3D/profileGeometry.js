@@ -500,11 +500,12 @@ function settlementPoints(samples, cube) {
  * @param {Array<any>} samples  `extractTimelineSamples` output
  * @param {number} [cube] half-extent of the normalised cube
  * @param {string[]|null} [velAvgPalette]  map-supplied ramp for the curve colour
+ * @param {[number, number]|null} [velAvgDomain]  map-supplied `VEL_AVG` colour domain
  * @returns {Array<{ key:string, id:string|null, label:string, color:string,
  *   stdKey:null, banded:false, rows:Array<any>, velAvg:number|null,
  *   minD:number, maxD:number, tMin:number, tMax:number }>}
  */
-function timelineCurves(samples, cube, velAvgPalette = null) {
+function timelineCurves(samples, cube, velAvgPalette = null, velAvgDomain = null) {
   const groups = new Map();
   for (const s of samples) {
     const key = s.pointKey ?? (s.id == null ? '__unknown' : String(s.id));
@@ -512,7 +513,10 @@ function timelineCurves(samples, cube, velAvgPalette = null) {
     groups.get(key).samples.push(s);
   }
 
-  const velScale = buildColorScale('VEL_AVG', [...MAP_VEL_AVG_DOMAIN], undefined, velAvgPalette);
+  const velDomain = Array.isArray(velAvgDomain) && velAvgDomain.length === 2
+    ? velAvgDomain
+    : MAP_VEL_AVG_DOMAIN;
+  const velScale = buildColorScale('VEL_AVG', [...velDomain], undefined, velAvgPalette);
   const stepCount = TREND_TIMELINE.length;
   const DAY_MS = 24 * 60 * 60 * 1000;
   // Each step reads a smoothed ~90-day window around its target epoch instead
@@ -700,7 +704,7 @@ function timelineBandTicks(curves) {
  *       stepKey:string|null, stepLabel:string|null, sample:any }> }>,
  * }}
  */
-export function buildProfileFrame(profile, cube = 1, velAvgPalette = null) {
+export function buildProfileFrame(profile, cube = 1, velAvgPalette = null, velAvgDomain = null) {
   const view =
     profile?.view === 'timeline'
       ? 'timeline'
@@ -739,7 +743,7 @@ export function buildProfileFrame(profile, cube = 1, velAvgPalette = null) {
 
   const rawCurves =
     view === 'timeline'
-      ? timelineCurves(samples, cube, velAvgPalette)
+      ? timelineCurves(samples, cube, velAvgPalette, velAvgDomain)
       : view === 'aggregate'
         ? aggregateCurve(samples, aggValueKey, aggStep, aggInterpolate)
         : view === 'trend'

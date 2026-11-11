@@ -16,7 +16,11 @@ import {
   FeatureSpaceChart,
   isTimelineKey,
 } from '../../components/FeatureSpaceChart3D';
-import { POLAKY_VEL_AVG_COLORS, buildPolakyVelAvgScale } from './velAvgPalette';
+import {
+  POLAKY_VEL_AVG_COLORS,
+  POLAKY_VEL_AVG_DOMAIN,
+  buildPolakyVelAvgScale,
+} from './velAvgPalette';
 import TimelineChart from './TimelineChart';
 
 const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/polaky_95D_PS.geojson';
@@ -94,7 +98,7 @@ const DEFAULT_POINT_ID = 59054;
 const colorScale = buildPolakyVelAvgScale();
 
 // |VEL_AVG| at/below which a point renders as a sphere instead of an arrow.
-const NEAR_ZERO_VEL_AVG = 0.1;
+const NEAR_ZERO_VEL_AVG = 0.5;
 
 // Missing / non-finite VEL_AVG keeps the arrow behaviour.
 function isNearZeroVelAvg(feature) {
@@ -194,10 +198,11 @@ function getPylonOrientation(feature) {
 }
 
 function getRgba(feature) {
-  // chroma 2.x scales extrapolate outside the domain; clamp so the few stations
-  // past ±1 stay at the ramp endpoints instead of producing bad channels.
+  // chroma 2.x scales extrapolate outside the domain; clamp so stations past
+  // the ramp endpoints stay on them instead of producing bad channels.
   const value = Number(feature?.properties?.VEL_AVG ?? 0);
-  const clamped = Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : 0;
+  const [min, max] = POLAKY_VEL_AVG_DOMAIN;
+  const clamped = Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : 0;
   const [r, g, b] = colorScale(clamped).rgb();
   return [r, g, b, 255];
 }
@@ -570,7 +575,7 @@ export default function PolakyHradec() {
       updateTriggers: colorUpdateTriggers,
     });
 
-    // |VEL_AVG| <= 0.1 renders as a sphere instead; same anchor and colour
+    // |VEL_AVG| <= 0.5 renders as a sphere instead; same anchor and colour
     // accessor, and the builder lifts it by its own radius.
     const sphereLayer = build3dLosSphereLayer({
       id: `${POINT_LAYER_PREFIX}-spheres`,
@@ -736,11 +741,11 @@ export default function PolakyHradec() {
         <div style={{ marginBottom: '4px', fontWeight: 600 }}>VEL_AVG (mm/yr)</div>
         <div style={{ width: '100%', height: '10px', borderRadius: '2px', background: legendGradient }} />
         <div style={{ display: 'flex', marginTop: '2px', color: '#555' }}>
-          <span style={{ flex: 1, textAlign: 'left' }}>-1</span>
+          <span style={{ flex: 1, textAlign: 'left' }}>{POLAKY_VEL_AVG_DOMAIN[0]}</span>
           <span style={{ flex: 1, textAlign: 'center' }}>0</span>
-          <span style={{ flex: 1, textAlign: 'right' }}>+1</span>
+          <span style={{ flex: 1, textAlign: 'right' }}>+{POLAKY_VEL_AVG_DOMAIN[1]}</span>
         </div>
-        <div style={{ marginTop: '4px', color: '#555' }}>|VEL_AVG| ≤ 0.1 = sphere</div>
+        <div style={{ marginTop: '4px', color: '#555' }}>|VEL_AVG| ≤ 0.5 = sphere</div>
       </div>
 
       {(selectedPylonKey != null || selectedFeature) && (
@@ -779,6 +784,7 @@ export default function PolakyHradec() {
                 attributeKeys={chartAttributeKeys}
                 colorPalette={BLUE_PALETTE}
                 velAvgPalette={POLAKY_VEL_AVG_COLORS}
+                velAvgDomain={POLAKY_VEL_AVG_DOMAIN}
                 onPointHover={setHoveredPointId}
                 onPointClick={setSelectedId}
                 onClose={() => {

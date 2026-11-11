@@ -21,7 +21,11 @@ import {
   FeatureSpaceChart,
   isTimelineKey,
 } from '../../components/FeatureSpaceChart3D';
-import { POLAKY_VEL_AVG_COLORS, buildPolakyVelAvgScale } from './velAvgPalette';
+import {
+  POLAKY_VEL_AVG_CHART_COLORS,
+  buildPolakyVelAvgScale,
+  POLAKY_VEL_AVG_DOMAIN,
+} from './velAvgPalette';
 import TimelineChart from './TimelineChart';
 
 // Measurement tracks available on this map. The GeoJSON carries no orbit/track
@@ -120,11 +124,14 @@ const POINT_LAYER_PREFIX = 'vel-avg-arrows';
 const DEFAULT_PYLON_ID = 10;
 const DEFAULT_POINT_ID = 59054;
 
-// The chart's VEL_AVG ramp, shared with the map legend and the 3D chart.
-const colorScale = buildPolakyVelAvgScale();
+// The chart's VEL_AVG ramps, shared with the map legend and the 3D chart.
+// Descending tracks use the inverted ramp so the colour reading does not flip
+// between passes over the same pylon.
+const ASCENDING_VEL_AVG_SCALE = buildPolakyVelAvgScale('A');
+const DESCENDING_VEL_AVG_SCALE = buildPolakyVelAvgScale('D');
 
 // |VEL_AVG| at/below which a point renders as a sphere instead of an arrow.
-const NEAR_ZERO_VEL_AVG = 0.1;
+const NEAR_ZERO_VEL_AVG = 0.5;
 
 // Missing / non-finite VEL_AVG keeps the arrow behaviour.
 function isNearZeroVelAvg(feature) {
@@ -269,12 +276,13 @@ function getPylonOrientation(feature) {
   return [0, 90 - getPylonAzimuth(feature) + PYLON_OBJ_YAW_OFFSET, 0];
 }
 
-function getRgba(feature) {
-  // chroma 2.x scales extrapolate outside the domain; clamp so the few stations
-  // past ±1 stay at the ramp endpoints instead of producing bad channels.
+function getRgba(feature, scale) {
+  // chroma 2.x scales extrapolate outside the domain; clamp so stations past
+  // the ramp endpoints stay on them instead of producing bad channels.
   const value = Number(feature?.properties?.VEL_AVG ?? 0);
-  const clamped = Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : 0;
-  const [r, g, b] = colorScale(clamped).rgb();
+  const [min, max] = POLAKY_VEL_AVG_DOMAIN;
+  const clamped = Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : 0;
+  const [r, g, b] = scale(clamped).rgb();
   return [r, g, b, 255];
 }
 
@@ -320,6 +328,10 @@ export default function PolakyHradecV2() {
   const isLoading = !trackState
     || (trackState.status !== 'ready' && trackState.status !== 'error');
   const error = trackState?.status === 'error' ? trackState.error : null;
+  // Active-track ramp: descending tracks invert the ascending one.
+  const colorScale = activeTrack.orbit === 'D'
+    ? DESCENDING_VEL_AVG_SCALE
+    : ASCENDING_VEL_AVG_SCALE;
 
   // Fetch a track once and cache it; later switches are instant. The cache is
   // cleared on failure so the selector's retry starts a fresh request.
@@ -653,7 +665,7 @@ export default function PolakyHradecV2() {
       const isHighlighted = [selectedId, hoveredSphereId].some(
         other => other != null && String(id) === String(other),
       );
-      return isHighlighted ? [...SELECTION_COLOR, 255] : getRgba(d);
+      return isHighlighted ? [...SELECTION_COLOR, 255] : getRgba(d, colorScale);
     };
     const colorUpdateTriggers = {
       getColor: [selectedId, hoveredSphereId, hoveredPointId],
@@ -683,7 +695,7 @@ export default function PolakyHradecV2() {
       updateTriggers: colorUpdateTriggers,
     });
 
-    // |VEL_AVG| <= 0.1 renders as a sphere instead; same anchor and colour
+    // |VEL_AVG| <= 0.5 renders as a sphere instead; same anchor and colour
     // accessor, and the builder lifts it by its own radius.
     const sphereLayer = build3dLosSphereLayer({
       id: `${POINT_LAYER_PREFIX}-spheres`,
@@ -717,6 +729,7 @@ export default function PolakyHradecV2() {
     pylonHitData,
     zoom,
     activeTrack.orbit,
+    colorScale,
     selectedId,
     hoveredPointId,
     hoveredSphereId,
@@ -870,11 +883,11 @@ export default function PolakyHradecV2() {
         <div style={OVERLAY_TITLE_STYLE}>VEL_AVG (mm/yr)</div>
         <div style={{ width: '100%', height: '10px', borderRadius: '2px', background: legendGradient }} />
         <div style={{ display: 'flex', marginTop: '2px', color: '#555' }}>
-          <span style={{ flex: 1, textAlign: 'left' }}>-1</span>
+          <span style={{ flex: 1, textAlign: 'left' }}>{POLAKY_VEL_AVG_DOMAIN[0]}</span>
           <span style={{ flex: 1, textAlign: 'center' }}>0</span>
-          <span style={{ flex: 1, textAlign: 'right' }}>+1</span>
+          <span style={{ flex: 1, textAlign: 'right' }}>+{POLAKY_VEL_AVG_DOMAIN[1]}</span>
         </div>
-        <div style={{ marginTop: '4px', color: '#555' }}>|VEL_AVG| ≤ 0.1 = sphere</div>
+        <div style={{ marginTop: '4px', color: '#555' }}>|VEL_AVG| ≤ 0.5 = sphere</div>
       </div>
 
       {(selectedPylonKey != null || selectedFeature) && (
@@ -912,7 +925,8 @@ export default function PolakyHradecV2() {
                 defaultCustomAxes={{ x: 'lon', y: 'lat', z: 'H_REF', color: 'VEL_AVG', size: 'COH' }}
                 attributeKeys={chartAttributeKeys}
                 colorPalette={BLUE_PALETTE}
-                velAvgPalette={POLAKY_VEL_AVG_COLORS}
+                velAvgPalette={POLAKY_VEL_AVG_CHART_COLORS}
+                velAvgDomain={POLAKY_VEL_AVG_DOMAIN}
                 onPointHover={setHoveredPointId}
                 onPointClick={setSelectedId}
                 onClose={() => {
