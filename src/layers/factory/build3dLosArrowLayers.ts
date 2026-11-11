@@ -18,14 +18,22 @@ import {
   computeWingTipTranslation,
 } from '../velocity/velocity3dArrow';
 import { compute3dVelocitySizeZoomScale } from '../velocity/velocityZoom';
+import arrowTailUnitRoundedUrl from '../velocity/meshes/arrow_tail_unit_rounded.obj?url&no-inline';
+import arrowTailRoundEndRoundedUrl from '../velocity/meshes/arrow_tail_round_end_rounded.obj?url&no-inline';
 
 /**
- * Local, Vite-base-safe OBJ URLs for the 3D LOS arrow composite. The rod mesh is
- * used for the straight body and both wing rods; the round-end mesh is used for
- * the rear cap, the two wing-tip caps and the arrow-tip cap.
+ * OBJ meshes for the 3D LOS arrow composite. The rod mesh is used for the
+ * straight body and both wing rods; the round-end mesh is used for the rear
+ * cap, the two wing-tip caps and the arrow-tip cap.
+ *
+ * They are imported as Vite assets (`?url&no-inline`) so the build emits
+ * content-hashed files under `assets/`. Referencing them from `public/` yielded
+ * stable, unhashed URLs that a deploy or an SPA fallback could answer with
+ * `index.html`, which the OBJ parser then rejected with
+ * `Unexpected line: "<!DOCTYPE html>"`.
  */
-const ARROW_TAIL_UNIT_ROUNDED = `${import.meta.env.BASE_URL}meshes/arrow_tail_unit_rounded.obj`;
-const ARROW_TAIL_ROUND_END_ROUNDED = `${import.meta.env.BASE_URL}meshes/arrow_tail_round_end_rounded.obj`;
+const ARROW_TAIL_UNIT_ROUNDED = arrowTailUnitRoundedUrl;
+const ARROW_TAIL_ROUND_END_ROUNDED = arrowTailRoundEndRoundedUrl;
 
 const VEL_AVG_KEYS = ['VEL_AVG', 'vel_avg'] as const;
 const VEL_REL_KEYS = ['VEL_REL', 'vel_rel'] as const;
