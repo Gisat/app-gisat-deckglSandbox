@@ -66,6 +66,7 @@ const RENDERER_COMPONENTS = {
  * @param {import('./attributes').PresetAxes} [props.defaultCustomAxes]  initial Custom axes
  * @param {string[]} [props.attributeKeys]  override the scatter picker attributes (e.g. the loaded GeoJSON's numeric properties)
  * @param {string[]} [props.colorPalette]  palette for non-velocity colour attributes (defaults to viridis)
+ * @param {string[]} [props.velAvgPalette]  map-supplied continuous ramp for the `VEL_AVG` colour channel
  * @param {boolean} [props.embedded]  compact card mode: deck.gl spheres, Custom preset, scatter only, no renderer/mode/marker/preset rows
  * @param {boolean} [props.showTimeline]  embedded only: offer a Timeline chart type (one time-series line per `d_*` point)
  * @param {'timeline'|'custom'} [props.defaultChartType]  initial chart type when `showTimeline` is on
@@ -87,6 +88,7 @@ export function FeatureSpaceChart({
   defaultCustomAxes = DEFAULT_CUSTOM_AXES,
   attributeKeys = null,
   colorPalette,
+  velAvgPalette,
   embedded = false,
   showTimeline = false,
   defaultChartType = 'custom',
@@ -142,8 +144,8 @@ export function FeatureSpaceChart({
 
   const colorDomain = useMemo(() => getColorDomain(axes.color, points), [axes.color, points]);
   const colorScale = useMemo(
-    () => buildColorScale(axes.color, colorDomain, colorPalette),
-    [axes.color, colorDomain, colorPalette],
+    () => buildColorScale(axes.color, colorDomain, colorPalette, velAvgPalette),
+    [axes.color, colorDomain, colorPalette, velAvgPalette],
   );
   const sizeDomain = useMemo(() => getSizeDomain(axes.size, points), [axes.size, points]);
 
@@ -298,6 +300,8 @@ export function FeatureSpaceChart({
     markerStyle: markerStyleForRenderer,
     onHover: handleHover,
     onPointClick,
+    // Map-supplied VEL_AVG ramp for the profile/timeline curves.
+    velAvgPalette,
     // The compact embedded card has less room, so give the Custom point cloud
     // a little more margin.
     zoomOutScatter: embedded,
@@ -626,7 +630,7 @@ export function FeatureSpaceChart({
           )}
 
           {profileView !== 'aggregate' && sizeByOffset && (
-            <span style={{ fontSize: '10px', color: '#999' }}>
+            <span style={{ fontSize: '11px', color: '#999' }}>
               {'Marker/sphere size shows the perpendicular offset from the line: larger marker = further from the line (normalised by the selection buffer).'}
             </span>
           )}
@@ -671,7 +675,7 @@ export function FeatureSpaceChart({
                 />
                 <span>Interpolate</span>
               </label>
-              <span style={{ fontSize: '10px', color: '#666' }}>
+              <span style={{ fontSize: '11px', color: '#666' }}>
                 {`${aggregateBins} bins${aggStepTouched ? '' : ' (auto)'}`}
               </span>
             </div>
@@ -679,7 +683,7 @@ export function FeatureSpaceChart({
 
           {profileView === 'trend' && trendLines === 'points' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '10px', color: '#666' }}>settlement</span>
+              <span style={{ fontSize: '11px', color: '#666' }}>settlement</span>
               <span
                 style={{
                   flex: 1,
@@ -689,13 +693,13 @@ export function FeatureSpaceChart({
                   background: `linear-gradient(to right, ${DISPLACEMENT_RAMP.join(', ')})`,
                 }}
               />
-              <span style={{ fontSize: '10px', color: '#666' }}>
+              <span style={{ fontSize: '11px', color: '#666' }}>
                 {`${formatValue('TD_730', DISPLACEMENT_DOMAIN[0])} \u2013 ${formatValue('TD_730', DISPLACEMENT_DOMAIN[1])}`}
               </span>
             </div>
           )}
 
-          <span style={{ fontSize: '10px', color: '#999' }}>
+          <span style={{ fontSize: '11px', color: '#999' }}>
             {profileView === 'aggregate'
               ? 'Each bin shows the median value of the samples whose along-line distance falls in it; the line connects the bins (no gaps) and the shaded ribbon is the interquartile range (25\u201375 pct). Interpolated bins are flagged in the tooltip.'
               : profileView === 'trend'
@@ -717,7 +721,7 @@ export function FeatureSpaceChart({
                 }`}
           </span>
           {profileView === 'trend' && trendLines === 'windows' && (
-            <span style={{ fontSize: '10px', color: '#999' }}>
+            <span style={{ fontSize: '11px', color: '#999' }}>
               {'The shaded band is the \u00b11\u03c3 uncertainty of each window\u2019s trend displacement (its paired STD_*); it widens for longer windows because a longer accumulation carries more error.'}
             </span>
           )}
@@ -743,7 +747,7 @@ export function FeatureSpaceChart({
             ['size', scatterKeys],
           ].map(([slot, keys]) => (
             <label key={slot} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <span style={{ fontSize: '10px', color: '#666', textTransform: 'uppercase' }}>{slot}</span>
+              <span style={{ fontSize: '11px', color: '#666', textTransform: 'uppercase' }}>{slot}</span>
               <select
                 value={customAxes[slot]}
                 onChange={(e) => setAxis(slot, e.target.value)}
@@ -788,7 +792,7 @@ export function FeatureSpaceChart({
             padding: '6px 12px',
             borderTop: '1px solid #eee',
             color: '#888',
-            fontSize: '10px',
+            fontSize: '11px',
           }}
         >
           {'Lines: one per point \u00b7 Markers: 5 trend steps \u00b7 Color: VEL_AVG \u00b7 Z: settlement [mm]'}
@@ -801,7 +805,7 @@ export function FeatureSpaceChart({
             padding: '6px 12px',
             borderTop: '1px solid #eee',
             color: '#888',
-            fontSize: '10px',
+            fontSize: '11px',
             display: 'flex',
             justifyContent: 'space-between',
             gap: '8px',
@@ -935,7 +939,7 @@ const axisPickerStyle = {
 };
 
 const axisPickerLabel = {
-  fontSize: '10px',
+  fontSize: '11px',
   color: '#666',
   textTransform: 'uppercase',
 };

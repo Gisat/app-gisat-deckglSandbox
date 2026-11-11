@@ -15,6 +15,10 @@ function formatNumber(value, digits) {
   return Number.isFinite(num) ? num.toFixed(digits) : '–';
 }
 
+// The Poláky stack is a single 95D track; the GeoJSON carries no orbit/track
+// property, so the label is constant for every point.
+const POINT_TRACK = '95D';
+
 /**
  * Displacement timeline card for a single Poláky point.
  *
@@ -63,7 +67,7 @@ export default function TimelineChart({ feature, onClose }) {
         VEL_AVG <b>{formatNumber(props.VEL_AVG, 2)}</b> mm/yr
       </div>
       <div style={{ fontSize: '11px', color: '#555' }}>
-        H_dem <b>{formatNumber(props.H_dem, 1)}</b> m
+        Track: <b>{POINT_TRACK}</b>
       </div>
       <button
         type="button"
@@ -136,12 +140,14 @@ export default function TimelineChart({ feature, onClose }) {
             tickSize: 4,
             tickPadding: 6,
           }}
-          colors={['#1f77b4']}
-          lineWidth={1.25}
-          pointSize={2.5}
-          pointColor={{ theme: 'background' }}
-          pointBorderWidth={1.5}
-          pointBorderColor={{ from: 'serieColor' }}
+          colors={['#228BE6']}
+          // nivo 0.99 has no `enableLine`; omitting the `lines` layer removes the
+          // connecting line while keeping the per-sample dots, mesh and crosshair.
+          layers={['grid', 'markers', 'axes', 'areas', 'crosshair', 'points', 'slices', 'mesh', 'legends']}
+          pointSize={3.5}
+          enablePoints={true}
+          pointColor="#228BE6"
+          pointBorderWidth={0}
           enableArea={false}
           enableGridX={false}
           useMesh={true}

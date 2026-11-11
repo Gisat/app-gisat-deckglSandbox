@@ -5,13 +5,15 @@
  *
  * The shared meter functions (`computeArrowTargetMeters`,
  * `computeStemThicknessMeters`, `computeArrowHeading`, `coalesce`, `clamp`) live in
- * `./velocitySymbols` and are reused here; this module adds the 3D-only constants
- * and functions. All functions are pure and side-effect free.
+ * `./velocitySymbols` and are re-exported here; this module adds the 3D-only
+ * constants and functions. All functions are pure and side-effect free.
  *
  * Rendering values are driven by feature attributes:
  * - `VEL_AVG` / `vel_avg` — selects the fixed arrow heading by its sign.
- * - `VEL_REL` / `vel_rel` — drives the **tail (body) length**.
- * - `REL_LEN` / `rel_len` — drives the **pen width** (stroke thickness).
+ * - `VEL_REL` / `vel_rel` — no longer drives the tail length; every arrow uses
+ *   the same fixed length (see `ARROW_FIXED_TAIL_TARGET_METERS`).
+ * - `REL_LEN` / `rel_len` — no longer drives thickness; every arrow uses the
+ *   same fixed pen width (see `ARROW_PEN_METERS`).
  * - `orbit` — `'A'` (ascending) or `'D'` (descending); selects the heading pair.
  *
  * The arrow is a composite of round rods and round end caps, all sharing one pen
@@ -34,15 +36,15 @@ import {
   computeStemThicknessMeters,
 } from './velocitySymbols';
 
-/** Pen-width scale applied to the raw stem-thickness band (1–5 m → 0.5–2.5 m). */
-export const ARROW_PEN_SCALE = 0.5;
+/** Uniform 3D arrow pen width in map meters, shared by every arrow. */
+export const ARROW_PEN_METERS = 0.6;
 
 /**
- * Slight uniform scale applied to the map arrows only (stem length, pen width and
- * fixed head), on top of the data-driven bands, so the arrows read a touch
- * larger.
+ * Uniform scale applied to the map arrows only (stem length, pen width and fixed
+ * head). `1` renders at the base meter bands; lower it to shrink the whole
+ * arrow without touching the data-driven constants.
  */
-export const ARROW_MAP_SIZE_SCALE = 1.25;
+export const ARROW_MAP_SIZE_SCALE = 1;
 
 /** Reference pen width (map meters) the fixed head geometry is sized from. */
 export const ARROW_HEAD_PEN_METERS = 1.5;
@@ -67,27 +69,32 @@ export const ARROW_HEAD_WING_ROD_LENGTH_METERS = Math.hypot(
 );
 
 /**
- * Fixed bare-stem reserve (map meters) added to the `VEL_REL` stem so the tail
- * length depends only on displacement: `1.5 × 1.5 + 3.36` (= 5.61 m).
+ * Fixed bare-stem reserve (map meters) added to the fixed tail target:
+ * `1.5 × 1.5 + 3.36` (= 5.61 m).
  */
 export const ARROW_TAIL_RESERVE_METERS = 1.5 * ARROW_HEAD_PEN_METERS + ARROW_HEAD_SIZE_METERS;
 
 /**
- * Computes the arrow pen width in map meters from the reliability length rate.
+ * Fixed tail (body) length driver in map meters. Replaces the `VEL_REL`-driven
+ * band so every arrow renders at the same length, regardless of the feature's
+ * displacement.
+ */
+export const ARROW_FIXED_TAIL_TARGET_METERS = 4;
+
+/**
+ * Returns the uniform 3D arrow pen width in map meters.
  *
- * `computeStemThicknessMeters(relLen) × ARROW_PEN_SCALE` — 0.5 m at `REL_LEN = 0.4`
- * up to 2.5 m at `REL_LEN = 1`.
+ * Every arrow uses `ARROW_PEN_METERS`; `REL_LEN` no longer drives thickness.
  *
- * @param relLen - `REL_LEN` attribute value, or null when missing.
+ * @param _relLen - Unused; kept for call-site compatibility.
  * @returns Pen (stroke) width in map meters.
  */
-export const computePenWidthMeters = (relLen: number | null): number =>
-  computeStemThicknessMeters(relLen) * ARROW_PEN_SCALE;
+export const computePenWidthMeters = (_relLen: number | null): number => ARROW_PEN_METERS;
 
 /**
  * Model-unit scale factor mapping one model unit to the pen width in map meters.
  *
- * @param relLen - `REL_LEN` attribute value, or null when missing.
+ * @param relLen - Unused; the pen width is fixed for every arrow.
  * @returns Pen width as a model-unit scale factor.
  */
 export const computePenScale = (relLen: number | null): number =>
@@ -96,24 +103,25 @@ export const computePenScale = (relLen: number | null): number =>
 /**
  * Computes the visible 3D tail length (anchor → tip) in map meters.
  *
- * The tail is the `VEL_REL` displacement stem plus a fixed reserve, so it depends
- * only on displacement, not on the pen.
+ * Every arrow uses the same fixed length: `ARROW_FIXED_TAIL_TARGET_METERS` plus
+ * the fixed head reserve. It depends on neither the feature's displacement nor
+ * its pen.
  *
- * @param velRel - `VEL_REL` attribute value driving the stem length, or null.
+ * @param _velRel - Unused; kept for call-site compatibility.
  * @param _relLen - Unused; kept for call-site compatibility.
  * @returns Tail length in map meters.
  */
 export const computeEffectiveTailMeters = (
-  velRel: number | null,
+  _velRel: number | null,
   _relLen: number | null,
-): number => computeArrowTargetMeters(velRel) + ARROW_TAIL_RESERVE_METERS;
+): number => ARROW_FIXED_TAIL_TARGET_METERS + ARROW_TAIL_RESERVE_METERS;
 
 /**
  * Computes the straight-body length in map meters, from the rear cap's flat face
  * to the arrow tip: `max(0, tail − penWidth / 2)`.
  *
- * @param velRel - `VEL_REL` attribute value driving the stem length, or null.
- * @param relLen - `REL_LEN` attribute value driving the pen width, or null.
+ * @param velRel - Unused; the tail length is fixed for every arrow.
+ * @param relLen - Unused; the pen width is fixed for every arrow.
  * @returns Straight-body length in map meters.
  */
 export const computeBodyLengthMeters = (velRel: number | null, relLen: number | null): number =>
@@ -123,7 +131,7 @@ export const computeBodyLengthMeters = (velRel: number | null, relLen: number | 
  * Computes the per-instance scale for the round rear cap mesh: `[pen, pen, pen]`
  * so the semicircular cap is never stretched.
  *
- * @param relLen - `REL_LEN` attribute value driving the pen width, or null.
+ * @param relLen - Unused; the pen width is fixed for every arrow.
  * @returns `[pen, pen, pen]` model-unit scale.
  */
 export const computeCapScale = (relLen: number | null): [number, number, number] => {
@@ -134,8 +142,8 @@ export const computeCapScale = (relLen: number | null): [number, number, number]
 /**
  * Computes the per-instance scale for the straight body mesh.
  *
- * @param velRel - `VEL_REL` attribute value driving the stem length, or null.
- * @param relLen - `REL_LEN` attribute value driving the pen width, or null.
+ * @param velRel - Unused; the tail length is fixed for every arrow.
+ * @param relLen - Unused; the pen width is fixed for every arrow.
  * @returns `[lateral, lateral, bodyLength / ARROW_TAIL_UNIT_HEIGHT]`.
  */
 export const computeBodyScale = (
@@ -151,7 +159,7 @@ export const computeBodyScale = (
  * Computes the per-instance scale for a single wing rod mesh — pen-sized
  * cross-section, fixed along-Z length.
  *
- * @param relLen - `REL_LEN` attribute value driving the pen width, or null.
+ * @param relLen - Unused; the pen width is fixed for every arrow.
  * @returns `[lateral, lateral, wingRodLength / ARROW_TAIL_UNIT_HEIGHT]`.
  */
 export const computeWingScale = (relLen: number | null): [number, number, number] => {
@@ -165,7 +173,7 @@ export const computeWingScale = (relLen: number | null): [number, number, number
  * `ARROW_TAIL_UNIT_THICKNESS × pen`, lifting the whole pen thickness above the
  * anchor.
  *
- * @param relLen - `REL_LEN` attribute value driving the pen width, or null.
+ * @param relLen - Unused; the pen width is fixed for every arrow.
  * @returns The vertical (model Y) thickness in map meters.
  */
 export const computeVectorRaiseMeters = (relLen: number | null): number =>
@@ -248,8 +256,8 @@ export const computeCapOrientation = (headingDeg: number): [number, number, numb
  * Computes the per-instance translation of a wing's OUTER end (where its round
  * cap sits): the arrow tip plus the fixed wing rod length along the wing heading.
  *
- * @param velRel - `VEL_REL` attribute value driving the stem length, or null.
- * @param relLen - `REL_LEN` attribute value driving the pen width, or null.
+ * @param velRel - Unused; the tail length is fixed for every arrow.
+ * @param relLen - Unused; the pen width is fixed for every arrow.
  * @param velAvg - `VEL_AVG` attribute value driving the fixed heading, or null.
  * @param orbit - `'A'`/`'D'`, or null when missing.
  * @param side - `'left'` or `'right'` wing.
@@ -277,7 +285,7 @@ export const computeWingTipTranslation = (
  * Computes the per-instance translation shared by the round rear cap and the
  * straight body: half a pen forward of the anchor.
  *
- * @param relLen - `REL_LEN` attribute value driving the pen width, or null.
+ * @param relLen - Unused; the pen width is fixed for every arrow.
  * @param velAvg - `VEL_AVG` attribute value driving the fixed heading, or null.
  * @param orbit - `'A'`/`'D'`, or null when missing.
  * @returns `[pen/2 * sin(heading), pen/2 * cos(heading), 0]`.
@@ -296,8 +304,8 @@ export const computeStemTranslation = (
  * Computes the per-instance translation placing the wing rods and the tip cap at
  * the arrow tip: `tail` along the heading.
  *
- * @param velRel - `VEL_REL` attribute value driving the stem length, or null.
- * @param relLen - `REL_LEN` attribute value driving the pen width, or null.
+ * @param velRel - Unused; the tail length is fixed for every arrow.
+ * @param relLen - Unused; the pen width is fixed for every arrow.
  * @param velAvg - `VEL_AVG` attribute value driving the fixed heading, or null.
  * @param orbit - `'A'`/`'D'`, or null when missing.
  * @returns `[tail * sin(heading), tail * cos(heading), 0]`.

@@ -212,8 +212,9 @@ Notes:
   `VEL_AVG`. Pass `showTimeline` to add the toggle and `defaultChartType="timeline"`
   to open on it.
 - `attributeKeys` overrides the picker/attribute set for embedded callers (for
-  example the loaded GeoJSON's numeric properties) and `colorPalette` overrides the
-  non-velocity palette.
+  example the loaded GeoJSON's numeric properties), `colorPalette` overrides the
+  non-velocity palette and `velAvgPalette` overrides the `VEL_AVG` ramp (Poláky
+  passes its 11-colour continuous scale).
 - `onStateChange` reports only primitives (`mode`, `view`, `basis`, `zKey`, …). This is
   what the map uses to decide which curtain to build. It fires `null` on unmount so the
   curtain disappears when the panel closes.

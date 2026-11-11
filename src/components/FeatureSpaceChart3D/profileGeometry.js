@@ -30,7 +30,8 @@
  * - `timeline`: the Trend ▸ points model transposed. One settlement curve per
  *   point across the five ordered trend steps (X), with one categorical band per
  *   point (Y) and cumulative settlement (Z), smoothed over ~90-day windows.
- *   Curve colour comes from the map's `VEL_AVG` ramp; no ribbon, bands or
+ *   Curve colour comes from the `VEL_AVG` ramp (`velAvgPalette` when the host
+ *   map supplies one, otherwise the default map ramp); no ribbon, bands or
  *   per-epoch marks.
  */
 
@@ -498,11 +499,12 @@ function settlementPoints(samples, cube) {
  *
  * @param {Array<any>} samples  `extractTimelineSamples` output
  * @param {number} [cube] half-extent of the normalised cube
+ * @param {string[]|null} [velAvgPalette]  map-supplied ramp for the curve colour
  * @returns {Array<{ key:string, id:string|null, label:string, color:string,
  *   stdKey:null, banded:false, rows:Array<any>, velAvg:number|null,
  *   minD:number, maxD:number, tMin:number, tMax:number }>}
  */
-function timelineCurves(samples, cube) {
+function timelineCurves(samples, cube, velAvgPalette = null) {
   const groups = new Map();
   for (const s of samples) {
     const key = s.pointKey ?? (s.id == null ? '__unknown' : String(s.id));
@@ -510,7 +512,7 @@ function timelineCurves(samples, cube) {
     groups.get(key).samples.push(s);
   }
 
-  const velScale = buildColorScale('VEL_AVG', [...MAP_VEL_AVG_DOMAIN]);
+  const velScale = buildColorScale('VEL_AVG', [...MAP_VEL_AVG_DOMAIN], undefined, velAvgPalette);
   const stepCount = TREND_TIMELINE.length;
   const DAY_MS = 24 * 60 * 60 * 1000;
   // Each step reads a smoothed ~90-day window around its target epoch instead
@@ -698,7 +700,7 @@ function timelineBandTicks(curves) {
  *       stepKey:string|null, stepLabel:string|null, sample:any }> }>,
  * }}
  */
-export function buildProfileFrame(profile, cube = 1) {
+export function buildProfileFrame(profile, cube = 1, velAvgPalette = null) {
   const view =
     profile?.view === 'timeline'
       ? 'timeline'
@@ -737,7 +739,7 @@ export function buildProfileFrame(profile, cube = 1) {
 
   const rawCurves =
     view === 'timeline'
-      ? timelineCurves(samples, cube)
+      ? timelineCurves(samples, cube, velAvgPalette)
       : view === 'aggregate'
         ? aggregateCurve(samples, aggValueKey, aggStep, aggInterpolate)
         : view === 'trend'

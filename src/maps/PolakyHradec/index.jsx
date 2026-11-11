@@ -10,13 +10,13 @@ import { CogTerrainLayer } from '@gisatcz/deckgl-geolib';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
 import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
 import { build3dLosArrowLayers } from '../../layers/factory/build3dLosArrowLayers';
+import { build3dLosSphereLayer } from '../../layers/factory/build3dLosSphereLayer';
 import {
   BLUE_PALETTE,
   FeatureSpaceChart,
-  MAP_VEL_AVG_DOMAIN,
-  buildColorScale,
   isTimelineKey,
 } from '../../components/FeatureSpaceChart3D';
+import { POLAKY_VEL_AVG_COLORS, buildPolakyVelAvgScale } from './velAvgPalette';
 import TimelineChart from './TimelineChart';
 
 const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/polaky_95D_PS.geojson';
@@ -80,8 +80,8 @@ function getPylonPickFeature(object) {
 // Stable empty array so memoised selections do not retrigger chart transforms.
 const EMPTY = [];
 
-// Layer-id prefix shared by the seven 3D LOS arrow sublayers.
-const ARROW_LAYER_PREFIX = 'vel-avg-arrows';
+// Layer-id prefix shared by the 3D LOS point symbols (arrow parts and spheres).
+const POINT_LAYER_PREFIX = 'vel-avg-arrows';
 
 // Pre-selection opened once on mount: Pylon 10 and one of its linked InSAR
 // points, so the map highlight and both charts are visible without a click.
@@ -91,7 +91,18 @@ const DEFAULT_PYLON_ID = 10;
 const DEFAULT_POINT_ID = 59054;
 
 // The chart's VEL_AVG ramp, shared with the map legend and the 3D chart.
-const colorScale = buildColorScale('VEL_AVG', MAP_VEL_AVG_DOMAIN);
+const colorScale = buildPolakyVelAvgScale();
+
+// |VEL_AVG| at/below which a point renders as a sphere instead of an arrow.
+const NEAR_ZERO_VEL_AVG = 0.1;
+
+// Missing / non-finite VEL_AVG keeps the arrow behaviour.
+function isNearZeroVelAvg(feature) {
+  const raw = feature?.properties?.VEL_AVG;
+  if (raw == null || raw === '') return false;
+  const value = Number(raw);
+  return Number.isFinite(value) && Math.abs(value) <= NEAR_ZERO_VEL_AVG;
+}
 
 // Numeric GeoJSON properties that identify/join features or carry generic
 // index/descriptive statistics rather than measurements; keep them out of the
@@ -404,12 +415,23 @@ export default function PolakyHradec() {
     const nextPylonKey = layerId.startsWith('pylons-')
       ? getPylonJoinKey(getPylonPickFeature(info.object))
       : null;
-    const nextSphereId = layerId.startsWith(ARROW_LAYER_PREFIX)
+    const nextSphereId = layerId.startsWith(POINT_LAYER_PREFIX)
       ? (info.object?.properties?.ID ?? null)
       : null;
     setHoveredPylonKey(prev => (prev === nextPylonKey ? prev : nextPylonKey));
     setHoveredSphereId(prev => (prev === nextSphereId ? prev : nextSphereId));
   }, []);
+
+  // Split once per data load: near-zero points become spheres, everything else
+  // (including missing VEL_AVG) keeps the 3D arrow composite.
+  const { arrowFeatures, sphereFeatures } = useMemo(() => {
+    const arrows = [];
+    const spheres = [];
+    for (const feature of features) {
+      (isNearZeroVelAvg(feature) ? spheres : arrows).push(feature);
+    }
+    return { arrowFeatures: arrows, sphereFeatures: spheres };
+  }, [features]);
 
   const layers = useMemo(() => {
     const terrainLayer = new CogTerrainLayer({
@@ -507,57 +529,77 @@ export default function PolakyHradec() {
       pickable: true,
     });
 
-    // Every point renders as a 3D LOS round-cap arrow composite (rear cap, body,
-    // two wing rods, two wing-tip caps, arrow tip). Chart hover paints the
-    // matching arrow red; a directly selected/hovered arrow keeps the shared
-    // highlight cyan. The accessor is shared by all seven arrow parts, so the
-    // pylon-linked selection highlight applies to the whole composite too.
+    // Shared point-symbol accessor: chart hover paints red, a direct selection
+    // or map hover keeps the cyan highlight, otherwise the VEL_AVG ramp. Arrows
+    // and spheres use it so highlight behaviour stays identical.
+    const getPointSymbolColor = (d) => {
+      const id = d.properties?.ID;
+      if (hoveredPointId != null && String(id) === String(hoveredPointId)) {
+        return CHART_HOVER_COLOR;
+      }
+      const isHighlighted = [selectedId, hoveredSphereId].some(
+        other => other != null && String(id) === String(other),
+      );
+      return isHighlighted ? [...SELECTION_COLOR, 255] : getRgba(d);
+    };
+    const colorUpdateTriggers = {
+      getColor: [selectedId, hoveredSphereId, hoveredPointId],
+    };
+    const getAnchorPosition = (d) => [
+      d.geometry.coordinates[0],
+      d.geometry.coordinates[1],
+      getPointElevation(d),
+    ];
+
+    // Non-near-zero points render as the 3D LOS round-cap arrow composite (rear
+    // cap, body, two wing rods, two wing-tip caps, arrow tip). The accessor is
+    // shared by all seven parts, so the pylon-linked selection highlight applies
+    // to the whole composite too.
     const arrowLayers = build3dLosArrowLayers({
-      idPrefix: ARROW_LAYER_PREFIX,
-      data: features,
+      idPrefix: POINT_LAYER_PREFIX,
+      data: arrowFeatures,
       zoom,
       orbit: 'D',
       pickable: true,
-      getPosition: (d) => [
-        d.geometry.coordinates[0],
-        d.geometry.coordinates[1],
-        getPointElevation(d),
-      ],
-      // Offset mode shifts every arrow part by the terrain height sampled under
-      // its anchor, keeping the composite rigid while grounding it.
+      getPosition: getAnchorPosition,
+      // Offset mode shifts every part by the terrain height sampled under its
+      // anchor, keeping the composite rigid while grounding it.
       extensions: [new TerrainExtension()],
       terrainDrawMode: 'offset',
-      getColor: (d) => {
-        const id = d.properties?.ID;
-        if (hoveredPointId != null && String(id) === String(hoveredPointId)) {
-          return CHART_HOVER_COLOR;
-        }
-        const isHighlighted = [selectedId, hoveredSphereId].some(
-          other => other != null && String(id) === String(other),
-        );
-        return isHighlighted ? [...SELECTION_COLOR, 255] : getRgba(d);
-      },
-      updateTriggers: {
-        getColor: [
-          selectedId,
-          hoveredSphereId,
-          hoveredPointId,
-        ],
-      },
+      getColor: getPointSymbolColor,
+      updateTriggers: colorUpdateTriggers,
+    });
+
+    // |VEL_AVG| <= 0.1 renders as a sphere instead; same anchor and colour
+    // accessor, and the builder lifts it by its own radius.
+    const sphereLayer = build3dLosSphereLayer({
+      id: `${POINT_LAYER_PREFIX}-spheres`,
+      data: sphereFeatures,
+      zoom,
+      radiusMeters: 1.6,
+      pickable: true,
+      getPosition: getAnchorPosition,
+      extensions: [new TerrainExtension()],
+      terrainDrawMode: 'offset',
+      getColor: getPointSymbolColor,
+      updateTriggers: colorUpdateTriggers,
     });
 
     return [
       terrainLayer,
       satelliteLayer,
       ...pylonLayers,
-      // Before the arrows on purpose: later layers win overlapping pick pixels.
+      // Before the point symbols on purpose: later layers win overlapping pick
+      // pixels, so arrows and spheres keep click priority over pylon hit volumes.
       pylonHitLayer,
       ...arrowLayers,
+      sphereLayer,
     ];
   }, [
     zRange,
     onZRangeUpdate,
-    features,
+    arrowFeatures,
+    sphereFeatures,
     pylonGroups,
     pylonHitData,
     zoom,
@@ -568,7 +610,7 @@ export default function PolakyHradec() {
     hoveredPylonKey,
   ]);
 
-  const legendGradient = `linear-gradient(to right, ${colorScale.colors(10).join(', ')})`;
+  const legendGradient = `linear-gradient(to right, ${colorScale.colors(11).join(', ')})`;
 
   return (
     <div style={{
@@ -597,7 +639,7 @@ export default function PolakyHradec() {
             setSelectedPylonKey(key);
             return;
           }
-          if (layerId.startsWith(ARROW_LAYER_PREFIX)) {
+          if (layerId.startsWith(POINT_LAYER_PREFIX)) {
             setHoveredPointId(null);
             setSelectedId(info.object?.properties?.ID ?? null);
             return;
@@ -624,7 +666,7 @@ export default function PolakyHradec() {
               ].join('\n'),
             };
           }
-          if (layerId.startsWith(ARROW_LAYER_PREFIX)) {
+          if (layerId.startsWith(POINT_LAYER_PREFIX)) {
             const props = object?.properties;
             if (!props) return null;
             return {
@@ -698,7 +740,7 @@ export default function PolakyHradec() {
           <span style={{ flex: 1, textAlign: 'center' }}>0</span>
           <span style={{ flex: 1, textAlign: 'right' }}>+1</span>
         </div>
-        <div style={{ marginTop: '4px', color: '#555' }}>Arrow length = |VEL_REL| · thickness = REL_LEN</div>
+        <div style={{ marginTop: '4px', color: '#555' }}>|VEL_AVG| ≤ 0.1 = sphere</div>
       </div>
 
       {(selectedPylonKey != null || selectedFeature) && (
@@ -736,6 +778,7 @@ export default function PolakyHradec() {
                 defaultCustomAxes={{ x: 'lon', y: 'lat', z: 'H_REF', color: 'VEL_AVG', size: 'COH' }}
                 attributeKeys={chartAttributeKeys}
                 colorPalette={BLUE_PALETTE}
+                velAvgPalette={POLAKY_VEL_AVG_COLORS}
                 onPointHover={setHoveredPointId}
                 onPointClick={setSelectedId}
                 onClose={() => {
