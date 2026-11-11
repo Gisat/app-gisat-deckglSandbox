@@ -45,8 +45,9 @@ const GRID_COLOR = [232, 232, 232, 255];
 const GRID_WIDTH = 0.5;
 /** Colored shafts are deliberately thicker than the grid/cube so the axis reads. */
 const AXIS_WIDTH = 1.5;
-const TICK_LABEL_COLOR = [110, 110, 110];
-// Match the 2D timeline card's nivo theme: 10 px tick text, 11 px axis titles.
+// Match the 2D timeline card's nivo theme: #555 10 px ticks, #333 11 px titles.
+const TICK_LABEL_COLOR = [85, 85, 85];
+const TITLE_LABEL_COLOR = [51, 51, 51];
 const TICK_LABEL_SIZE = 10;
 const TITLE_SIZE = 11;
 
@@ -302,7 +303,7 @@ function axisOverlay({ edges, far, ticks, titles, enabled }) {
     titleLabels.push({
       position,
       text: titles[slot],
-      color: AXIS_COLORS[slot],
+      color: TITLE_LABEL_COLOR,
       size: TITLE_SIZE,
       direction: AXIS_DIRECTIONS[slot],
     });

@@ -15,10 +15,6 @@ function formatNumber(value, digits) {
   return Number.isFinite(num) ? num.toFixed(digits) : '–';
 }
 
-// The Poláky stack is a single 95D track; the GeoJSON carries no orbit/track
-// property, so the label is constant for every point.
-const POINT_TRACK = '95D';
-
 /**
  * Displacement timeline card for a single Poláky point.
  *
@@ -26,9 +22,9 @@ const POINT_TRACK = '95D';
  * UTC. Non-finite / null samples are skipped. The card fills its positioned
  * parent, which owns the floating placement.
  *
- * @param {{ feature: any, onClose: () => void }} props
+ * @param {{ feature: any, trackLabel?: string, onClose: () => void }} props
  */
-export default function TimelineChart({ feature, onClose }) {
+export default function TimelineChart({ feature, trackLabel = '–', onClose }) {
   const props = feature?.properties ?? {};
 
   const series = useMemo(() => {
@@ -51,7 +47,7 @@ export default function TimelineChart({ feature, onClose }) {
     flexDirection: 'column',
     boxSizing: 'border-box',
     padding: '8px 10px 10px',
-    background: 'rgba(255, 255, 255, 0.97)',
+    background: '#fff',
     border: '1px solid #ddd',
     borderRadius: '8px',
     boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25)',
@@ -60,14 +56,11 @@ export default function TimelineChart({ feature, onClose }) {
 
   const header = (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '4px' }}>
-      <div style={{ fontSize: '13px', fontWeight: 700, color: '#333' }}>
-        Point {props.ID ?? '–'}
+      <div style={{ fontSize: '11px', fontWeight: 600, color: '#333' }}>
+        Point {props.ID ?? '–'} · {trackLabel}
       </div>
       <div style={{ fontSize: '11px', color: '#555' }}>
         VEL_AVG <b>{formatNumber(props.VEL_AVG, 2)}</b> mm/yr
-      </div>
-      <div style={{ fontSize: '11px', color: '#555' }}>
-        Track: <b>{POINT_TRACK}</b>
       </div>
       <button
         type="button"
@@ -156,7 +149,7 @@ export default function TimelineChart({ feature, onClose }) {
           tooltip={({ point }) => (
             <div style={{
               padding: '4px 8px',
-              background: 'rgba(255, 255, 255, 0.97)',
+    background: '#fff',
               border: '1px solid #ccc',
               borderRadius: '4px',
               boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',

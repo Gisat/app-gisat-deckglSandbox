@@ -24,7 +24,32 @@ import {
 import { POLAKY_VEL_AVG_COLORS, buildPolakyVelAvgScale } from './velAvgPalette';
 import TimelineChart from './TimelineChart';
 
-const DATA_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/polaky_95D_PS.geojson';
+// Measurement tracks available on this map. The GeoJSON carries no orbit/track
+// property, so the orbit (which drives the arrow heading pair) is declared here.
+// Files share the point schema and the `index_right` pylon join space; only one
+// track is displayed at a time, so reused point IDs cannot collide.
+const TRACKS = [
+  {
+    id: '95D',
+    direction: 'descending',
+    orbit: 'D',
+    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/polaky_95D_PS.geojson',
+  },
+  {
+    id: '44A',
+    direction: 'ascending',
+    orbit: 'A',
+    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/polaky_44A_PS.geojson',
+  },
+  {
+    id: '146A',
+    direction: 'ascending',
+    orbit: 'A',
+    url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/polaky_146A_PS.geojson',
+  },
+];
+const DEFAULT_TRACK_ID = '95D';
+
 const TERRAIN_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/EL-GRID_COGeoN.tif';
 const SATELLITE_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const PYLONS_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/sloupy.geojson';
@@ -130,6 +155,52 @@ const SELECTION_COLOR = [66, 212, 244];
 // Chart hover highlight, matching the chart's own red point highlight.
 const CHART_HOVER_COLOR = [255, 0, 0, 255];
 
+// Shared chrome for the map's floating cards (track selector, legend, status).
+// Opaque white on purpose: the map must not show through the controls.
+const OVERLAY_CARD_STYLE = {
+  position: 'absolute',
+  zIndex: 10,
+  padding: '8px 10px',
+  background: '#fff',
+  border: '1px solid #ddd',
+  borderRadius: '6px',
+  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+  color: '#333',
+  fontFamily: 'system-ui, sans-serif',
+  fontSize: '11px',
+};
+
+// Card headings match the 11px/600 label size used across the chart cards.
+const OVERLAY_TITLE_STYLE = {
+  marginBottom: '4px',
+  fontSize: '11px',
+  fontWeight: 600,
+};
+
+// The shared chart header renders `title` inside a 13px <strong>; wrapping the
+// text keeps the v2 chart headline at the same 11px/600 size as the other
+// card titles without editing the shared chart module.
+const CHART_TITLE_STYLE = {
+  fontSize: '11px',
+  fontWeight: 600,
+};
+
+// Mirrors the 3D chart's Timeline/Custom toggle highlight.
+function trackButtonStyle(active, failed = false) {
+  return {
+    minHeight: '24px',
+    padding: '4px 8px',
+    border: `1px solid ${failed ? '#a00000' : active ? '#0066cc' : '#ccc'}`,
+    borderRadius: '4px',
+    background: active ? '#e6f0ff' : '#fff',
+    color: failed ? '#a00000' : '#333',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontSize: '11px',
+    fontWeight: active ? 600 : 400,
+  };
+}
+
 const INITIAL_VIEW_STATE = {
   longitude: 13.3607,
   latitude: 50.33776,
@@ -217,13 +288,17 @@ function formatNumber(value, digits) {
 
 export default function PolakyHradecV2() {
   const { zRange, onZRangeUpdate } = useTerrainZRange();
-  const [features, setFeatures] = useState([]);
+  const [activeTrackId, setActiveTrackId] = useState(DEFAULT_TRACK_ID);
+  // Per-track cache: id -> { status: 'loading' | 'ready' | 'error', features, error }.
+  // Only the active entry is read, so a late response for another track can
+  // never repaint the visible map.
+  const [tracks, setTracks] = useState({});
+  // In-flight fetches live in a ref so deduping does not trigger renders.
+  const inFlight = useRef(new Map());
   const [pylonFeatures, setPylonFeatures] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
   // Pylons load independently of the points; the default selection waits for
   // both loaders to settle so the pylon chart never flashes its empty hint.
   const [pylonsLoaded, setPylonsLoaded] = useState(false);
-  const [error, setError] = useState(null);
   // Selected point (arrow click → 2D timeline) and selected pylon (pylon click
   // → grouped 3D feature chart) are independent and can both stay open.
   const [selectedId, setSelectedId] = useState(null);
@@ -238,34 +313,67 @@ export default function PolakyHradecV2() {
   // reopened by a later effect run.
   const didApplyDefaultSelection = useRef(false);
 
-  useEffect(() => {
-    let cancelled = false;
+  const activeTrack = TRACKS.find(t => t.id === activeTrackId) ?? TRACKS[0];
+  const trackState = tracks[activeTrackId];
+  // EMPTY keeps the downstream memo inputs stable while a track is loading.
+  const features = trackState?.status === 'ready' ? trackState.features : EMPTY;
+  const isLoading = !trackState
+    || (trackState.status !== 'ready' && trackState.status !== 'error');
+  const error = trackState?.status === 'error' ? trackState.error : null;
 
-    const loadData = async () => {
+  // Fetch a track once and cache it; later switches are instant. The cache is
+  // cleared on failure so the selector's retry starts a fresh request.
+  const loadTrack = useCallback((id) => {
+    const track = TRACKS.find(t => t.id === id);
+    if (!track || inFlight.current.has(id)) return;
+
+    setTracks(prev => (prev[id]?.status === 'ready'
+      ? prev
+      : { ...prev, [id]: { status: 'loading', features: null, error: null } }));
+
+    const promise = (async () => {
       try {
-        const res = await fetch(DATA_URL);
-        if (!res.ok) throw new Error(`HTTP ${res.status} for ${DATA_URL}`);
+        const res = await fetch(track.url);
+        if (!res.ok) throw new Error(`HTTP ${res.status} for ${track.url}`);
         const data = await res.json();
-        // Handle both FeatureCollection and direct array formats
         const loaded = Array.isArray(data) ? data : (data.features || []);
-        if (!cancelled) {
-          setFeatures(loaded);
-          setIsLoading(false);
-        }
+        setTracks(prev => ({
+          ...prev,
+          [id]: { status: 'ready', features: loaded, error: null },
+        }));
       } catch (err) {
-        console.error('❌ Failed to load Poláky data:', err);
-        if (!cancelled) {
-          setError(err.message || String(err));
-          setIsLoading(false);
-        }
+        console.error(`❌ Failed to load Poláky data for track ${id}:`, err);
+        setTracks(prev => ({
+          ...prev,
+          [id]: { status: 'error', features: null, error: err.message || String(err) },
+        }));
+      } finally {
+        inFlight.current.delete(id);
       }
-    };
+    })();
 
-    loadData();
-    return () => {
-      cancelled = true;
-    };
+    inFlight.current.set(id, promise);
   }, []);
+
+  useEffect(() => {
+    loadTrack(DEFAULT_TRACK_ID);
+  }, [loadTrack]);
+
+  // A point belongs to exactly one track, so its highlight and timeline close on
+  // switch. Pylons are track-independent, so the pylon chart stays open and
+  // re-renders with that pylon's points in the new track.
+  const handleSelectTrack = useCallback((id) => {
+    if (id === activeTrackId) {
+      // An already-active, failed track is retried by clicking it again.
+      if (tracks[id]?.status === 'error') loadTrack(id);
+      return;
+    }
+    setActiveTrackId(id);
+    setSelectedId(null);
+    setHoveredPointId(null);
+    setHoveredSphereId(null);
+    if (tracks[id]?.status !== 'ready') loadTrack(id);
+  }, [activeTrackId, tracks, loadTrack]);
 
   // Pylons are decorative: a failure here must not raise the map-level error
   // banner, because the InSAR visualisation still works without them.
@@ -564,7 +672,7 @@ export default function PolakyHradecV2() {
       idPrefix: POINT_LAYER_PREFIX,
       data: arrowFeatures,
       zoom,
-      orbit: 'D',
+      orbit: activeTrack.orbit,
       pickable: true,
       getPosition: getAnchorPosition,
       // Offset mode shifts every part by the terrain height sampled under its
@@ -608,6 +716,7 @@ export default function PolakyHradecV2() {
     pylonGroups,
     pylonHitData,
     zoom,
+    activeTrack.orbit,
     selectedId,
     hoveredPointId,
     hoveredSphereId,
@@ -667,7 +776,7 @@ export default function PolakyHradecV2() {
               text: [
                 `Pylon ${props.id ?? '–'} (${props.typ ?? '–'})`,
                 `Height: ${height} m`,
-                `InSAR points: ${pointsByPylonKey.get(key)?.length ?? 0}`,
+                `InSAR points (${activeTrack.id}): ${pointsByPylonKey.get(key)?.length ?? 0}`,
               ].join('\n'),
             };
           }
@@ -677,6 +786,7 @@ export default function PolakyHradecV2() {
             return {
               text: [
                 `ID: ${props.ID ?? '–'}`,
+                `Track: ${activeTrack.id} (${activeTrack.direction})`,
                 `VEL_AVG: ${formatNumber(props.VEL_AVG, 2)} mm/yr`,
                 `COH: ${formatNumber(props.COH, 2)}`,
                 `H_REF: ${formatNumber(props.H_REF, 2)} m`,
@@ -692,14 +802,10 @@ export default function PolakyHradecV2() {
 
       {isLoading && (
         <div style={{
-          position: 'absolute',
+          ...OVERLAY_CARD_STYLE,
           top: 10,
           left: '50%',
           transform: 'translateX(-50%)',
-          background: 'rgba(0,0,0,0.7)',
-          color: 'white',
-          padding: '10px',
-          borderRadius: '4px',
         }}>
           Loading data...
         </div>
@@ -707,38 +813,61 @@ export default function PolakyHradecV2() {
 
       {error && (
         <div style={{
-          position: 'absolute',
+          ...OVERLAY_CARD_STYLE,
           top: 10,
           left: '50%',
           transform: 'translateX(-50%)',
           maxWidth: '60%',
-          background: 'rgba(160,0,0,0.85)',
-          color: 'white',
-          padding: '10px',
-          borderRadius: '4px',
-          fontFamily: 'system-ui, sans-serif',
-          fontSize: '12px',
+          color: '#a00000',
+          border: '1px solid #a00000',
         }}>
-          Failed to load Poláky data: {error}
+          Failed to load Poláky {activeTrack.id} data: {error}
         </div>
       )}
 
+      <div
+        role="group"
+        aria-label="InSAR track"
+        style={{
+          ...OVERLAY_CARD_STYLE,
+          top: 12,
+          left: 12,
+        }}
+      >
+        <div style={OVERLAY_TITLE_STYLE}>Track</div>
+        <div style={{ display: 'flex', gap: '3px' }}>
+          {TRACKS.map(track => {
+            const state = tracks[track.id];
+            const isActive = track.id === activeTrackId;
+            const isTrackLoading = state?.status === 'loading';
+            const hasFailed = state?.status === 'error';
+            return (
+              <button
+                key={track.id}
+                type="button"
+                onClick={() => handleSelectTrack(track.id)}
+                aria-pressed={isActive}
+                aria-busy={isTrackLoading || undefined}
+                title={hasFailed
+                  ? `${track.id} (${track.direction}) failed to load: ${state.error}. Click to retry.`
+                  : `${track.id} (${track.direction})`}
+                style={trackButtonStyle(isActive, hasFailed)}
+              >
+                {track.id}
+                {isTrackLoading ? ' …' : ''}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div style={{
-        position: 'absolute',
+        ...OVERLAY_CARD_STYLE,
         left: 12,
         bottom: 12,
-        zIndex: 10,
-        padding: '8px 10px',
-        background: 'rgba(255, 255, 255, 0.9)',
-        border: '1px solid #ddd',
-        borderRadius: '6px',
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '11px',
-        color: '#333',
       }}
       >
-        <div style={{ marginBottom: '4px', fontWeight: 600 }}>VEL_AVG (mm/yr)</div>
+        <div style={OVERLAY_TITLE_STYLE}>VEL_AVG (mm/yr)</div>
         <div style={{ width: '100%', height: '10px', borderRadius: '2px', background: legendGradient }} />
         <div style={{ display: 'flex', marginTop: '2px', color: '#555' }}>
           <span style={{ flex: 1, textAlign: 'left' }}>-1</span>
@@ -790,8 +919,12 @@ export default function PolakyHradecV2() {
                   setSelectedPylonKey(null);
                   setHoveredPointId(null);
                 }}
-                emptyHint="No InSAR points are linked to this pylon."
-                title={`Poláky · Pylon ${selectedPylon?.properties?.id ?? selectedPylonKey} · 3D feature space`}
+                emptyHint={`No ${activeTrack.id} InSAR points are linked to this pylon.`}
+                title={(
+                  <span style={CHART_TITLE_STYLE}>
+                    {`Pylon ${selectedPylon?.properties?.id ?? selectedPylonKey} · ${activeTrack.id}`}
+                  </span>
+                )}
               />
             </div>
           )}
@@ -802,7 +935,11 @@ export default function PolakyHradecV2() {
               flex: selectedPylonKey != null ? '3 1 0' : '1 1 auto',
               minHeight: 0,
             }}>
-              <TimelineChart feature={selectedFeature} onClose={() => setSelectedId(null)} />
+              <TimelineChart
+                feature={selectedFeature}
+                trackLabel={activeTrack.id}
+                onClose={() => setSelectedId(null)}
+              />
             </div>
           )}
         </div>
