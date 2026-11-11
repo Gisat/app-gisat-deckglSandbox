@@ -31,8 +31,8 @@
  *   point across the five ordered trend steps (X), with one categorical band per
  *   point (Y) and cumulative settlement (Z), smoothed over ~90-day windows.
  *   Curve colour comes from the `VEL_AVG` ramp (`velAvgPalette` when the host
- *   map supplies one, otherwise the default map ramp); no ribbon, bands or
- *   per-epoch marks.
+ *   map supplies one, otherwise the default map ramp) unless the host opts into
+ *   `timelineColor.by === 'settlement'`; no ribbon, bands or per-epoch marks.
  */
 
 import { ATTRIBUTES, axisTitle, TREND_TIMELINE, TREND_WINDOWS, trendWindowLabel } from './attributes';
@@ -520,8 +520,10 @@ function timelineCurves(samples, cube, velAvgPalette = null, velAvgDomain = null
   const settlementDomain = Array.isArray(timelineColor?.domain) && timelineColor.domain.length === 2
     ? timelineColor.domain
     : null;
+  // Settlement is in mm, so its fallback must use the settlement domain, not
+  // the ±1 mm/yr velocity domain (which would clamp every curve to an endpoint).
   const velDomain = colorBySettlement
-    ? (settlementDomain ?? MAP_VEL_AVG_DOMAIN)
+    ? (settlementDomain ?? DISPLACEMENT_DOMAIN)
     : (Array.isArray(velAvgDomain) && velAvgDomain.length === 2 ? velAvgDomain : MAP_VEL_AVG_DOMAIN);
   // Settlement colouring has its own fixed ramp; VEL_AVG colouring keeps the
   // host palette (the active map ramp) so chart and map cannot diverge.
@@ -699,6 +701,12 @@ function timelineBandTicks(curves) {
  *   bufferDistance?:number, sizeByOffset?:boolean,
  *   samples?:Array<any>}} profile
  * @param {number} [cube] half-extent of the normalised cube
+ * @param {string[]|null} [velAvgPalette]  map-supplied ramp for the timeline curves
+ * @param {[number, number]|null} [velAvgDomain]  map-supplied `VEL_AVG` colour domain
+ * @param {{ by?: 'velAvg'|'settlement', domain?: [number, number], palette?: string[] }|null} [timelineColor]
+ *   timeline colour key: `settlement` colours by the final cumulative settlement
+ *   (over `domain`, with `palette` when supplied), anything else by `VEL_AVG`
+ * @param {boolean} [symmetricTimelineZ]  pin the timeline Z domain symmetrically around 0
  * @returns {{
  *   view:'attributes'|'trend'|'aggregate'|'timeline', shape:'windows'|'profiles'|'points'|null,
  *   basis:'along'|'plan', yKey:string|null, zKey:string|null,

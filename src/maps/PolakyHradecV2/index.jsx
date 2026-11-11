@@ -1,8 +1,9 @@
 // Forked from src/maps/PolakyHradec at v1.20.1 as the Poláky/Hradec v2 work area.
-// The shared chart/layer modules (src/components/FeatureSpaceChart3D,
-// src/layers/factory/build3dLos*) must not be edited from this branch: v1 and
-// /3d-feature-charts use them too. Copy the specific file into this folder and
-// repoint the v2 imports instead.
+// Map-specific modules (this file, velAvgPalette, TimelineChart) live in this
+// folder so the two routes can diverge. The shared chart/layer modules
+// (src/components/FeatureSpaceChart3D, src/layers/factory/build3dLos*) are used
+// by v1 and /3d-feature-charts as well, so changes there must stay optional and
+// backward compatible.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
@@ -355,17 +356,21 @@ export default function PolakyHradecV2() {
       ? prev
       : { ...prev, [id]: { status: 'loading', features: null, error: null } }));
 
+    const controller = new AbortController();
     const promise = (async () => {
       try {
-        const res = await fetch(track.url);
+        const res = await fetch(track.url, { signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status} for ${track.url}`);
         const data = await res.json();
         const loaded = Array.isArray(data) ? data : (data.features || []);
+        if (controller.signal.aborted) return;
         setTracks(prev => ({
           ...prev,
           [id]: { status: 'ready', features: loaded, error: null },
         }));
       } catch (err) {
+        // Unmount aborts in flight; not a track failure and no state to update.
+        if (controller.signal.aborted) return;
         console.error(`❌ Failed to load Poláky data for track ${id}:`, err);
         setTracks(prev => ({
           ...prev,
@@ -376,12 +381,18 @@ export default function PolakyHradecV2() {
       }
     })();
 
-    inFlight.current.set(id, promise);
+    inFlight.current.set(id, { promise, controller });
   }, []);
 
   useEffect(() => {
     loadTrack(DEFAULT_TRACK_ID);
   }, [loadTrack]);
+
+  // Abort any pending track request when the map unmounts.
+  useEffect(() => () => {
+    for (const { controller } of inFlight.current.values()) controller.abort();
+    inFlight.current.clear();
+  }, []);
 
   // A point belongs to exactly one track, so its highlight and timeline close on
   // switch. Pylons are track-independent, so the pylon chart stays open and

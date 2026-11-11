@@ -1005,8 +1005,8 @@ const SLOT_ARIA_LABELS = {
   size: 'Size attribute',
 };
 
-/** Room for the inline prefix: one `ch` per label character plus padding. */
-const selectPrefixPadding = (slot) => `calc(7px + ${slot.length}ch + 4px)`;
+/** Room for the inline prefix; `ch` per label character plus the trailing colon. */
+const selectPrefixPadding = (slot) => `calc(7px + ${slot.length + 1}ch + 4px)`;
 
 const axisPickerStyle = {
   display: 'flex',

@@ -149,7 +149,7 @@ export default function TimelineChart({ feature, trackLabel = '–', onClose }) 
           tooltip={({ point }) => (
             <div style={{
               padding: '4px 8px',
-    background: '#fff',
+              background: '#fff',
               border: '1px solid #ccc',
               borderRadius: '4px',
               boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
