@@ -155,24 +155,42 @@ asset_role = "supercell"
 name = "Impact Observatory 10m Annual LULC (9-class)"
 attribution = "Impact Observatory / National Geographic Society (CC-BY-4.0)"
 dynamic = true
+# Pin this source to ONE timestep via STAC's standard `datetime` search
+# parameter — an RFC 3339 INSTANT only; intervals are rejected by the server.
+# io-lulc items run whole calendar years from the year start, so the canonical
+# stamp is YYYY-01-01T00:00:00Z.
+#
+# Why this matters: unpinned, a /search returns one item per (footprint,
+# timestep) — 8 vintages per cell. The per-tile asset cap then fills with ONE
+# cell's history, its neighbour is never opened, and the tile renders a hard
+# vertical gap (the 12°E seam, 52.9% coverage at z8). It is also ~8x the fetch
+# work (z3: 264 items / 6 pages / 3.03s vs 33 items / 1 page / 0.47s). The
+# server now refuses to load an unpinned time-series source at startup.
+#
+# Where a footprint has no item covering this instant, the area renders as a
+# void — accepted, not a bug. Rollover: edit this line, then SIGHUP.
+datetime = "2024-01-01T00:00:00Z"
 # max_items is the PAGE SIZE (limit per STAC /search request); the total
-# fetched per tile is bounded by max_total_items (default 64). 20 x 64
-# comfortably covers z>=9 in Bavaria.
-max_items = 20
+# fetched per tile is bounded by max_total_items (default 64, left unset — it
+# covers the global 62-cell worst case). Pinned z3 = 33 items -> one page of 50.
+max_items = 50
 # mosaic_max_assets caps how many assets a SINGLE tile opens and composites.
 # Distinct from max_total_items (which bounds how many a tile fetches): each
 # open COG handle is charged a flat 16 MiB against the dataset-cache byte
-# budget (1 GiB here = 64 handles), and a low-zoom tile's bbox matches far
-# more items than that — a z6 io-lulc tile matches 32 (4 supercells x 8
-# years). Without a cap the mosaic saturates the budget, further opens are
-# refused ("byte budget exhausted") and the tile renders blank, which looks
-# like the server went down. 8 keeps a low-zoom tile's live handles bounded
-# on a small host. 0 = unlimited (previous behaviour).
-mosaic_max_assets = 8
+# budget (1 GiB here = 64 handles).
+#
+# Pinned, this counts PLACES, not (place x timestep): the demo's worst case is
+# the Bavaria z3 tile at 33 cells, comfortably inside 64. Do NOT set this to 8
+# as before — with one item per footprint that truncates z3 to 8 of 33 cells
+# (measured: coverage 68.5% -> 28.2%). 0 = unlimited (previous behaviour).
+mosaic_max_assets = 64
 pixel_selection = "first"
 stac_bbox = [11.2, 47.9, 11.9, 48.4]
 resampling = "nearest"
-minzoom = 0
+# minzoom = 3: the demo's z3 guarantee (33 cells = 528 MiB of handles). Below
+# z3 a request would fan out across far more cells than the budget can hold.
+# Enforced in code on the dynamic STAC path, not TileJSON-advisory only.
+minzoom = 3
 maxzoom = 14
 
 # Categorical class ids -> IO 9-class legend colors. `rescale_mode = "none"`
