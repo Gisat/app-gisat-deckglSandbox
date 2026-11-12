@@ -23,7 +23,7 @@ import { useMemo } from 'react';
 import Plotly from 'plotly.js-dist-min';
 import createPlotlyComponent from 'react-plotly.js/factory';
 import { axisTitle, getAttribute } from '../attributes';
-import { buildPlotlyColorscale, sizeForValue } from '../colorScale';
+import { OFFSET_MARKER_SIZE, buildPlotlyColorscale, sizeForValue } from '../colorScale';
 import { buildProfileFrame, DISPLACEMENT_COLORSCALE, displacementColor, formatTick } from '../profileGeometry';
 
 const Plot = createPlotlyComponent(Plotly);
@@ -38,9 +38,16 @@ const Plot = createPlotlyComponent(Plotly);
  * @param {[number, number]} props.sizeRange
  * @param {{view:'attributes'|'trend', yKey:string, zKey:string, trendLines:string, samples:Array<any>}} [props.profile]
  * @param {(id: string|null) => void} props.onHover
+ * @param {string[]} [props.velAvgPalette]  map-supplied ramp for the profile curve colour
+ * @param {[number, number]} [props.velAvgDomain]  map-supplied `VEL_AVG` colour domain
+ * @param {{ by?: 'velAvg'|'settlement', domain?: [number, number] }} [props.timelineColor]  timeline colour key
+ * @param {boolean} [props.symmetricTimelineZ]  pin the timeline Z domain symmetrically around 0
  */
-export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDomain, sizeRange, profile, onHover }) {
-  const frame = useMemo(() => (profile ? buildProfileFrame(profile) : null), [profile]);
+export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDomain, sizeRange, profile, onHover, velAvgPalette = null, velAvgDomain = null, timelineColor = null, symmetricTimelineZ = false }) {
+  const frame = useMemo(
+    () => (profile ? buildProfileFrame(profile, 1, velAvgPalette, velAvgDomain, timelineColor, symmetricTimelineZ) : null),
+    [profile, velAvgPalette, velAvgDomain, timelineColor, symmetricTimelineZ],
+  );
 
   const traces = useMemo(() => {
     if (frame) return buildProfileTraces(frame);
@@ -100,7 +107,7 @@ export function PlotlyRenderer({ points, axes, colorScale, colorDomain, sizeDoma
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: 'rgba(0,0,0,0)',
       showlegend: false,
-      font: { family: 'system-ui, sans-serif', size: 10, color: '#333' },
+      font: { family: 'system-ui, sans-serif', size: 11, color: '#333' },
       scene: {
         bgcolor: 'rgba(0,0,0,0)',
         aspectmode: 'cube',
@@ -270,8 +277,9 @@ function buildProfileTraces(frame) {
     // cannot gradient a line, so the line takes the station's mean displacement
     // colour (thin) and the markers carry the full ramp. Marker size encodes the
     // perpendicular offset in both the Attribute and Trend views.
+    const [minSize, maxSize] = OFFSET_MARKER_SIZE.plotly;
     const sizes = frame.sizeByOffset
-      ? samples.map((p) => 3 + (p.offsetT ?? 0) * 4)
+      ? samples.map((p) => minSize + (p.offsetT ?? 0) * (maxSize - minSize))
       : 3;
     const marker = curve.colored
       ? {
@@ -447,7 +455,7 @@ function axisStyle(key) {
     gridcolor: '#eee',
     zerolinecolor: '#ddd',
     color: '#555',
-    tickfont: { size: 9 },
+    tickfont: { size: 10 },
   };
 }
 
@@ -457,7 +465,7 @@ function axisStyleText(title) {
     gridcolor: '#eee',
     zerolinecolor: '#ddd',
     color: '#555',
-    tickfont: { size: 9 },
+    tickfont: { size: 10 },
   };
 }
 

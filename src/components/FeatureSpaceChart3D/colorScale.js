@@ -20,11 +20,45 @@ import chroma from 'chroma-js';
 export const MAP_VELOCITY_COLORS = [[215, 25, 28], [254, 254, 191], [65, 182, 196]];
 export const MAP_VELOCITY_DOMAIN = [-3, 3];
 
+/**
+ * `VEL_AVG` keeps a fixed ±1 mm/yr domain so the chart and the map symbols read
+ * the same range. Maps with a custom `VEL_AVG` ramp pass it as `velAvgPalette`;
+ * without one the default `MAP_VELOCITY_COLORS` ramp is used. Chroma clips
+ * out-of-domain values to the endpoints.
+ */
+export const MAP_VEL_AVG_DOMAIN = [-1, 1];
+
 /** Viridis, for non-velocity attributes. */
 const GENERIC_PALETTE = ['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725'];
 
+/** Blue shades, for non-velocity attributes in the Poláky 3D chart. */
+export const BLUE_PALETTE = [
+  '#2D5A81',
+  '#2B72B1',
+  '#228be6',
+  '#509FE3',
+  '#7BB3E4',
+  '#A2C7E7',
+  '#C7DCED',
+];
+
 /** Per-point pixel-radius range for the size channel. */
 export const SIZE_PIXEL_RANGE = [3, 14];
+
+/**
+ * Marker size when the profile "Size by offset" encoding is enabled. `offsetT`
+ * maps 0 (on the line) -> the first value and 1 (at the buffer edge) -> the
+ * second. The ranges are shifted down from the old fixed base + `offsetT * 4`
+ * so offset-sized marks start smaller and the far-line marks stay compact.
+ * The `points*` ranges keep the Trend ▸ points shape smaller still.
+ */
+export const OFFSET_MARKER_SIZE = {
+  radius: [2, 4.5],
+  world: [0.014, 0.034],
+  pointsRadius: [1.5, 3.5],
+  pointsWorld: [0.01, 0.026],
+  plotly: [1.5, 4],
+};
 
 /**
  * Domain to map colour values over. `VEL_REL` is pinned to the map's [-3, 3]
@@ -36,6 +70,7 @@ export const SIZE_PIXEL_RANGE = [3, 14];
  */
 export function getColorDomain(key, points) {
   if (key === 'VEL_REL') return [...MAP_VELOCITY_DOMAIN];
+  if (key === 'VEL_AVG') return [...MAP_VEL_AVG_DOMAIN];
 
   let min = Infinity;
   let max = -Infinity;
@@ -53,14 +88,20 @@ export function getColorDomain(key, points) {
 /**
  * @param {string} key
  * @param {[number, number]} domain
+ * @param {string[]} [palette]  palette for non-velocity attributes
+ * @param {string[]|null} [velAvgPalette]  map-supplied ramp for `VEL_AVG`
  * @returns {import('chroma-js').Scale}
  */
-export function buildColorScale(key, domain) {
-  if (key === 'VEL_REL') {
+export function buildColorScale(key, domain, palette = GENERIC_PALETTE, velAvgPalette = null) {
+  if (key === 'VEL_AVG' && Array.isArray(velAvgPalette) && velAvgPalette.length >= 2) {
+    // Map-supplied continuous ramp (Poláky/Hradec); other maps keep the default.
+    return chroma.scale(velAvgPalette).domain(domain);
+  }
+  if (key === 'VEL_REL' || key === 'VEL_AVG') {
     // Exact match with the map scale (default rgb interpolation).
     return chroma.scale(MAP_VELOCITY_COLORS).domain(domain);
   }
-  return chroma.scale(GENERIC_PALETTE).mode('lab').domain(domain);
+  return chroma.scale(palette).mode('lab').domain(domain);
 }
 
 /**

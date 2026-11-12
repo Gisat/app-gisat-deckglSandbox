@@ -21,7 +21,7 @@ import { Canvas, useThree } from '@react-three/fiber';
 import { Html, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { axisTitle, formatValue } from '../attributes';
-import { colorToHex, sizeForValue } from '../colorScale';
+import { OFFSET_MARKER_SIZE, colorToHex, sizeForValue } from '../colorScale';
 import { computeAxisDomains, projectToCube } from '../transformPoints';
 import { buildProfileFrame, formatTick } from '../profileGeometry';
 import { PointTooltip } from '../PointTooltip';
@@ -116,12 +116,19 @@ function buildRibbonGeometry(samples) {
  * @param {'billboard'|'sphere'} props.markerStyle
  * @param {{view:'attributes'|'trend', yKey:string, zKey:string, trendLines:string, samples:Array<any>}} [props.profile]
  * @param {(id: string|null) => void} props.onHover
+ * @param {string[]} [props.velAvgPalette]  map-supplied ramp for the profile curve colour
+ * @param {[number, number]} [props.velAvgDomain]  map-supplied `VEL_AVG` colour domain
+ * @param {{ by?: 'velAvg'|'settlement', domain?: [number, number] }} [props.timelineColor]  timeline colour key
+ * @param {boolean} [props.symmetricTimelineZ]  pin the timeline Z domain symmetrically around 0
  */
-export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover }) {
+export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover, velAvgPalette = null, velAvgDomain = null, timelineColor = null, symmetricTimelineZ = false }) {
   const domains = useMemo(() => computeAxisDomains(points, axes), [points, axes]);
   const [hovered, setHovered] = useState(null);
 
-  const frame = useMemo(() => (profile ? buildProfileFrame(profile, CUBE) : null), [profile]);
+  const frame = useMemo(
+    () => (profile ? buildProfileFrame(profile, CUBE, velAvgPalette, velAvgDomain, timelineColor, symmetricTimelineZ) : null),
+    [profile, velAvgPalette, velAvgDomain, timelineColor, symmetricTimelineZ],
+  );
 
   const scatterData = useMemo(
     () =>
@@ -142,12 +149,15 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
 
   const profileData = useMemo(() => {
     if (!frame) return [];
-    // Trend ▸ points uses smaller marks; the other profile views keep their size.
+    // Trend ▸ points uses smaller offset-scaled marks; the other profile views
+    // use the regular OFFSET_MARKER_SIZE range.
     const pointsMode = frame.shape === 'points';
     const aggregateView = frame.view === 'aggregate';
     const sizeByOffset = frame.sizeByOffset;
     const baseRadius = pointsMode ? 3 : 4;
     const baseWorld = pointsMode ? 0.017 : 0.03;
+    const [minRadius, maxRadius] = pointsMode ? OFFSET_MARKER_SIZE.pointsRadius : OFFSET_MARKER_SIZE.radius;
+    const [minWorld, maxWorld] = pointsMode ? OFFSET_MARKER_SIZE.pointsWorld : OFFSET_MARKER_SIZE.world;
     const out = [];
     for (const curve of frame.curves) {
       for (const p of curve.samples) {
@@ -158,8 +168,8 @@ export function ThreeRenderer({ points, axes, colorScale, sizeDomain, sizeRange,
           point: { id: p.id },
           position: toThree(p.position),
           hex: p.color ?? curve.color,
-          radius: off == null ? baseRadius : baseRadius + off * 4,
-          worldRadius: off == null ? baseWorld : baseWorld + off * 0.04,
+          radius: off == null ? baseRadius : minRadius + off * (maxRadius - minRadius),
+          worldRadius: off == null ? baseWorld : minWorld + off * (maxWorld - minWorld),
           frameSample: p,
           curve,
         });

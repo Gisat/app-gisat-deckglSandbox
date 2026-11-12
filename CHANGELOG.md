@@ -1,3 +1,73 @@
+## [1.21.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.20.1...v1.21.0) (2026-11-11)
+
+### Features
+
+* **polaky:** add 95D/44A/146A track selector to v2 map ([6cce96c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/6cce96cb614f833b2e914811ba86729bd65cc495))
+* **polaky:** align v1 chart headings with v2 ([b4b75ab](https://github.com/Gisat/app-gisat-deckglSandbox/commit/b4b75abf1dcb47c38816012384623e1d74c1427c))
+* **polaky:** colour v2 3D timeline by cumulative settlement ([cd0d518](https://github.com/Gisat/app-gisat-deckglSandbox/commit/cd0d518c7bd79de12e665b769b2cbb0680120b84))
+* **polaky:** compact chart axis selectors and per-orbit VEL_AVG colours ([5dc608c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/5dc608ce281acf8cf7ef51a99979b8334bb496a6))
+* **polaky:** fork Poláky/Hradec v2 route ([32a3567](https://github.com/Gisat/app-gisat-deckglSandbox/commit/32a3567ffc6e48c19f4530bb1aaf9f815d366dda))
+* **polaky:** tune VEL_AVG scale, sphere threshold and chart palette ([58523bc](https://github.com/Gisat/app-gisat-deckglSandbox/commit/58523bc9078f0605b70d8209b8939d5b67f45b33))
+
+### Bug Fixes
+
+* **polaky:** harden v2 track loading and settlement colouring ([8582e03](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8582e036595893b4afcb31c85ddc63010551d6aa))
+
+## [1.20.1](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.20.0...v1.20.1) (2026-11-11)
+
+### Bug Fixes
+
+* **map:** load arrow OBJ meshes from hashed Vite assets ([281a513](https://github.com/Gisat/app-gisat-deckglSandbox/commit/281a513895a6a0d9501f4e57590dba7b5717e50a))
+
+## [1.20.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.19.0...v1.20.0) (2026-11-11)
+
+### Features
+
+* **polaky:** refresh Poláky/Hradec symbol and chart visuals ([4b75237](https://github.com/Gisat/app-gisat-deckglSandbox/commit/4b7523726038d18f27db1dd054a04f3bf0b514e8))
+
+## [1.19.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.18.0...v1.19.0) (2026-11-10)
+
+### Features
+
+* **map:** add 3D pylon meshes to Poláky, Hradec ([bb8561c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/bb8561c96acaf64c2ce16f7050986f077496d512))
+* **map:** add ČEPS Poláky, Hradec map ([746cfe7](https://github.com/Gisat/app-gisat-deckglSandbox/commit/746cfe74acb57faab00cdd177c9b2a9905ffece9))
+* **map:** add point-selection 3D chart to Poláky map ([0167bd4](https://github.com/Gisat/app-gisat-deckglSandbox/commit/0167bd48161dad6ff7d402866a8a72357be6353a))
+* **map:** add timeline chart type and dual point/pylon selection ([5ab0599](https://github.com/Gisat/app-gisat-deckglSandbox/commit/5ab059979a29d6c256e46555d29d772ed72744a0))
+* **map:** ground Poláky InSAR arrows on terrain via H_REF ([454d119](https://github.com/Gisat/app-gisat-deckglSandbox/commit/454d11914db46584e09d2fd2193818412ae67e25))
+* **map:** highlight Poláky spheres with cyan on selection and hover ([8f4b673](https://github.com/Gisat/app-gisat-deckglSandbox/commit/8f4b67377337ef09bfd21054111026f11ae154d0))
+* **map:** make Poláky pylons selectable across their full silhouette ([22f4d0e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/22f4d0e57454f31c4bddb692af5ceb9b269d2978))
+* **map:** orient Poláky pylons by azimuth ([6e2a6ae](https://github.com/Gisat/app-gisat-deckglSandbox/commit/6e2a6ae023533862c3522befaaa46e9672aa098c))
+* **map:** pre-select Poláky point 58931 to showcase the timeline ([c72dfda](https://github.com/Gisat/app-gisat-deckglSandbox/commit/c72dfdaa0353a116a3a5bf200b66cb445ff39362))
+* **map:** pre-select Poláky pylon 10 and point 59054 on load ([e64aa9d](https://github.com/Gisat/app-gisat-deckglSandbox/commit/e64aa9d2868baf093056958afe6e73ca7ee141df))
+* **map:** render Poláky points as 3D LOS arrows ([d95c303](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d95c30332c3d080d992bae9f22e58a4c8217102d))
+* **map:** select Poláky pylons to chart their linked InSAR points ([d165736](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d16573662c4c460bcaeb487c24f347e2e753dce5))
+* **map:** stretch Poláky legend color ramp to full width ([eb48d45](https://github.com/Gisat/app-gisat-deckglSandbox/commit/eb48d457da846a022ef9aaac14e5c82d2d60c272))
+
+### Bug Fixes
+
+* **map:** address Poláky review findings ([f8abac9](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f8abac93c2b1e7817d673314f88e5a291e1aa0e8))
+* **map:** align Poláky legend labels with color bar ([69fc1c8](https://github.com/Gisat/app-gisat-deckglSandbox/commit/69fc1c815e614e85215fd04be9efd4addccee45a))
+* **map:** shrink Poláky spheres and use a cyan selection ring ([e04df12](https://github.com/Gisat/app-gisat-deckglSandbox/commit/e04df12f29c8e749355d2172ebc17772177cb9b4))
+
+## [1.18.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.17.0...v1.18.0) (2026-11-04)
+
+### Features
+
+* **chart:** update trend palette and compact offset marker sizing ([c47fe29](https://github.com/Gisat/app-gisat-deckglSandbox/commit/c47fe29e470dd8908f4705d69646dadd0b0a58fb))
+
+## [1.17.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.16.0...v1.17.0) (2026-11-02)
+
+### Features
+
+* **chart:** add axis ticks, hover spikes and fix profile ribbons ([a694bb1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/a694bb1dbf3d4f865788916ef96598d4b45e9a23))
+* **chart:** orient deck.gl axis titles along their axes ([be85b53](https://github.com/Gisat/app-gisat-deckglSandbox/commit/be85b531ba36396edf029472f29e5949ba02befa))
+* **chart:** plotly-style deck.gl axes with constant label size ([e04441f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/e04441ff5e489bfc3c2cc9c04c2242283897064d))
+
+### Bug Fixes
+
+* **chart:** address deck.gl axis and marker review findings ([bf643d7](https://github.com/Gisat/app-gisat-deckglSandbox/commit/bf643d748e65729932e327f7ced30f7c455a82ff))
+* **map:** keep curtain line width constant and nodes above the line ([4b1aa88](https://github.com/Gisat/app-gisat-deckglSandbox/commit/4b1aa884ab9f8d5d2231c07a6d80b3ad49c7ff7e))
+
 ## [1.16.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.15.0...v1.16.0) (2026-10-26)
 
 ### Features

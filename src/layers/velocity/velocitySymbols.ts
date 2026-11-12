@@ -40,10 +40,10 @@ export const NON_DOMINANT_ORBIT_SIZE_FACTOR = 0.5;
 export const SMALL_SPHERE_RADIUS_METERS = SPHERE_RADIUS_METERS * NON_DOMINANT_ORBIT_SIZE_FACTOR;
 
 /** Lower clamp bound for the `rel_len` attribute. */
-const REL_LEN_MIN = 0.4;
+export const REL_LEN_MIN = 0.4;
 
 /** Upper clamp bound for the `rel_len` attribute. */
-const REL_LEN_MAX = 1;
+export const REL_LEN_MAX = 1;
 
 /** Minimum arrowhead size in map meters. */
 const HEAD_SIZE_MIN_METERS = 6.5;
