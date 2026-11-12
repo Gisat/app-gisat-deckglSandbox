@@ -34,7 +34,7 @@ The runtime (binary + shared libs + GDAL/PROJ data + CA bundle) is downloaded at
 sha256 before extraction:
 
 ```
-https://github.com/twosix-code/tileserver-rs/releases/download/gisat-v2.39.0/tileserver-gisat.tar.gz
+https://github.com/twosix-code/tileserver-rs/releases/download/gisat-v2.41.3/tileserver-gisat.tar.gz
 ```
 
 So from the repository root it is just:
@@ -182,14 +182,14 @@ that age badly and are no longer needed locally).
 
 | Build arg | Default | Meaning |
 |---|---|---|
-| `TILESERVER_RELEASE_TAG` | `gisat-v2.39.0` | the release to fetch |
-| `TILESERVER_ASSET_SHA256` | `eb948886…831b8e` | expected sha256 of `tileserver-gisat.tar.gz` |
+| `TILESERVER_RELEASE_TAG` | `gisat-v2.41.3` | the release to fetch |
+| `TILESERVER_ASSET_SHA256` | `b01aa48e…542c2f` | expected sha256 of `tileserver-gisat.tar.gz` |
 
 Pin a different release:
 
 ```sh
 docker compose -f deploy/tileserver/docker-compose.yml build \
-  --build-arg TILESERVER_RELEASE_TAG=gisat-v2.40.0 \
+  --build-arg TILESERVER_RELEASE_TAG=gisat-v2.41.3 \
   --build-arg TILESERVER_ASSET_SHA256=<sha256>
 ```
 
