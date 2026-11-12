@@ -15,7 +15,7 @@
 #   gdal-data/ + ca-certs/ + nsswitch.conf) under a single top-level
 #   `tileserver-gisat/` directory, so it is extracted with --strip-components=1
 #   to land the files directly at /tmp/tsr-runtime. Override the release with
-#   --build-arg TILESERVER_RELEASE_TAG=... (default: gisat-v2.39.0).
+#   --build-arg TILESERVER_RELEASE_TAG=... (default: gisat-v2.41.3).
 #
 #   WHY DOWNLOAD INSTEAD OF COPY FROM A LOCAL CONTEXT
 #     - The vendored inputs (~219 MB of .so/.db files) are .gitignore'd and age
@@ -37,8 +37,8 @@
 # =============================================================================
 FROM debian:12-slim
 
-ARG TILESERVER_RELEASE_TAG=gisat-v2.39.0
-ARG TILESERVER_ASSET_SHA256=eb948886b81a2b00ac9548e7e7ee559c0eaf972c6bb80b28c0136eec5e831b8e
+ARG TILESERVER_RELEASE_TAG=gisat-v2.41.3
+ARG TILESERVER_ASSET_SHA256=b01aa48eb22ea1f92cc2594d0019c2f22376dec6ae0b9a1e40562da20b542c2f
 
 ENV DEBIAN_FRONTEND=noninteractive
 
