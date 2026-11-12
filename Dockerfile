@@ -1,7 +1,7 @@
 # =============================================================================
 # Stage 1 — Build frontend (Vite/React, always built at base /)
 # =============================================================================
-FROM node:26.13.1-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS builder
+FROM node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS builder
 
 WORKDIR /build
 
