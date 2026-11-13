@@ -110,6 +110,14 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/titiler/, ''),
       },
+      // be-gisdata data service (pantherbackoffice-dev.gisat.cz) sends no CORS
+      // headers, and the dev server serves the page under COEP require-corp, so
+      // direct browser fetches are blocked. Proxy through the same-origin dev
+      // server instead: /be-gisdata/... -> https://pantherbackoffice-dev.gisat.cz/be-gisdata/...
+      '/be-gisdata': {
+        target: 'https://pantherbackoffice-dev.gisat.cz',
+        changeOrigin: true,
+      },
     },
   },
   worker: {
