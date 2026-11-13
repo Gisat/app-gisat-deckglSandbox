@@ -26,10 +26,21 @@ export const BASE_ATTRIBUTES = [
     'mean_velocity_std',
 ];
 
+// The dev proxy serves the SPA index.html for unknown paths, so a missing
+// /be-gisdata proxy (stale dev server) shows up as a 200 HTML response.
+// Fail loudly instead of a confusing JSON parse error.
+async function readJson(res, label) {
+    const contentType = res.headers.get('content-type') || '';
+    if (!res.ok) throw new Error(`${label} ${res.status}`);
+    if (contentType.includes('text/html')) {
+        throw new Error(`${label}: got HTML — the /be-gisdata dev proxy is missing (restart the Vite dev server)`);
+    }
+    return res.json();
+}
+
 export async function fetchStats(documentId = DOCUMENT_ID) {
     const res = await fetch(`${BASE_URL}/query/stats/${documentId}`);
-    if (!res.ok) throw new Error(`query/stats ${res.status}`);
-    return res.json();
+    return readJson(res, 'query/stats');
 }
 
 // The timeline is stored as regular `d_YYYYMMDD` attributes (attributesTimeseries
@@ -53,8 +64,7 @@ export function mvtAttributesUrlTemplate(attributes, { documentId = DOCUMENT_ID,
 export async function prepareMvt({ zMin = 0, zMax = 14, attributes, documentId = DOCUMENT_ID } = {}) {
     const params = `z_min=${zMin}&z_max=${zMax}` + (attributes ? `&attributes=${attributes.join(',')}` : '');
     const res = await fetch(`${BASE_URL}/query/mvt-prepare/${documentId}?${params}`, { method: 'POST' });
-    if (!res.ok) throw new Error(`mvt-prepare ${res.status}`);
-    return res.json();
+    return readJson(res, 'mvt-prepare');
 }
 
 // Feature IDs are the `pid` values (fid == pid in this dataset). The response is
@@ -66,8 +76,7 @@ export async function queryAttributesByIds(ids, attributes, documentId = DOCUMEN
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ documentId, features: ids, attributes }),
     });
-    if (!res.ok) throw new Error(`query/attributes ${res.status}`);
-    return res.json();
+    return readJson(res, 'query/attributes');
 }
 
 export async function queryByGeometry(geometry, attributes, documentId = DOCUMENT_ID) {
@@ -76,6 +85,5 @@ export async function queryByGeometry(geometry, attributes, documentId = DOCUMEN
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ documentId, geometry, attributes }),
     });
-    if (!res.ok) throw new Error(`query/by-geometry ${res.status}`);
-    return res.json();
+    return readJson(res, 'query/by-geometry');
 }

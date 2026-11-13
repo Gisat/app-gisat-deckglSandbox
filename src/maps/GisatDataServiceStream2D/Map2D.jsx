@@ -63,18 +63,49 @@ function flattenFeatures(rawFeatures) {
     return flat;
 }
 
+// MVT tiles decode to LOCAL tile coordinates (deck.gl picks 'local' when the
+// viewport has no resolution), so positions come from the longitude/latitude
+// attributes requested in every tile; fall back to tile-bbox math if absent.
+function lngLatToWorld([lng, lat]) {
+    const x = ((lng + 180) / 360) * 512;
+    const sin = Math.sin((lat * Math.PI) / 180);
+    const y = (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * 512;
+    return [x, y];
+}
+
+function worldToLngLat([x, y]) {
+    const lng = (x / 512) * 360 - 180;
+    const n = Math.PI - (2 * Math.PI * y) / 512;
+    const lat = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+    return [lng, lat];
+}
+
+function localToLngLat([x, y], bbox) {
+    const nw = lngLatToWorld([bbox.west, bbox.north]);
+    const se = lngLatToWorld([bbox.east, bbox.south]);
+    return worldToLngLat([nw[0] + x * (se[0] - nw[0]), nw[1] + y * (se[1] - nw[1])]);
+}
+
+function getFeaturePosition(f, bbox) {
+    const p = f.properties || {};
+    if (p.longitude != null && p.latitude != null) return [p.longitude, p.latitude];
+    const c = f.geometry?.coordinates;
+    if (Array.isArray(c) && c.length >= 2 && bbox) return localToLngLat(c, bbox);
+    return c;
+}
+
 function getFeaturePointId(f) {
     return f.properties?.pid ?? f.properties?.fid ?? f.id ?? null;
 }
 
 // Adapt a flattened feature array to the {numRows, getPosition, getPointId}
 // shape filterPointsByGeometryInBounds expects.
-function toTileAdapter(features) {
+function toTileAdapter(features, bbox) {
     return {
         numRows: features.length,
         getPosition: (i) => {
-            const c = features[i].geometry.coordinates;
-            return { lon: c[0], lat: c[1] };
+            const [lon, lat] = getFeaturePosition(features[i], bbox);
+            return { lon, lat };
         },
         getPointId: (i) => getFeaturePointId(features[i]),
     };
@@ -156,6 +187,8 @@ function GisatDataServiceStream2D() {
     const drawnGeometryRef = useRef(null);
     // Track when geometry was last processed to avoid re-filtering every frame
     const lastProcessedGeometryRef = useRef(null);
+    // Tile ids already logged, so the console isn't spammed every frame
+    const loggedTilesRef = useRef(new Set());
 
     useEffect(() => { drawnGeometryRef.current = drawnGeometry; }, [drawnGeometry]);
 
@@ -182,6 +215,14 @@ function GisatDataServiceStream2D() {
                 const { dateColumns, dates } = extractTimeline(stats);
                 setDateColumns(dateColumns);
                 setDates(dates);
+                console.log('[gisat-ds] stats', {
+                    documentId: stats.documentId,
+                    features: stats.numberOfFeatures,
+                    extent: stats.geometry?.extent,
+                    dateColumns: dateColumns.length,
+                    firstDate: dates[0],
+                    lastDate: dates[dates.length - 1],
+                });
                 const extent = stats?.geometry?.extent;
                 if (extent) {
                     const [minLon, minLat, maxLon, maxLat] = extent;
@@ -197,7 +238,7 @@ function GisatDataServiceStream2D() {
                 if (AUTO_PREPARE) handlePrepareRef.current?.();
             })
             .catch((err) => {
-                console.error('Gisat stats error:', err);
+                console.error('[gisat-ds] stats error:', err);
                 if (!cancelled) setFetchStatus('Stats failed');
             });
         return () => { cancelled = true; };
@@ -251,6 +292,10 @@ function GisatDataServiceStream2D() {
         return mvtAttributesUrlTemplate([...BASE_ATTRIBUTES, ...dateColumns], { bypassCache });
     }, [dateColumns, bypassCache]);
 
+    useEffect(() => {
+        if (mvtUrl) console.log('[gisat-ds] mvt url template:', mvtUrl.slice(0, 100) + '... (full length ' + mvtUrl.length + ')');
+    }, [mvtUrl]);
+
     const handlePrepare = () => {
         if (dateColumns.length === 0) return;
         setPrepareState({ status: 'running' });
@@ -287,10 +332,11 @@ function GisatDataServiceStream2D() {
             })
             .then((geojson) => {
                 if (cancelled || !geojson) return;
+                console.log('[gisat-ds] selection query returned', geojson.features?.length, 'features; first:', geojson.features?.[0]);
                 setSelectedFeatures(transformSelectedFeatures(geojson, dateColumns, dates, pointCoordsRef.current));
             })
             .catch((err) => {
-                console.error('Gisat selection error:', err);
+                console.error('[gisat-ds] selection error:', err);
                 if (!cancelled) setSelectedFeatures(null);
             })
             .finally(() => { if (!cancelled) setIsSelectingBackend(false); });
@@ -334,14 +380,26 @@ function GisatDataServiceStream2D() {
                     if (!visibleIds.has(key)) tileFeaturesRef.current.delete(key);
                 }
             },
-            onTileError: (error) => {
-                console.error('MVT tile error:', error);
+            onTileLoad: (tile) => {
+                const n = Array.isArray(tile.content) ? tile.content.length : tile.content?.features?.length;
+                console.log('[gisat-ds] tile loaded', tile.id, 'features:', n ?? tile.content);
+            },
+            onTileError: (error, tile) => {
+                console.error('[gisat-ds] MVT tile error:', tile?.id, tile?.url?.slice(0, 120), error);
                 setIsLoading(false);
                 setFetchStatus('Tile error');
             },
             renderSubLayers: (props) => {
                 const flat = flattenFeatures(props.data);
+                const bbox = props.tile.bbox;
                 tileFeaturesRef.current.set(props.tile.id, flat);
+
+                if (flat.length > 0 && !loggedTilesRef.current.has(props.tile.id)) {
+                    loggedTilesRef.current.add(props.tile.id);
+                    const f = flat[0];
+                    console.log('[gisat-ds] points in tile', props.tile.id, ':', flat.length,
+                        'position:', getFeaturePosition(f, bbox), 'props:', f.properties);
+                }
 
                 // HUD status
                 const total = [...tileFeaturesRef.current.values()].reduce((sum, a) => sum + a.length, 0);
@@ -383,10 +441,10 @@ function GisatDataServiceStream2D() {
                         tileFeaturesRef.current.forEach((feats) => {
                             for (const f of feats) {
                                 const id = getFeaturePointId(f);
-                                if (id != null) coordsById.set(id, f.geometry.coordinates);
+                                if (id != null) coordsById.set(id, getFeaturePosition(f, bbox));
                             }
                             const pointIds = filterPointsByGeometryInBounds(
-                                toTileAdapter(feats),
+                                toTileAdapter(feats, bbox),
                                 drawnGeometry,
                                 bounds
                             );
@@ -404,7 +462,7 @@ function GisatDataServiceStream2D() {
                     id: `${props.id}-points`,
                     data: flat,
 
-                    getPosition: (f) => f.geometry.coordinates,
+                    getPosition: (f) => getFeaturePosition(f, bbox),
 
                     getRadius: getPointSize(viewState.zoom),
                     radiusUnits: 'pixels',
