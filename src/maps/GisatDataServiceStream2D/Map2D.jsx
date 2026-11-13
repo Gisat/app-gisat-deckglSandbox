@@ -98,6 +98,12 @@ function getFeaturePointId(f) {
     return f.properties?.pid ?? f.properties?.fid ?? f.id ?? null;
 }
 
+function setsEqual(a, b) {
+    if (a.size !== b.size) return false;
+    for (const value of a) if (!b.has(value)) return false;
+    return true;
+}
+
 // Adapt a flattened feature array to the {numRows, getPosition, getPointId}
 // shape filterPointsByGeometryInBounds expects.
 function toTileAdapter(features, bbox) {
@@ -119,7 +125,7 @@ function transformSelectedFeatures(geojson, dateColumns, dates, coordsById) {
         type: 'FeatureCollection',
         features: (geojson?.features || []).map((f) => {
             const p = f.properties || {};
-            const pointId = p.fid ?? p.pid ?? f.id;
+            const pointId = p.pid ?? p.fid ?? f.id;
             let coords = null;
             if (f.geometry?.type === 'Point' && Array.isArray(f.geometry.coordinates)) {
                 coords = f.geometry.coordinates;
@@ -195,6 +201,13 @@ function GisatDataServiceStream2D() {
     // Handle geometry completion from drawing overlay
     const handleGeometryComplete = (geometry, mode, coords) => {
         if (!geometry) return;
+
+        console.log('[gisat-ds] geometry complete', {
+            mode,
+            coords: Array.isArray(coords) ? coords.length : 0,
+            geometryType: geometry.type,
+            rings: geometry.coordinates?.length,
+        });
 
         setDrawnGeometry(geometry);
         setIsDrawing(false);
@@ -296,6 +309,16 @@ function GisatDataServiceStream2D() {
         if (mvtUrl) console.log('[gisat-ds] mvt url template:', mvtUrl.slice(0, 100) + '... (full length ' + mvtUrl.length + ')');
     }, [mvtUrl]);
 
+    // A new tile set is the only thing that puts the map into a loading state.
+    // View changes must NOT set it: onViewportLoad only fires when the tileset or
+    // its loading state actually changes, so a pan inside cached tiles would leave
+    // isLoading stuck true (which disables PlaybackControls' Play button).
+    useEffect(() => {
+        if (!mvtUrl) return;
+        setIsLoading(true);
+        setFetchStatus('Fetching...');
+    }, [mvtUrl]);
+
     const handlePrepare = () => {
         if (dateColumns.length === 0) return;
         setPrepareState({ status: 'running' });
@@ -311,37 +334,51 @@ function GisatDataServiceStream2D() {
     };
     const handlePrepareRef = useRef(handlePrepare);
     useEffect(() => { handlePrepareRef.current = handlePrepare; });
-    // Query the data service for the selected point IDs (full timeline + metrics)
+    // Query the data service for the selected point IDs (full timeline + metrics).
+    // The client-side filter produces a new Set on every tile/cache pass, so the
+    // query is debounced: only the final selection is requested and in-flight
+    // requests are cancelled by the cleanup of the next run.
     useEffect(() => {
         if (selectedPointIds.size === 0) {
             setSelectedFeatures(null);
+            setIsSelectingBackend(false);
             return;
         }
         if (dateColumns.length === 0) return;
 
         let cancelled = false;
-        setIsSelectingBackend(true);
         const attributes = [...BASE_ATTRIBUTES, ...dateColumns];
         const ids = Array.from(selectedPointIds);
+        setIsSelectingBackend(true);
 
-        queryAttributesByIds(ids, attributes)
-            .then((geojson) => {
-                if (geojson?.features?.length > 0) return geojson;
-                // Fallback: query by the drawn geometry instead of feature IDs
-                return queryByGeometry(drawnGeometryRef.current, attributes);
-            })
-            .then((geojson) => {
-                if (cancelled || !geojson) return;
-                console.log('[gisat-ds] selection query returned', geojson.features?.length, 'features; first:', geojson.features?.[0]);
-                setSelectedFeatures(transformSelectedFeatures(geojson, dateColumns, dates, pointCoordsRef.current));
-            })
-            .catch((err) => {
-                console.error('[gisat-ds] selection error:', err);
-                if (!cancelled) setSelectedFeatures(null);
-            })
-            .finally(() => { if (!cancelled) setIsSelectingBackend(false); });
+        const timer = setTimeout(() => {
+            queryAttributesByIds(ids, attributes)
+                .then((geojson) => {
+                    if (cancelled) return null;
+                    if (geojson?.features?.length > 0) {
+                        console.log('[gisat-ds] selection query: by ids ->', geojson.features.length, 'features');
+                        return geojson;
+                    }
+                    // Fallback: query by the drawn geometry instead of feature IDs
+                    console.log('[gisat-ds] selection query: no id matches, falling back to by-geometry');
+                    return queryByGeometry(drawnGeometryRef.current, attributes);
+                })
+                .then((geojson) => {
+                    if (cancelled || !geojson) return;
+                    console.log('[gisat-ds] selection query returned', geojson.features?.length, 'features; first:', geojson.features?.[0]);
+                    setSelectedFeatures(transformSelectedFeatures(geojson, dateColumns, dates, pointCoordsRef.current));
+                })
+                .catch((err) => {
+                    console.error('[gisat-ds] selection error:', err);
+                    if (!cancelled) setSelectedFeatures(null);
+                })
+                .finally(() => { if (!cancelled) setIsSelectingBackend(false); });
+        }, 300);
 
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
     }, [selectedPointIds, dateColumns, dates]);
 
     const profileData = useMemo(() => {
@@ -371,6 +408,21 @@ function GisatDataServiceStream2D() {
             maxZoom: MAX_TILE_ZOOM,
             maxCacheSize: TILE_CACHE_LIMIT,
             binary: false,
+            // Tile sublayers are cached in `tile.layers` and only regenerated when
+            // TileLayer sees a prop change (tile-layer.js updateState). The
+            // ScatterplotLayer closures capture the playback state, so a named
+            // trigger (NOT `all`, which forces a full tile reload) invalidates the
+            // cached sublayers and re-runs renderSubLayers on every change.
+            updateTriggers: {
+                renderKey: [
+                    debouncedTimeIndex,
+                    mode,
+                    selectedPointIds,
+                    hoveredPointId,
+                    getTileZoom(viewState.zoom),
+                    drawnGeometry,
+                ],
+            },
             onViewportLoad: (selectedTiles) => {
                 setIsLoading(false);
                 setFetchStatus('Ready');
@@ -452,9 +504,10 @@ function GisatDataServiceStream2D() {
                         });
                         pointCoordsRef.current = coordsById;
 
-                        if (newSelected.size > 0) {
-                            setSelectedPointIds(newSelected);
-                        }
+                        // Always publish the filter result, including an empty one,
+                        // so stale highlights/charts are cleared. Keep the previous
+                        // Set when the contents are equal to avoid render churn.
+                        setSelectedPointIds((prev) => (setsEqual(prev, newSelected) ? prev : newSelected));
                     }
                 }
 
@@ -508,13 +561,7 @@ function GisatDataServiceStream2D() {
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
             <DeckGL
                 viewState={viewState}
-                onViewStateChange={({ viewState: vs }) => {
-                    setViewState(vs);
-                    if (mvtUrl) {
-                        setIsLoading(true);
-                        setFetchStatus('Fetching...');
-                    }
-                }}
+                onViewStateChange={({ viewState: vs }) => setViewState(vs)}
                 controller={true}
                 layers={layers}
             />
