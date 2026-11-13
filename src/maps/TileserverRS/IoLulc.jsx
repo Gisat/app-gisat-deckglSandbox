@@ -61,6 +61,7 @@ const IoLulc = () => (
         maxZoom={14} // COG native tiling zoom (10 m class raster)
         probeTile={PROBE_TILE}
         inspectTiles // STAC demo: outline the hovered tile + custom right-click menu
+        enableCrawl // drag a bbox -> get the fetch-tiles.mjs command for it
     />
 );
 

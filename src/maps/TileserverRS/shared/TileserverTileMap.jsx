@@ -5,6 +5,8 @@ import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import TileserverErrorModal from './TileserverErrorModal';
+import CrawlBoxOverlay from './CrawlBoxOverlay';
+import CrawlCommandPanel from './CrawlCommandPanel';
 import { TileOutline, TileContextMenu } from './TileInspectorOverlay';
 import { useTileHoverInspector } from './useTileHoverInspector';
 import { TILESERVER_ENDPOINT } from './endpoints';
@@ -37,14 +39,25 @@ import '../../TiTilerDemo/shared/TiTilerEndpointSwitch.css';
  * @param {number} maxZoom      - max zoom for the tile layer
  * @param {string} [probeTile]  - guaranteed in-bounds tile path (defaults to a z0 probe)
  * @param {boolean} [inspectTiles=false] - outline the hovered tile + custom right-click menu
+ * @param {boolean} [enableCrawl=false] - let the user drag a bbox and get the
+ *        fetch-tiles.mjs command for it (see CrawlCommandPanel)
  */
-function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile = '0/0/0.png', inspectTiles = false }) {
+function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile = '0/0/0.png', inspectTiles = false, enableCrawl = false }) {
     const [viewState, setViewState] = useState(initialViewState);
     const { baseUrl, healthUrl, startCommand } = TILESERVER_ENDPOINT;
     // Bumped on retry/timing toggle to recreate the TileLayer and force a full tile reload.
     const [tileLayerKey, setTileLayerKey] = useState(0);
     // Right-click menu state: client coords of the click + the tile under it.
     const [menu, setMenu] = useState(null);
+
+    // --- Crawl-from-bbox state -------------------------------------------
+    // drawMode makes the next drag select a bbox instead of panning the map;
+    // the deck.gl controller is disabled while it is on.
+    const [drawMode, setDrawMode] = useState(false);
+    // The completed bbox as [west, south, east, north], or null.
+    const [crawlBbox, setCrawlBbox] = useState(null);
+    // Source TileJSON, read once for the suggested zoom range (min/maxzoom).
+    const [tilejson, setTilejson] = useState(null);
 
     const tileUrl = `${baseUrl}/data/${sourceId}/{z}/{x}/{y}.png`;
     // The probe tile must be in-bounds for the source — systemic failures only.
@@ -103,6 +116,25 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
         el.addEventListener('contextmenu', onContextMenu);
         return () => el.removeEventListener('contextmenu', onContextMenu);
     }, [inspectTiles]);
+
+    // Read the source's TileJSON once, purely to suggest a zoom range that the
+    // server actually supports. Failure is non-fatal: the panel falls back to
+    // sane defaults rather than hiding the feature.
+    useEffect(() => {
+        if (!enableCrawl) return undefined;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(`${baseUrl}/data/${sourceId}.json`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setTilejson(data);
+            } catch {
+                // Offline / server down: keep tilejson null and let the panel default.
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [enableCrawl, baseUrl, sourceId]);
 
     // Dev-only test hook: expose a deterministic camera control on window so a
     // CDP-driven harness can pan/zoom the map with REAL viewState changes.
@@ -230,12 +262,19 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
                 id="deck-map"
                 viewState={viewState}
                 onViewStateChange={handleViewStateChange}
-                controller={true}
+                controller={!drawMode}
                 layers={layers}
                 views={new MapView({ repeat: true })}
                 onHover={inspectTiles ? handleHover : undefined}
                 style={{ width: '100vw', height: '100vh' }}
             />
+            {enableCrawl && drawMode && (
+                <CrawlBoxOverlay
+                    viewState={viewState}
+                    onComplete={(box) => { setCrawlBbox(box); setDrawMode(false); }}
+                    onCancel={() => setDrawMode(false)}
+                />
+            )}
             </div>
             <div className="titiler-endpoint-switch" role="group" aria-label="tileserver-rs endpoint">
                 <span className="titiler-endpoint-title">tileserver-rs endpoint</span>
@@ -249,6 +288,19 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
                     </button>
                 </div>
                 <div className="titiler-endpoint-url" title={baseUrl}>{baseUrl}</div>
+                {enableCrawl && !drawMode && !crawlBbox && (
+                    <button
+                        type="button"
+                        className="titiler-timing-toggle"
+                        onClick={() => setDrawMode(true)}
+                        title="Drag a rectangle on the map to get the fetch-tiles.mjs command for it"
+                    >
+                        Select area to crawl
+                    </button>
+                )}
+                {enableCrawl && drawMode && (
+                    <div className="titiler-timing-note">Drag a rectangle on the map · Esc cancels</div>
+                )}
                 <div className="titiler-timing" role="group" aria-label="Tile timing">
                     <button
                         type="button"
@@ -282,6 +334,16 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
                     onClose={closeMenu}
                 />,
                 document.body,
+            )}
+            {enableCrawl && crawlBbox && (
+                <CrawlCommandPanel
+                    bbox={crawlBbox}
+                    zoom={viewState.zoom}
+                    sourceId={sourceId}
+                    baseUrl={baseUrl}
+                    tilejson={tilejson}
+                    onClear={() => { setCrawlBbox(null); setDrawMode(false); }}
+                />
             )}
             {modal && (
                 <TileserverErrorModal
