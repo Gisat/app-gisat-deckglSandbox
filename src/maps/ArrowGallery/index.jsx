@@ -98,7 +98,7 @@ const FILL_HEAD_WIDTH_METERS = 0.8 * FILL_HEAD_SIZE_METERS;
 const ROW_2D_Y = 18;
 const ROW_SPLIT_Y = 0;
 const ROW_SINGLE_Y = -18;
-const COLUMN_SPACING = 18;
+const COLUMN_SPACING = 16;
 const RAISE_METERS = 0.2;
 
 const columnPosition = (index, rowY) => [(index - (TYPES.length - 1) / 2) * COLUMN_SPACING, rowY, RAISE_METERS];
@@ -301,7 +301,7 @@ const ArrowGallery = () => {
             </div>
             <aside
                 style={{
-                    width: 290,
+                    width: 270,
                     background: '#fff',
                     padding: 15,
                     borderLeft: '1px solid #ddd',
