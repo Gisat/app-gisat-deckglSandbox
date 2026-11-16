@@ -68,7 +68,7 @@ const mapApps = [
     { category: '3DFLUS CCN', name: 'COG Terrain Kernel', path: '/cog-kernel', component: CogTerrainKernel, description: 'Showcase kernel calculation and hover features with deck.gl-geotiff' },
     { category: '3DFLUS CCN', name: 'Gisat Data Service', path: '/gisat-data-service', component: GisatDataService },
     { category: '3DFLUS CCN', name: 'Arrow LOD Stream 2D', path: '/arrow-lod-stream-2d', component: ArrowLODStream2D },
-    { category: '3DFLUS CCN', name: 'Gisat Data Service Stream 2D', path: '/gisat-data-service-stream-2d', component: GisatDataServiceStream2D, description: 'Arrow LOD Stream 2D UX sourced from the be-gisdata data service (MVT tiles carrying the full d_* timeline, selection via /query/attributes)' },
+    { category: '3DFLUS CCN', name: 'Gisat Data Service Stream 2D', path: '/gisat-data-service-stream-2d', component: GisatDataServiceStream2D, description: 'Same UX as Arrow LOD Stream 2D, sourced from be-gisdata (MVT tiles: base + displayed d_* column in static mode, full timeline in animation; selection via /query/attributes)' },
     { category: '3DFLUS CCN', name: 'Arrow LOD Stream 3D', path: '/arrow-lod-stream-3d', component: ArrowLODStream3D },
     { category: '3DFLUS CCN', name: 'Terrain Interactive Slider', path: '/terrain-interactive-slider', component: MisicuniDam },
     { category: '3DFLUS CCN', name: 'Selection Drawing 3D', path: '/selection-drawing-3d', component: SelectionDrawing3D },

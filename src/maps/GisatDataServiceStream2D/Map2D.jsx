@@ -29,7 +29,8 @@ const INITIAL_VIEW_STATE = { longitude: 15.103, latitude: 50.249, zoom: 14, pitc
 // Prepared variants are optional and generated only up to this zoom;
 // deeper zooms fall back to live SQL.
 const PREPARE_MAX_ZOOM = 18;
-// TILE_CACHE_LIMIT stays 200 (see Decisions: URL changes reload in place).
+// deck.gl in-memory tile cache bound; a URL change reloads visible indices in
+// place, so per-date tiles do not accumulate.
 const TILE_CACHE_LIMIT = 200;
 
 const colorScale = scaleLinear()
@@ -209,8 +210,6 @@ function GisatDataServiceStream2D() {
     const drawnGeometryRef = useRef(null);
     // Track when geometry was last processed to avoid re-filtering every frame
     const lastProcessedGeometryRef = useRef(null);
-    // Tile ids already logged, so the console isn't spammed every frame
-    const loggedTilesRef = useRef(new Set());
 
     useEffect(() => { drawnGeometryRef.current = drawnGeometry; }, [drawnGeometry]);
 
@@ -340,7 +339,6 @@ function GisatDataServiceStream2D() {
     useEffect(() => {
         if (!mvtUrl) return;
         setIsLoading(true);
-        setFetchStatus('Fetching...');
     }, [mvtUrl]);
 
     const handlePrepare = () => {
@@ -455,10 +453,6 @@ function GisatDataServiceStream2D() {
                     if (!visibleIds.has(key)) tileFeaturesRef.current.delete(key);
                 }
             },
-            onTileLoad: (tile) => {
-                const n = Array.isArray(tile.content) ? tile.content.length : tile.content?.features?.length;
-                console.log('[gisat-ds] tile loaded', tile.id, 'features:', n ?? tile.content);
-            },
             onTileError: (error, tile) => {
                 console.error('[gisat-ds] MVT tile error:', tile?.id, tile?.url?.slice(0, 120), error);
                 setIsLoading(false);
@@ -468,13 +462,6 @@ function GisatDataServiceStream2D() {
                 const flat = flattenFeatures(props.data);
                 const bbox = props.tile.bbox;
                 tileFeaturesRef.current.set(props.tile.id, flat);
-
-                if (flat.length > 0 && !loggedTilesRef.current.has(props.tile.id)) {
-                    loggedTilesRef.current.add(props.tile.id);
-                    const f = flat[0];
-                    console.log('[gisat-ds] points in tile', props.tile.id, ':', flat.length,
-                        'position:', getFeaturePosition(f, bbox), 'props:', f.properties);
-                }
 
                 // HUD status
                 const total = [...tileFeaturesRef.current.values()].reduce((sum, a) => sum + a.length, 0);

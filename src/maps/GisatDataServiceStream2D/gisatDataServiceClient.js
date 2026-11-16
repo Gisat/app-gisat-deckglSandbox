@@ -64,7 +64,7 @@ export function mvtAttributesUrlTemplate(attributes, { documentId = DOCUMENT_ID,
     return `${BASE_URL}/query/mvt-attributes/${documentId}/{z}/{x}/{y}?${params}attributes=${attributes.join(',')}`;
 }
 
-export async function prepareMvt({ zMin = 0, zMax = 14, attributes, documentId = DOCUMENT_ID } = {}) {
+export async function prepareMvt({ zMin = 0, zMax = 18, attributes, documentId = DOCUMENT_ID } = {}) {
     const params = `z_min=${zMin}&z_max=${zMax}` + (attributes ? `&attributes=${attributes.join(',')}` : '');
     const res = await fetch(`${BASE_URL}/query/mvt-prepare/${documentId}?${params}`, { method: 'POST' });
     return readJson(res, 'mvt-prepare');
