@@ -52,10 +52,13 @@ export function extractTimeline(stats) {
     return { dateColumns, dates };
 }
 
-// One MVT tile can carry ALL timeline columns in a single request — that single
-// tile per z/x/y is the animation prefetch. bypass_cache=true forces live SQL
-// while no prepared tile variant exists (mvtPrepared:false); after a successful
-// mvt-prepare, drop the flag to serve the prepared tiles.
+// Per-mode tile attributes: static mode requests BASE_ATTRIBUTES plus the single
+// displayed `d_*` column; animation mode requests BASE_ATTRIBUTES plus ALL date
+// columns in one tile per z/x/y (the playback prefetch). Prepared tile variants
+// only match the all-dates list, so static requests always pass bypass_cache=true.
+// In animation, bypass_cache=true forces live SQL while no prepared variant exists
+// (mvtPrepared:false); after a successful mvt-prepare the flag is dropped to serve
+// the prepared tiles.
 export function mvtAttributesUrlTemplate(attributes, { documentId = DOCUMENT_ID, bypassCache = true } = {}) {
     const params = bypassCache ? 'bypass_cache=true&' : '';
     return `${BASE_URL}/query/mvt-attributes/${documentId}/{z}/{x}/{y}?${params}attributes=${attributes.join(',')}`;

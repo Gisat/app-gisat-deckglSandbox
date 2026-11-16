@@ -4,7 +4,7 @@ import { TileLayer, MVTLayer } from '@deck.gl/geo-layers';
 import { ScatterplotLayer, BitmapLayer } from '@deck.gl/layers';
 import { scaleLinear } from 'd3-scale';
 
-import { HUD } from '../../components/HUD';
+import { HudPanel } from './HudPanel';
 import { PlaybackControls } from '../../components/PlaybackControls';
 import { SelectionAnalysisPanel, filterPointsByGeometryInBounds, normalizeGeometry } from '../../components/PointSelection';
 import { calculateProfileData } from '../../components/2DLineProfile';
@@ -25,7 +25,11 @@ import {
 // overrides this once loaded.
 const INITIAL_VIEW_STATE = { longitude: 15.103, latitude: 50.249, zoom: 14, pitch: 0, bearing: 0 };
 
-const MAX_TILE_ZOOM = 14;
+// MVT is generated per z/x/y on the server; there is no tile-zoom cap.
+// Prepared variants are optional and generated only up to this zoom;
+// deeper zooms fall back to live SQL.
+const PREPARE_MAX_ZOOM = 18;
+// TILE_CACHE_LIMIT stays 200 (see Decisions: URL changes reload in place).
 const TILE_CACHE_LIMIT = 200;
 
 const colorScale = scaleLinear()
@@ -33,10 +37,23 @@ const colorScale = scaleLinear()
     .range([[215, 25, 28], [254, 254, 191], [65, 182, 196]])
     .clamp(true);
 
-// Server-side MVT simplification replaces the old tier system; the HUD "tier"
-// label shows the tile zoom.
+// The server generates a tile per z/x/y, so the HUD shows the true tile zoom
+// requested for the current viewport.
 function getTileZoom(zoom) {
-    return Math.max(0, Math.min(MAX_TILE_ZOOM, Math.floor(zoom)));
+    return Math.max(0, Math.floor(zoom));
+}
+
+// HUD status is explicit instead of free-form fetch strings: a tile URL change
+// is the only thing that starts a fetch (see the isLoading effect below).
+function getHudStatus({ isLoading, mode, dates, timeIndex, fetchStatus }) {
+    if (fetchStatus === 'Stats failed') return 'Stats failed';
+    if (fetchStatus === 'Tile error') return 'Tile error';
+    if (isLoading) {
+        return mode === 'animation'
+            ? 'Loading tiles (timeline)'
+            : `Loading tiles (${dates[timeIndex] ?? '...'})`;
+    }
+    return fetchStatus === 'Ready' ? 'Ready' : 'Idle';
 }
 
 function getPointSize(zoom) {
@@ -153,6 +170,7 @@ function transformSelectedFeatures(geojson, dateColumns, dates, coordsById) {
 
 function GisatDataServiceStream2D() {
     const [totalPoints, setTotalPoints] = useState(0);
+    const [datasetPoints, setDatasetPoints] = useState(0);
     const [cacheSize, setCacheSize] = useState(0);
     const [dates, setDates] = useState([]);
     const [dateColumns, setDateColumns] = useState([]);
@@ -160,8 +178,6 @@ function GisatDataServiceStream2D() {
     const [timeIndex, setTimeIndex] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
     const [fetchStatus, setFetchStatus] = useState('Idle');
-
-    const currentTierDisplay = `z${getTileZoom(viewState.zoom)}`;
 
     const [mode, setMode] = useState('static');
     const [isPlaying, setIsPlaying] = useState(false);
@@ -228,6 +244,7 @@ function GisatDataServiceStream2D() {
                 const { dateColumns, dates } = extractTimeline(stats);
                 setDateColumns(dateColumns);
                 setDates(dates);
+                setDatasetPoints(stats.numberOfFeatures ?? 0);
                 console.log('[gisat-ds] stats', {
                     documentId: stats.documentId,
                     features: stats.numberOfFeatures,
@@ -298,12 +315,19 @@ function GisatDataServiceStream2D() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [debouncedBufferDistance]);
 
-    // One tile per z/x/y carries ALL date columns, so the same URL serves both
-    // modes and MVTLayer's URL-keyed cache reuses animation tiles in static mode.
+    // Static mode requests only the displayed date column alongside the base
+    // attributes; animation requests the full timeline in one tile per z/x/y.
+    // A URL change does not accumulate cache entries: deck.gl reloads the same
+    // visible tile indices in place.
     const mvtUrl = useMemo(() => {
         if (dateColumns.length === 0) return null;
-        return mvtAttributesUrlTemplate([...BASE_ATTRIBUTES, ...dateColumns], { bypassCache });
-    }, [dateColumns, bypassCache]);
+        const attributes = mode === 'animation'
+            ? [...BASE_ATTRIBUTES, ...dateColumns]
+            : [...BASE_ATTRIBUTES, dateColumns[debouncedTimeIndex]];
+        if (!attributes.every(Boolean)) return null;
+        const bypass = mode === 'animation' ? bypassCache : true;
+        return mvtAttributesUrlTemplate(attributes, { bypassCache: bypass });
+    }, [dateColumns, debouncedTimeIndex, mode, bypassCache]);
 
     useEffect(() => {
         if (mvtUrl) console.log('[gisat-ds] mvt url template:', mvtUrl.slice(0, 100) + '... (full length ' + mvtUrl.length + ')');
@@ -322,7 +346,7 @@ function GisatDataServiceStream2D() {
     const handlePrepare = () => {
         if (dateColumns.length === 0) return;
         setPrepareState({ status: 'running' });
-        prepareMvt({ zMin: 0, zMax: MAX_TILE_ZOOM, attributes: [...BASE_ATTRIBUTES, ...dateColumns] })
+        prepareMvt({ zMin: 0, zMax: PREPARE_MAX_ZOOM, attributes: [...BASE_ATTRIBUTES, ...dateColumns] })
             .then((summary) => {
                 setPrepareState({ status: 'done', summary });
                 setBypassCache(false); // serve prepared tiles from now on
@@ -405,7 +429,6 @@ function GisatDataServiceStream2D() {
             id: 'gisat-mvt-stream',
             data: mvtUrl,
             minZoom: 0,
-            maxZoom: MAX_TILE_ZOOM,
             maxCacheSize: TILE_CACHE_LIMIT,
             binary: false,
             // Tile sublayers are cached in `tile.layers` and only regenerated when
@@ -566,14 +589,13 @@ function GisatDataServiceStream2D() {
                 layers={layers}
             />
 
-            <HUD
-                viewState={viewState}
-                currentTierDisplay={currentTierDisplay}
-                totalPoints={totalPoints}
-                fetchStatus={fetchStatus}
-                isLoading={isLoading}
-                cacheSize={cacheSize}
-                cacheLimit={TILE_CACHE_LIMIT}
+            <HudPanel
+                zoom={viewState.zoom}
+                tileZoom={getTileZoom(viewState.zoom)}
+                visiblePoints={totalPoints}
+                datasetPoints={datasetPoints}
+                status={getHudStatus({ isLoading, mode, dates, timeIndex, fetchStatus })}
+                tileCount={cacheSize}
             />
 
             <div style={{
