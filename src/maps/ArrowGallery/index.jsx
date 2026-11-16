@@ -98,7 +98,7 @@ const FILL_HEAD_WIDTH_METERS = 0.8 * FILL_HEAD_SIZE_METERS;
 const ROW_2D_Y = 18;
 const ROW_SPLIT_Y = 0;
 const ROW_SINGLE_Y = -18;
-const COLUMN_SPACING = 16;
+const COLUMN_SPACING = 14;
 const RAISE_METERS = 0.2;
 
 const columnPosition = (index, rowY) => [(index - (TYPES.length - 1) / 2) * COLUMN_SPACING, rowY, RAISE_METERS];
@@ -224,7 +224,8 @@ const ArrowGallery = () => {
             data: TYPES.map((type, index) => ({
                 text: type.label,
                 position: getTypePosition(index, 38),
-                color: COLORS[type.id]
+                color: COLORS[type.id],
+                anchor: index === TYPES.length - 1 ? 'end' : 'middle'
             })),
             coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
             coordinateOrigin: GALLERY_ORIGIN,
@@ -233,7 +234,7 @@ const ArrowGallery = () => {
             getColor: (d) => d.color,
             getSize: 15,
             sizeUnits: 'pixels',
-            getTextAnchor: 'middle',
+            getTextAnchor: (d) => d.anchor,
             getAlignmentBaseline: 'center',
             fontFamily: 'system-ui, sans-serif',
             fontWeight: 600,
