@@ -22,6 +22,7 @@ import CogTerrainKernel from './CogTerrainKernel';
 import NepalMap from './Nepal';
 import MisicuniDam from './Misicuni_dam/index.jsx';
 import TabqaDam from './Tabqa_dam/index.jsx';
+import ArrowGallery from './ArrowGallery/index.jsx';
 import GisatDataService from './GisatDataService/index.jsx';
 import SelectionDrawing3D from './SelectionDrawing3D/index.jsx';
 import FeatureScatterChart3D from './FeatureScatterChart3D/index.jsx';
@@ -63,6 +64,7 @@ const mapApps = [
     { category: 'Other', name: 'Deck.gl-raster COG', path: '/deck.gl-raster', component: devSeedCOG },
     { category: 'Other', name: 'Nepal', path: '/nepal', component: NepalMap, description: 'Nepal COP30 terrain COG with satellite imagery overlay' },
     { category: 'Other', name: 'Fehmarnsundbrucke', path: '/fehmarnsundbrucke', component: Fehmarnsundbrucke, description: 'Fehmarnsundbrücke 3D OBJ model on a Carto light basemap' },
+    { category: 'Other', name: 'Arrow Gallery', path: '/arrow-gallery', component: ArrowGallery, description: '2D shader arrows and 3D split/single meshes with live pen and tail controls' },
     // { name: 'Test Gisat Geotiff', path: '/test-gisat-geotiff', component: GisatGeotiffMap, description: 'Testing Gisat Geotiff rendering' },
     { category: '3DFLUS CCN', name: 'COG Terrain Kernel', path: '/cog-kernel', component: CogTerrainKernel, description: 'Showcase kernel calculation and hover features with deck.gl-geotiff' },
     { category: '3DFLUS CCN', name: 'Gisat Data Service', path: '/gisat-data-service', component: GisatDataService },

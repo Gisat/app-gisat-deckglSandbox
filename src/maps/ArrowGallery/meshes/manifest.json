@@ -1,0 +1,533 @@
+{
+  "generated_by": "scripts/arrows/generate_arrows.py",
+  "model": {
+    "pen_width": 1.0,
+    "thickness": 0.8,
+    "tail_length": 4.0,
+    "head_angle_deg": 40.0,
+    "head_arm_ratio": 2.24,
+    "bevel_size": 0.08,
+    "bevel_steps": 3
+  },
+  "styles": {
+    "filled": {
+      "span": 3.0,
+      "socket_to_apex": 3.0,
+      "overhang": 0.0,
+      "single_total": 7.0
+    },
+    "round-cap": {
+      "span": 2.714036901632383,
+      "socket_to_apex": 1.873738709727311,
+      "overhang": 0.840298191905072,
+      "single_total": 5.873738709727311
+    },
+    "square-cap": {
+      "span": 2.815195270859986,
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 0.6635946477024692,
+      "single_total": 6.151600623157517
+    },
+    "vertical-cut": {
+      "span": 3.271663379446923,
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.120062756289406,
+      "single_total": 6.151600623157517
+    }
+  },
+  "files": {
+    "arrow_head_filled.obj": {
+      "style": "filled",
+      "mode": "head",
+      "finish": "sharp",
+      "verts": 10,
+      "tris": 16,
+      "bbox": {
+        "x": [
+          -1.75,
+          1.75
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -3.0,
+          0.0
+        ]
+      },
+      "sha256": "5cf696d2e389d977089547e37a23133248e302c1e0c44533b8dbfd2d030ce0c3",
+      "socket_to_apex": 3.0,
+      "overhang": 0.0,
+      "span": 3.0
+    },
+    "arrow_head_filled_beveled.obj": {
+      "style": "filled",
+      "mode": "head",
+      "finish": "beveled",
+      "verts": 40,
+      "tris": 76,
+      "bbox": {
+        "x": [
+          -1.75,
+          1.75
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -3.0,
+          0.0
+        ]
+      },
+      "sha256": "6cfc05bd0027c0080b7a2c94643e6d7442f12c7b7f32a2f9b041d50fcf84258b",
+      "socket_to_apex": 3.0,
+      "overhang": 0.0,
+      "span": 3.0,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_head_round_cap.obj": {
+      "style": "round-cap",
+      "mode": "head",
+      "finish": "sharp",
+      "verts": 54,
+      "tris": 104,
+      "bbox": {
+        "x": [
+          -1.937942,
+          1.937942
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -1.873739,
+          0.840298
+        ]
+      },
+      "sha256": "6e504e292a81975b20d161a18a25b7ea8f9370448fa02d4a3f5548f7a465a551",
+      "socket_to_apex": 1.873738709727311,
+      "overhang": 0.840298191905072,
+      "span": 2.714036901632383
+    },
+    "arrow_head_round_cap_beveled.obj": {
+      "style": "round-cap",
+      "mode": "head",
+      "finish": "beveled",
+      "verts": 216,
+      "tris": 428,
+      "bbox": {
+        "x": [
+          -1.937942,
+          1.937942
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -1.873739,
+          0.840298
+        ]
+      },
+      "sha256": "37f96214be4b3d6c399758fab703e5ca6e0ad1d3462be21dca500aad3bc55c2f",
+      "socket_to_apex": 1.873738709727311,
+      "overhang": 0.840298191905072,
+      "span": 2.714036901632383,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_head_square_cap.obj": {
+      "style": "square-cap",
+      "mode": "head",
+      "finish": "sharp",
+      "verts": 14,
+      "tris": 24,
+      "bbox": {
+        "x": [
+          -1.822866,
+          1.822866
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -2.151601,
+          0.663595
+        ]
+      },
+      "sha256": "c2c053f0fd3d9c769bbaff85a58591e4bc2c1ffd53e5e7136abd594fc82e95a2",
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 0.6635946477024692,
+      "span": 2.815195270859986
+    },
+    "arrow_head_square_cap_beveled.obj": {
+      "style": "square-cap",
+      "mode": "head",
+      "finish": "beveled",
+      "verts": 56,
+      "tris": 108,
+      "bbox": {
+        "x": [
+          -1.822866,
+          1.822866
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -2.151601,
+          0.663595
+        ]
+      },
+      "sha256": "3db72a69c460ae342dae7c1ce6ddd231d3636f77d7ada61e9186a684526566f7",
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 0.6635946477024692,
+      "span": 2.815195270859986,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_head_vertical_cut.obj": {
+      "style": "vertical-cut",
+      "mode": "head",
+      "finish": "sharp",
+      "verts": 14,
+      "tris": 24,
+      "bbox": {
+        "x": [
+          -1.439844,
+          1.439844
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -2.151601,
+          1.120063
+        ]
+      },
+      "sha256": "bd2023ad3c79b0e203717eb20a67255fa1d7e5d88098dfd7f3e563fcb7682ea7",
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.120062756289406,
+      "span": 3.271663379446923
+    },
+    "arrow_head_vertical_cut_beveled.obj": {
+      "style": "vertical-cut",
+      "mode": "head",
+      "finish": "beveled",
+      "verts": 56,
+      "tris": 108,
+      "bbox": {
+        "x": [
+          -1.439844,
+          1.439844
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -2.151601,
+          1.120063
+        ]
+      },
+      "sha256": "34eb3dc97f6c1f7b2a250314399d875a09f4b0d6294907d4943682676037a7a2",
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.120062756289406,
+      "span": 3.271663379446923,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_single_filled.obj": {
+      "style": "filled",
+      "mode": "single",
+      "finish": "sharp",
+      "verts": 14,
+      "tris": 24,
+      "bbox": {
+        "x": [
+          -1.75,
+          1.75
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -7.0,
+          0.0
+        ]
+      },
+      "sha256": "66c635993683900397b8ee6df7dad508c4174f1aad5eeab47f9ada40dca14f5c",
+      "tail": 4.0,
+      "socket_to_apex": 3.0,
+      "overhang": 0.0,
+      "total_length": 7.0
+    },
+    "arrow_single_filled_beveled.obj": {
+      "style": "filled",
+      "mode": "single",
+      "finish": "beveled",
+      "verts": 56,
+      "tris": 108,
+      "bbox": {
+        "x": [
+          -1.75,
+          1.75
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -7.0,
+          0.0
+        ]
+      },
+      "sha256": "014ac01c2c38159623e57c2034f813b258645a5c16f79d230ffbc8b4e3ce3854",
+      "tail": 4.0,
+      "socket_to_apex": 3.0,
+      "overhang": 0.0,
+      "total_length": 7.0,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_single_round_cap.obj": {
+      "style": "round-cap",
+      "mode": "single",
+      "finish": "sharp",
+      "verts": 58,
+      "tris": 112,
+      "bbox": {
+        "x": [
+          -1.937942,
+          1.937942
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -5.873739,
+          0.0
+        ]
+      },
+      "sha256": "a78b393a8ca22ddf86f8ef18ed5d64c201aecc5d2dd7974cb0c89483894acf18",
+      "tail": 4.0,
+      "socket_to_apex": 1.873738709727311,
+      "overhang": 0.840298191905072,
+      "total_length": 5.873738709727311
+    },
+    "arrow_single_round_cap_beveled.obj": {
+      "style": "round-cap",
+      "mode": "single",
+      "finish": "beveled",
+      "verts": 232,
+      "tris": 460,
+      "bbox": {
+        "x": [
+          -1.937942,
+          1.937942
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -5.873739,
+          0.0
+        ]
+      },
+      "sha256": "fb88e64749e1ac3c045ac0f1ad1d1eea2e742eea735555897000bb60e0aa99ef",
+      "tail": 4.0,
+      "socket_to_apex": 1.873738709727311,
+      "overhang": 0.840298191905072,
+      "total_length": 5.873738709727311,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_single_square_cap.obj": {
+      "style": "square-cap",
+      "mode": "single",
+      "finish": "sharp",
+      "verts": 18,
+      "tris": 32,
+      "bbox": {
+        "x": [
+          -1.822866,
+          1.822866
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -6.151601,
+          0.0
+        ]
+      },
+      "sha256": "3b653d55496eed3fe8b0af11f4272d4753ac1fc6a7fbf6cc822a21281877a9fd",
+      "tail": 4.0,
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 0.6635946477024692,
+      "total_length": 6.151600623157517
+    },
+    "arrow_single_square_cap_beveled.obj": {
+      "style": "square-cap",
+      "mode": "single",
+      "finish": "beveled",
+      "verts": 72,
+      "tris": 140,
+      "bbox": {
+        "x": [
+          -1.822866,
+          1.822866
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -6.151601,
+          0.0
+        ]
+      },
+      "sha256": "4372820880b63c5675548c236bdd82206d724cfdaa91bb1559320fbda0a657ec",
+      "tail": 4.0,
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 0.6635946477024692,
+      "total_length": 6.151600623157517,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_single_vertical_cut.obj": {
+      "style": "vertical-cut",
+      "mode": "single",
+      "finish": "sharp",
+      "verts": 18,
+      "tris": 32,
+      "bbox": {
+        "x": [
+          -1.439844,
+          1.439844
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -6.151601,
+          0.0
+        ]
+      },
+      "sha256": "e9a427e482733e8c53ffe01d2221ab89dbe1aed5b4556fe436a81d937c00ac5a",
+      "tail": 4.0,
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.120062756289406,
+      "total_length": 6.151600623157517
+    },
+    "arrow_single_vertical_cut_beveled.obj": {
+      "style": "vertical-cut",
+      "mode": "single",
+      "finish": "beveled",
+      "verts": 72,
+      "tris": 140,
+      "bbox": {
+        "x": [
+          -1.439844,
+          1.439844
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -6.151601,
+          0.0
+        ]
+      },
+      "sha256": "44dbe991f6b3be67735657322b4920b91ada1a5c36e2cdc397b27067675df13b",
+      "tail": 4.0,
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.120062756289406,
+      "total_length": 6.151600623157517,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_tail_round_end_rounded.obj": {
+      "style": "shared",
+      "mode": "cap",
+      "finish": "beveled",
+      "verts": 72,
+      "tris": 140,
+      "bbox": {
+        "x": [
+          -0.5,
+          0.5
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -0.5,
+          0.0
+        ]
+      },
+      "sha256": "7d4d26fda97704f576e0bacc946dc735e3fcb8fb0814a0d5d05c86786e374197",
+      "depth": 0.5
+    },
+    "arrow_tail_unit.obj": {
+      "style": "shared",
+      "mode": "stem",
+      "finish": "sharp",
+      "verts": 8,
+      "tris": 12,
+      "bbox": {
+        "x": [
+          -0.5,
+          0.5
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -1.0,
+          0.0
+        ]
+      },
+      "sha256": "177153b33a7c894fb29806edd3b0f2c5c6f4c5df048fa5b1a13df001fd1226d8",
+      "tail": 1.0
+    },
+    "arrow_tail_unit_rounded.obj": {
+      "style": "shared",
+      "mode": "stem",
+      "finish": "rounded",
+      "verts": 56,
+      "tris": 108,
+      "bbox": {
+        "x": [
+          -0.5,
+          0.5
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -1.0,
+          0.0
+        ]
+      },
+      "sha256": "192d7c42a9f6b573a54dd0ed266aac744333bbbb6aec130b9f83c4ed38d7d844",
+      "tail": 1.0
+    }
+  }
+}
