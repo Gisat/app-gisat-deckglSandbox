@@ -1,40 +1,37 @@
 /**
  * Poláky/Hradec v3 — `?debugRig=1` acceptance block.
  *
- * Prints the numeric gates from plan tasks 2–4 for pylon 10 (the default focus)
- * and a no-NaN sweep over the shortest and tallest towers. Enabled only by the
- * query parameter; v1 / v2 ignore it entirely.
+ * Prints the numeric gates for pylon 10 (the default focus) and a no-NaN sweep
+ * over the shortest and tallest towers. Enabled only by the query parameter; the
+ * other routes ignore it entirely.
  *
- * Each check logs as `console.info('[rig] P/F ...')` so a failing gate is
+ * Each check logs as `console.info('[rig] PASS/FAIL ...')` so a failing gate is
  * visible without opening the console details.
  */
 
 import {
   bandMedianAt,
-  bandMedianSeries,
-  buildBandCollars,
-  buildFinGeometry,
+  buildHaloRingFrame,
+  buildHaloRingGeometry,
   coneAxis,
   coneOrientation,
-  featureSeries,
-  resampleSeries,
+  haloBandSeries,
 } from './bandGeometry';
+import { SOLVER_TRACK_IDS, losRow, solveBand, towardDeg } from './decomposition';
 import {
-  SOLVER_TRACK_IDS,
-  losRow,
-  solveBand,
-  towardDeg,
-} from './decomposition';
-import {
-  BAND_COLLAR_RADIUS_M,
-  BAND_COLLAR_SEGMENTS,
   BAND_FRACTIONS,
   BAND_LABELS,
-  FIN_INNER_M,
-  FIN_LENGTH_M,
-  FIN_SAMPLE_COUNT,
-  LANE_OFFSET_M,
-  RIG_GROUND_CLEARANCE_M,
+  HALO_ARC_DEG,
+  HALO_EAST_START_DEG,
+  HALO_INNER_RADIUS_M,
+  HALO_OUTER_RADIUS_M,
+  HALO_RADIAL_SCALE_M_PER_MM,
+  HALO_SAMPLE_COUNT,
+  HALO_SEGMENTS,
+  HALO_WEST_START_DEG,
+  HALO_ZERO_RADIUS_M,
+  METRES_PER_DEG_LAT,
+  TRACK_HALO_SIDE,
   TRACK_IDS,
   metresPerDegLon,
 } from './tracks';
@@ -42,6 +39,7 @@ import {
 export const DEBUG_PYLON_ID = 10;
 export const SPOT_PYLON_IDS = [1, 18];
 
+const DEG = 180 / Math.PI;
 const fmt = (value, digits = 2) => (Number.isFinite(value) ? value.toFixed(digits) : '—');
 const fmtDate = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '—');
 
@@ -68,15 +66,38 @@ function findPylonById(store, id) {
   return null;
 }
 
+/** East/north offset in metres from a pylon to a ring vertex. */
+function offsetFrom(pylon, point, mPerDegLon) {
+  return {
+    east: (point[0] - pylon.lon) * mPerDegLon,
+    north: (point[1] - pylon.lat) * METRES_PER_DEG_LAT,
+  };
+}
+
+/** Compass azimuth of a ring vertex, degrees clockwise from north. */
+function azimuthOf(pylon, point, mPerDegLon) {
+  const { east, north } = offsetFrom(pylon, point, mPerDegLon);
+  return ((Math.atan2(east, north) * DEG) + 360) % 360;
+}
+
+/** Radius of a ring vertex, metres. */
+function radiusOf(pylon, point, mPerDegLon) {
+  const { east, north } = offsetFrom(pylon, point, mPerDegLon);
+  return Math.hypot(east, north);
+}
+
+const clampRadius = (value) => Math.min(
+  HALO_OUTER_RADIUS_M,
+  Math.max(HALO_INNER_RADIUS_M, HALO_ZERO_RADIUS_M + value * HALO_RADIAL_SCALE_M_PER_MM),
+);
+
 /**
  * Runs the debug block.
  *
- * @param {{
- *   store: any, windowDays: number, scaleMPerMm: number,
- * }} input
+ * @param {{ store: any, windowDays: number }} input
  * @returns {number} Number of failed checks.
  */
-export function logRigDebug({ store, windowDays, scaleMPerMm }) {
+export function logRigDebug({ store, windowDays }) {
   const log = (message) => console.info(`[rig] ${message}`);
   let failures = 0;
   const must = (name, ok, detail) => {
@@ -84,7 +105,7 @@ export function logRigDebug({ store, windowDays, scaleMPerMm }) {
     if (!ok) failures += 1;
   };
 
-  log(`window ${windowDays} d · scale ${scaleMPerMm} m/mm · union grid ${store.grid.length} epochs`);
+  log(`window ${windowDays} d · union grid ${store.grid.length} epochs`);
   log(`common decomposition epoch ${fmtDate(store.commonEpochMs)}`);
 
   const pylon = findPylonById(store, DEBUG_PYLON_ID);
@@ -93,30 +114,26 @@ export function logRigDebug({ store, windowDays, scaleMPerMm }) {
     return failures + 1;
   }
 
-  // ---- Task 2: z frame ----------------------------------------------------
+  const mPerDegLon = metresPerDegLon(pylon.lat);
+
+  // ---- Frame ---------------------------------------------------------------
   log(`pylon ${pylon.id} (${pylon.typ ?? '?'}) at ${fmt(pylon.lon, 5)}, ${fmt(pylon.lat, 5)}`);
   log(`  terrainElevation ${fmt(pylon.terrainElevation)} m (COG, the z anchor)`);
   log(`  baseElevation ${fmt(pylon.baseElevation)} m (DTM _median, reported only)`);
   log(`  _median - COG offset ${fmt(pylon.baseElevation - pylon.terrainElevation)} m`);
-  log('  z frame: [lon, lat, terrainElevation + bandZ + Δ], rigid, no per-vertex terrain');
-  log(`  height ${fmt(pylon.height, 1)} m`);
-  log(`  bandZ ${pylon.bandZ.map((z) => fmt(z)).join(' / ')} m`);
+  log(`  height ${fmt(pylon.height, 1)} m · bandZ ${pylon.bandZ.map((z) => fmt(z)).join(' / ')} m`);
   for (const trackId of TRACK_IDS) {
     log(`  ${trackId} band counts ${pylon.nByBandTrack[trackId].join(' / ')}`);
   }
-  // The rig must not use `_median` as an absolute z: the COG terrain under the
-  // towers sits ~45 m below that datum at this site. The wire check is that the
-  // band heights are a clean fraction of the tower and strictly increasing;
-  // `baseElevation` is printed only so the offset stays auditable.
-  must(
-    'bandZ equals the band fractions of the tower height',
-    pylon.bandZ.every((z, i) => Math.abs(z - BAND_FRACTIONS[i] * pylon.height) < 1e-6),
-    `${pylon.bandZ.map((z) => fmt(z, 2)).join(' / ')} m`,
-  );
   must(
     'terrain elevation sampled for pylon 10',
     Number.isFinite(pylon.terrainElevation) && pylon.terrainElevation > 0,
     `${fmt(pylon.terrainElevation)} m`,
+  );
+  must(
+    'bandZ equals the band fractions of the tower height',
+    pylon.bandZ.every((z, i) => Math.abs(z - BAND_FRACTIONS[i] * pylon.height) < 1e-6),
+    pylon.bandZ.map((z) => fmt(z, 2)).join(' / '),
   );
   must(
     'band heights increase',
@@ -130,85 +147,144 @@ export function logRigDebug({ store, windowDays, scaleMPerMm }) {
     `${store.pylons.size} pylons`,
   );
 
-  // ---- Task 3: fin geometry ----------------------------------------------
-  const mPerDegLon = metresPerDegLon(pylon.lat);
-  const axisEnd = FIN_INNER_M + FIN_LENGTH_M;
-  let quadTotal = 0;
+  // ---- Ring frames ---------------------------------------------------------
+  const base = pylon.terrainElevation;
+  const halfSegments = Math.max(2, Math.round(HALO_SEGMENTS / 2));
+  const discVertices = 2 * (halfSegments + 1);
 
-  for (const trackId of TRACK_IDS) {
-    const side = trackId === '95D' ? 'west' : 'east';
-    const dir = side === 'west' ? -1 : 1;
-    const laneOffsetM = trackId === '95D' ? 0 : (trackId === '44A' ? -LANE_OFFSET_M / 2 : LANE_OFFSET_M / 2);
+  for (let band = 0; band < pylon.bandZ.length; band++) {
+    const frame = buildHaloRingFrame({
+      pylon,
+      base,
+      bandZ: pylon.bandZ[band],
+      segments: HALO_SEGMENTS,
+    });
+    const radii = frame.discs.flatMap((disc) => disc.polygon.map((p) => radiusOf(pylon, p, mPerDegLon)));
+    const zeroRadii = frame.zeroCircle.map((p) => radiusOf(pylon, p, mPerDegLon));
+    const dividerAzimuths = frame.divider.map((p) => azimuthOf(pylon, p, mPerDegLon));
+    const dividerRadii = frame.divider.map((p) => radiusOf(pylon, p, mPerDegLon));
 
-    for (let band = 0; band < pylon.bandZ.length; band++) {
+    log(
+      `  ring ${BAND_LABELS[band]}: discs=${frame.discs.length} `
+      + `vertices=${frame.discs.map((d) => d.polygon.length).join('+')} `
+      + `radii ${fmt(Math.min(...radii))}–${fmt(Math.max(...radii))} m`,
+    );
+
+    must(`${BAND_LABELS[band]} has a west and an east disc`, frame.discs.length === 2);
+    must(
+      `${BAND_LABELS[band]} discs use ${discVertices} vertices`,
+      frame.discs.every((disc) => disc.polygon.length === discVertices),
+      `${discVertices}`,
+    );
+    must(
+      `${BAND_LABELS[band]} disc radii stay on the inner/outer bounds`,
+      radii.every((r) => r >= HALO_INNER_RADIUS_M - 1e-6 && r <= HALO_OUTER_RADIUS_M + 1e-6),
+    );
+    must(
+      `${BAND_LABELS[band]} 0 mm circle is ${HALO_ZERO_RADIUS_M} m`,
+      zeroRadii.every((r) => Math.abs(r - HALO_ZERO_RADIUS_M) < 1e-6),
+      `${fmt(Math.min(...zeroRadii))}–${fmt(Math.max(...zeroRadii))} m`,
+    );
+    must(
+      `${BAND_LABELS[band]} divider runs north to south`,
+      Math.abs(dividerAzimuths[0]) < 1e-6
+        && Math.abs(dividerAzimuths[1] - 180) < 1e-6
+        && dividerRadii.every((r) => Math.abs(r - HALO_OUTER_RADIUS_M) < 1e-6),
+      `${fmt(dividerAzimuths[0], 3)}° / ${fmt(dividerAzimuths[1], 3)}°`,
+    );
+
+    // ---- Polar curves ------------------------------------------------------
+    for (const trackId of TRACK_IDS) {
       const scatterers = pylon.bands[trackId][band];
       if (scatterers.length === 0) {
-        log(`  fin ${trackId}/${BAND_LABELS[band]}: no scatterers, not drawn`);
+        log(`  ${trackId}/${BAND_LABELS[band]} ring: no scatterers, not drawn`);
         continue;
       }
 
-      const dense = bandMedianSeries(scatterers, windowDays, store.grid);
-      const display = resampleSeries(dense, store.grid, FIN_SAMPLE_COUNT);
-      const geometry = buildFinGeometry({
-        series: display.series,
-        grid: display.grid,
-        side,
-        laneOffsetM,
+      const prepared = haloBandSeries(scatterers, store.grid, windowDays, HALO_SAMPLE_COUNT);
+      if (prepared.median.length < 2) {
+        must(`${trackId}/${BAND_LABELS[band]} has a resampled median`, false);
+        continue;
+      }
+
+      const side = TRACK_HALO_SIDE[trackId];
+      const geometry = buildHaloRingGeometry({
+        pylon,
+        base,
         bandZ: pylon.bandZ[band],
         bandIndex: band,
         trackId,
-        scaleMPerMm: scaleMPerMm,
-        pylon,
-        base: pylon.terrainElevation,
+        side,
+        series: prepared.median,
+        scatterers: prepared.scatterers,
+        times: prepared.times,
       });
-      quadTotal += geometry.quads.length;
 
-      const present = display.series.filter(Number.isFinite).length;
-      const gaps = FIN_SAMPLE_COUNT - present;
-      const drawn = geometry.curve[0] ?? [];
-      const first = drawn[0];
-      const last = drawn[drawn.length - 1];
-      const innerOffset = first ? dir * (first[0] - pylon.lon) * mPerDegLon : NaN;
-      const outerOffset = last ? dir * (last[0] - pylon.lon) * mPerDegLon : NaN;
-      const firstMm = first ? first[2] - pylon.terrainElevation - pylon.bandZ[band] : NaN;
-      const lowest = drawn.length ? Math.min(...drawn.map((p) => p[2])) : NaN;
-      const ordered = drawn.every((p, i) => i === 0 || dir * (p[0] - drawn[i - 1][0]) > 0);
+      const vertices = geometry.curve.flat();
+      const azimuths = vertices.map((p) => azimuthOf(pylon, p, mPerDegLon));
+      const radiiCurve = vertices.map((p) => radiusOf(pylon, p, mPerDegLon));
+
+      const startDeg = side === 'west' ? HALO_WEST_START_DEG : HALO_EAST_START_DEG;
+      const endDeg = side === 'west'
+        ? HALO_WEST_START_DEG - HALO_ARC_DEG
+        : HALO_EAST_START_DEG + HALO_ARC_DEG;
+      const minAzimuth = Math.min(startDeg, endDeg) - 1e-6;
+      const maxAzimuth = Math.max(startDeg, endDeg) + 1e-6;
+      const inArc = azimuths.every((a) => a >= minAzimuth && a <= maxAzimuth);
+
+      // Radii must reproduce clamp(18 + v × 0.8) vertex by vertex.
+      let cursor = 0;
+      let radiusMatch = true;
+      for (let i = 0; i < prepared.median.length; i++) {
+        const value = prepared.median[i];
+        if (!Number.isFinite(value)) continue;
+        if (Math.abs(radiiCurve[cursor] - clampRadius(value)) > 1e-6) radiusMatch = false;
+        cursor += 1;
+      }
+
+      const firstVertex = vertices[0];
+      const firstAzimuth = firstVertex ? azimuthOf(pylon, firstVertex, mPerDegLon) : NaN;
 
       log(
-        `  fin ${trackId}/${BAND_LABELS[band]}: n=${scatterers.length} quads=${geometry.quads.length} `
-        + `present=${present} gaps=${gaps} axis ${FIN_INNER_M}→${axisEnd} m, drawn ${fmt(innerOffset, 3)}→`
-        + `${fmt(outerOffset, 3)} m, first ${fmt(firstMm)} mm`,
+        `  ${trackId}/${BAND_LABELS[band]} ring: n=${scatterers.length} `
+        + `vertices=${vertices.length} runs=${geometry.curve.length} `
+        + `scatterer curves=${geometry.scatterers.reduce((sum, runs) => sum + runs.length, 0)} `
+        + `azimuth ${fmt(Math.min(...azimuths), 1)}…${fmt(Math.max(...azimuths), 1)}° `
+        + `radius ${fmt(Math.min(...radiiCurve))}…${fmt(Math.max(...radiiCurve))} m`,
       );
 
-      // The time axis is shared by all three tracks and resampled to 120 steps
-      // (~35 days each), so a track that starts a few days after the first union
-      // epoch begins up to one step outward.
-      must(`${trackId}/${BAND_LABELS[band]} inner vertex at ${FIN_INNER_M} m (±0.6)`,
-        Math.abs(innerOffset - FIN_INNER_M) <= 0.6, `${fmt(innerOffset, 3)} m`);
-      must(`${trackId}/${BAND_LABELS[band]} resampled to ${FIN_SAMPLE_COUNT} vertices`,
-        display.series.length === FIN_SAMPLE_COUNT);
-      must(`${trackId}/${BAND_LABELS[band]} never below ground + ${RIG_GROUND_CLEARANCE_M} m`,
-        !Number.isFinite(lowest)
-          || lowest >= pylon.terrainElevation + RIG_GROUND_CLEARANCE_M - 1e-6,
-        `${fmt(lowest)} m vs ${fmt(pylon.terrainElevation + RIG_GROUND_CLEARANCE_M)} m`);
-      must(`${trackId}/${BAND_LABELS[band]} vertices ordered start→end`, ordered);
-      // The raw record is pre-referenced to its first epoch, so every scatterer's
-      // first `d_*` sample is 0. The *smoothed* first value is the mean of the
-      // first window, which is why it is reported rather than asserted at 0.
-      must(`${trackId}/${BAND_LABELS[band]} raw records start at 0 mm`,
-        scatterers.every((feature) => Math.abs(featureSeries(feature).values[0]) < 1e-9),
-        `smoothed start ${fmt(firstMm)} mm`);
-      must(`${trackId}/${BAND_LABELS[band]} quads cover every present pair`,
-        geometry.quads.length === present - 1, `${geometry.quads.length} vs ${present - 1}`);
-      must(`${trackId}/${BAND_LABELS[band]} drawn end stays on the axis`,
-        outerOffset <= axisEnd + 0.01, `${fmt(outerOffset, 2)} m`);
+      must(
+        `${trackId}/${BAND_LABELS[band]} curve stays inside ${fmt(minAzimuth, 0)}–${fmt(maxAzimuth, 0)}°`,
+        inArc,
+      );
+      must(
+        `${trackId}/${BAND_LABELS[band]} radius = clamp(18 + v × 0.8)`,
+        radiusMatch,
+      );
+      must(
+        `${trackId}/${BAND_LABELS[band]} radii stay on the ring bounds`,
+        radiiCurve.every((r) => r >= HALO_INNER_RADIUS_M - 1e-6 && r <= HALO_OUTER_RADIUS_M + 1e-6),
+      );
+      // A track whose record starts after the union grid begins is clipped at the
+      // first resampled step, so assert its first vertex sits at or past the arc
+      // start rather than exactly on it.
+      const startsOnOrAfterArc = side === 'west'
+        ? firstAzimuth <= startDeg + 1e-3
+        : firstAzimuth >= startDeg - 1e-3;
+      must(
+        `${trackId}/${BAND_LABELS[band]} starts at or past ${fmt(startDeg, 0)}°`,
+        !Number.isFinite(firstAzimuth) || startsOnOrAfterArc,
+        `${fmt(firstAzimuth, 3)}°`,
+      );
+      must(
+        `${trackId}/${BAND_LABELS[band]} has terminal nodes`,
+        geometry.anchors.length >= geometry.curve.length,
+        `${geometry.anchors.length}`,
+      );
     }
   }
 
-  log(`  fins total ${quadTotal} quads`);
-  must('fins were built', quadTotal > 0);
-
-  // ---- Task 4: decomposition ---------------------------------------------
+  // ---- Decomposition -------------------------------------------------------
   const incidence = {};
   for (const trackId of SOLVER_TRACK_IDS) incidence[trackId] = store.incidence[trackId] ?? NaN;
 
@@ -258,11 +334,10 @@ export function logRigDebug({ store, windowDays, scaleMPerMm }) {
     matrix[0][0] > 0 && matrix[1][0] < 0 && matrix[2][0] < 0,
     matrix.map((r) => fmt(r[0], 3)).join(' / '));
 
-  // ---- Arrow heads and collars -------------------------------------------
-  // The heads must align with their shafts. deck.gl maps a mesh's local +Z to
-  // (cos yaw·sin pitch, sin yaw·sin pitch, cos pitch); these assertions prove the
-  // emitted orientation reproduces (east, 0, up) instead of trusting an Euler
-  // convention. A ±90° yaw, for instance, would put the axis on ±Y (north/south).
+  // ---- Arrow heads ---------------------------------------------------------
+  // deck.gl maps a mesh's local +Z to (cos yaw·sin pitch, sin yaw·sin pitch,
+  // cos pitch); these assertions prove the emitted orientation reproduces
+  // (east, 0, up). A ±90° yaw would put the axis on ±Y (north/south).
   for (const [eastM, upM] of [[4, -1], [-4, -1], [0, -4], [3, 3]]) {
     const axis = coneAxis(coneOrientation(eastM, upM));
     const length = Math.hypot(eastM, upM);
@@ -274,29 +349,7 @@ export function logRigDebug({ store, windowDays, scaleMPerMm }) {
     );
   }
 
-  const collars = buildBandCollars({
-    pylon,
-    base: pylon.terrainElevation,
-    bandZ: pylon.bandZ,
-    radiusM: BAND_COLLAR_RADIUS_M,
-    segments: BAND_COLLAR_SEGMENTS,
-  });
-  must('one collar per band', collars.length === pylon.bandZ.length, `${collars.length}`);
-  must(
-    'fin inner radius matches the collar radius',
-    FIN_INNER_M === BAND_COLLAR_RADIUS_M,
-    `${FIN_INNER_M} m`,
-  );
-  must(
-    'each collar closes on itself',
-    collars.every((collar) => {
-      const start = collar.path[0];
-      const end = collar.path[collar.path.length - 1];
-      return start[0] === end[0] && start[1] === end[1] && start[2] === end[2];
-    }),
-  );
-
-  // ---- Height sweep ------------------------------------------------------
+  // ---- Height sweep --------------------------------------------------------
   for (const id of SPOT_PYLON_IDS) {
     const spot = findPylonById(store, id);
     if (!spot) {

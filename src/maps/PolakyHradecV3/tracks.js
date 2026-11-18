@@ -41,7 +41,7 @@ export const DEFAULT_TRACK_ID = '95D';
 
 /**
  * Look direction per track, degrees clockwise from north: where the sensor
- * points. It only decides which side of the tower the fin is drawn on. The
+ * points. It only decides which side of the ring the curve is drawn on. The
  * least-squares row uses the opposite bearing (toward the sensor), see
  * `towardDeg` in `decomposition.js`.
  */
@@ -51,18 +51,21 @@ export const TRACK_LOOK_DEG = {
   '146A': 80,
 };
 
-/** Fin side per track: descending west, both ascending east. */
-export const TRACK_FIN_SIDE = {
-  '95D': 'west',
-  '44A': 'east',
-  '146A': 'east',
-};
-
 /** One hue per track (fill alpha is applied by the map host). */
-export const FIN_TRACK_COLORS = {
+export const HALO_TRACK_COLORS = {
   '95D': [108, 79, 216],
   '44A': [14, 159, 143],
   '146A': [217, 119, 6],
+};
+
+/**
+ * Ring side per track: 95D reads the west semicircle, both ascending tracks the
+ * east one. The north-south divider is the seam between them.
+ */
+export const TRACK_HALO_SIDE = {
+  '95D': 'west',
+  '44A': 'east',
+  '146A': 'east',
 };
 
 /** Only this track's curve is dashed, so the two ascending tracks never merge. */
@@ -85,43 +88,52 @@ export const BAND_ASSIGN_FRACTIONS = [0.40, 0.70];
 export const BAND_LABELS = ['base', 'mid', 'top'];
 export const BAND_COUNT = BAND_FRACTIONS.length;
 
-/**
- * Rig fin layout, metres. `FIN_INNER_M` equals the collar radius so each ribbon
- * springs directly from its collar ring on the tower instead of starting in
- * mid-air.
- */
-export const FIN_INNER_M = 3.5;
-export const FIN_LENGTH_M = 60;
+// ---------------------------------------------------------------------------
+// Halo rings
+//
+// One flat polar ring per structural band, centred on the tower axis. Time runs
+// clockwise from north (2014) to south (2026) on both semicircles; displacement
+// is radial — inward for negative LOS, outward for positive. The 0 mm circle at
+// 18 m clears the lattice and still fits inside the 50 m closest neighbour
+// spacing, so three rings never intersect a neighbouring tower.
+//
+// Unlike the old vertical fin walls these are strictly horizontal: no terrain extension and no
+// vertical channel, so they cannot bleed into each other in perspective.
+// ---------------------------------------------------------------------------
 
-/**
- * Lane separation between the two east fins. Both ascending tracks sit on the
- * east side, so they are offset north/south by half this distance each. At 8 m
- * the two translucent walls no longer sit on top of each other in a tilted view.
- */
-export const LANE_OFFSET_M = 8.0;
+/** -10 mm boundary. */
+export const HALO_INNER_RADIUS_M = 10;
+/** 0 mm baseline circle: clears the tower, stays inside the neighbour spacing. */
+export const HALO_ZERO_RADIUS_M = 18;
+/** +10 mm boundary. */
+export const HALO_OUTER_RADIUS_M = 26;
+/** Metres of radius per millimetre of smoothed LOS displacement. */
+export const HALO_RADIAL_SCALE_M_PER_MM = 0.8;
+/** Vertices around a full ring (half are used per semicircle disc). */
+export const HALO_SEGMENTS = 96;
+/** Display vertices per curve, after smoothing. */
+export const HALO_SAMPLE_COUNT = 120;
 
-/**
- * Vertical exaggeration choices, displayed as ×700 / ×1500 / ×2500. The default
- * ×1500 makes 4–9 mm deflections read clearly; the ground-clearance clamp in
- * `buildFinGeometry` keeps the deepest base-band values out of the terrain.
- */
-export const SCALE_OPTIONS = [0.7, 1.5, 2.5];
-export const DEFAULT_SCALE_M_PER_MM = 1.5;
+/** Polar sweep: each semicircle spans 150° of the ring, 30° shy of the divider. */
+export const HALO_ARC_DEG = 150;
+/** 95D starts NNW (345°) and sweeps clockwise to SSW (195°). */
+export const HALO_WEST_START_DEG = 345;
+/** The ascending tracks start NNE (15°) and sweep clockwise to SSE (165°). */
+export const HALO_EAST_START_DEG = 15;
 
-/**
- * Display vertices per fin. Smoothing happens on each track's own dates; the
- * smoothed series is then resampled to this many uniform steps before it becomes
- * geometry. The union grid has ~1300 epochs, i.e. ~0.05 m per segment along a
- * 60 m fin, which turns a dashed line into a sub-pixel scribble.
- */
-export const FIN_SAMPLE_COUNT = 120;
+// ---------------------------------------------------------------------------
+// Structural ΔU/ΔE vectors
+// ---------------------------------------------------------------------------
 
-/** Band collar: a small ring on the tower at each band height. */
-export const BAND_COLLAR_RADIUS_M = 3.5;
-export const BAND_COLLAR_SEGMENTS = 48;
-
-/** Fins are clamped to this height above the sampled ground. */
-export const RIG_GROUND_CLEARANCE_M = 0.5;
+/** Metres of arrow per millimetre of solved motion. */
+export const VECTOR_SCALE_M_PER_MM = 2.5;
+/** Even a 1.7 mm mid-shaft tilt must reach past the 3.5 m lattice. */
+export const VECTOR_MIN_LENGTH_M = 6.5;
+export const VECTOR_MAX_LENGTH_M = 22;
+export const VECTOR_SHAFT_RADIUS_M = 0.32;
+export const VECTOR_HEAD_LENGTH_M = 2.4;
+export const VECTOR_HEAD_RADIUS_M = 0.7;
+export const VECTOR_COLOR = [255, 210, 60, 255];
 
 /** Smoothing windows, in days. The cadence is irregular (6–24 d), so never in samples. */
 export const WINDOW_OPTIONS = [30, 90, 180, 365];
@@ -140,14 +152,14 @@ export function metresPerDegLon(latDeg) {
   return METRES_PER_DEG_LAT * Math.cos((latDeg * Math.PI) / 180);
 }
 
-/** Rig render modes. */
+/** Rig render modes. Rings are the primary reading; vectors are the optional extra. */
 export const RIG_OFF = 'off';
-export const RIG_FINS = 'fins';
-export const RIG_FINS_VECTORS = 'fins-vectors';
+export const RIG_RINGS = 'rings';
+export const RIG_RINGS_VECTORS = 'rings-vectors';
 export const RIG_MODES = [
   { id: RIG_OFF, label: 'Off' },
-  { id: RIG_FINS, label: 'Fins' },
-  { id: RIG_FINS_VECTORS, label: 'Fins + vectors' },
+  { id: RIG_RINGS, label: 'Rings' },
+  { id: RIG_RINGS_VECTORS, label: 'Rings + vectors' },
 ];
 
 /** Decomposition confidence thresholds (see `decomposition.js`). */

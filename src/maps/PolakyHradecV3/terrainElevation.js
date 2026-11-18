@@ -3,8 +3,8 @@
  *
  * The rig has to be anchored on the *displayed* ground, and the only truthful
  * source for that is the terrain COG the map drapes. Sampling it once per tower
- * is enough: fins and vectors are rigid, so they need one elevation, not a
- * terrain-following surface (per-vertex terrain offsets bent the ribbons and were
+ * is enough: rings and vectors are rigid, so they need one elevation, not a
+ * terrain-following surface (per-vertex terrain offsets bent the old ribbons and were
  * removed).
  *
  * Why this is not `_median` / `H_dem`: those InSAR heights live on a different

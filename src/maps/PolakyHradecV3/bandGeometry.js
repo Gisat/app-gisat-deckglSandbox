@@ -1,9 +1,9 @@
 /**
- * Poláky/Hradec v3 — pure time-series and fin geometry.
+ * Poláky/Hradec v3 — pure time-series and halo-ring geometry.
  *
  * Pure module (same convention as `FeatureSpaceChart3D/curtainGeometry.js`):
- * no React, no deck.gl, no three. The map host turns `quads` / `curve` /
- * `baseline` into `SolidPolygonLayer` / `PathLayer` data.
+ * no React, no deck.gl, no three. The map host turns the returned polygons and
+ * paths into `SolidPolygonLayer` / `PathLayer` / `ScatterplotLayer` data.
  *
  * Three rules this module exists to enforce:
  *
@@ -19,10 +19,14 @@
 
 import {
   BAND_LABELS,
-  FIN_INNER_M,
-  FIN_LENGTH_M,
-  RIG_GROUND_CLEARANCE_M,
-  DEFAULT_SCALE_M_PER_MM,
+  HALO_ARC_DEG,
+  HALO_EAST_START_DEG,
+  HALO_INNER_RADIUS_M,
+  HALO_OUTER_RADIUS_M,
+  HALO_RADIAL_SCALE_M_PER_MM,
+  HALO_SEGMENTS,
+  HALO_WEST_START_DEG,
+  HALO_ZERO_RADIUS_M,
   METRES_PER_DEG_LAT,
   metresPerDegLon,
 } from './tracks';
@@ -85,8 +89,8 @@ const seriesCache = new WeakMap();
 /**
  * Sorted, de-duplicated date lists for all three tracks plus their union.
  *
- * The union is the fin time axis: one vertex per acquisition of any track, so
- * each ribbon shows the dates its own track actually observed and nothing is
+ * The union is the ring time axis: one vertex per acquisition of any track, so
+ * each curve shows the dates its own track actually observed and nothing is
  * decimated away.
  *
  * @param {Record<string, Array<any>>} featuresByTrack
@@ -292,10 +296,10 @@ export function bandMedianAt(scatterers, epochMs, windowDays) {
 /**
  * Resamples a smoothed series onto `count` uniform steps in *time*.
  *
- * The fin maps time linearly to distance from the tower, so a uniform time grid
- * is also a uniform distance grid. This runs after smoothing (never before) so
- * the resampling cannot shift the window weights, and it is what keeps the drawn
- * curve smooth: ~1300 union epochs would otherwise become sub-pixel segments.
+ * The ring maps time linearly to angle around the tower, so a uniform time grid
+ * is also a uniform angular grid. This runs after smoothing (never before) so the
+ * resampling cannot shift the window weights, and it keeps the drawn curve
+ * smooth: ~1300 union epochs would otherwise become sub-pixel segments.
  *
  * @param {Array<number|null>} series Values on `grid`.
  * @param {number[]} grid Sorted epoch ms.
@@ -323,7 +327,7 @@ export function resampleSeries(series, grid, count) {
 /**
  * The scatterer whose smoothed value at `epochMs` is the median of the band.
  *
- * Used by the fin click to open a concrete 2D timeline without inventing an
+ * Used by the ring click to open a concrete 2D timeline without inventing an
  * "average point" the dataset does not contain.
  *
  * @param {Array<any>} scatterers
@@ -343,120 +347,6 @@ export function medianScatterer(scatterers, epochMs, windowDays) {
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => a.value - b.value);
   return candidates[candidates.length >> 1].feature;
-}
-
-/**
- * Fin wall geometry for one ribbon (one track × one band).
- *
- * Time runs outward from the tower: vertex 0 sits `innerM` from the tower on the
- * requested side, the last vertex `innerM + lengthM` away. Z is
- * `base + bandZ + value × scale` in metres *above the terrain under each
- * vertex* — the map adds the COG height through the terrain extension, exactly
- * as it does for the tower meshes and the point symbols. `base` is an extra lift
- * and stays 0 on this map: the InSAR `_median` / `H_dem` datum is ~45 m above
- * the draped COG surface, so it must not be used as an absolute elevation here.
- *
- * Metre offsets are converted with *both* degrees factors, so east/west and
- * north/south distances stay true at this latitude.
- *
- * Each quad is the area between the 0 mm baseline and the smoothed value, i.e. a
- * vertical, planar wall — planar by construction, so it stays planar when the
- * camera tilts.
- *
- * @param {{
- *   series: Array<number|null>, grid: number[], side: 'east'|'west',
- *   laneOffsetM?: number, bandZ: number, bandIndex?: number, trackId?: string,
- *   lengthM?: number, innerM?: number, scaleMPerMm?: number,
- *   pylon: { lon: number, lat: number }, base?: number,
- * }} options `base` is an extra lift above the terrain frame and defaults to 0.
- * @returns {{
- *   quads: Array<{ polygon:number[][], value:number, dateMs:number, index:number }>,
- *   curve: number[][][], baseline: number[][][],
- * }}
- */
-export function buildFinGeometry({
-  series,
-  grid,
-  side,
-  laneOffsetM = 0,
-  bandZ,
-  bandIndex = 0,
-  trackId = '',
-  lengthM = FIN_LENGTH_M,
-  innerM = FIN_INNER_M,
-  scaleMPerMm = DEFAULT_SCALE_M_PER_MM,
-  pylon,
-  base = 0,
-}) {
-  const empty = { quads: [], curve: [], baseline: [] };
-  if (!Array.isArray(grid) || grid.length < 2 || !Array.isArray(series)) return empty;
-  if (!pylon || !Number.isFinite(pylon.lon) || !Number.isFinite(pylon.lat)) return empty;
-
-  const direction = side === 'west' ? -1 : 1;
-  const mPerDegLon = metresPerDegLon(pylon.lat);
-  const lat = pylon.lat + laneOffsetM / METRES_PER_DEG_LAT;
-  // Never below the sampled ground: a 9 mm settlement at ×1.5 would otherwise
-  // push a base-band fin 13 m under the field.
-  const zFloor = base + RIG_GROUND_CLEARANCE_M;
-  const zBase = Math.max(base + bandZ, zFloor);
-  const count = Math.min(grid.length, series.length);
-  if (count < 2) return empty;
-
-  // One vertex per grid epoch; x grows outward with time.
-  const vertices = [];
-  for (let i = 0; i < count; i++) {
-    const value = series[i];
-    const t = count === 1 ? 0 : i / (count - 1);
-    const offsetM = innerM + t * lengthM;
-    const lon = pylon.lon + (direction * offsetM) / mPerDegLon;
-    const raw = zBase + (Number.isFinite(value) ? value * scaleMPerMm : 0);
-    vertices.push({ lon, lat, z: Math.max(raw, zFloor), value, dateMs: grid[i] });
-  }
-
-  const quads = [];
-  const curve = [];
-  const baseline = [];
-  let run = null;
-  let baseRun = null;
-
-  for (let i = 0; i < vertices.length; i++) {
-    const v = vertices[i];
-    const present = Number.isFinite(v.value);
-    if (present) {
-      if (!run) {
-        run = [];
-        baseRun = [];
-        curve.push(run);
-        baseline.push(baseRun);
-      }
-      run.push([v.lon, v.lat, v.z]);
-      baseRun.push([v.lon, v.lat, zBase]);
-    } else {
-      run = null;
-      baseRun = null;
-    }
-  }
-
-  for (let i = 0; i < vertices.length - 1; i++) {
-    const a = vertices[i];
-    const b = vertices[i + 1];
-    if (!Number.isFinite(a.value) || !Number.isFinite(b.value)) continue;
-    quads.push({
-      polygon: [
-        [a.lon, a.lat, zBase],
-        [b.lon, b.lat, zBase],
-        [b.lon, b.lat, b.z],
-        [a.lon, a.lat, a.z],
-      ],
-      value: (a.value + b.value) / 2,
-      dateMs: a.dateMs,
-      index: i,
-      bandIndex,
-      trackId,
-    });
-  }
-
-  return { quads, curve, baseline };
 }
 
 /**
@@ -523,40 +413,205 @@ export function coneAxis([pitchDeg = 0, yawDeg = 0, rollDeg = 0]) {
   ];
 }
 
+
 /**
- * One horizontal collar ring per band height, centred on the tower axis.
+ * Smoothed band series prepared for one ring.
  *
- * This is the visual tie between a ribbon and its structural zone: same radius
- * for every band, same z frame as the fins.
+ * The band median is smoothed on the union grid and resampled to `count` uniform
+ * steps in time; every individual scatterer is smoothed on its own dates and
+ * interpolated onto those same steps, so faint scatterer curves and the bold
+ * median share one time→angle mapping.
+ *
+ * @param {Array<any>} scatterers Features assigned to this band of this track.
+ * @param {number[]} grid Union date grid.
+ * @param {number} windowDays
+ * @param {number} count Display vertices per curve.
+ * @returns {{
+ *   median: Array<number|null>,
+ *   times: number[],
+ *   scatterers: Array<Array<number|null>>,
+ * }}
+ */
+export function haloBandSeries(scatterers, grid, windowDays, count = 120) {
+  const empty = { median: [], times: [], scatterers: [] };
+  if (!Array.isArray(scatterers) || !Array.isArray(grid) || grid.length < 2) return empty;
+
+  const dense = bandMedianSeries(scatterers, windowDays, grid);
+  const display = resampleSeries(dense, grid, count);
+  if (display.series.length < 2) return empty;
+
+  const perScatterer = [];
+  for (const feature of scatterers) {
+    const { dates, values } = featureSeries(feature);
+    if (dates.length < 2) continue;
+    const smoothed = smoothSeries(values, dates, windowDays);
+    perScatterer.push(interpolateSeries(display.grid, dates, smoothed));
+  }
+
+  return { median: display.series, times: display.grid, scatterers: perScatterer };
+}
+
+/**
+ * Flat polar point on a ring: `radiusM` at `angleDeg`, clockwise from north.
+ *
+ * Both degrees factors are used, so east–west and north–south distances stay
+ * true at this latitude.
+ */
+function haloPoint(pylon, mPerDegLon, z, radiusM, angleDeg) {
+  const angle = (angleDeg * Math.PI) / 180;
+  return [
+    pylon.lon + (radiusM * Math.sin(angle)) / mPerDegLon,
+    pylon.lat + (radiusM * Math.cos(angle)) / METRES_PER_DEG_LAT,
+    z,
+  ];
+}
+
+/**
+ * One band's polar frame: the two semicircular glass discs, the 0 mm circle and
+ * the north–south divider.
+ *
+ * The annulus is split at the divider into a west and an east half instead of
+ * being emitted as a single ring with a hole: each half is a simple closed
+ * polygon (outer arc, radial seam on the divider, inner arc back), so
+ * `getPolygon(...).flat()` + `_normalize: false` tessellates without holes or
+ * degenerate seams. The seams sit exactly under the divider line.
  *
  * @param {{
- *   pylon: { lon: number, lat: number }, base: number, bandZ: number[],
- *   radiusM?: number, segments?: number,
+ *   pylon: { lon: number, lat: number }, base: number, bandZ: number,
+ *   segments?: number,
  * }} options
- * @returns {Array<{ band: number, path: number[][] }>}
+ * @returns {{
+ *   discs: Array<{ side: 'west'|'east', polygon: number[][] }>,
+ *   zeroCircle: number[][],
+ *   divider: number[][],
+ * }}
  */
-export function buildBandCollars({
+export function buildHaloRingFrame({ pylon, base, bandZ, segments = HALO_SEGMENTS }) {
+  const empty = { discs: [], zeroCircle: [], divider: [] };
+  if (!pylon || !Number.isFinite(pylon.lon) || !Number.isFinite(pylon.lat)) return empty;
+  if (!Number.isFinite(base) || !Number.isFinite(bandZ)) return empty;
+
+  const z = base + bandZ;
+  const mPerDegLon = metresPerDegLon(pylon.lat);
+  const half = Math.max(2, Math.round(segments / 2));
+  const outer = (deg) => haloPoint(pylon, mPerDegLon, z, HALO_OUTER_RADIUS_M, deg);
+  const inner = (deg) => haloPoint(pylon, mPerDegLon, z, HALO_INNER_RADIUS_M, deg);
+
+  // West: outer 180° → 360° (south → west → north), then inner back to 180°.
+  const west = [];
+  for (let i = 0; i <= half; i++) west.push(outer(180 + (180 * i) / half));
+  for (let i = half; i >= 0; i--) west.push(inner(180 + (180 * i) / half));
+
+  // East: outer 0° → 180° (north → east → south), then inner back to 0°.
+  const east = [];
+  for (let i = 0; i <= half; i++) east.push(outer((180 * i) / half));
+  for (let i = half; i >= 0; i--) east.push(inner((180 * i) / half));
+
+  const steps = Math.max(8, Math.round(segments));
+  const zeroCircle = [];
+  for (let i = 0; i <= steps; i++) {
+    zeroCircle.push(haloPoint(pylon, mPerDegLon, z, HALO_ZERO_RADIUS_M, (360 * i) / steps));
+  }
+
+  return {
+    discs: [
+      { side: 'west', polygon: west },
+      { side: 'east', polygon: east },
+    ],
+    zeroCircle,
+    divider: [outer(0), outer(180)],
+  };
+}
+
+/**
+ * One track's polar timeline curve on a ring.
+ *
+ * Time runs clockwise from north: 95D sweeps the west semicircle from 345° (2014)
+ * through 270° (due west, mid-record) to 195° (2026); both ascending tracks sweep
+ * the east semicircle from 15° through 90° to 165°. Displacement is radial:
+ *
+ *     r = clamp(HALO_ZERO + value × scale, HALO_INNER, HALO_OUTER)
+ *
+ * so negative LOS bends inward toward the pylon and positive bends outward.
+ *
+ * @param {{
+ *   pylon: { lon: number, lat: number }, base: number, bandZ: number,
+ *   bandIndex?: number, trackId?: string, side: 'west'|'east',
+ *   series: Array<number|null>, scatterers?: Array<Array<number|null>>,
+ *   times?: number[],
+ * }} options
+ * @returns {{
+ *   curve: number[][][],
+ *   scatterers: number[][][],
+ *   anchors: number[][],
+ * }}
+ */
+export function buildHaloRingGeometry({
   pylon,
   base,
   bandZ,
-  radiusM = 3.5,
-  segments = 48,
+  bandIndex = 0,
+  trackId = '',
+  side,
+  series,
+  scatterers = [],
+  times,
 }) {
-  if (!pylon || !Array.isArray(bandZ)) return [];
+  const empty = { curve: [], scatterers: [], anchors: [] };
+  if (!Array.isArray(series) || !Array.isArray(times) || series.length < 2) return empty;
+  if (!pylon || !Number.isFinite(pylon.lon) || !Number.isFinite(pylon.lat)) return empty;
+  if (!Number.isFinite(base) || !Number.isFinite(bandZ)) return empty;
+
+  const z = base + bandZ;
   const mPerDegLon = metresPerDegLon(pylon.lat);
-  const collars = [];
-  for (let band = 0; band < bandZ.length; band++) {
-    const z = base + bandZ[band];
-    const path = [];
-    for (let i = 0; i <= segments; i++) {
-      const angle = (i / segments) * Math.PI * 2;
-      path.push([
-        pylon.lon + (Math.cos(angle) * radiusM) / mPerDegLon,
-        pylon.lat + (Math.sin(angle) * radiusM) / METRES_PER_DEG_LAT,
-        z,
-      ]);
+  const startDeg = side === 'west' ? HALO_WEST_START_DEG : HALO_EAST_START_DEG;
+  const sweepDeg = side === 'west' ? -HALO_ARC_DEG : HALO_ARC_DEG;
+  const count = series.length;
+
+  const vertexAt = (value, index) => {
+    const u = count === 1 ? 0 : index / (count - 1);
+    const angle = startDeg + sweepDeg * u;
+    const radius = Math.min(
+      HALO_OUTER_RADIUS_M,
+      Math.max(
+        HALO_INNER_RADIUS_M,
+        HALO_ZERO_RADIUS_M + value * HALO_RADIAL_SCALE_M_PER_MM,
+      ),
+    );
+    return haloPoint(pylon, mPerDegLon, z, radius, angle);
+  };
+
+  const buildRuns = (values) => {
+    const runs = [];
+    let run = null;
+    for (let i = 0; i < count; i++) {
+      const value = values?.[i];
+      if (Number.isFinite(value)) {
+        if (!run) {
+          run = [];
+          runs.push(run);
+        }
+        run.push(vertexAt(value, i));
+      } else {
+        run = null;
+      }
     }
-    collars.push({ band, path });
+    return runs;
+  };
+
+  const curve = buildRuns(series);
+  const anchors = [];
+  for (const run of curve) {
+    if (run.length === 0) continue;
+    anchors.push(run[0]);
+    if (run.length > 1) anchors.push(run[run.length - 1]);
   }
-  return collars;
+
+  return {
+    curve,
+    scatterers: scatterers.map((values) => buildRuns(values)),
+    anchors,
+    bandIndex,
+    trackId,
+  };
 }

@@ -140,7 +140,7 @@ export function buildRigStore({
     if (median == null) warnings.push(`${track.id}: no INC_ANG values`);
   }
 
-  // One vertex per acquisition of any track: the union grid is the fin time axis.
+  // One vertex per acquisition of any track: the union grid is the ring time axis.
   const { grid, byTrack: trackDates } = unionGrid(featuresByTrack);
 
   // All three tracks report the same end of record only approximately (95D stops
