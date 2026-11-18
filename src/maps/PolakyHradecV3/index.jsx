@@ -145,15 +145,29 @@ const EMPTY = [];
 const RIG_FIN_WALL_LAYER = 'rig-fin-walls';
 const RIG_FIN_SOLID_LAYER = 'rig-fin-curves';
 const RIG_FIN_DASHED_LAYER = 'rig-fin-curves-dashed';
+const RIG_FIN_SOLID_GLOW_LAYER = 'rig-fin-curves-glow';
+const RIG_FIN_DASHED_GLOW_LAYER = 'rig-fin-curves-glow-dashed';
 const RIG_FIN_BASELINE_LAYER = 'rig-fin-baselines';
 const RIG_BAND_COLLAR_LAYER = 'rig-band-collars';
+const RIG_FIN_ANCHOR_LAYER = 'rig-fin-anchors';
 const RIG_VECTOR_SHAFT_LAYER = 'rig-vector-shafts';
 const RIG_VECTOR_HEAD_LAYER = 'rig-vector-heads';
 const RIG_DEBUG_MARKER_LAYER = 'rig-debug-band-markers';
 
 /** Walls read as translucent glass; curves and baselines stay legible. */
-const RIG_FIN_FILL_ALPHA = 65;
+const RIG_FIN_FILL_ALPHA = 105;
 const RIG_FIN_STROKE_ALPHA = 255;
+
+/**
+ * Two-pass curves: a wide translucent halo under a crisp core, so a timeline
+ * reads as a glowing glass edge without losing the exact value line.
+ */
+const RIG_CURVE_CORE_WIDTH = 3.5;
+const RIG_CURVE_GLOW_WIDTH = 8;
+const RIG_CURVE_GLOW_ALPHA = 75;
+
+/** Terminal nodes at each curve's first and last vertex. */
+const RIG_ANCHOR_RADIUS_PX = 4;
 
 /** The 0 mm zero line is a dashed white rule, not a faint track-coloured line. */
 const RIG_BASELINE_COLOR = [255, 255, 255, 190];
@@ -161,8 +175,8 @@ const RIG_BASELINE_WIDTH = 1.5;
 const RIG_BASELINE_DASH = [4, 4];
 
 /** Band collars tie each ribbon to its structural zone on the tower. */
-const RIG_COLLAR_COLOR = [255, 255, 255, 210];
-const RIG_COLLAR_WIDTH = 1.5;
+const RIG_COLLAR_COLOR = [66, 212, 244, 235];
+const RIG_COLLAR_WIDTH = 3;
 
 /** Vectors: amber on the focused or hovered tower, pale grey elsewhere. */
 const RIG_VECTOR_COLOR = [235, 238, 242];
@@ -634,7 +648,14 @@ export default function PolakyHradecV3() {
   // same union grid and then resampled to `FIN_SAMPLE_COUNT` display vertices.
   // Only this one tower is drawn as ribbons — 9 at most, never 18.
   const finData = useMemo(() => {
-    const empty = { walls: EMPTY, solid: EMPTY, dashed: EMPTY, baselines: EMPTY, collars: EMPTY };
+    const empty = {
+      walls: EMPTY,
+      solid: EMPTY,
+      dashed: EMPTY,
+      baselines: EMPTY,
+      collars: EMPTY,
+      anchors: EMPTY,
+    };
     if (!rigEnabled || !focusedPylon || !rigStore) return empty;
     const base = focusedPylon.terrainElevation;
     if (!Number.isFinite(base)) return empty;
@@ -643,6 +664,7 @@ export default function PolakyHradecV3() {
     const solid = [];
     const dashed = [];
     const baselines = [];
+    const anchors = [];
 
     for (const trackId of TRACK_IDS) {
       const color = FIN_TRACK_COLORS[trackId];
@@ -685,7 +707,15 @@ export default function PolakyHradecV3() {
             fillColor: fill,
           });
         }
-        for (const path of geometry.curve) curves.push({ path, color: stroke, width: 2 });
+        for (const path of geometry.curve) {
+          curves.push({ path, color: stroke });
+          // Terminal nodes: a crisp start (first epoch) and end (last epoch) on
+          // every visible run, in the full track colour.
+          if (path.length > 0) {
+            anchors.push({ position: path[0], color: stroke });
+            anchors.push({ position: path[path.length - 1], color: stroke });
+          }
+        }
         for (const path of geometry.baseline) baselines.push({ path });
       }
     }
@@ -698,7 +728,7 @@ export default function PolakyHradecV3() {
       segments: BAND_COLLAR_SEGMENTS,
     });
 
-    return { walls, solid, dashed, baselines, collars };
+    return { walls, solid, dashed, baselines, collars, anchors };
   }, [rigEnabled, focusedPylon, rigStore, windowDays, scaleMPerMm]);
 
   // Per-band ΔU/ΔE for every tower. The focused tower shows the numbers in the
@@ -1040,6 +1070,10 @@ export default function PolakyHradecV3() {
           data: undefined,
           image: props.data,
           bounds: [west, south, east, north],
+          // Cool and dim the imagery slightly while the rig is on so the ribbons,
+          // collars and vectors keep their contrast against daylight satellite.
+          tintColor: rigEnabled ? [175, 182, 195] : [255, 255, 255],
+          updateTriggers: { tintColor: [rigEnabled] },
         });
       },
     });
@@ -1206,16 +1240,29 @@ export default function PolakyHradecV3() {
       }));
     }
 
-    // Curves: one solid PathLayer, one dashed for the 146A track. Separate
-    // layers rather than a per-feature dash ternary — the counts are trivial and
-    // it sidesteps dash-attribute pitfalls.
+    // Curves: two passes per track — a wide translucent halo under a crisp core —
+    // so every timeline reads as a glowing glass edge. The 146A track keeps its
+    // own dashed layers (dash on halo and core alike) instead of a per-feature
+    // dash ternary.
     if (finData.solid.length > 0) {
+      rigLayers.push(new PathLayer({
+        id: RIG_FIN_SOLID_GLOW_LAYER,
+        data: finData.solid,
+        getPath: (d) => d.path,
+        getColor: (d) => [d.color[0], d.color[1], d.color[2], RIG_CURVE_GLOW_ALPHA],
+        getWidth: RIG_CURVE_GLOW_WIDTH,
+        widthUnits: 'pixels',
+        billboard: true,
+        jointRounded: true,
+        capRounded: true,
+        pickable: false,
+      }));
       rigLayers.push(new PathLayer({
         id: RIG_FIN_SOLID_LAYER,
         data: finData.solid,
         getPath: (d) => d.path,
         getColor: (d) => d.color,
-        getWidth: (d) => d.width,
+        getWidth: RIG_CURVE_CORE_WIDTH,
         widthUnits: 'pixels',
         billboard: true,
         jointRounded: true,
@@ -1225,16 +1272,30 @@ export default function PolakyHradecV3() {
     }
 
     if (finData.dashed.length > 0) {
+      // Round joints at sub-pixel spacing turn a dashed line into a scribble; the
+      // dashed ribbon uses butt joints and a coarser pattern on both passes.
+      rigLayers.push(new PathLayer({
+        id: RIG_FIN_DASHED_GLOW_LAYER,
+        data: finData.dashed,
+        getPath: (d) => d.path,
+        getColor: (d) => [d.color[0], d.color[1], d.color[2], RIG_CURVE_GLOW_ALPHA],
+        getWidth: RIG_CURVE_GLOW_WIDTH,
+        widthUnits: 'pixels',
+        billboard: true,
+        jointRounded: false,
+        capRounded: false,
+        pickable: false,
+        extensions: [new PathStyleExtension({ dash: true })],
+        getDashArray: () => [10, 5],
+      }));
       rigLayers.push(new PathLayer({
         id: RIG_FIN_DASHED_LAYER,
         data: finData.dashed,
         getPath: (d) => d.path,
         getColor: (d) => d.color,
-        getWidth: (d) => d.width,
+        getWidth: RIG_CURVE_CORE_WIDTH,
         widthUnits: 'pixels',
         billboard: true,
-        // Round joints at sub-pixel spacing turn a dashed line into a scribble;
-        // the dashed ribbon uses butt joints and a coarser pattern.
         jointRounded: false,
         capRounded: false,
         pickable: false,
@@ -1274,6 +1335,20 @@ export default function PolakyHradecV3() {
         billboard: true,
         jointRounded: true,
         capRounded: false,
+        pickable: false,
+      }));
+    }
+
+    // Terminal nodes: 2014 inner start and 2026 outer tip of every visible run.
+    if (finData.anchors.length > 0) {
+      rigLayers.push(new ScatterplotLayer({
+        id: RIG_FIN_ANCHOR_LAYER,
+        data: finData.anchors,
+        getPosition: (d) => d.position,
+        radiusUnits: 'pixels',
+        getRadius: RIG_ANCHOR_RADIUS_PX,
+        billboard: true,
+        getFillColor: (d) => d.color,
         pickable: false,
       }));
     }
