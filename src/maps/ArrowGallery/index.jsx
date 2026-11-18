@@ -10,6 +10,10 @@ import { ARROW_REFERENCE_RADIUS_METERS, metersToArrowFraction } from '../../laye
 
 import headFilled from './meshes/arrow_head_filled.obj?url&no-inline';
 import headFilledBeveled from './meshes/arrow_head_filled_beveled.obj?url&no-inline';
+import headRoundCapBeveled from './meshes/arrow_head_round_cap_beveled.obj?url&no-inline';
+import headSquareCapBeveled from './meshes/arrow_head_square_cap_beveled.obj?url&no-inline';
+import headVerticalCutBeveled from './meshes/arrow_head_vertical_cut_beveled.obj?url&no-inline';
+import meshManifest from './meshes/manifest.json';
 import singleFilled from './meshes/arrow_single_filled.obj?url&no-inline';
 import singleFilledBeveled from './meshes/arrow_single_filled_beveled.obj?url&no-inline';
 import singleRoundCap from './meshes/arrow_single_round_cap.obj?url&no-inline';
@@ -20,7 +24,9 @@ import singleVerticalCut from './meshes/arrow_single_vertical_cut.obj?url&no-inl
 import singleVerticalCutBeveled from './meshes/arrow_single_vertical_cut_beveled.obj?url&no-inline';
 import stemSharp from './meshes/arrow_tail_unit.obj?url&no-inline';
 import stemRounded from './meshes/arrow_tail_unit_rounded.obj?url&no-inline';
+import stemBeveled from './meshes/arrow_tail_unit_beveled.obj?url&no-inline';
 import roundCap from './meshes/arrow_tail_round_end_rounded.obj?url&no-inline';
+import roundCapSharp from './meshes/arrow_tail_round_end_sharp.obj?url&no-inline';
 
 /**
  * 2D shader arrows and 3D split/single meshes side by side.
@@ -66,6 +72,15 @@ const COLORS = {
 };
 
 const FILLED_HEAD_MESHES = { sharp: headFilled, beveled: headFilledBeveled };
+
+// Beveled open-V split heads. The sharp finish keeps the live-profile
+// SolidPolygonLayer; the beveled finish uses the generator's beveled OBJ scaled
+// onto the same live footprint, so toggling the finish only changes the rims.
+const BEVELED_HEAD_MESHES = {
+    'round-cap': headRoundCapBeveled,
+    'square-cap': headSquareCapBeveled,
+    'vertical-cut': headVerticalCutBeveled
+};
 
 const SINGLE_MESHES = {
     filled: { sharp: singleFilled, beveled: singleFilledBeveled },
@@ -192,6 +207,40 @@ const headProfile = (style, pen) => {
     return poly.map(([x, y]) => [x, y - yInner]);
 };
 
+/**
+ * Plan-view bounding box (metres) of a live split-head profile.
+ *
+ * @param {string} style - `round-cap`, `square-cap` or `vertical-cut`.
+ * @param {number} pen - Pen width in metres.
+ * @returns {{width: number, span: number}} X width and along-axis span.
+ */
+const liveProfileBBox = (style, pen) => {
+    const points = headProfile(style, pen);
+    const xs = points.map(([x]) => x);
+    const ys = points.map(([, y]) => y);
+    return {
+        width: Math.max(...xs) - Math.min(...xs),
+        span: Math.max(...ys) - Math.min(...ys)
+    };
+};
+
+/**
+ * Scale that maps a generated beveled head OBJ onto the live pen profile.
+ *
+ * The OBJ is authored at pen 1.0; scaling X and Z by the bbox ratios keeps the
+ * exact live silhouette (width and along-axis span) while the bevel rims come
+ * from the mesh. Y scales the 0.8 model thickness to the live head thickness.
+ *
+ * @param {string} style - `round-cap`, `square-cap` or `vertical-cut`.
+ * @param {number} pen - Pen width in metres.
+ * @returns {number[]} `[x, y, z]` mesh scale.
+ */
+const beveledHeadScale = (style, pen) => {
+    const bbox = meshManifest.files[`arrow_head_${style.replace('-', '_')}_beveled.obj`].bbox;
+    const live = liveProfileBBox(style, pen);
+    return [live.width / (bbox.x[1] - bbox.x[0]), pen, live.span / (bbox.z[1] - bbox.z[0])];
+};
+
 const ROW_2D_Y = 18;
 const ROW_SPLIT_Y = 0;
 const ROW_SINGLE_Y = -18;
@@ -214,12 +263,17 @@ const ROW_LABEL_X = -((TYPES.length - 1) / 2) * COLUMN_SPACING - 8;
 const ArrowGallery = () => {
     const [pen, setPen] = useState(1.5);
     const [tail, setTail] = useState(6);
-    const [finish, setFinish] = useState('sharp');
+    const [finish, setFinish] = useState('default');
     const [tailStyle, setTailStyle] = useState('custom');
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
 
     const layers = useMemo(() => {
         const penScale = pen / 1.0;
+
+        // Default is the mixed finish, mirroring the stem style: the round-cap is
+        // beveled and every other style is sharp. Sharp and Beveled apply to all.
+        const finishFor = (type) =>
+            finish === 'default' ? (type.id === 'round-cap' ? 'beveled' : 'sharp') : finish;
 
         const twoDLayers = TYPES.map((type, index) => {
             const isFilled = type.id === 'filled';
@@ -264,12 +318,22 @@ const ArrowGallery = () => {
             color: COLORS[type.id]
         }));
 
-        // Default is the mixed mode: sharp stems everywhere except the round-cap,
-        // which keeps the rounded rear cap. The other modes apply to all columns.
+        // Stem style decides the cap (round-cap column by default; all columns for
+        // Rod + cap) and an explicit Sharp rod always stays sharp.
         const stemStyleFor = (type) =>
             tailStyle === 'custom' ? (type.id === 'round-cap' ? 'rounded' : 'sharp') : tailStyle;
-        const roundedStems = splitData.filter((d) => stemStyleFor(d.type) === 'rounded');
-        const sharpStems = splitData.filter((d) => stemStyleFor(d.type) === 'sharp');
+        const cappedStems = splitData.filter((d) => stemStyleFor(d.type) === 'rounded');
+        // Rod shape: explicit Sharp rod wins, then an explicit Sharp finish, then
+        // the capped rod (rounded), then the beveled finish's long-edge bevel.
+        const rodKindFor = (type) => {
+            if (stemStyleFor(type) === 'sharp') return 'sharp';
+            if (finishFor(type) === 'sharp') return 'sharp';
+            if (stemStyleFor(type) === 'rounded') return 'rounded';
+            return finishFor(type) === 'beveled' ? 'beveled' : 'sharp';
+        };
+        const roundedStems = splitData.filter((d) => rodKindFor(d.type) === 'rounded');
+        const beveledStems = splitData.filter((d) => rodKindFor(d.type) === 'beveled');
+        const sharpStems = splitData.filter((d) => rodKindFor(d.type) === 'sharp');
 
         const makeStemLayer = (id, data, mesh) =>
             new SimpleMeshLayer({
@@ -289,31 +353,42 @@ const ArrowGallery = () => {
 
         const stemLayers = [
             makeStemLayer(`arrow-gallery-3d-stem-rounded-${tailStyle}`, roundedStems, stemRounded),
-            makeStemLayer(`arrow-gallery-3d-stem-sharp-${tailStyle}`, sharpStems, stemSharp)
+            makeStemLayer(`arrow-gallery-3d-stem-beveled-${finish}-${tailStyle}`, beveledStems, stemBeveled),
+            makeStemLayer(`arrow-gallery-3d-stem-sharp-${finish}-${tailStyle}`, sharpStems, stemSharp)
         ];
 
-        const capLayer = roundedStems.length
-            ? new SimpleMeshLayer({
-                  id: `arrow-gallery-3d-caps-${tailStyle}`,
-                  data: roundedStems,
-                  mesh: roundCap,
-                  loaders: [OBJLoader],
-                  coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
-                  coordinateOrigin: GALLERY_ORIGIN,
-                  getPosition: (d) => d.position,
-                  getScale: [penScale, penScale, penScale],
-                  // The cap's dome points rearward, opposite the arrow heading.
-                  getOrientation: [0, 180, 90],
-                  getColor: (d) => d.color,
-                  material: MATERIAL,
-                  pickable: false
-              })
-            : null;
+        // Caps follow the finish too: a sharp finish needs the sharp-rim cap.
+        const makeCapLayer = (id, data, mesh) =>
+            data.length
+                ? new SimpleMeshLayer({
+                      id,
+                      data,
+                      mesh,
+                      loaders: [OBJLoader],
+                      coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
+                      coordinateOrigin: GALLERY_ORIGIN,
+                      getPosition: (d) => d.position,
+                      getScale: [penScale, penScale, penScale],
+                      // The cap's dome points rearward, opposite the arrow heading.
+                      getOrientation: [0, 180, 90],
+                      getColor: (d) => d.color,
+                      material: MATERIAL,
+                      pickable: false
+                  })
+                : null;
 
+        const sharpCaps = cappedStems.filter((d) => finishFor(d.type) === 'sharp');
+        const beveledCaps = cappedStems.filter((d) => finishFor(d.type) === 'beveled');
+        const capLayers = [
+            makeCapLayer(`arrow-gallery-3d-caps-sharp-${tailStyle}-${finish}`, sharpCaps, roundCapSharp),
+            makeCapLayer(`arrow-gallery-3d-caps-beveled-${tailStyle}-${finish}`, beveledCaps, roundCap)
+        ].filter(Boolean);
+
+        const filledFinish = finishFor(TYPES[0]);
         const filledHeadLayer = new SimpleMeshLayer({
             id: `arrow-gallery-3d-head-filled-${finish}`,
             data: [{ position: getTypePosition(0, ROW_SPLIT_Y), color: COLORS.filled }],
-            mesh: FILLED_HEAD_MESHES[finish],
+            mesh: FILLED_HEAD_MESHES[filledFinish],
             loaders: [OBJLoader],
             coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
             coordinateOrigin: GALLERY_ORIGIN,
@@ -343,9 +418,12 @@ const ArrowGallery = () => {
             position: getTypePosition(index, ROW_SPLIT_Y)
         })).filter((type) => type.id !== 'filled');
 
+        const sharpHeads = strokedHeads.filter((type) => finishFor(type) === 'sharp');
+        const beveledHeads = strokedHeads.filter((type) => finishFor(type) === 'beveled');
+
         const headLayer = new SolidPolygonLayer({
             id: 'arrow-gallery-3d-heads',
-            data: strokedHeads,
+            data: sharpHeads,
             coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
             coordinateOrigin: GALLERY_ORIGIN,
             extruded: true,
@@ -366,12 +444,34 @@ const ArrowGallery = () => {
             pickable: false
         });
 
+        // Beveled open-V split heads: the generated mesh keeps the rims, scaled
+        // onto the live pen profile so the silhouette matches the sharp finish.
+        const beveledHeadLayers = beveledHeads.map(
+            (type) =>
+                new SimpleMeshLayer({
+                    id: `arrow-gallery-3d-head-beveled-${type.id}-${finish}`,
+                    data: [{ position: type.position, color: COLORS[type.id] }],
+                    mesh: BEVELED_HEAD_MESHES[type.id],
+                    loaders: [OBJLoader],
+                    coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
+                    coordinateOrigin: GALLERY_ORIGIN,
+                    getPosition: (d) => d.position,
+                    getScale: beveledHeadScale(type.id, pen),
+                    getOrientation: [0, 0, 90],
+                    // The head socket sits at the stem tip.
+                    getTranslation: [0, tail, 0],
+                    getColor: (d) => d.color,
+                    material: MATERIAL,
+                    pickable: false
+                })
+        );
+
         const singleLayers = TYPES.map(
             (type, index) =>
                 new SimpleMeshLayer({
                     id: `arrow-gallery-3d-single-${type.id}-${finish}`,
                     data: [{ position: getTypePosition(index, ROW_SINGLE_Y), color: COLORS[type.id] }],
-                    mesh: SINGLE_MESHES[type.id][finish],
+                    mesh: SINGLE_MESHES[type.id][finishFor(type)],
                     loaders: [OBJLoader],
                     coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
                     coordinateOrigin: GALLERY_ORIGIN,
@@ -459,9 +559,10 @@ const ArrowGallery = () => {
             gridLayer,
             ...twoDLayers,
             ...stemLayers,
-            ...(capLayer ? [capLayer] : []),
+            ...capLayers,
             filledHeadLayer,
             headLayer,
+            ...beveledHeadLayers,
             ...singleLayers,
             rowLabels,
             columnLabels
@@ -487,7 +588,7 @@ const ArrowGallery = () => {
                     className="deckgl-map"
                     viewState={viewState}
                     onViewStateChange={({ viewState: next }) => setViewState(next)}
-                    controller={true}
+                    controller={{ maxZoom: 24 }}
                     layers={layers}
                 />
             </div>
@@ -533,8 +634,15 @@ const ArrowGallery = () => {
                     style={sliderStyle}
                 />
 
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>3D finish (filled + single)</div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>3D finish (all 3D rows)</div>
                 <div style={{ marginBottom: 10 }}>
+                    <button
+                        type="button"
+                        style={buttonStyle(finish === 'default')}
+                        onClick={() => setFinish('default')}
+                    >
+                        Default
+                    </button>
                     <button type="button" style={buttonStyle(finish === 'sharp')} onClick={() => setFinish('sharp')}>
                         Sharp
                     </button>
@@ -580,10 +688,13 @@ const ArrowGallery = () => {
                     The 2D row is shader-rasterized. The filled 2D and 3D split heads share the compo-EW equilateral
                     footprint (head width equals head length). The 3D open-V split heads are rebuilt from the fixed 40°
                     footprint for the live pen, so each keeps its round/square/vertical endings while the stroke
-                    thickens. Stem style Default uses the round rear cap only for the round-cap column; Rod + cap and
-                    Sharp rod apply to every split column. The stem style affects only the 3D split row; the 3D single
-                    row is fixed-proportion. The exact split-head OBJs are attached in the docs. The no-border 2D
-                    variant is not shown.
+                    thickens. Finish Default bevels only the round-cap, matching the rounded 2D round cap; Sharp and
+                    Beveled apply to every 3D row, and Beveled also bevels the stem long edges while the head socket
+                    and the capped end stay sharp. Stem style Default uses the round rear cap only for the round-cap
+                    column; Rod + cap and Sharp rod apply to every split column, and an explicit Sharp rod always
+                    stays sharp whatever the finish. The stem style affects only the 3D split row; the 3D single row
+                    is fixed-proportion. The exact split-head OBJs are attached in the
+                    docs. The no-border 2D variant is not shown.
                 </div>
             </aside>
         </div>

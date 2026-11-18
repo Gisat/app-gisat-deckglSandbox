@@ -4,7 +4,8 @@ Generate the 2D/3D arrow documentation assets.
 
 Outputs:
   - split 3D heads (sharp + beveled) for filled / round-cap / square-cap / vertical-cut
-  - shared tail parts: sharp stem, rounded-edge stem, selectively beveled round cap
+  - shared tail parts: sharp stem, rounded-edge stem, beveled-edge stem (sharp
+    end faces), selectively beveled round cap
   - single-mesh arrows (sharp + beveled), canonical tail 4.0, flat rear
     except the round-cap single, whose tail keeps the round cap
   - manifest.json with counts, bounding boxes and hashes
@@ -38,6 +39,9 @@ THICKNESS = 0.8
 HALF_THICKNESS = THICKNESS / 2.0
 BEVEL_SIZE = 0.08
 BEVEL_STEPS = 3
+# Short fade at a connection seam: the bevel runs at full width up to this
+# distance from the socket edge, then stops (reads as a cut, not a taper).
+SOCKET_TAPER = 0.1
 
 TAIL_LENGTH = 4.0
 HEAD_ANGLE_DEG = 40.0
@@ -252,6 +256,45 @@ def export_sharp_extruded(
     return verts, faces
 
 
+def drop_degenerate_faces(verts, faces, eps: float = 1e-12):
+    """Remove zero-area faces (collapsed bevel rings) and unused vertices."""
+    kept = []
+    for a, b, c in faces:
+        p0, p1, p2 = verts[a - 1], verts[b - 1], verts[c - 1]
+        ab = (p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2])
+        ac = (p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2])
+        cx = ab[1] * ac[2] - ab[2] * ac[1]
+        cy = ab[2] * ac[0] - ab[0] * ac[2]
+        cz = ab[0] * ac[1] - ab[1] * ac[0]
+        if math.sqrt(cx * cx + cy * cy + cz * cz) > eps:
+            kept.append((a, b, c))
+
+    used = sorted({index for face in kept for index in face})
+    remap = {old: new for new, old in enumerate(used, start=1)}
+    welded_verts = [verts[index - 1] for index in used]
+    welded_faces = [tuple(remap[index] for index in face) for face in kept]
+
+    # Weight-0 bevel columns leave coincident ring vertices behind. Weld them so
+    # the sharp edge becomes a single shared edge instead of an open seam.
+    key_to_index = {}
+    weld_remap = {}
+    final_verts = []
+    for index, (x, y, z) in enumerate(welded_verts, start=1):
+        key = (round(x, 6), round(y, 6), round(z, 6))
+        if key not in key_to_index:
+            key_to_index[key] = len(final_verts) + 1
+            final_verts.append((x, y, z))
+        weld_remap[index] = key_to_index[key]
+    final_faces = [tuple(weld_remap[index] for index in face) for face in welded_faces]
+
+    used_final = sorted({index for face in final_faces for index in face})
+    compact = {old_index: new_index for new_index, old_index in enumerate(used_final, start=1)}
+    return (
+        [final_verts[index - 1] for index in used_final],
+        [tuple(compact[index] for index in face) for face in final_faces],
+    )
+
+
 def export_beveled(
     path: Path,
     object_name: str,
@@ -260,9 +303,27 @@ def export_beveled(
     thickness: float = THICKNESS,
     bevel_size: float = BEVEL_SIZE,
     bevel_steps: int = BEVEL_STEPS,
+    bevel_weights=None,
 ) -> tuple[list, list]:
-    """Extrude a 2D XZ footprint with a smooth bevel on the top/bottom rims."""
-    poly = ensure_ccw(poly_xz)
+    """Extrude a 2D XZ footprint with a smooth bevel on the top/bottom rims.
+
+    `bevel_weights` optionally gives a per-vertex bevel amount in `[0, 1]`.
+    Vertices at 0 keep their outline point on the top/bottom faces with a full
+    height side wall, producing a sharp edge there instead of a bevel — used to
+    keep connection seams (the head socket, the capped stem end) invisible.
+    """
+    poly_in = list(poly_xz)
+    n_in = len(poly_in)
+    weights = list(bevel_weights) if bevel_weights is not None else [1.0] * n_in
+    if len(weights) != n_in:
+        raise ValueError("bevel_weights must match the polygon length")
+
+    if is_clockwise(poly_in):
+        poly = list(reversed(poly_in))
+        weights = list(reversed(weights))
+    else:
+        poly = poly_in
+
     normals = compute_inward_normals_xz(poly)
     n = len(poly)
     half = thickness / 2.0
@@ -270,16 +331,30 @@ def export_beveled(
     top_rings = []
     for k in range(bevel_steps + 1):
         angle = (math.pi / 2.0) * (k / float(bevel_steps))
-        offset = bevel_size * (1.0 - math.cos(angle))
-        y = (half - bevel_size) + bevel_size * math.sin(angle)
-        top_rings.append([(x + offset * nx, y, z + offset * nz) for (x, z), (nx, nz) in zip(poly, normals)])
+        top_rings.append(
+            [
+                (
+                    x + bevel_size * w * (1.0 - math.cos(angle)) * nx,
+                    (half - bevel_size * w) + bevel_size * w * math.sin(angle),
+                    z + bevel_size * w * (1.0 - math.cos(angle)) * nz,
+                )
+                for (x, z), (nx, nz), w in zip(poly, normals, weights)
+            ]
+        )
 
     bottom_rings = []
     for k in range(bevel_steps + 1):
         angle = (math.pi / 2.0) * (k / float(bevel_steps))
-        offset = bevel_size * (1.0 - math.cos(angle))
-        y = -(half - bevel_size) - bevel_size * math.sin(angle)
-        bottom_rings.append([(x + offset * nx, y, z + offset * nz) for (x, z), (nx, nz) in zip(poly, normals)])
+        bottom_rings.append(
+            [
+                (
+                    x + bevel_size * w * (1.0 - math.cos(angle)) * nx,
+                    -((half - bevel_size * w) + bevel_size * w * math.sin(angle)),
+                    z + bevel_size * w * (1.0 - math.cos(angle)) * nz,
+                )
+                for (x, z), (nx, nz), w in zip(poly, normals, weights)
+            ]
+        )
 
     verts = []
     b_cap_start = len(verts) + 1
@@ -335,6 +410,7 @@ def export_beveled(
     for a, b, c in tris:
         faces.append((t_cap_start + a, t_cap_start + b, t_cap_start + c))
 
+    verts, faces = drop_degenerate_faces(verts, faces)
     write_obj(path, object_name, verts, faces, header)
     return verts, faces
 
@@ -344,12 +420,8 @@ def export_beveled(
 # --------------------------------------------------------------------------- #
 
 
-def head_profile_xz(style: str) -> list[tuple[float, float]]:
-    """Return the head outline in XZ with the flat stem socket at Z = 0.
-
-    The profile is authored in 2D (x, y) with +y toward the tip, the socket at
-    y = 0 and the apex toward +y, then mapped to z = -y for the 3D convention.
-    """
+def _head_poly_xy(style: str):
+    """Head outline in authoring space (+y forward, socket at `socket_y`)."""
     if style == "filled":
         poly_xy = [
             (-HALF_PEN, 0.0),
@@ -358,7 +430,7 @@ def head_profile_xz(style: str) -> list[tuple[float, float]]:
             (0.0, 3.0),
             (-1.75, 0.0),
         ]
-        return [(x, -y) for x, y in poly_xy]
+        return poly_xy, 0.0
 
     if style == "round-cap":
         poly_xy = [(-HALF_PEN, Y_INNER), (HALF_PEN, Y_INNER)]
@@ -415,9 +487,51 @@ def head_profile_xz(style: str) -> list[tuple[float, float]]:
     else:
         raise ValueError(f"Unknown style: {style}")
 
-    # Shift so the flat stem socket is exactly at y = 0, then map y -> -z.
-    socket_y = Y_INNER if style != "filled" else 0.0
+    return poly_xy, Y_INNER
+
+
+def _socket_taper(poly_xy):
+    """Add short taper points next to the socket edge and their bevel weights.
+
+    The socket edge (poly[0] to poly[1]) stays sharp (weight 0). Points one
+    `SOCKET_TAPER` along the two adjacent edges get weight 1, so the bevel runs
+    at full width until just before the connection and then stops instead of
+    fading across the whole adjacent edge.
+    """
+    def toward(a, b, distance):
+        vx, vy = b[0] - a[0], b[1] - a[1]
+        length = math.hypot(vx, vy)
+        if length < 1e-9:
+            return a
+        d = min(distance, length * 0.45)
+        return (a[0] + vx / length * d, a[1] + vy / length * d)
+
+    before = toward(poly_xy[0], poly_xy[-1], SOCKET_TAPER)
+    after = toward(poly_xy[1], poly_xy[2], SOCKET_TAPER)
+    tapered = [before, poly_xy[0], poly_xy[1], after] + list(poly_xy[2:])
+    weights = [1.0, 0.0, 0.0, 1.0] + [1.0] * (len(poly_xy) - 2)
+    return tapered, weights
+
+
+def head_profile_xz(style: str) -> list[tuple[float, float]]:
+    """Return the head outline in XZ with the flat stem socket at Z = 0.
+
+    The profile is authored in 2D (x, y) with +y toward the tip, the socket at
+    y = 0 and the apex toward +y, then mapped to z = -y for the 3D convention.
+    """
+    poly_xy, socket_y = _head_poly_xy(style)
     return [(x, -(y - socket_y)) for x, y in poly_xy]
+
+
+def head_bevel_profile_xz(style: str):
+    """Beveled head outline plus per-vertex bevel weights.
+
+    Identical footprint to `head_profile_xz` with two extra collinear taper
+    points near the socket corners; see `_socket_taper`.
+    """
+    poly_xy, socket_y = _head_poly_xy(style)
+    poly_xy, weights = _socket_taper(poly_xy)
+    return [(x, -(y - socket_y)) for x, y in poly_xy], weights
 
 
 def single_tail_extent(style: str, tail: float = TAIL_LENGTH) -> float:
@@ -519,6 +633,61 @@ def generate_rounded_stem(path: Path, num_arc: int = 6, radius: float = 0.08) ->
     return verts, faces
 
 
+def generate_beveled_stem(path: Path, expose_rear: bool = True) -> tuple[list, list]:
+    """Unit stem with beveled long edges and a sharp head-socket face.
+
+    The plan outline gets extra points one bevel in from each end so the long
+    sides are beveled while the end faces stay flat. The front (head socket)
+    edge is always sharp; the free rear edge is beveled when `expose_rear`
+    (no cap) and kept sharp when a cap covers it, so both seams stay invisible.
+    """
+    b = BEVEL_SIZE
+    # Taper points sit just past the corner's axial miter reach (one bevel) so
+    # the bevel runs at full width up to the connection and stops in a short,
+    # cut-like fade instead of tapering along the whole stem.
+    t = SOCKET_TAPER
+    poly = [
+        (-HALF_PEN, 0.0),
+        (HALF_PEN, 0.0),
+        (HALF_PEN, -t),
+        (HALF_PEN, -1.0 + t),
+        (HALF_PEN, -1.0),
+        (-HALF_PEN, -1.0),
+        (-HALF_PEN, -1.0 + t),
+        (-HALF_PEN, -t),
+    ]
+    rear_w = 1.0 if expose_rear else 0.0
+    weights = [rear_w, rear_w, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0]
+    return export_beveled(
+        path,
+        "arrow_tail_unit_beveled",
+        poly,
+        "Beveled Long Edges Stem, Sharp Head Socket" + (", Beveled Free End" if expose_rear else ", Sharp Cap Seam"),
+        bevel_weights=weights,
+    )
+
+
+def round_cap_poly_xz(num_arc_pts: int = NUM_ARC):
+    """Semicircular cap plan: flat face at Z = 0, dome toward -Z."""
+    thick = PEN_WIDTH / 2.0
+    poly_xz = [(-thick, 0.0)]
+    for i in range(1, num_arc_pts):
+        ang = math.pi + (math.pi * i / num_arc_pts)
+        poly_xz.append((thick * math.cos(ang), thick * math.sin(ang)))
+    poly_xz.append((thick, 0.0))
+    return poly_xz
+
+
+def generate_sharp_round_cap(path: Path) -> tuple[list, list]:
+    """Semicircular tail cap with sharp rims (matches the Sharp finish)."""
+    return export_sharp_extruded(
+        path,
+        "arrow_tail_round_end",
+        round_cap_poly_xz(),
+        "Round Tail End Cap Mesh with Sharp Rims",
+    )
+
+
 def generate_round_cap(
     path: Path,
     bevel_size: float = BEVEL_SIZE,
@@ -526,14 +695,7 @@ def generate_round_cap(
     num_arc_pts: int = NUM_ARC,
 ) -> tuple[list, list]:
     """Semicircular tail cap, flat face at Z = 0, bulge toward -Z, beveled rims."""
-    thick = PEN_WIDTH / 2.0
-    poly_xz = [(-thick, 0.0)]
-    for i in range(1, num_arc_pts):
-        ang = math.pi + (math.pi * i / num_arc_pts)
-        poly_xz.append((thick * math.cos(ang), thick * math.sin(ang)))
-    poly_xz.append((thick, 0.0))
-
-    poly = ensure_ccw(poly_xz)
+    poly = ensure_ccw(round_cap_poly_xz(num_arc_pts))
     normals = compute_selective_inward_normals_xz(poly)
     n = len(poly)
     half_y = THICKNESS / 2.0
@@ -689,12 +851,22 @@ def generate(out_dir: Path) -> dict:
     for style in STYLES:
         label = STYLE_LABELS[style]
         head = head_profile_xz(style)
+        head_bevel, socket_weights = head_bevel_profile_xz(style)
         span, socket_to_apex, overhang = head_metrics(style)
 
         sharp = out_dir / f"arrow_head_{style.replace('-', '_')}.obj"
         bevel = out_dir / f"arrow_head_{style.replace('-', '_')}_beveled.obj"
         export_sharp_extruded(sharp, sharp.stem, head, f"3D head (sharp, socket origin): {label}")
-        export_beveled(bevel, bevel.stem, head, f"3D head (beveled rim, socket origin): {label}")
+        # Keep the socket edge sharp: its bevel would show as a groove where the
+        # stem meets the head, so the connection must stay invisible. The taper
+        # points confine the fade to a short cut at the socket.
+        export_beveled(
+            bevel,
+            bevel.stem,
+            head_bevel,
+            f"3D head (beveled rim, sharp socket): {label}",
+            bevel_weights=socket_weights,
+        )
         manifest[sharp.name] = manifest_entry(
             sharp, style, "head", "sharp", socket_to_apex=socket_to_apex, overhang=overhang, span=span
         )
@@ -756,9 +928,17 @@ def generate(out_dir: Path) -> dict:
     generate_rounded_stem(rounded_stem)
     manifest[rounded_stem.name] = manifest_entry(rounded_stem, "shared", "stem", "rounded", tail=1.0)
 
+    beveled_stem = out_dir / "arrow_tail_unit_beveled.obj"
+    generate_beveled_stem(beveled_stem)
+    manifest[beveled_stem.name] = manifest_entry(beveled_stem, "shared", "stem", "beveled", tail=1.0)
+
     cap = out_dir / "arrow_tail_round_end_rounded.obj"
     generate_round_cap(cap)
     manifest[cap.name] = manifest_entry(cap, "shared", "cap", "beveled", depth=0.5)
+
+    sharp_cap = out_dir / "arrow_tail_round_end_sharp.obj"
+    generate_sharp_round_cap(sharp_cap)
+    manifest[sharp_cap.name] = manifest_entry(sharp_cap, "shared", "cap", "sharp", depth=0.5)
 
     payload = {
         "generated_by": "scripts/arrows/generate_arrows.py",

@@ -65,8 +65,8 @@
       "style": "filled",
       "mode": "head",
       "finish": "beveled",
-      "verts": 40,
-      "tris": 76,
+      "verts": 44,
+      "tris": 84,
       "bbox": {
         "x": [
           -1.75,
@@ -81,7 +81,7 @@
           0.0
         ]
       },
-      "sha256": "6cfc05bd0027c0080b7a2c94643e6d7442f12c7b7f32a2f9b041d50fcf84258b",
+      "sha256": "76271ab1406ee36dbc7626cbecf7b7cbd341d481f696c5fe8072101796b40384",
       "socket_to_apex": 3.0,
       "overhang": 0.0,
       "span": 3.0,
@@ -117,8 +117,8 @@
       "style": "round-cap",
       "mode": "head",
       "finish": "beveled",
-      "verts": 216,
-      "tris": 428,
+      "verts": 220,
+      "tris": 436,
       "bbox": {
         "x": [
           -2.377681,
@@ -133,7 +133,7 @@
           1.364359
         ]
       },
-      "sha256": "898f04651558fbbc3e1d1f5965f9a437619a1f4b1d66e42e4af713348aa98c9b",
+      "sha256": "ff4ba94137afe2d6d0b11712c9be6fc49dd34f753cb1013489996ece147ed0c5",
       "socket_to_apex": 1.873738709727311,
       "overhang": 1.3643586393185618,
       "span": 3.238097349045873,
@@ -169,8 +169,8 @@
       "style": "square-cap",
       "mode": "head",
       "finish": "beveled",
-      "verts": 56,
-      "tris": 108,
+      "verts": 60,
+      "tris": 116,
       "bbox": {
         "x": [
           -2.262605,
@@ -185,7 +185,7 @@
           1.187655
         ]
       },
-      "sha256": "737a032093334ed7b99ef6873167cd92653565e1f87d0221dcd6fd2a90018ba4",
+      "sha256": "62f7d22408f317f203f7ddc07e095e02100771cafbdbca1b578e538bc58ea60e",
       "socket_to_apex": 2.151600623157517,
       "overhang": 1.187655095115959,
       "span": 3.339255718273476,
@@ -221,8 +221,8 @@
       "style": "vertical-cut",
       "mode": "head",
       "finish": "beveled",
-      "verts": 56,
-      "tris": 108,
+      "verts": 60,
+      "tris": 116,
       "bbox": {
         "x": [
           -1.879583,
@@ -237,7 +237,7 @@
           1.644123
         ]
       },
-      "sha256": "c6f7818a34aa946d3e6e54ec84051fec4b9497240ad49710dc540e75432507d1",
+      "sha256": "6a64c0c6912bb48aa97e66285b9f1419b97cea16ea3e70c29b7b5442bec6a458",
       "socket_to_apex": 2.151600623157517,
       "overhang": 1.644123203702895,
       "span": 3.795723826860412,
@@ -483,6 +483,29 @@
       "sha256": "7d4d26fda97704f576e0bacc946dc735e3fcb8fb0814a0d5d05c86786e374197",
       "depth": 0.5
     },
+    "arrow_tail_round_end_sharp.obj": {
+      "style": "shared",
+      "mode": "cap",
+      "finish": "sharp",
+      "verts": 18,
+      "tris": 32,
+      "bbox": {
+        "x": [
+          -0.5,
+          0.5
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -0.5,
+          0.0
+        ]
+      },
+      "sha256": "8019acee3dcb0dcbd95d0e001f2c780ca6ae535470d594a0480c3fcd5b958e7c",
+      "depth": 0.5
+    },
     "arrow_tail_unit.obj": {
       "style": "shared",
       "mode": "stem",
@@ -504,6 +527,29 @@
         ]
       },
       "sha256": "177153b33a7c894fb29806edd3b0f2c5c6f4c5df048fa5b1a13df001fd1226d8",
+      "tail": 1.0
+    },
+    "arrow_tail_unit_beveled.obj": {
+      "style": "shared",
+      "mode": "stem",
+      "finish": "beveled",
+      "verts": 52,
+      "tris": 100,
+      "bbox": {
+        "x": [
+          -0.5,
+          0.5
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -1.0,
+          0.0
+        ]
+      },
+      "sha256": "172de7b3107f3379be825ef728b1d194492438cbb3ea683b7cf88001c675501b",
       "tail": 1.0
     },
     "arrow_tail_unit_rounded.obj": {
