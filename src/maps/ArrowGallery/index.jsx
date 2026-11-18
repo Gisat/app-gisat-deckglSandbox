@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import DeckGL from '@deck.gl/react';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
-import { LineLayer, TextLayer } from '@deck.gl/layers';
+import { LineLayer, SolidPolygonLayer, TextLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { OBJLoader } from '@loaders.gl/obj';
 
@@ -10,12 +10,6 @@ import { ARROW_REFERENCE_RADIUS_METERS, metersToArrowFraction } from '../../laye
 
 import headFilled from './meshes/arrow_head_filled.obj?url&no-inline';
 import headFilledBeveled from './meshes/arrow_head_filled_beveled.obj?url&no-inline';
-import headRoundCap from './meshes/arrow_head_round_cap.obj?url&no-inline';
-import headRoundCapBeveled from './meshes/arrow_head_round_cap_beveled.obj?url&no-inline';
-import headSquareCap from './meshes/arrow_head_square_cap.obj?url&no-inline';
-import headSquareCapBeveled from './meshes/arrow_head_square_cap_beveled.obj?url&no-inline';
-import headVerticalCut from './meshes/arrow_head_vertical_cut.obj?url&no-inline';
-import headVerticalCutBeveled from './meshes/arrow_head_vertical_cut_beveled.obj?url&no-inline';
 import singleFilled from './meshes/arrow_single_filled.obj?url&no-inline';
 import singleFilledBeveled from './meshes/arrow_single_filled_beveled.obj?url&no-inline';
 import singleRoundCap from './meshes/arrow_single_round_cap.obj?url&no-inline';
@@ -31,16 +25,19 @@ import roundCap from './meshes/arrow_tail_round_end_rounded.obj?url&no-inline';
 /**
  * 2D shader arrows and 3D split/single meshes side by side.
  *
- * The 2D row is rendered by `DynamicArrowLayer`; the 3D rows by `SimpleMeshLayer`.
- * The columns share one color per type, so the four shapes can be compared across
- * the three representations:
+ * The 2D row is rendered by `DynamicArrowLayer`; the 3D rows by `SimpleMeshLayer`
+ * (the split heads by `SolidPolygonLayer`). The columns share one color per type,
+ * so the four shapes can be compared across the three representations:
  *
- *   2D fill-head <-> 3D filled head (conceptually)
- *   2D round/square/vertical open-V <-> 3D solid head profiles
+ *   2D fill-head <-> 3D filled solid head
+ *   2D round/square/vertical open-V <-> 3D extruded head profile
  *
- * The 2D shapes use the shader's data-driven stem plus its minimum bare stem.
- * The pen/tail sliders therefore affect the 2D row and the 3D split row; the 3D
- * single row is fixed-proportion and only responds to the pen scale.
+ * The 3D split row rebuilds each open-V head from the same 40°/2.24 footprint as
+ * the 2D shader, with the arm length fixed and the stroke driven by the pen. That
+ * keeps the wing length and angle constant while letting the round, square and
+ * vertical-cut endings reproduce their authored geometry. The filled head uses
+ * the solid OBJ at its reference footprint. The 3D single row is fixed-proportion
+ * and responds only to the pen scale.
  */
 
 const GALLERY_ORIGIN = [38.5667, 35.8722];
@@ -67,12 +64,7 @@ const COLORS = {
     'vertical-cut': [178, 121, 162]
 };
 
-const HEAD_MESHES = {
-    filled: { sharp: headFilled, beveled: headFilledBeveled },
-    'round-cap': { sharp: headRoundCap, beveled: headRoundCapBeveled },
-    'square-cap': { sharp: headSquareCap, beveled: headSquareCapBeveled },
-    'vertical-cut': { sharp: headVerticalCut, beveled: headVerticalCutBeveled }
-};
+const FILLED_HEAD_MESHES = { sharp: headFilled, beveled: headFilledBeveled };
 
 const SINGLE_MESHES = {
     filled: { sharp: singleFilled, beveled: singleFilledBeveled },
@@ -95,6 +87,102 @@ const STROKED_HEAD_WIDTH_METERS = 2 * 2.24 * Math.tan((40 * Math.PI) / 180) * 1.
 const FILL_HEAD_SIZE_METERS = 6.5;
 const FILL_HEAD_WIDTH_METERS = 0.8 * FILL_HEAD_SIZE_METERS;
 
+// The solid head meshes are authored at pen 1.0; the 2D stroked head corresponds
+// to the 1.5 m reference pen (`2.24 × 1.5`). The filled split head keeps that
+// reference footprint; the open-V split heads use that fixed arm length.
+const HEAD_REFERENCE_SCALE = 1.5;
+
+// The open-V split heads are extruded from the same 40 degree / 2.24 x pen
+// footprint as the 2D shader: the along-axis head size is fixed at the reference
+// pen and the stroke is the live pen, so the wings keep their length, angle and
+// style endings while the stroke thickens.
+const HEAD_SIZE_METERS = 2.24 * HEAD_REFERENCE_SCALE;
+const HEAD_ANGLE_DEG = 40;
+const HEAD_THETA = (HEAD_ANGLE_DEG * Math.PI) / 180;
+const HEAD_SIN = Math.sin(HEAD_THETA);
+const HEAD_COS = Math.cos(HEAD_THETA);
+const HEAD_HALF_WIDTH_METERS = HEAD_SIZE_METERS * Math.tan(HEAD_THETA);
+const HEAD_ARC_SEGMENTS = 8;
+
+/**
+ * Build the plan-view outline of a split head, socket at (0, 0), +y forward.
+ *
+ * Ports the generator's round/square/vertical profiles to metres so the gallery
+ * can rebuild the head for the live pen: the arm length stays fixed and only the
+ * stroke (`pen`) changes. The returned y values may be negative at the rear wing
+ * overhang, matching the authored OBJ meshes.
+ *
+ * @param {string} style - `round-cap`, `square-cap` or `vertical-cut`.
+ * @param {number} pen - Pen width in metres.
+ * @returns {number[][]} Closed outline points in metres.
+ */
+const headProfile = (style, pen) => {
+    const halfPen = pen / 2;
+    const tInner = (halfPen * (1 + HEAD_COS)) / HEAD_SIN;
+    const yInner = -halfPen * HEAD_SIN - tInner * HEAD_COS;
+    const miter = halfPen / HEAD_SIN;
+    let poly;
+
+    if (style === 'round-cap') {
+        poly = [
+            [-halfPen, yInner],
+            [halfPen, yInner]
+        ];
+
+        const rightCy = -HEAD_SIZE_METERS;
+        for (let i = 0; i <= HEAD_ARC_SEGMENTS; i += 1) {
+            const angle = ((220 + (180 * i) / HEAD_ARC_SEGMENTS) * Math.PI) / 180;
+            poly.push([
+                HEAD_HALF_WIDTH_METERS + halfPen * Math.cos(angle),
+                rightCy + halfPen * Math.sin(angle)
+            ]);
+        }
+        for (let i = 1; i < HEAD_ARC_SEGMENTS; i += 1) {
+            const angle = ((40 + (100 * i) / HEAD_ARC_SEGMENTS) * Math.PI) / 180;
+            poly.push([halfPen * Math.cos(angle), halfPen * Math.sin(angle)]);
+        }
+
+        const leftCy = -HEAD_SIZE_METERS;
+        for (let i = 0; i <= HEAD_ARC_SEGMENTS; i += 1) {
+            const angle = ((140 + (180 * i) / HEAD_ARC_SEGMENTS) * Math.PI) / 180;
+            poly.push([
+                -HEAD_HALF_WIDTH_METERS + halfPen * Math.cos(angle),
+                leftCy + halfPen * Math.sin(angle)
+            ]);
+        }
+    } else if (style === 'square-cap') {
+        const rxOuter = HEAD_HALF_WIDTH_METERS + halfPen * HEAD_COS;
+        const ryOuter = -HEAD_SIZE_METERS + halfPen * HEAD_SIN;
+        const rxInner = HEAD_HALF_WIDTH_METERS - halfPen * HEAD_COS;
+        const ryInner = -HEAD_SIZE_METERS - halfPen * HEAD_SIN;
+        poly = [
+            [-halfPen, yInner],
+            [halfPen, yInner],
+            [rxInner, ryInner],
+            [rxOuter, ryOuter],
+            [0, miter],
+            [-rxOuter, ryOuter],
+            [-rxInner, ryInner]
+        ];
+    } else {
+        const tOuter = (HEAD_HALF_WIDTH_METERS - halfPen * HEAD_COS) / HEAD_SIN;
+        const yOuter = halfPen * HEAD_SIN - tOuter * HEAD_COS;
+        const tIn = (HEAD_HALF_WIDTH_METERS + halfPen * HEAD_COS) / HEAD_SIN;
+        const yIn = -halfPen * HEAD_SIN - tIn * HEAD_COS;
+        poly = [
+            [-halfPen, yInner],
+            [halfPen, yInner],
+            [HEAD_HALF_WIDTH_METERS, yIn],
+            [HEAD_HALF_WIDTH_METERS, yOuter],
+            [0, miter],
+            [-HEAD_HALF_WIDTH_METERS, yOuter],
+            [-HEAD_HALF_WIDTH_METERS, yIn]
+        ];
+    }
+
+    return poly.map(([x, y]) => [x, y - yInner]);
+};
+
 const ROW_2D_Y = 18;
 const ROW_SPLIT_Y = 0;
 const ROW_SINGLE_Y = -18;
@@ -109,7 +197,7 @@ const ArrowGallery = () => {
     const [pen, setPen] = useState(1.5);
     const [tail, setTail] = useState(6);
     const [finish, setFinish] = useState('sharp');
-    const [tailStyle, setTailStyle] = useState('rounded');
+    const [tailStyle, setTailStyle] = useState('custom');
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
 
     const layers = useMemo(() => {
@@ -117,6 +205,12 @@ const ArrowGallery = () => {
 
         const twoDLayers = TYPES.map((type, index) => {
             const isFilled = type.id === 'filled';
+            // The shader adds the stroked shapes' minimum bare stem (pen + wing
+            // sweep + cap radius) on top of the data stem. Feed that reserve back
+            // out and allow for the 3D head's rear overhang, so the visible bare
+            // tail matches the 3D split/single rows instead of reading longer.
+            const overhangMeters = isFilled ? 0 : Math.min(...headProfile(type.id, pen).map(([, y]) => y));
+            const dataStemMeters = isFilled ? tail : tail + overhangMeters - pen;
             return new DynamicArrowLayer({
                 id: `arrow-gallery-2d-${type.id}`,
                 data: [{ position: getTypePosition(index, ROW_2D_Y) }],
@@ -125,7 +219,7 @@ const ArrowGallery = () => {
                 coordinateOrigin: GALLERY_ORIGIN,
                 getPosition: (d) => d.position,
                 getAngle: 0,
-                getStemLength: metersToArrowFraction(tail),
+                getStemLength: metersToArrowFraction(dataStemMeters),
                 getStemThickness: metersToArrowFraction(isFilled ? Math.max(pen, 1.0) : pen),
                 getHeadSize: metersToArrowFraction(isFilled ? FILL_HEAD_SIZE_METERS : STROKED_HEAD_SIZE_METERS),
                 getHeadWidth: metersToArrowFraction(isFilled ? FILL_HEAD_WIDTH_METERS : STROKED_HEAD_WIDTH_METERS),
@@ -136,70 +230,114 @@ const ArrowGallery = () => {
                 getLineWidth: 0,
                 pickable: false,
                 updateTriggers: {
-                    getStemLength: [tail],
+                    getStemLength: [tail, pen],
                     getStemThickness: [pen]
                 }
             });
         });
 
         const splitData = TYPES.map((type, index) => ({
+            type,
             position: getTypePosition(index, ROW_SPLIT_Y),
             color: COLORS[type.id]
         }));
 
-        const stemLayer = new SimpleMeshLayer({
-            id: `arrow-gallery-3d-stem-${tailStyle}`,
-            data: splitData,
-            mesh: tailStyle === 'rounded' ? stemRounded : stemSharp,
+        // Custom is the default mix: sharp stems everywhere except the round-cap,
+        // which keeps the rounded rear cap. The other modes apply to all columns.
+        const stemStyleFor = (type) =>
+            tailStyle === 'custom' ? (type.id === 'round-cap' ? 'rounded' : 'sharp') : tailStyle;
+        const roundedStems = splitData.filter((d) => stemStyleFor(d.type) === 'rounded');
+        const sharpStems = splitData.filter((d) => stemStyleFor(d.type) === 'sharp');
+
+        const makeStemLayer = (id, data, mesh) =>
+            new SimpleMeshLayer({
+                id,
+                data,
+                mesh,
+                loaders: [OBJLoader],
+                coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
+                coordinateOrigin: GALLERY_ORIGIN,
+                getPosition: (d) => d.position,
+                getScale: [penScale, penScale, tail],
+                getOrientation: [0, 0, 90],
+                getColor: (d) => d.color,
+                material: MATERIAL,
+                pickable: false
+            });
+
+        const stemLayers = [
+            makeStemLayer(`arrow-gallery-3d-stem-rounded-${tailStyle}`, roundedStems, stemRounded),
+            makeStemLayer(`arrow-gallery-3d-stem-sharp-${tailStyle}`, sharpStems, stemSharp)
+        ];
+
+        const capLayer = roundedStems.length
+            ? new SimpleMeshLayer({
+                  id: `arrow-gallery-3d-caps-${tailStyle}`,
+                  data: roundedStems,
+                  mesh: roundCap,
+                  loaders: [OBJLoader],
+                  coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
+                  coordinateOrigin: GALLERY_ORIGIN,
+                  getPosition: (d) => d.position,
+                  getScale: [penScale, penScale, penScale],
+                  // The cap's dome points rearward, opposite the arrow heading.
+                  getOrientation: [0, 180, 90],
+                  getColor: (d) => d.color,
+                  material: MATERIAL,
+                  pickable: false
+              })
+            : null;
+
+        const filledHeadLayer = new SimpleMeshLayer({
+            id: `arrow-gallery-3d-head-filled-${finish}`,
+            data: [{ position: getTypePosition(0, ROW_SPLIT_Y), color: COLORS.filled }],
+            mesh: FILLED_HEAD_MESHES[finish],
             loaders: [OBJLoader],
             coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
             coordinateOrigin: GALLERY_ORIGIN,
             getPosition: (d) => d.position,
-            getScale: [penScale, penScale, tail],
+            // The filled split head is a solid symbol: keep its footprint fixed and let
+            // the pen drive the slab thickness, matching the stem.
+            getScale: [HEAD_REFERENCE_SCALE, penScale, HEAD_REFERENCE_SCALE],
             getOrientation: [0, 0, 90],
+            // The head socket sits at the stem tip.
+            getTranslation: [0, tail, 0],
             getColor: (d) => d.color,
             material: MATERIAL,
             pickable: false
         });
 
-        const capLayer =
-            tailStyle === 'rounded'
-                ? new SimpleMeshLayer({
-                      id: 'arrow-gallery-3d-cap-rounded',
-                      data: splitData,
-                      mesh: roundCap,
-                      loaders: [OBJLoader],
-                      coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
-                      coordinateOrigin: GALLERY_ORIGIN,
-                      getPosition: (d) => d.position,
-                      getScale: [penScale, penScale, penScale],
-                      // The cap's dome points rearward, opposite the arrow heading.
-                      getOrientation: [0, 180, 90],
-                      getColor: (d) => d.color,
-                      material: MATERIAL,
-                      pickable: false
-                  })
-                : null;
+        // Open-V split heads are extruded from the live pen profile, so each style
+        // keeps its round/square/vertical endings while the stroke changes.
+        const headThickness = 0.8 * pen;
+        const headBaseZ = RAISE_METERS - headThickness / 2;
+        const strokedHeads = TYPES.map((type, index) => ({
+            ...type,
+            position: getTypePosition(index, ROW_SPLIT_Y)
+        })).filter((type) => type.id !== 'filled');
 
-        const headLayers = TYPES.map(
-            (type, index) =>
-                new SimpleMeshLayer({
-                    id: `arrow-gallery-3d-head-${type.id}-${finish}`,
-                    data: [{ position: getTypePosition(index, ROW_SPLIT_Y), color: COLORS[type.id] }],
-                    mesh: HEAD_MESHES[type.id][finish],
-                    loaders: [OBJLoader],
-                    coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
-                    coordinateOrigin: GALLERY_ORIGIN,
-                    getPosition: (d) => d.position,
-                    getScale: [penScale, penScale, 1],
-                    getOrientation: [0, 0, 90],
-                    // The head socket sits at the stem tip.
-                    getTranslation: [0, tail, 0],
-                    getColor: (d) => d.color,
-                    material: MATERIAL,
-                    pickable: false
-                })
-        );
+        const headLayer = new SolidPolygonLayer({
+            id: 'arrow-gallery-3d-heads',
+            data: strokedHeads,
+            coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
+            coordinateOrigin: GALLERY_ORIGIN,
+            extruded: true,
+            filled: true,
+            getPolygon: (d) =>
+                headProfile(d.id, pen).map(([x, y]) => [
+                    d.position[0] + x,
+                    d.position[1] + tail + y,
+                    headBaseZ
+                ]),
+            getElevation: headThickness,
+            getFillColor: (d) => COLORS[d.id],
+            updateTriggers: {
+                getPolygon: [pen, tail],
+                getElevation: [pen]
+            },
+            material: MATERIAL,
+            pickable: false
+        });
 
         const singleLayers = TYPES.map(
             (type, index) =>
@@ -269,9 +407,10 @@ const ArrowGallery = () => {
         return [
             gridLayer,
             ...twoDLayers,
-            stemLayer,
+            ...stemLayers,
             ...(capLayer ? [capLayer] : []),
-            ...headLayers,
+            filledHeadLayer,
+            headLayer,
             ...singleLayers,
             columnLabels
         ];
@@ -342,7 +481,7 @@ const ArrowGallery = () => {
                     style={sliderStyle}
                 />
 
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>3D finish</div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>3D finish (filled + single)</div>
                 <div style={{ marginBottom: 10 }}>
                     <button type="button" style={buttonStyle(finish === 'sharp')} onClick={() => setFinish('sharp')}>
                         Sharp
@@ -356,8 +495,15 @@ const ArrowGallery = () => {
                     </button>
                 </div>
 
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>3D tail style</div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>3D stem style (split row only)</div>
                 <div style={{ marginBottom: 10 }}>
+                    <button
+                        type="button"
+                        style={buttonStyle(tailStyle === 'custom')}
+                        onClick={() => setTailStyle('custom')}
+                    >
+                        Custom
+                    </button>
                     <button
                         type="button"
                         style={buttonStyle(tailStyle === 'rounded')}
@@ -379,8 +525,12 @@ const ArrowGallery = () => {
                 </button>
 
                 <div style={{ marginTop: 10, color: '#666', fontSize: 11, lineHeight: 1.35 }}>
-                    The 2D row is shader-rasterized. The 3D split row keeps a fixed head length while pen and tail change;
-                    the 3D single row is fixed-proportion. The no-border 2D variant is not shown.
+                    The 2D row is shader-rasterized. The 3D open-V split heads are rebuilt from the fixed 40° footprint
+                    for the live pen, so each keeps its round/square/vertical endings while the stroke thickens. Stem
+                    style Custom uses the round rear cap only for the round-cap column; Rod + cap and Sharp rod apply to
+                    every split column. The stem style affects only the 3D split row; the 3D single row is
+                    fixed-proportion. The exact split-head OBJs are attached in the docs. The no-border 2D variant is not
+                    shown.
                 </div>
             </aside>
         </div>

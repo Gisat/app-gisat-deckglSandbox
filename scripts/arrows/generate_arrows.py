@@ -40,7 +40,9 @@ BEVEL_STEPS = 3
 
 TAIL_LENGTH = 4.0
 HEAD_ANGLE_DEG = 40.0
-HEAD_ARM_RATIO = 2.24
+# 2.24 is the along-axis head size (matching `2.24 x pen` in the 2D shader),
+# not the wing-arm hypotenuse.
+HEAD_SIZE_RATIO = 2.24
 HEAD_REFERENCE_PEN = 1.5
 NUM_ARC = 8
 
@@ -48,9 +50,10 @@ NUM_ARC = 8
 THETA = math.radians(HEAD_ANGLE_DEG)
 SIN_T = math.sin(THETA)
 COS_T = math.cos(THETA)
-ARM_LENGTH = HEAD_ARM_RATIO * PEN_WIDTH
-HEAD_SIZE = ARM_LENGTH * COS_T
-HEAD_HALF_WIDTH = ARM_LENGTH * SIN_T
+TAN_T = math.tan(THETA)
+HEAD_SIZE = HEAD_SIZE_RATIO * PEN_WIDTH
+HEAD_HALF_WIDTH = HEAD_SIZE * TAN_T
+ARM_LENGTH = HEAD_SIZE / COS_T
 
 L_STEM = 4.0
 WING_BACK = HEAD_SIZE + HALF_PEN
@@ -733,7 +736,7 @@ def generate(out_dir: Path) -> dict:
             "thickness": THICKNESS,
             "tail_length": TAIL_LENGTH,
             "head_angle_deg": HEAD_ANGLE_DEG,
-            "head_arm_ratio": HEAD_ARM_RATIO,
+            "head_size_ratio": HEAD_SIZE_RATIO,
             "bevel_size": BEVEL_SIZE,
             "bevel_steps": BEVEL_STEPS,
         },
