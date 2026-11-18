@@ -92,4 +92,4 @@ docker run -p 5000:5000 -e VITE_BASE=/my-app/ sandbox
 
 ## Live Demo
 
-The latest version is deployed at: [https://gisat.github.io/app-gisat-deckglSandbox/](https://gisat.github.io/app-gisat-deckglSandbox/)
+The latest version is deployed at: [https://3dsandbox-dev.gisat.cz/](https://3dsandbox-dev.gisat.cz/)
