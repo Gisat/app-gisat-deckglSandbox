@@ -286,7 +286,17 @@ def make_3d_style_preview(preview_dir: Path, meshes_dir: Path, style: str, manif
     single_name = f"arrow_single_{style.replace('-', '_')}.obj"
     metrics = manifest["styles"][style]
     body = [text(24, 34, f"3D arrow — {LABELS[style]}", 20, 700, "#222")]
-    body.append(text(24, 56, "Split head (socket at Z=0) · shared tail parts · single mesh (flat rear, tail 4.0)", 12, 400, "#666"))
+    rear_note = "capped round tail, tail 4.5" if style == "round-cap" else "flat rear, tail 4.0"
+    body.append(
+        text(
+            24,
+            56,
+            f"Split head (socket at Z=0) · shared tail parts · single mesh ({rear_note})",
+            12,
+            400,
+            "#666",
+        )
+    )
 
     body.append(f'<rect x="20" y="76" width="300" height="300" rx="8" fill="#fafafa" stroke="#e5e5e5"/>')
     body.append(f'<rect x="336" y="76" width="300" height="300" rx="8" fill="#fafafa" stroke="#e5e5e5"/>')
@@ -307,13 +317,14 @@ def make_3d_style_preview(preview_dir: Path, meshes_dir: Path, style: str, manif
     body.append(text(362, 360, "stem (1.0 unit)", 10, 400, "#777"))
     body.append(text(500, 360, "cap (0.5 deep)", 10, 400, "#777"))
 
-    body.append(panel_title(668, 102, "Single mesh", "sharp finish · flat rear", color))
+    single_note = "sharp finish · capped round tail" if style == "round-cap" else "sharp finish · flat rear"
+    body.append(panel_title(668, 102, "Single mesh", single_note, color))
     single_svg, _ = draw_obj_in_box(meshes_dir / single_name, (316, 230), color)
     body.append(f'<g transform="translate(664,120)">{single_svg}</g>')
 
     body.append(panel_title(1024, 102, "Dimensions", "model units", "#333"))
     lines = [
-        f"tail 4.0",
+        "tail 4.5 (capped)" if style == "round-cap" else "tail 4.0",
         f"head span {metrics['span']:.3f}",
         f"socket→apex {metrics['socket_to_apex']:.3f}",
         f"overhang {metrics['overhang']:.3f}",
@@ -332,7 +343,16 @@ def make_3d_style_preview(preview_dir: Path, meshes_dir: Path, style: str, manif
 def make_3d_overview(preview_dir: Path, meshes_dir: Path, manifest: dict):
     width, height = 1180, 900
     body = [text(24, 34, "3D arrow meshes — four styles", 20, 700, "#222")]
-    body.append(text(24, 56, "Split head (socket origin) and single mesh (flat rear, tail 4.0), projected from the OBJ triangles.", 12, 400, "#666"))
+    body.append(
+        text(
+            24,
+            56,
+            "Split head (socket origin) and single mesh (flat rear except the round-cap tail cap), projected from the OBJ triangles.",
+            12,
+            400,
+            "#666",
+        )
+    )
 
     row_h = 200
     top = 82

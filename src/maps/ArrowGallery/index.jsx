@@ -36,8 +36,9 @@ import roundCap from './meshes/arrow_tail_round_end_rounded.obj?url&no-inline';
  * the 2D shader, with the arm length fixed and the stroke driven by the pen. That
  * keeps the wing length and angle constant while letting the round, square and
  * vertical-cut endings reproduce their authored geometry. The filled head uses
- * the solid OBJ at its reference footprint. The 3D single row is fixed-proportion
- * and responds only to the pen scale.
+ * the solid OBJ scaled onto the same equilateral footprint as the 2D fill-head
+ * (width equals length), matching the dams app compo-EW pair. The 3D single row
+ * is fixed-proportion and responds only to the pen scale.
  */
 
 const GALLERY_ORIGIN = [38.5667, 35.8722];
@@ -80,17 +81,25 @@ const MATERIAL = {
     specularColor: [70, 70, 70]
 };
 
-// 2D shader constants: head size and width are fixed for the stroked presets;
-// the fill-head uses the coherence-driven head shape at its documented minimum.
-const STROKED_HEAD_SIZE_METERS = 2.24 * 1.5;
-const STROKED_HEAD_WIDTH_METERS = 2 * 2.24 * Math.tan((40 * Math.PI) / 180) * 1.5;
-const FILL_HEAD_SIZE_METERS = 6.5;
-const FILL_HEAD_WIDTH_METERS = 0.8 * FILL_HEAD_SIZE_METERS;
-
 // The solid head meshes are authored at pen 1.0; the 2D stroked head corresponds
 // to the 1.5 m reference pen (`2.24 × 1.5`). The filled split head keeps that
 // reference footprint; the open-V split heads use that fixed arm length.
 const HEAD_REFERENCE_SCALE = 1.5;
+
+// 2D shader constants: head size and width are fixed for the stroked presets;
+// the fill-head uses the coherence-driven head shape at its documented minimum.
+const STROKED_HEAD_SIZE_METERS = 2.24 * HEAD_REFERENCE_SCALE;
+const STROKED_HEAD_WIDTH_METERS = 2 * 2.24 * Math.tan((40 * Math.PI) / 180) * HEAD_REFERENCE_SCALE;
+
+// Filled head, mirroring the dams app compo-EW pair: the 2D head is equilateral
+// (head width equals head length) and the 3D `arrow_head_filled.obj` (3.5 wide ×
+// 3.0 long) is scaled on X and Z independently onto that same footprint, so both
+// rows draw one and the same head shape. The LOS 0.8 width ratio is not used
+// here — it makes the 2D triangle noticeably pointier than the 3D mesh.
+const ARROW_HEAD_FILLED_DIAMETER = 3.5;
+const ARROW_HEAD_FILLED_HEIGHT = 3.0;
+const FILLED_HEAD_SIZE_METERS = ARROW_HEAD_FILLED_DIAMETER * HEAD_REFERENCE_SCALE;
+const FILLED_HEAD_WIDTH_METERS = FILLED_HEAD_SIZE_METERS;
 
 // The open-V split heads are extruded from the same 40 degree / 2.24 x pen
 // footprint as the 2D shader: the along-axis head size is fixed at the reference
@@ -193,6 +202,15 @@ const columnPosition = (index, rowY) => [(index - (TYPES.length - 1) / 2) * COLU
 
 const getTypePosition = (index, rowY) => columnPosition(index, rowY);
 
+const ROWS = [
+    { id: '2d', label: '2D shader', y: ROW_2D_Y },
+    { id: 'split', label: '3D split', y: ROW_SPLIT_Y },
+    { id: 'single', label: '3D single', y: ROW_SINGLE_Y }
+];
+
+// Right edge of the row labels, held clear of the first type column.
+const ROW_LABEL_X = -((TYPES.length - 1) / 2) * COLUMN_SPACING - 8;
+
 const ArrowGallery = () => {
     const [pen, setPen] = useState(1.5);
     const [tail, setTail] = useState(6);
@@ -205,6 +223,10 @@ const ArrowGallery = () => {
 
         const twoDLayers = TYPES.map((type, index) => {
             const isFilled = type.id === 'filled';
+            // The shader's filled shape id is `fill-head`, not the column id
+            // `filled`; passing the latter would fall through to the stroked
+            // branch and rasterize an open-V instead of the filled head.
+            const shape = isFilled ? 'fill-head' : type.id;
             // The shader adds the stroked shapes' minimum bare stem (pen + wing
             // sweep + cap radius) on top of the data stem. Feed that reserve back
             // out and allow for the 3D head's rear overhang, so the visible bare
@@ -214,15 +236,15 @@ const ArrowGallery = () => {
             return new DynamicArrowLayer({
                 id: `arrow-gallery-2d-${type.id}`,
                 data: [{ position: getTypePosition(index, ROW_2D_Y) }],
-                shape: type.id,
+                shape,
                 coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
                 coordinateOrigin: GALLERY_ORIGIN,
                 getPosition: (d) => d.position,
                 getAngle: 0,
                 getStemLength: metersToArrowFraction(dataStemMeters),
                 getStemThickness: metersToArrowFraction(isFilled ? Math.max(pen, 1.0) : pen),
-                getHeadSize: metersToArrowFraction(isFilled ? FILL_HEAD_SIZE_METERS : STROKED_HEAD_SIZE_METERS),
-                getHeadWidth: metersToArrowFraction(isFilled ? FILL_HEAD_WIDTH_METERS : STROKED_HEAD_WIDTH_METERS),
+                getHeadSize: metersToArrowFraction(isFilled ? FILLED_HEAD_SIZE_METERS : STROKED_HEAD_SIZE_METERS),
+                getHeadWidth: metersToArrowFraction(isFilled ? FILLED_HEAD_WIDTH_METERS : STROKED_HEAD_WIDTH_METERS),
                 getRadius: ARROW_REFERENCE_RADIUS_METERS,
                 radiusUnits: 'meters',
                 getFillColor: COLORS[type.id],
@@ -242,7 +264,7 @@ const ArrowGallery = () => {
             color: COLORS[type.id]
         }));
 
-        // Custom is the default mix: sharp stems everywhere except the round-cap,
+        // Default is the mixed mode: sharp stems everywhere except the round-cap,
         // which keeps the rounded rear cap. The other modes apply to all columns.
         const stemStyleFor = (type) =>
             tailStyle === 'custom' ? (type.id === 'round-cap' ? 'rounded' : 'sharp') : tailStyle;
@@ -296,9 +318,14 @@ const ArrowGallery = () => {
             coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
             coordinateOrigin: GALLERY_ORIGIN,
             getPosition: (d) => d.position,
-            // The filled split head is a solid symbol: keep its footprint fixed and let
-            // the pen drive the slab thickness, matching the stem.
-            getScale: [HEAD_REFERENCE_SCALE, penScale, HEAD_REFERENCE_SCALE],
+            // Scale X and Z independently so the filled mesh lands on the same
+            // equilateral footprint as the 2D fill-head (the dams app compo-EW
+            // pair); Y follows the live pen like the stem.
+            getScale: [
+                FILLED_HEAD_WIDTH_METERS / ARROW_HEAD_FILLED_DIAMETER,
+                penScale,
+                FILLED_HEAD_SIZE_METERS / ARROW_HEAD_FILLED_HEIGHT
+            ],
             getOrientation: [0, 0, 90],
             // The head socket sits at the stem tip.
             getTranslation: [0, tail, 0],
@@ -357,6 +384,30 @@ const ArrowGallery = () => {
                 })
         );
 
+        const rowLabels = new TextLayer({
+            id: 'arrow-gallery-row-labels',
+            data: ROWS.map((row) => ({
+                text: row.label,
+                position: [ROW_LABEL_X, row.y, RAISE_METERS]
+            })),
+            coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
+            coordinateOrigin: GALLERY_ORIGIN,
+            getPosition: (d) => d.position,
+            getText: (d) => d.text,
+            getColor: [85, 85, 85],
+            getSize: 15,
+            sizeUnits: 'pixels',
+            getTextAnchor: 'end',
+            getAlignmentBaseline: 'center',
+            fontFamily: 'system-ui, sans-serif',
+            fontWeight: 600,
+            background: true,
+            getBackgroundColor: [255, 255, 255, 220],
+            backgroundPadding: [6, 3],
+            billboard: true,
+            pickable: false
+        });
+
         const columnLabels = new TextLayer({
             id: 'arrow-gallery-column-labels',
             data: TYPES.map((type, index) => ({
@@ -412,6 +463,7 @@ const ArrowGallery = () => {
             filledHeadLayer,
             headLayer,
             ...singleLayers,
+            rowLabels,
             columnLabels
         ];
     }, [pen, tail, finish, tailStyle]);
@@ -502,7 +554,7 @@ const ArrowGallery = () => {
                         style={buttonStyle(tailStyle === 'custom')}
                         onClick={() => setTailStyle('custom')}
                     >
-                        Custom
+                        Default
                     </button>
                     <button
                         type="button"
@@ -525,12 +577,13 @@ const ArrowGallery = () => {
                 </button>
 
                 <div style={{ marginTop: 10, color: '#666', fontSize: 11, lineHeight: 1.35 }}>
-                    The 2D row is shader-rasterized. The 3D open-V split heads are rebuilt from the fixed 40° footprint
-                    for the live pen, so each keeps its round/square/vertical endings while the stroke thickens. Stem
-                    style Custom uses the round rear cap only for the round-cap column; Rod + cap and Sharp rod apply to
-                    every split column. The stem style affects only the 3D split row; the 3D single row is
-                    fixed-proportion. The exact split-head OBJs are attached in the docs. The no-border 2D variant is not
-                    shown.
+                    The 2D row is shader-rasterized. The filled 2D and 3D split heads share the compo-EW equilateral
+                    footprint (head width equals head length). The 3D open-V split heads are rebuilt from the fixed 40°
+                    footprint for the live pen, so each keeps its round/square/vertical endings while the stroke
+                    thickens. Stem style Default uses the round rear cap only for the round-cap column; Rod + cap and
+                    Sharp rod apply to every split column. The stem style affects only the 3D split row; the 3D single
+                    row is fixed-proportion. The exact split-head OBJs are attached in the docs. The no-border 2D
+                    variant is not shown.
                 </div>
             </aside>
         </div>

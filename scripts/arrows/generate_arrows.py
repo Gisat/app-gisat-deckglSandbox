@@ -6,6 +6,7 @@ Outputs:
   - split 3D heads (sharp + beveled) for filled / round-cap / square-cap / vertical-cut
   - shared tail parts: sharp stem, rounded-edge stem, selectively beveled round cap
   - single-mesh arrows (sharp + beveled), canonical tail 4.0, flat rear
+    except the round-cap single, whose tail keeps the round cap
   - manifest.json with counts, bounding boxes and hashes
 
 The meshes use the documentation convention:
@@ -419,15 +420,43 @@ def head_profile_xz(style: str) -> list[tuple[float, float]]:
     return [(x, -(y - socket_y)) for x, y in poly_xy]
 
 
+def single_tail_extent(style: str, tail: float = TAIL_LENGTH) -> float:
+    """Rear-most tail extent, including the round-cap tail dome.
+
+    Every single keeps a straight stem of `tail`; the round-cap single also ends
+    with the same semicircular cap the split round-cap composite uses, so its
+    rear-most point sits one cap radius behind the straight stem.
+    """
+    return tail + (HALF_PEN if style == "round-cap" else 0.0)
+
+
 def single_profile_xz(style: str, tail: float = TAIL_LENGTH) -> list[tuple[float, float]]:
-    """Union of a flat-rear stem (length `tail`) and the head, socket at `tail`."""
+    """Union of a stem (length `tail`) and the head, socket at the stem tip.
+
+    The round-cap single replaces the flat rear edge with a semicircular cap
+    (radius = half pen) matching the split row's round tail end, so the tail is
+    always capped; the other styles keep the flat rear.
+    """
     head = head_profile_xz(style)
     head_y = [(x, -z) for x, z in head]  # socket at 0, rear negative, apex positive
-    shifted = [(x, y + tail) for x, y in head_y]
 
-    poly_xy = [(-HALF_PEN, 0.0), (HALF_PEN, 0.0), (HALF_PEN, tail)]
+    if style == "round-cap":
+        cap_r = HALF_PEN
+        socket = tail + cap_r
+        # Semicircle from (-cap_r, cap_r) through (0, 0) to (cap_r, cap_r): the
+        # dome bulges rearward, the straight stem starts one radius forward.
+        poly_xy = []
+        for i in range(NUM_ARC + 1):
+            ang = math.pi + math.pi * i / NUM_ARC
+            poly_xy.append((cap_r * math.cos(ang), cap_r + cap_r * math.sin(ang)))
+    else:
+        socket = tail
+        poly_xy = [(-HALF_PEN, 0.0), (HALF_PEN, 0.0)]
+
+    shifted = [(x, y + socket) for x, y in head_y]
+    poly_xy.append((HALF_PEN, socket))
     poly_xy.extend(shifted[2:])
-    poly_xy.append((-HALF_PEN, tail))
+    poly_xy.append((-HALF_PEN, socket))
     return [(x, -y) for x, y in poly_xy]
 
 
@@ -684,15 +713,17 @@ def generate(out_dir: Path) -> dict:
         single = out_dir / f"arrow_single_{style.replace('-', '_')}.obj"
         single_bevel = out_dir / f"arrow_single_{style.replace('-', '_')}_beveled.obj"
         union = single_profile_xz(style)
-        total = TAIL_LENGTH + socket_to_apex
-        export_sharp_extruded(single, single.stem, union, f"Single arrow (sharp, flat rear): {label}")
-        export_beveled(single_bevel, single_bevel.stem, union, f"Single arrow (beveled rim, flat rear): {label}")
+        tail_extent = single_tail_extent(style)
+        total = tail_extent + socket_to_apex
+        rear = "capped round tail" if style == "round-cap" else "flat rear"
+        export_sharp_extruded(single, single.stem, union, f"Single arrow (sharp, {rear}): {label}")
+        export_beveled(single_bevel, single_bevel.stem, union, f"Single arrow (beveled rim, {rear}): {label}")
         manifest[single.name] = manifest_entry(
             single,
             style,
             "single",
             "sharp",
-            tail=TAIL_LENGTH,
+            tail=tail_extent,
             socket_to_apex=socket_to_apex,
             overhang=overhang,
             total_length=total,
@@ -702,7 +733,7 @@ def generate(out_dir: Path) -> dict:
             style,
             "single",
             "beveled",
-            tail=TAIL_LENGTH,
+            tail=tail_extent,
             socket_to_apex=socket_to_apex,
             overhang=overhang,
             total_length=total,
@@ -740,7 +771,7 @@ def generate(out_dir: Path) -> dict:
             "bevel_size": BEVEL_SIZE,
             "bevel_steps": BEVEL_STEPS,
         },
-        "styles": {style: {"span": head_metrics(style)[0], "socket_to_apex": head_metrics(style)[1], "overhang": head_metrics(style)[2], "single_total": TAIL_LENGTH + head_metrics(style)[1]} for style in STYLES},
+        "styles": {style: {"span": head_metrics(style)[0], "socket_to_apex": head_metrics(style)[1], "overhang": head_metrics(style)[2], "single_total": single_tail_extent(style) + head_metrics(style)[1]} for style in STYLES},
         "files": dict(sorted(manifest.items())),
     }
     (out_dir / "manifest.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

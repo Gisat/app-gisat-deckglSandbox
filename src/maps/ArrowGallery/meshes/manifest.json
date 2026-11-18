@@ -20,7 +20,7 @@
       "span": 3.238097349045873,
       "socket_to_apex": 1.873738709727311,
       "overhang": 1.3643586393185618,
-      "single_total": 5.873738709727311
+      "single_total": 6.373738709727311
     },
     "square-cap": {
       "span": 3.339255718273476,
@@ -302,8 +302,8 @@
       "style": "round-cap",
       "mode": "single",
       "finish": "sharp",
-      "verts": 58,
-      "tris": 112,
+      "verts": 72,
+      "tris": 140,
       "bbox": {
         "x": [
           -2.377681,
@@ -314,22 +314,22 @@
           0.4
         ],
         "z": [
-          -5.873739,
+          -6.373739,
           0.0
         ]
       },
-      "sha256": "7116d8bdd3423427668ad49d545a8bc4105bc09ae1b3882cdcfefb208e590b72",
-      "tail": 4.0,
+      "sha256": "232e16d405c66de994c5ddb06356711de82e3c53c8ed9d6d145b6f1f05b04bf0",
+      "tail": 4.5,
       "socket_to_apex": 1.873738709727311,
       "overhang": 1.3643586393185618,
-      "total_length": 5.873738709727311
+      "total_length": 6.373738709727311
     },
     "arrow_single_round_cap_beveled.obj": {
       "style": "round-cap",
       "mode": "single",
       "finish": "beveled",
-      "verts": 232,
-      "tris": 460,
+      "verts": 288,
+      "tris": 572,
       "bbox": {
         "x": [
           -2.377681,
@@ -340,15 +340,15 @@
           0.4
         ],
         "z": [
-          -5.873739,
+          -6.373739,
           0.0
         ]
       },
-      "sha256": "71081cfaa90fcdff0c96f624896dbf312196826296fe0066b2f796880c74e903",
-      "tail": 4.0,
+      "sha256": "7ac1320fd6d7f19ac4a1465957ec1c3c752de3794399081952b8967803277e56",
+      "tail": 4.5,
       "socket_to_apex": 1.873738709727311,
       "overhang": 1.3643586393185618,
-      "total_length": 5.873738709727311,
+      "total_length": 6.373738709727311,
       "bevel_size": 0.08,
       "bevel_steps": 3
     },
