@@ -85,8 +85,12 @@ export const BAND_ASSIGN_FRACTIONS = [0.40, 0.70];
 export const BAND_LABELS = ['base', 'mid', 'top'];
 export const BAND_COUNT = BAND_FRACTIONS.length;
 
-/** Rig fin layout, metres. */
-export const FIN_INNER_M = 6;
+/**
+ * Rig fin layout, metres. `FIN_INNER_M` equals the collar radius so each ribbon
+ * springs directly from its collar ring on the tower instead of starting in
+ * mid-air.
+ */
+export const FIN_INNER_M = 3.5;
 export const FIN_LENGTH_M = 60;
 
 /**
@@ -97,12 +101,12 @@ export const FIN_LENGTH_M = 60;
 export const LANE_OFFSET_M = 8.0;
 
 /**
- * Vertical exaggeration choices, displayed as ×300 / ×700 / ×1500. Kept under 1
- * so cumulative settlement (commonly 5–20 mm) stays comparable with the 10–13 m
- * band spacing instead of swallowing the neighbouring bands.
+ * Vertical exaggeration choices, displayed as ×700 / ×1500 / ×2500. The default
+ * ×1500 makes 4–9 mm deflections read clearly; the ground-clearance clamp in
+ * `buildFinGeometry` keeps the deepest base-band values out of the terrain.
  */
-export const SCALE_OPTIONS = [0.3, 0.7, 1.5];
-export const DEFAULT_SCALE_M_PER_MM = 0.7;
+export const SCALE_OPTIONS = [0.7, 1.5, 2.5];
+export const DEFAULT_SCALE_M_PER_MM = 1.5;
 
 /**
  * Display vertices per fin. Smoothing happens on each track's own dates; the

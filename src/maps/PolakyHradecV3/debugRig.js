@@ -176,7 +176,7 @@ export function logRigDebug({ store, windowDays, scaleMPerMm }) {
 
       log(
         `  fin ${trackId}/${BAND_LABELS[band]}: n=${scatterers.length} quads=${geometry.quads.length} `
-        + `present=${present} gaps=${gaps} axis 6→${axisEnd} m, drawn ${fmt(innerOffset, 3)}→`
+        + `present=${present} gaps=${gaps} axis ${FIN_INNER_M}→${axisEnd} m, drawn ${fmt(innerOffset, 3)}→`
         + `${fmt(outerOffset, 3)} m, first ${fmt(firstMm)} mm`,
       );
 
@@ -282,6 +282,11 @@ export function logRigDebug({ store, windowDays, scaleMPerMm }) {
     segments: BAND_COLLAR_SEGMENTS,
   });
   must('one collar per band', collars.length === pylon.bandZ.length, `${collars.length}`);
+  must(
+    'fin inner radius matches the collar radius',
+    FIN_INNER_M === BAND_COLLAR_RADIUS_M,
+    `${FIN_INNER_M} m`,
+  );
   must(
     'each collar closes on itself',
     collars.every((collar) => {

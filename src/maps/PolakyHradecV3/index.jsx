@@ -16,7 +16,6 @@ import { COORDINATE_SYSTEM, FlyToInterpolator } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import {
   BitmapLayer,
-  LineLayer,
   PathLayer,
   ScatterplotLayer,
   SolidPolygonLayer,
@@ -148,7 +147,7 @@ const RIG_FIN_SOLID_LAYER = 'rig-fin-curves';
 const RIG_FIN_DASHED_LAYER = 'rig-fin-curves-dashed';
 const RIG_FIN_BASELINE_LAYER = 'rig-fin-baselines';
 const RIG_BAND_COLLAR_LAYER = 'rig-band-collars';
-const RIG_VECTOR_LINE_LAYER = 'rig-vector-shafts';
+const RIG_VECTOR_SHAFT_LAYER = 'rig-vector-shafts';
 const RIG_VECTOR_HEAD_LAYER = 'rig-vector-heads';
 const RIG_DEBUG_MARKER_LAYER = 'rig-debug-band-markers';
 
@@ -168,12 +167,18 @@ const RIG_COLLAR_WIDTH = 1.5;
 /** Vectors: amber on the focused or hovered tower, pale grey elsewhere. */
 const RIG_VECTOR_COLOR = [235, 238, 242];
 const RIG_FOCUS_VECTOR_COLOR = [255, 210, 60];
-const RIG_VECTOR_WIDTH = 4;
+const RIG_SHAFT_RADIUS = 0.16;
 
 /** Auto-zoom target when the rig is switched on (60 m ≈ 20 px at the default z15). */
 const RIG_FOCUS_ZOOM = 18;
 
-/** Unit cone, apex on +Z, centred on the origin; scaled to each arrow head. */
+/**
+ * Unit meshes for the vector: a slim rod and a cone head, both with their long
+ * axis on local +Z so one `coneOrientation(east, up)` orients shaft and head
+ * identically. The shaft is a mesh rather than a pixel-width LineLayer because a
+ * 4 px line swallowed the head and read as a floating cone.
+ */
+const RIG_SHAFT_MESH = new CylinderGeometry({ radius: 1, height: 1, verticalAxis: 'z', nradial: 12 });
 const RIG_CONE_MESH = new ConeGeometry({ radius: 1, height: 1, verticalAxis: 'z', nradial: 12 });
 
 // Layer-id prefix shared by the 3D LOS point symbols (arrow parts and spheres).
@@ -739,13 +744,18 @@ export default function PolakyHradecV3() {
     return bandSolutions.filter(entry => entry.pylonKey === focusedPylon.key);
   }, [bandSolutions, focusedPylon]);
 
-  // Arrow shafts and heads: one per band per tower, east + up in metres.
+  // Arrow shafts and heads, only for the focused and hovered tower. Drawing all
+  // 54 band vectors put a pale cone on every neighbour's cross-arms and buried
+  // the one vector being read.
   const rigVectors = useMemo(() => {
     if (rigMode !== RIG_FINS_VECTORS || !rigStore) return { shafts: EMPTY, heads: EMPTY };
+    if (selectedPylonKey == null && hoveredPylonKey == null) return { shafts: EMPTY, heads: EMPTY };
+
     const shafts = [];
     const heads = [];
 
     for (const entry of bandSolutions) {
+      if (entry.pylonKey !== selectedPylonKey && entry.pylonKey !== hoveredPylonKey) continue;
       const { solution } = entry;
       if (!solution.ok || !Number.isFinite(solution.dE) || !Number.isFinite(solution.dU)) continue;
       const pylon = rigStore.pylons.get(entry.pylonKey);
@@ -758,27 +768,40 @@ export default function PolakyHradecV3() {
 
       const z0 = pylon.terrainElevation + entry.bandZ;
       const mPerDegLon = metresPerDegLon(pylon.lat);
-      const source = [pylon.lon, pylon.lat, z0];
-      const target = [pylon.lon + east / mPerDegLon, pylon.lat, z0 + up];
-
       const unitEast = east / length;
       const unitUp = up / length;
-      const headLength = Math.min(6, Math.max(1.2, length * 0.4));
-      const headRadius = headLength * 0.28;
-      const centreEast = east - unitEast * (headLength / 2);
-      const centreUp = up - unitUp * (headLength / 2);
+      const orientation = coneOrientation(east, up);
 
-      shafts.push({ source, target, pylonKey: entry.pylonKey });
+      // Shaft and head split the same vector: the rod runs from the tower axis to
+      // the head base, the cone covers the last `headLength` metres.
+      const headLength = Math.min(2.2, Math.max(0.8, length * 0.28), length);
+      const headRadius = headLength * 0.22;
+      const shaftLength = Math.max(0.2, length - headLength);
+
+      shafts.push({
+        pylonKey: entry.pylonKey,
+        position: [
+          pylon.lon + ((unitEast * shaftLength) / 2) / mPerDegLon,
+          pylon.lat,
+          z0 + (unitUp * shaftLength) / 2,
+        ],
+        orientation,
+        scale: [RIG_SHAFT_RADIUS, RIG_SHAFT_RADIUS, shaftLength],
+      });
       heads.push({
         pylonKey: entry.pylonKey,
-        position: [pylon.lon + centreEast / mPerDegLon, pylon.lat, z0 + centreUp],
-        orientation: coneOrientation(east, up),
+        position: [
+          pylon.lon + ((east - unitEast * (headLength / 2)) / mPerDegLon),
+          pylon.lat,
+          z0 + up - unitUp * (headLength / 2),
+        ],
+        orientation,
         scale: [headRadius, headRadius, headLength],
       });
     }
 
     return { shafts, heads };
-  }, [rigMode, bandSolutions, rigStore, scaleMPerMm]);
+  }, [rigMode, bandSolutions, rigStore, scaleMPerMm, selectedPylonKey, hoveredPylonKey]);
 
   // One controlled-view-state sink for every camera change, interactions
   // included. Transition props are one-shot: they must not be stored, or the
@@ -1262,14 +1285,16 @@ export default function PolakyHradecV3() {
         const highlighted = d.pylonKey === selectedPylonKey || d.pylonKey === hoveredPylonKey;
         return [...(highlighted ? RIG_FOCUS_VECTOR_COLOR : RIG_VECTOR_COLOR), 255];
       };
-      rigLayers.push(new LineLayer({
-        id: RIG_VECTOR_LINE_LAYER,
+      rigLayers.push(new SimpleMeshLayer({
+        id: RIG_VECTOR_SHAFT_LAYER,
         data: rigVectors.shafts,
-        getSourcePosition: (d) => d.source,
-        getTargetPosition: (d) => d.target,
+        mesh: RIG_SHAFT_MESH,
+        coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
+        getPosition: (d) => d.position,
+        getOrientation: (d) => d.orientation,
+        getScale: (d) => d.scale,
         getColor: vectorColor,
-        getWidth: RIG_VECTOR_WIDTH,
-        widthUnits: 'pixels',
+        material: { ambient: 0.5, diffuse: 0.6, shininess: 16, specularColor: [40, 40, 40] },
         pickable: false,
       }));
       rigLayers.push(new SimpleMeshLayer({
