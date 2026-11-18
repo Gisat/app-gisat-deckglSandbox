@@ -686,15 +686,17 @@ const ArrowGallery = () => {
 
                 <div style={{ marginTop: 10, color: '#666', fontSize: 11, lineHeight: 1.35 }}>
                     The 2D row is shader-rasterized. The filled 2D and 3D split heads share the compo-EW equilateral
-                    footprint (head width equals head length). The 3D open-V split heads are rebuilt from the fixed 40°
-                    footprint for the live pen, so each keeps its round/square/vertical endings while the stroke
-                    thickens. Finish Default bevels only the round-cap, matching the rounded 2D round cap; Sharp and
-                    Beveled apply to every 3D row, and Beveled also bevels the stem long edges while the head socket
-                    and the capped end stay sharp. Stem style Default uses the round rear cap only for the round-cap
-                    column; Rod + cap and Sharp rod apply to every split column, and an explicit Sharp rod always
-                    stays sharp whatever the finish. The stem style affects only the 3D split row; the 3D single row
-                    is fixed-proportion. The exact split-head OBJs are attached in the
-                    docs. The no-border 2D variant is not shown.
+                    footprint (head width equals head length). The 3D open-V split heads are authored from the fixed 40°
+                    footprint: the sharp finish rebuilds them for the live pen, the beveled finish scales the
+                    generated mesh onto the same profile, and each keeps its round/square/vertical endings while the
+                    stroke thickens. Finish Default bevels only the round-cap, matching the rounded 2D round cap;
+                    Sharp and Beveled apply to every 3D row. Beveled also bevels the stem long edges on uncapped
+                    split columns and keeps the head socket and the cap seam sharp; a capped column keeps the
+                    rounded stem, so only its head and cap rims take the bevel. Stem style Default uses the round
+                    rear cap only for the round-cap column; Rod + cap and Sharp rod apply to every split column,
+                    and an explicit Sharp rod always stays sharp whatever the finish. The stem style affects only
+                    the 3D split row; the 3D single row is fixed-proportion. The exact split-head OBJs ship with the
+                    gallery and come from scripts/arrows/generate_arrows.py. The no-border 2D variant is not shown.
                 </div>
             </aside>
         </div>
