@@ -844,8 +844,10 @@ def manifest_entry(path: Path, style: str, mode: str, finish: str, **extra) -> d
 # --------------------------------------------------------------------------- #
 
 
-def generate(out_dir: Path) -> dict:
+def generate(out_dir: Path, shared_out_dir: Path | None = None) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
+    shared_out_dir = shared_out_dir or out_dir
+    shared_out_dir.mkdir(parents=True, exist_ok=True)
     manifest: dict[str, dict] = {}
 
     for style in STYLES:
@@ -924,7 +926,7 @@ def generate(out_dir: Path) -> dict:
     )
     manifest[sharp_stem.name] = manifest_entry(sharp_stem, "shared", "stem", "sharp", tail=1.0)
 
-    rounded_stem = out_dir / "arrow_tail_unit_rounded.obj"
+    rounded_stem = shared_out_dir / "arrow_tail_unit_rounded.obj"
     generate_rounded_stem(rounded_stem)
     manifest[rounded_stem.name] = manifest_entry(rounded_stem, "shared", "stem", "rounded", tail=1.0)
 
@@ -932,7 +934,7 @@ def generate(out_dir: Path) -> dict:
     generate_beveled_stem(beveled_stem)
     manifest[beveled_stem.name] = manifest_entry(beveled_stem, "shared", "stem", "beveled", tail=1.0)
 
-    cap = out_dir / "arrow_tail_round_end_rounded.obj"
+    cap = shared_out_dir / "arrow_tail_round_end_rounded.obj"
     generate_round_cap(cap)
     manifest[cap.name] = manifest_entry(cap, "shared", "cap", "beveled", depth=0.5)
 
@@ -958,16 +960,17 @@ def generate(out_dir: Path) -> dict:
     return payload
 
 
-def check_reference_assets(out_dir: Path, reference_dir: Path) -> bool:
+def check_reference_assets(out_dir: Path, reference_dir: Path, shared_out_dir: Path | None = None) -> bool:
+    shared_out_dir = shared_out_dir or out_dir
     references = [
-        "arrow_head_filled.obj",
-        "arrow_tail_unit.obj",
-        "arrow_tail_unit_rounded.obj",
-        "arrow_tail_round_end_rounded.obj",
+        (out_dir, "arrow_head_filled.obj"),
+        (out_dir, "arrow_tail_unit.obj"),
+        (shared_out_dir, "arrow_tail_unit_rounded.obj"),
+        (shared_out_dir, "arrow_tail_round_end_rounded.obj"),
     ]
     ok = True
-    for name in references:
-        generated = out_dir / name
+    for generated_dir, name in references:
+        generated = generated_dir / name
         reference = reference_dir / name
         if not generated.exists():
             print(f"MISSING generated: {generated}")
@@ -986,9 +989,16 @@ def check_reference_assets(out_dir: Path, reference_dir: Path) -> bool:
 def main() -> int:
     script = Path(__file__).resolve()
     default_out = script.parents[2] / "src" / "maps" / "ArrowGallery" / "meshes"
+    default_shared_out = script.parents[2] / "src" / "layers" / "velocity" / "meshes"
 
     parser = argparse.ArgumentParser(description="Generate 2D/3D arrow documentation meshes.")
     parser.add_argument("--out", type=Path, default=default_out, help="Output mesh directory.")
+    parser.add_argument(
+        "--shared-out",
+        type=Path,
+        default=default_shared_out,
+        help="Output directory for meshes shared with the velocity layers.",
+    )
     parser.add_argument(
         "--check",
         type=Path,
@@ -997,12 +1007,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    payload = generate(args.out)
-    print(f"Generated {len(payload['files'])} OBJ files in {args.out}")
+    payload = generate(args.out, args.shared_out)
+    print(f"Generated {len(payload['files'])} OBJ assets")
+    print(f"Gallery meshes: {args.out}")
+    print(f"Shared tail meshes: {args.shared_out}")
     print(f"Manifest: {args.out / 'manifest.json'}")
 
     if args.check:
-        return 0 if check_reference_assets(args.out, args.check) else 1
+        return 0 if check_reference_assets(args.out, args.check, args.shared_out) else 1
     return 0
 
 

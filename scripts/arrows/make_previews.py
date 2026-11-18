@@ -31,9 +31,9 @@ HEAD_ARM = 2.24
 HEAD_ANGLE = math.radians(40.0)
 HEAD_SIZE_2D = HEAD_ARM * HEAD_PEN_2D
 HEAD_WIDTH_2D = 2 * HEAD_ARM * math.tan(HEAD_ANGLE) * HEAD_PEN_2D
-FILL_HEAD_SIZE = 6.5
-FILL_HEAD_WIDTH = 0.8 * FILL_HEAD_SIZE
-FILL_PEN = 2.0
+FILL_HEAD_SIZE = 5.25
+FILL_HEAD_WIDTH = FILL_HEAD_SIZE
+FILL_PEN = PEN_2D
 MIN_BARE_STEM = PEN_2D + HEAD_SIZE_2D + PEN_2D / 2.0
 
 COLORS = {
@@ -242,7 +242,7 @@ def draw_2d_shape(shape, box, pad=22):
 def make_2d_previews(out_dir: Path):
     width, height = 1180, 500
     body = [text(24, 34, "2D arrow shapes — DynamicArrowLayer", 20, 700, "#222")]
-    body.append(text(24, 56, "First four Tabqa presets. The no-border variant is a styling option, not a fifth shape.", 12, 400, "#666"))
+    body.append(text(24, 56, "Filled follows the compo-EW equilateral footprint; the stroked shapes show the Tabqa presets. The no-border variant is a styling option, not a fifth shape.", 12, 400, "#666"))
 
     panel_w = (width - 40) / 4.0
     for i, shape in enumerate(STYLES):
@@ -278,7 +278,7 @@ def draw_obj_in_box(path: Path, box, color, pad=12):
     return f'<path d="{d}" fill="{color}" fill-opacity="0.9"/>', bbox
 
 
-def make_3d_style_preview(preview_dir: Path, meshes_dir: Path, style: str, manifest: dict):
+def make_3d_style_preview(preview_dir: Path, meshes_dir: Path, shared_meshes_dir: Path, style: str, manifest: dict):
     width, height = 1240, 430
     color = COLORS[style]
     files = manifest["files"]
@@ -311,7 +311,7 @@ def make_3d_style_preview(preview_dir: Path, meshes_dir: Path, style: str, manif
     # The stem is a simple rod; a schematic rectangle reads better than its
     # projected side-wall triangles. The cap is projected from the OBJ.
     stem_rect = f'<rect x="12" y="62" width="96" height="96" rx="7" fill="{color}" fill-opacity="0.9"/>'
-    cap_svg, _ = draw_obj_in_box(meshes_dir / "arrow_tail_round_end_rounded.obj", (120, 220), color)
+    cap_svg, _ = draw_obj_in_box(shared_meshes_dir / "arrow_tail_round_end_rounded.obj", (120, 220), color)
     body.append(f'<g transform="translate(348,130)">{stem_rect}</g>')
     body.append(f'<g transform="translate(486,130)">{cap_svg}</g>')
     body.append(text(362, 360, "stem (1.0 unit)", 10, 400, "#777"))
@@ -393,6 +393,12 @@ def main() -> int:
         default=Path(__file__).resolve().parents[2] / "src" / "maps" / "ArrowGallery" / "meshes",
         help="Generated mesh directory.",
     )
+    parser.add_argument(
+        "--shared-meshes",
+        type=Path,
+        default=Path(__file__).resolve().parents[2] / "src" / "layers" / "velocity" / "meshes",
+        help="Shared tail mesh directory.",
+    )
     parser.add_argument("--out", type=Path, default=Path("/tmp/arrow-previews"), help="Preview output directory.")
     args = parser.parse_args()
 
@@ -402,7 +408,7 @@ def main() -> int:
     make_2d_previews(args.out)
     make_3d_overview(args.out, args.meshes, manifest)
     for style in STYLES:
-        make_3d_style_preview(args.out, args.meshes, style, manifest)
+        make_3d_style_preview(args.out, args.meshes, args.shared_meshes, style, manifest)
 
     print(f"Wrote previews to {args.out}")
     for path in sorted(args.out.glob("*.svg")):
