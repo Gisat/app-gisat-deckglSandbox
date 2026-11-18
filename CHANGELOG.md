@@ -1,3 +1,18 @@
+## [1.22.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.21.0...v1.22.0) (2026-11-18)
+
+### Features
+
+* **arrows:** add 2D/3D arrow gallery and 3D mesh generator ([d5c3ee2](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d5c3ee2f5d2280651610cfc40bb9130d27d52b25))
+* **arrows:** finish-aware 3D gallery with beveled split heads ([cea46a2](https://github.com/Gisat/app-gisat-deckglSandbox/commit/cea46a28d4713f7812b4ec3adfe21ffa8ce054ef))
+
+### Bug Fixes
+
+* **arrows:** align 3D gallery heads and stems with 2D ([d1fadd1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d1fadd189695c8672e8716281b2fc6b54cb068f4))
+* **arrows:** anchor the last column label and widen margins ([050c038](https://github.com/Gisat/app-gisat-deckglSandbox/commit/050c03823c4b78621ad49200a431a30175d27ee4))
+* **arrows:** correct gallery filled head and cap round-cap single tail ([c07920f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/c07920f5dbca6131ab6ad5173a1f64bad94efffd))
+* **arrows:** fit arrow gallery on narrower viewports ([dc03ae8](https://github.com/Gisat/app-gisat-deckglSandbox/commit/dc03ae8965c4b13c155f4c14d6b70de0eca836d4))
+* **arrows:** rebuild beveled heads from the live pen ([471c74b](https://github.com/Gisat/app-gisat-deckglSandbox/commit/471c74b217fe13915f3a1b62015fca3f81e9f6bb))
+
 ## [1.21.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.20.1...v1.21.0) (2026-11-11)
 
 ### Features
