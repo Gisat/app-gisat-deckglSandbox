@@ -95,7 +95,11 @@ function offsetMetres(lonA, latA, lonB, latB) {
  * @param {{
  *   pylonFeatures: Array<any>,
  *   featuresByTrack: Record<string, Array<any>>,
- * }} input
+ *   terrainElevations?: Map<string, number|null>,
+ * }} input `terrainElevations` is the per-pylon COG sample (see
+ *   `terrainElevation.js`). It is the rig's z anchor; `baseElevation` below is
+ *   the DTM median and is kept for reporting only, because the two datums differ
+ *   by ~45 m at this site.
  * @returns {{
  *   pylons: Map<string, any>,
  *   grid: number[],
@@ -105,7 +109,11 @@ function offsetMetres(lonA, latA, lonB, latB) {
  *   warnings: string[],
  * }}
  */
-export function buildRigStore({ pylonFeatures = [], featuresByTrack = {} }) {
+export function buildRigStore({
+  pylonFeatures = [],
+  featuresByTrack = {},
+  terrainElevations = null,
+}) {
   const warnings = [];
 
   const pointsByKey = new Map();
@@ -197,6 +205,7 @@ export function buildRigStore({ pylonFeatures = [], featuresByTrack = {} }) {
       .map(feature => Number(feature?.properties?.H_dem))
       .filter(Number.isFinite);
     const baseElevation = medianOf(medians) ?? medianOf(hDems) ?? 0;
+    const terrainElevation = terrainElevations?.get(key) ?? null;
 
     pylons.set(key, {
       key,
@@ -205,8 +214,11 @@ export function buildRigStore({ pylonFeatures = [], featuresByTrack = {} }) {
       height,
       lon,
       lat,
+      /** DTM median of the linked points (reported, not used for z). */
       baseElevation,
-      /** Band centre heights above the base, metres. */
+      /** Draped COG ground elevation — the rig's absolute z anchor. */
+      terrainElevation,
+      /** Band centre heights above the terrain anchor, metres. */
       bandZ: BAND_FRACTIONS.map(fraction => fraction * height),
       byTrack,
       bands,
@@ -217,6 +229,15 @@ export function buildRigStore({ pylonFeatures = [], featuresByTrack = {} }) {
   }
 
   if (dropped) warnings.push(`${dropped} pylon feature(s) dropped: no join key or coordinates`);
+
+  if (terrainElevations === null) {
+    warnings.push('terrain not sampled: the rig cannot be anchored');
+  } else {
+    const missing = [...pylons.values()].filter(p => !Number.isFinite(p.terrainElevation));
+    if (missing.length) {
+      warnings.push(`${missing.length} pylon(s) without a terrain sample: ${missing.map(p => p.id).join(', ')}`);
+    }
+  }
 
   return { pylons, grid, trackDates, incidence, commonEpochMs, warnings };
 }

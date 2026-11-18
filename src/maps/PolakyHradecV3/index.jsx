@@ -45,11 +45,14 @@ import {
 } from './velAvgPalette';
 import TimelineChart from './TimelineChart';
 import {
+  BAND_COLLAR_RADIUS_M,
+  BAND_COLLAR_SEGMENTS,
   BAND_LABELS,
   DASHED_TRACK_ID,
   DEFAULT_SCALE_M_PER_MM,
   DEFAULT_TRACK_ID,
   DEFAULT_WINDOW_DAYS,
+  FIN_SAMPLE_COUNT,
   FIN_TRACK_COLORS,
   LANE_OFFSET_M,
   RIG_FINS_VECTORS,
@@ -72,17 +75,20 @@ import {
 import {
   bandMedianAt,
   bandMedianSeries,
+  buildBandCollars,
   buildFinGeometry,
+  coneOrientation,
   medianScatterer,
+  resampleSeries,
 } from './bandGeometry';
 import { eastLabel, solveBand } from './decomposition';
 import { logRigDebug } from './debugRig';
+import { TERRAIN_URL, sampleTerrainElevations } from './terrainElevation';
 
 // Measurement tracks, join keys and rig constants live in `tracks.js`;
 // `rigData.js` owns the three-track store.
 
 
-const TERRAIN_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/rasters/EL-GRID_COGeoN.tif';
 const SATELLITE_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const PYLONS_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/sloupy.geojson';
 const PYLON_ASSET_BASE = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets';
@@ -126,25 +132,22 @@ const EMPTY = [];
 // ---------------------------------------------------------------------------
 // Multi-track rig
 //
-// Rig vertices are `[lon, lat, bandZ + Δ]` LNGLAT metres with the terrain
-// extension in offset mode — exactly the frame the tower meshes use (`z = 0` +
-// terrain) and the point symbols use (`z = H_REF` + terrain). That is deliberate
-// and was measured, not assumed:
+// Rig vertices are `[lon, lat, terrainAtPylon + bandZ + Δ]` in LNGLAT metres —
+// one absolute z per tower, sampled once from the draped COG
+// (`terrainElevation.js`). No terrain extension on any rig layer: sampling terrain
+// per vertex bent each 60 m ribbon with the field topography, so a fin is rigid
+// and horizontal in world space by construction.
 //
-//   * The InSAR `H` / `H_dem` / `_median` heights are on a *different* vertical
-//     datum from the draped COG terrain. Sampling EL-GRID_COGeoN at the 18 pylon
-//     coordinates gives a smooth 43.9–46.1 m (mean 44.9 m) offset from `_median`
-//     across the site — a geoid offset, not noise.
-//   * Anchoring the rig at `_median + bandZ` therefore floats it ~45 m above the
-//     towers, which are drawn on the COG. Task 2's z-anchor gate fails on that
-//     frame, so the rig uses the terrain offset instead of any absolute datum.
-//
-// `baseElevation` is still kept in the rig store: it is the DTM median, useful in
-// the debug/PR report, but it must not drive z.
+// `terrainAtPylon` must come from the COG, not from `_median` / `H_dem`: the
+// InSAR heights sit on a different vertical datum (a smooth 43.9–46.1 m above the
+// COG at the 18 towers), so anchoring on them floats the rig ~45 m above the
+// steel. `baseElevation` stays in the rig store for reporting only.
 // ---------------------------------------------------------------------------
 const RIG_FIN_WALL_LAYER = 'rig-fin-walls';
 const RIG_FIN_SOLID_LAYER = 'rig-fin-curves';
 const RIG_FIN_DASHED_LAYER = 'rig-fin-curves-dashed';
+const RIG_FIN_BASELINE_LAYER = 'rig-fin-baselines';
+const RIG_BAND_COLLAR_LAYER = 'rig-band-collars';
 const RIG_VECTOR_LINE_LAYER = 'rig-vector-shafts';
 const RIG_VECTOR_HEAD_LAYER = 'rig-vector-heads';
 const RIG_DEBUG_MARKER_LAYER = 'rig-debug-band-markers';
@@ -152,10 +155,20 @@ const RIG_DEBUG_MARKER_LAYER = 'rig-debug-band-markers';
 /** Walls read as translucent glass; curves and baselines stay legible. */
 const RIG_FIN_FILL_ALPHA = 65;
 const RIG_FIN_STROKE_ALPHA = 255;
-const RIG_BASELINE_ALPHA = 90;
 
-/** Neutral vector colour; the focused or hovered tower switches to SELECTION_COLOR. */
-const RIG_VECTOR_COLOR = [38, 40, 44];
+/** The 0 mm zero line is a dashed white rule, not a faint track-coloured line. */
+const RIG_BASELINE_COLOR = [255, 255, 255, 190];
+const RIG_BASELINE_WIDTH = 1.5;
+const RIG_BASELINE_DASH = [4, 4];
+
+/** Band collars tie each ribbon to its structural zone on the tower. */
+const RIG_COLLAR_COLOR = [255, 255, 255, 210];
+const RIG_COLLAR_WIDTH = 1.5;
+
+/** Vectors: amber on the focused or hovered tower, pale grey elsewhere. */
+const RIG_VECTOR_COLOR = [235, 238, 242];
+const RIG_FOCUS_VECTOR_COLOR = [255, 210, 60];
+const RIG_VECTOR_WIDTH = 4;
 
 /** Auto-zoom target when the rig is switched on (60 m ≈ 20 px at the default z15). */
 const RIG_FOCUS_ZOOM = 18;
@@ -402,6 +415,7 @@ export default function PolakyHradecV3() {
   const [windowDays, setWindowDays] = useState(DEFAULT_WINDOW_DAYS);
   const [scaleMPerMm, setScaleMPerMm] = useState(DEFAULT_SCALE_M_PER_MM);
   const [rigTracks, setRigTracks] = useState(null);
+  const [terrainElevations, setTerrainElevations] = useState(null);
   const [hoveredFin, setHoveredFin] = useState(false);
   // Controlled view state. deck.gl 9.4 removed `Deck.flyTo`, so camera moves are
   // expressed as a view-state update carrying a transition interpolator — the
@@ -553,12 +567,43 @@ export default function PolakyHradecV3() {
     return () => controller.abort();
   }, []);
 
+  // One COG terrain sample per tower, in parallel with the track load. This is
+  // the rig's z anchor (see `terrainElevation.js` for why it is not `_median`).
+  useEffect(() => {
+    if (!pylonsLoaded || pylonFeatures.length === 0) return undefined;
+    const points = [];
+    for (const feature of pylonFeatures) {
+      const key = getPylonJoinKey(feature);
+      const coordinates = feature?.geometry?.coordinates;
+      if (key == null || !Array.isArray(coordinates)) continue;
+      points.push({ key, lon: coordinates[0], lat: coordinates[1] });
+    }
+    if (points.length === 0) return undefined;
+
+    const controller = new AbortController();
+    sampleTerrainElevations(points, controller.signal)
+      .then((elevations) => {
+        if (controller.signal.aborted) return;
+        setTerrainElevations(elevations);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        console.error('❌ Failed to sample Poláky terrain elevations:', err);
+        setTerrainElevations(new Map());
+      });
+    return () => controller.abort();
+  }, [pylonsLoaded, pylonFeatures]);
+
   // Join the three tracks to the pylons once both loads have settled. Pure and
   // cheap (18 towers), so it can be a memo rather than extra state.
   const rigStore = useMemo(() => {
     if (rigTracks?.status !== 'ready' || !pylonsLoaded || pylonFeatures.length === 0) return null;
-    return buildRigStore({ pylonFeatures, featuresByTrack: rigTracks.featuresByTrack });
-  }, [rigTracks, pylonsLoaded, pylonFeatures]);
+    return buildRigStore({
+      pylonFeatures,
+      featuresByTrack: rigTracks.featuresByTrack,
+      terrainElevations,
+    });
+  }, [rigTracks, pylonsLoaded, pylonFeatures, terrainElevations]);
 
   const rigReady = rigStore != null;
   const rigEnabled = rigMode !== RIG_OFF;
@@ -566,6 +611,7 @@ export default function PolakyHradecV3() {
     ? `tracks unavailable (${rigTracks.error})`
     : rigReady
       ? `${TRACK_IDS.length} tracks · ${rigStore.pylons.size} towers`
+        + (terrainElevations ? '' : ' · terrain…')
       : 'loading tracks…';
 
   // Join-distance and incidence warnings from the store, reported once per build.
@@ -580,20 +626,23 @@ export default function PolakyHradecV3() {
   }, [rigStore, selectedPylonKey]);
 
   // Fins for the focused tower: three tracks × three bands, all smoothed on the
-  // same union grid. Only this one tower is drawn as ribbons — 9 of them at a
-  // time, never 18.
+  // same union grid and then resampled to `FIN_SAMPLE_COUNT` display vertices.
+  // Only this one tower is drawn as ribbons — 9 at most, never 18.
   const finData = useMemo(() => {
-    if (!rigEnabled || !focusedPylon || !rigStore) return { walls: EMPTY, solid: EMPTY, dashed: EMPTY };
+    const empty = { walls: EMPTY, solid: EMPTY, dashed: EMPTY, baselines: EMPTY, collars: EMPTY };
+    if (!rigEnabled || !focusedPylon || !rigStore) return empty;
+    const base = focusedPylon.terrainElevation;
+    if (!Number.isFinite(base)) return empty;
 
     const walls = [];
     const solid = [];
     const dashed = [];
+    const baselines = [];
 
     for (const trackId of TRACK_IDS) {
       const color = FIN_TRACK_COLORS[trackId];
       const fill = withAlpha(color, RIG_FIN_FILL_ALPHA);
       const stroke = withAlpha(color, RIG_FIN_STROKE_ALPHA);
-      const baseline = withAlpha(color, RIG_BASELINE_ALPHA);
       const isDashed = trackId === DASHED_TRACK_ID;
       const curves = isDashed ? dashed : solid;
 
@@ -601,14 +650,17 @@ export default function PolakyHradecV3() {
         const scatterers = focusedPylon.bands[trackId][band];
         if (scatterers.length === 0) continue;
 
-        const series = bandMedianSeries(scatterers, windowDays, rigStore.grid);
+        // Smooth on the union grid first, then resample: the other order would
+        // re-weight the samples inside each window.
+        const dense = bandMedianSeries(scatterers, windowDays, rigStore.grid);
+        const display = resampleSeries(dense, rigStore.grid, FIN_SAMPLE_COUNT);
         const laneOffsetM = trackId === '95D'
           ? 0
           : (trackId === '44A' ? -LANE_OFFSET_M / 2 : LANE_OFFSET_M / 2);
 
         const geometry = buildFinGeometry({
-          series,
-          grid: rigStore.grid,
+          series: display.series,
+          grid: display.grid,
           side: TRACK_FIN_SIDE[trackId],
           laneOffsetM,
           bandZ: focusedPylon.bandZ[band],
@@ -616,6 +668,7 @@ export default function PolakyHradecV3() {
           trackId,
           scaleMPerMm,
           pylon: focusedPylon,
+          base,
         });
 
         for (const quad of geometry.quads) {
@@ -628,11 +681,19 @@ export default function PolakyHradecV3() {
           });
         }
         for (const path of geometry.curve) curves.push({ path, color: stroke, width: 2 });
-        for (const path of geometry.baseline) curves.push({ path, color: baseline, width: 1 });
+        for (const path of geometry.baseline) baselines.push({ path });
       }
     }
 
-    return { walls, solid, dashed };
+    const collars = buildBandCollars({
+      pylon: focusedPylon,
+      base,
+      bandZ: focusedPylon.bandZ,
+      radiusM: BAND_COLLAR_RADIUS_M,
+      segments: BAND_COLLAR_SEGMENTS,
+    });
+
+    return { walls, solid, dashed, baselines, collars };
   }, [rigEnabled, focusedPylon, rigStore, windowDays, scaleMPerMm]);
 
   // Per-band ΔU/ΔE for every tower. The focused tower shows the numbers in the
@@ -688,14 +749,14 @@ export default function PolakyHradecV3() {
       const { solution } = entry;
       if (!solution.ok || !Number.isFinite(solution.dE) || !Number.isFinite(solution.dU)) continue;
       const pylon = rigStore.pylons.get(entry.pylonKey);
-      if (!pylon) continue;
+      if (!pylon || !Number.isFinite(pylon.terrainElevation)) continue;
 
       const east = solution.dE * scaleMPerMm;
       const up = solution.dU * scaleMPerMm;
       const length = Math.hypot(east, up);
       if (length < 0.05) continue;
 
-      const z0 = entry.bandZ;
+      const z0 = pylon.terrainElevation + entry.bandZ;
       const mPerDegLon = metresPerDegLon(pylon.lat);
       const source = [pylon.lon, pylon.lat, z0];
       const target = [pylon.lon + east / mPerDegLon, pylon.lat, z0 + up];
@@ -711,7 +772,7 @@ export default function PolakyHradecV3() {
       heads.push({
         pylonKey: entry.pylonKey,
         position: [pylon.lon + centreEast / mPerDegLon, pylon.lat, z0 + centreUp],
-        orientation: [Math.atan2(Math.abs(east), up) * (180 / Math.PI), east < 0 ? 180 : 0, 0],
+        orientation: coneOrientation(east, up),
         scale: [headRadius, headRadius, headLength],
       });
     }
@@ -909,16 +970,23 @@ export default function PolakyHradecV3() {
     setHoveredFin(prev => (prev === nextFin ? prev : nextFin));
   }, []);
 
+  // With the rig on, the focused tower's own point cloud is hidden: 40+ bright
+  // symbols bury the lattice, the band collars and the ΔU/ΔE vectors. Other
+  // towers keep their normal symbols, and both charts read `features`, so the
+  // pylon chart and the timeline are unaffected.
+  const hiddenPointKey = rigEnabled ? selectedPylonKey : null;
+
   // Split once per data load: near-zero points become spheres, everything else
   // (including missing VEL_AVG) keeps the 3D arrow composite.
   const { arrowFeatures, sphereFeatures } = useMemo(() => {
     const arrows = [];
     const spheres = [];
     for (const feature of features) {
+      if (hiddenPointKey != null && getPointJoinKey(feature) === hiddenPointKey) continue;
       (isNearZeroVelAvg(feature) ? spheres : arrows).push(feature);
     }
     return { arrowFeatures: arrows, sphereFeatures: spheres };
-  }, [features]);
+  }, [features, hiddenPointKey]);
 
   const layers = useMemo(() => {
     const terrainLayer = new CogTerrainLayer({
@@ -1080,14 +1148,18 @@ export default function PolakyHradecV3() {
     const rigLayers = [];
 
     // Task 2's z-anchor gate, made reproducible: with `?debugRig=1` the focused
-    // tower gets one 1 m marker per band at exactly the band height, in the same
-    // terrain frame, so it must land on the tower (lower third / mid-shaft /
-    // cross-arms). Not rendered on a normal visit.
-    if (debugRig && focusedPylon) {
+    // tower gets one 1 m marker per band at `terrainAtPylon + bandZ`, the same
+    // absolute z the fins use, so it must land on the tower (lower third /
+    // mid-shaft / cross-arms). Not rendered on a normal visit.
+    if (debugRig && focusedPylon && Number.isFinite(focusedPylon.terrainElevation)) {
       rigLayers.push(new ScatterplotLayer({
         id: RIG_DEBUG_MARKER_LAYER,
         data: focusedPylon.bandZ.map((bandZ, band) => ({
-          position: [focusedPylon.lon, focusedPylon.lat, bandZ],
+          position: [
+            focusedPylon.lon,
+            focusedPylon.lat,
+            focusedPylon.terrainElevation + bandZ,
+          ],
           band,
         })),
         getPosition: (d) => d.position,
@@ -1095,8 +1167,6 @@ export default function PolakyHradecV3() {
         getRadius: 1,
         getFillColor: (d) => (d.band === 1 ? [255, 140, 0, 220] : [255, 0, 255, 220]),
         pickable: false,
-        extensions: [new TerrainExtension()],
-        terrainDrawMode: 'offset',
       }));
     }
 
@@ -1110,16 +1180,12 @@ export default function PolakyHradecV3() {
         _normalize: false,
         _full3d: true,
         pickable: true,
-        // Same terrain offset as the towers. Terrain is sampled per vertex for
-        // this layer (geometry.worldPosition is set from each projected vertex),
-        // so the ribbon follows the ground under its own footprint.
-        extensions: [new TerrainExtension()],
-        terrainDrawMode: 'offset',
       }));
     }
 
-    // Curves and 0 mm baselines. Two PathLayers rather than a per-feature dash
-    // ternary: counts are trivial and it sidesteps dash-attribute pitfalls.
+    // Curves: one solid PathLayer, one dashed for the 146A track. Separate
+    // layers rather than a per-feature dash ternary — the counts are trivial and
+    // it sidesteps dash-attribute pitfalls.
     if (finData.solid.length > 0) {
       rigLayers.push(new PathLayer({
         id: RIG_FIN_SOLID_LAYER,
@@ -1132,8 +1198,6 @@ export default function PolakyHradecV3() {
         jointRounded: true,
         capRounded: true,
         pickable: false,
-        extensions: [new TerrainExtension()],
-        terrainDrawMode: 'offset',
       }));
     }
 
@@ -1146,24 +1210,57 @@ export default function PolakyHradecV3() {
         getWidth: (d) => d.width,
         widthUnits: 'pixels',
         billboard: true,
-        jointRounded: true,
-        capRounded: true,
+        // Round joints at sub-pixel spacing turn a dashed line into a scribble;
+        // the dashed ribbon uses butt joints and a coarser pattern.
+        jointRounded: false,
+        capRounded: false,
         pickable: false,
-        // Dash and terrain extensions compose; both are shader modules on the
-        // same vertex stage.
-        extensions: [new PathStyleExtension({ dash: true }), new TerrainExtension()],
-        terrainDrawMode: 'offset',
-        getDashArray: () => [6, 3],
+        extensions: [new PathStyleExtension({ dash: true })],
+        getDashArray: () => [10, 5],
+      }));
+    }
+
+    // 0 mm zero line: dashed white, drawn per ribbon so the reader can tell
+    // above-0 from below-0 against grass.
+    if (finData.baselines.length > 0) {
+      rigLayers.push(new PathLayer({
+        id: RIG_FIN_BASELINE_LAYER,
+        data: finData.baselines,
+        getPath: (d) => d.path,
+        getColor: RIG_BASELINE_COLOR,
+        getWidth: RIG_BASELINE_WIDTH,
+        widthUnits: 'pixels',
+        billboard: true,
+        jointRounded: false,
+        capRounded: false,
+        pickable: false,
+        extensions: [new PathStyleExtension({ dash: true })],
+        getDashArray: () => RIG_BASELINE_DASH,
+      }));
+    }
+
+    // Collar rings tie every ribbon to its structural band on the tower.
+    if (finData.collars.length > 0) {
+      rigLayers.push(new PathLayer({
+        id: RIG_BAND_COLLAR_LAYER,
+        data: finData.collars,
+        getPath: (d) => d.path,
+        getColor: RIG_COLLAR_COLOR,
+        getWidth: RIG_COLLAR_WIDTH,
+        widthUnits: 'pixels',
+        billboard: true,
+        jointRounded: true,
+        capRounded: false,
+        pickable: false,
       }));
     }
 
     if (rigMode === RIG_FINS_VECTORS && rigVectors.shafts.length > 0) {
-      // z is band height above the terrain under each anchor, so the vectors
-      // share the tower frame. LineLayer samples terrain per vertex; the cone is
-      // instanced, so its single anchor is the correct sample point.
+      // z is the sampled ground plus the band height, so shafts and heads share
+      // the fins' absolute frame (no per-vertex terrain offset).
       const vectorColor = (d) => {
         const highlighted = d.pylonKey === selectedPylonKey || d.pylonKey === hoveredPylonKey;
-        return highlighted ? [...SELECTION_COLOR, 255] : [...RIG_VECTOR_COLOR, 255];
+        return [...(highlighted ? RIG_FOCUS_VECTOR_COLOR : RIG_VECTOR_COLOR), 255];
       };
       rigLayers.push(new LineLayer({
         id: RIG_VECTOR_LINE_LAYER,
@@ -1171,11 +1268,9 @@ export default function PolakyHradecV3() {
         getSourcePosition: (d) => d.source,
         getTargetPosition: (d) => d.target,
         getColor: vectorColor,
-        getWidth: 2,
+        getWidth: RIG_VECTOR_WIDTH,
         widthUnits: 'pixels',
         pickable: false,
-        extensions: [new TerrainExtension()],
-        terrainDrawMode: 'offset',
       }));
       rigLayers.push(new SimpleMeshLayer({
         id: RIG_VECTOR_HEAD_LAYER,
@@ -1188,8 +1283,6 @@ export default function PolakyHradecV3() {
         getColor: vectorColor,
         material: { ambient: 0.5, diffuse: 0.6, shininess: 16, specularColor: [40, 40, 40] },
         pickable: false,
-        extensions: [new TerrainExtension()],
-        terrainDrawMode: 'offset',
       }));
     }
 

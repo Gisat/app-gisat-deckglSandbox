@@ -12,8 +12,12 @@
 import {
   bandMedianAt,
   bandMedianSeries,
+  buildBandCollars,
   buildFinGeometry,
+  coneAxis,
+  coneOrientation,
   featureSeries,
+  resampleSeries,
 } from './bandGeometry';
 import {
   SOLVER_TRACK_IDS,
@@ -22,11 +26,15 @@ import {
   towardDeg,
 } from './decomposition';
 import {
+  BAND_COLLAR_RADIUS_M,
+  BAND_COLLAR_SEGMENTS,
   BAND_FRACTIONS,
   BAND_LABELS,
   FIN_INNER_M,
   FIN_LENGTH_M,
+  FIN_SAMPLE_COUNT,
   LANE_OFFSET_M,
+  RIG_GROUND_CLEARANCE_M,
   TRACK_IDS,
   metresPerDegLon,
 } from './tracks';
@@ -87,8 +95,10 @@ export function logRigDebug({ store, windowDays, scaleMPerMm }) {
 
   // ---- Task 2: z frame ----------------------------------------------------
   log(`pylon ${pylon.id} (${pylon.typ ?? '?'}) at ${fmt(pylon.lon, 5)}, ${fmt(pylon.lat, 5)}`);
+  log(`  terrainElevation ${fmt(pylon.terrainElevation)} m (COG, the z anchor)`);
   log(`  baseElevation ${fmt(pylon.baseElevation)} m (DTM _median, reported only)`);
-  log('  z frame: terrain (COG) + bandZ + Δ, same offset mode as the tower meshes');
+  log(`  _median - COG offset ${fmt(pylon.baseElevation - pylon.terrainElevation)} m`);
+  log('  z frame: [lon, lat, terrainElevation + bandZ + Δ], rigid, no per-vertex terrain');
   log(`  height ${fmt(pylon.height, 1)} m`);
   log(`  bandZ ${pylon.bandZ.map((z) => fmt(z)).join(' / ')} m`);
   for (const trackId of TRACK_IDS) {
@@ -102,6 +112,11 @@ export function logRigDebug({ store, windowDays, scaleMPerMm }) {
     'bandZ equals the band fractions of the tower height',
     pylon.bandZ.every((z, i) => Math.abs(z - BAND_FRACTIONS[i] * pylon.height) < 1e-6),
     `${pylon.bandZ.map((z) => fmt(z, 2)).join(' / ')} m`,
+  );
+  must(
+    'terrain elevation sampled for pylon 10',
+    Number.isFinite(pylon.terrainElevation) && pylon.terrainElevation > 0,
+    `${fmt(pylon.terrainElevation)} m`,
   );
   must(
     'band heights increase',
@@ -132,10 +147,11 @@ export function logRigDebug({ store, windowDays, scaleMPerMm }) {
         continue;
       }
 
-      const series = bandMedianSeries(scatterers, windowDays, store.grid);
+      const dense = bandMedianSeries(scatterers, windowDays, store.grid);
+      const display = resampleSeries(dense, store.grid, FIN_SAMPLE_COUNT);
       const geometry = buildFinGeometry({
-        series,
-        grid: store.grid,
+        series: display.series,
+        grid: display.grid,
         side,
         laneOffsetM,
         bandZ: pylon.bandZ[band],
@@ -143,17 +159,19 @@ export function logRigDebug({ store, windowDays, scaleMPerMm }) {
         trackId,
         scaleMPerMm: scaleMPerMm,
         pylon,
+        base: pylon.terrainElevation,
       });
       quadTotal += geometry.quads.length;
 
-      const present = series.filter(Number.isFinite).length;
-      const gaps = store.grid.length - present;
+      const present = display.series.filter(Number.isFinite).length;
+      const gaps = FIN_SAMPLE_COUNT - present;
       const drawn = geometry.curve[0] ?? [];
       const first = drawn[0];
       const last = drawn[drawn.length - 1];
       const innerOffset = first ? dir * (first[0] - pylon.lon) * mPerDegLon : NaN;
       const outerOffset = last ? dir * (last[0] - pylon.lon) * mPerDegLon : NaN;
-      const firstMm = first ? first[2] - pylon.bandZ[band] : NaN;
+      const firstMm = first ? first[2] - pylon.terrainElevation - pylon.bandZ[band] : NaN;
+      const lowest = drawn.length ? Math.min(...drawn.map((p) => p[2])) : NaN;
       const ordered = drawn.every((p, i) => i === 0 || dir * (p[0] - drawn[i - 1][0]) > 0);
 
       log(
@@ -162,11 +180,17 @@ export function logRigDebug({ store, windowDays, scaleMPerMm }) {
         + `${fmt(outerOffset, 3)} m, first ${fmt(firstMm)} mm`,
       );
 
-      // The axis is shared by all three tracks, so a track that starts a few days
-      // after the first union epoch begins a fraction of a metre outward — never
-      // more than one grid step's worth.
-      must(`${trackId}/${BAND_LABELS[band]} inner vertex at ${FIN_INNER_M} m (±0.2)`,
-        Math.abs(innerOffset - FIN_INNER_M) <= 0.2, `${fmt(innerOffset, 3)} m`);
+      // The time axis is shared by all three tracks and resampled to 120 steps
+      // (~35 days each), so a track that starts a few days after the first union
+      // epoch begins up to one step outward.
+      must(`${trackId}/${BAND_LABELS[band]} inner vertex at ${FIN_INNER_M} m (±0.6)`,
+        Math.abs(innerOffset - FIN_INNER_M) <= 0.6, `${fmt(innerOffset, 3)} m`);
+      must(`${trackId}/${BAND_LABELS[band]} resampled to ${FIN_SAMPLE_COUNT} vertices`,
+        display.series.length === FIN_SAMPLE_COUNT);
+      must(`${trackId}/${BAND_LABELS[band]} never below ground + ${RIG_GROUND_CLEARANCE_M} m`,
+        !Number.isFinite(lowest)
+          || lowest >= pylon.terrainElevation + RIG_GROUND_CLEARANCE_M - 1e-6,
+        `${fmt(lowest)} m vs ${fmt(pylon.terrainElevation + RIG_GROUND_CLEARANCE_M)} m`);
       must(`${trackId}/${BAND_LABELS[band]} vertices ordered start→end`, ordered);
       // The raw record is pre-referenced to its first epoch, so every scatterer's
       // first `d_*` sample is 0. The *smoothed* first value is the mean of the
@@ -233,6 +257,39 @@ export function logRigDebug({ store, windowDays, scaleMPerMm }) {
   must('east motion is + on 95D and − on both ascending rows',
     matrix[0][0] > 0 && matrix[1][0] < 0 && matrix[2][0] < 0,
     matrix.map((r) => fmt(r[0], 3)).join(' / '));
+
+  // ---- Arrow heads and collars -------------------------------------------
+  // The heads must align with their shafts. deck.gl maps a mesh's local +Z to
+  // (cos yaw·sin pitch, sin yaw·sin pitch, cos pitch); these assertions prove the
+  // emitted orientation reproduces (east, 0, up) instead of trusting an Euler
+  // convention. A ±90° yaw, for instance, would put the axis on ±Y (north/south).
+  for (const [eastM, upM] of [[4, -1], [-4, -1], [0, -4], [3, 3]]) {
+    const axis = coneAxis(coneOrientation(eastM, upM));
+    const length = Math.hypot(eastM, upM);
+    const target = [eastM / length, 0, upM / length];
+    must(
+      `cone axis matches shaft for (E ${eastM}, U ${upM})`,
+      axis.every((value, i) => Math.abs(value - target[i]) < 1e-9),
+      `[${axis.map((v) => fmt(v, 3)).join(', ')}]`,
+    );
+  }
+
+  const collars = buildBandCollars({
+    pylon,
+    base: pylon.terrainElevation,
+    bandZ: pylon.bandZ,
+    radiusM: BAND_COLLAR_RADIUS_M,
+    segments: BAND_COLLAR_SEGMENTS,
+  });
+  must('one collar per band', collars.length === pylon.bandZ.length, `${collars.length}`);
+  must(
+    'each collar closes on itself',
+    collars.every((collar) => {
+      const start = collar.path[0];
+      const end = collar.path[collar.path.length - 1];
+      return start[0] === end[0] && start[1] === end[1] && start[2] === end[2];
+    }),
+  );
 
   // ---- Height sweep ------------------------------------------------------
   for (const id of SPOT_PYLON_IDS) {

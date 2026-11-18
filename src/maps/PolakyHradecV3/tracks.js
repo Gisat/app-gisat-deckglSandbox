@@ -90,15 +90,34 @@ export const FIN_INNER_M = 6;
 export const FIN_LENGTH_M = 60;
 
 /**
- * Lane separation between the two east fins: both ascending tracks sit on the
- * east side, so they are offset north/south by half this each to stay readable
- * without eating the band's height encoding.
+ * Lane separation between the two east fins. Both ascending tracks sit on the
+ * east side, so they are offset north/south by half this distance each. At 8 m
+ * the two translucent walls no longer sit on top of each other in a tilted view.
  */
-export const LANE_OFFSET_M = 2.2;
+export const LANE_OFFSET_M = 8.0;
 
-/** Vertical exaggeration choices, displayed as ×500 / ×1200 / ×3000. */
-export const SCALE_OPTIONS = [0.5, 1.2, 3.0];
-export const DEFAULT_SCALE_M_PER_MM = 1.2;
+/**
+ * Vertical exaggeration choices, displayed as ×300 / ×700 / ×1500. Kept under 1
+ * so cumulative settlement (commonly 5–20 mm) stays comparable with the 10–13 m
+ * band spacing instead of swallowing the neighbouring bands.
+ */
+export const SCALE_OPTIONS = [0.3, 0.7, 1.5];
+export const DEFAULT_SCALE_M_PER_MM = 0.7;
+
+/**
+ * Display vertices per fin. Smoothing happens on each track's own dates; the
+ * smoothed series is then resampled to this many uniform steps before it becomes
+ * geometry. The union grid has ~1300 epochs, i.e. ~0.05 m per segment along a
+ * 60 m fin, which turns a dashed line into a sub-pixel scribble.
+ */
+export const FIN_SAMPLE_COUNT = 120;
+
+/** Band collar: a small ring on the tower at each band height. */
+export const BAND_COLLAR_RADIUS_M = 3.5;
+export const BAND_COLLAR_SEGMENTS = 48;
+
+/** Fins are clamped to this height above the sampled ground. */
+export const RIG_GROUND_CLEARANCE_M = 0.5;
 
 /** Smoothing windows, in days. The cadence is irregular (6–24 d), so never in samples. */
 export const WINDOW_OPTIONS = [30, 90, 180, 365];

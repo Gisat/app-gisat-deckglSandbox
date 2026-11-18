@@ -21,6 +21,7 @@ import {
   BAND_LABELS,
   FIN_INNER_M,
   FIN_LENGTH_M,
+  RIG_GROUND_CLEARANCE_M,
   DEFAULT_SCALE_M_PER_MM,
   METRES_PER_DEG_LAT,
   metresPerDegLon,
@@ -289,6 +290,37 @@ export function bandMedianAt(scatterers, epochMs, windowDays) {
 }
 
 /**
+ * Resamples a smoothed series onto `count` uniform steps in *time*.
+ *
+ * The fin maps time linearly to distance from the tower, so a uniform time grid
+ * is also a uniform distance grid. This runs after smoothing (never before) so
+ * the resampling cannot shift the window weights, and it is what keeps the drawn
+ * curve smooth: ~1300 union epochs would otherwise become sub-pixel segments.
+ *
+ * @param {Array<number|null>} series Values on `grid`.
+ * @param {number[]} grid Sorted epoch ms.
+ * @param {number} count Target vertex count.
+ * @returns {{ series: Array<number|null>, grid: number[] }}
+ */
+export function resampleSeries(series, grid, count) {
+  const n = Math.min(series?.length ?? 0, grid?.length ?? 0);
+  if (n < 2 || !(count >= 2)) return { series: [], grid: [] };
+
+  const dates = grid.slice(0, n);
+  const values = series.slice(0, n);
+  const first = dates[0];
+  const last = dates[n - 1];
+  const outSeries = new Array(count);
+  const outGrid = new Array(count);
+  for (let i = 0; i < count; i++) {
+    const ms = Math.round(first + ((last - first) * i) / (count - 1));
+    outGrid[i] = ms;
+    outSeries[i] = interpolateAt(ms, dates, values);
+  }
+  return { series: outSeries, grid: outGrid };
+}
+
+/**
  * The scatterer whose smoothed value at `epochMs` is the median of the band.
  *
  * Used by the fin click to open a concrete 2D timeline without inventing an
@@ -363,7 +395,10 @@ export function buildFinGeometry({
   const direction = side === 'west' ? -1 : 1;
   const mPerDegLon = metresPerDegLon(pylon.lat);
   const lat = pylon.lat + laneOffsetM / METRES_PER_DEG_LAT;
-  const zBase = base + bandZ;
+  // Never below the sampled ground: a 9 mm settlement at ×1.5 would otherwise
+  // push a base-band fin 13 m under the field.
+  const zFloor = base + RIG_GROUND_CLEARANCE_M;
+  const zBase = Math.max(base + bandZ, zFloor);
   const count = Math.min(grid.length, series.length);
   if (count < 2) return empty;
 
@@ -374,8 +409,8 @@ export function buildFinGeometry({
     const t = count === 1 ? 0 : i / (count - 1);
     const offsetM = innerM + t * lengthM;
     const lon = pylon.lon + (direction * offsetM) / mPerDegLon;
-    const z = zBase + (Number.isFinite(value) ? value * scaleMPerMm : 0);
-    vertices.push({ lon, lat, z, value, dateMs: grid[i] });
+    const raw = zBase + (Number.isFinite(value) ? value * scaleMPerMm : 0);
+    vertices.push({ lon, lat, z: Math.max(raw, zFloor), value, dateMs: grid[i] });
   }
 
   const quads = [];
@@ -432,4 +467,96 @@ export function buildFinGeometry({
  */
 export function bandLabel(bandIndex) {
   return BAND_LABELS[bandIndex] ?? `band ${bandIndex}`;
+}
+
+/**
+ * Euler orientation for the arrow-head cone in deck.gl's `[pitch, yaw, roll]`
+ * convention, pointing the cone's local +Z along `(eastM, 0, upM)`.
+ *
+ * Derivation, from `@deck.gl/mesh-layers/dist/utils/matrix.js`
+ * (`calculateTransformMatrix`, roll = 0): the local +Z axis maps to
+ *
+ *     col2 = (cos yaw · sin pitch,  sin yaw · sin pitch,  cos pitch)
+ *
+ * in world metres (x east, y north, z up). So yaw stays 0/180 (east/west) and
+ * pitch = atan2(|east|, up) gives the elevation angle. Adding ±90° to yaw would
+ * rotate the axis into ±Y, i.e. make the heads point north/south — see
+ * `coneAxis`, which recomputes col2 so the debug block can assert the match.
+ *
+ * @param {number} eastM East component, metres.
+ * @param {number} upM Vertical component, metres.
+ * @returns {[number, number, number]}
+ */
+export function coneOrientation(eastM, upM) {
+  if (!Number.isFinite(eastM) || !Number.isFinite(upM)) return [0, 0, 0];
+  if (eastM === 0 && upM === 0) return [0, 0, 0];
+  return [
+    (Math.atan2(Math.abs(eastM), upM) * 180) / Math.PI,
+    eastM < 0 ? 180 : 0,
+    0,
+  ];
+}
+
+/**
+ * World-space local +Z axis produced by a deck.gl mesh orientation.
+ *
+ * Mirrors the library matrix so orientation maths can be asserted instead of
+ * eyeballed. Same convention as `coneOrientation`.
+ *
+ * @param {[number, number, number]} orientation `[pitch, yaw, roll]` in degrees.
+ * @returns {[number, number, number]}
+ */
+export function coneAxis([pitchDeg = 0, yawDeg = 0, rollDeg = 0]) {
+  const pitch = (pitchDeg * Math.PI) / 180;
+  const yaw = (yawDeg * Math.PI) / 180;
+  const roll = (rollDeg * Math.PI) / 180;
+  const sr = Math.sin(roll);
+  const sp = Math.sin(pitch);
+  const sw = Math.sin(yaw);
+  const cr = Math.cos(roll);
+  const cp = Math.cos(pitch);
+  const cw = Math.cos(yaw);
+  return [
+    sw * sr + cw * sp * cr,
+    -cw * sr + sw * sp * cr,
+    cp * cr,
+  ];
+}
+
+/**
+ * One horizontal collar ring per band height, centred on the tower axis.
+ *
+ * This is the visual tie between a ribbon and its structural zone: same radius
+ * for every band, same z frame as the fins.
+ *
+ * @param {{
+ *   pylon: { lon: number, lat: number }, base: number, bandZ: number[],
+ *   radiusM?: number, segments?: number,
+ * }} options
+ * @returns {Array<{ band: number, path: number[][] }>}
+ */
+export function buildBandCollars({
+  pylon,
+  base,
+  bandZ,
+  radiusM = 3.5,
+  segments = 48,
+}) {
+  if (!pylon || !Array.isArray(bandZ)) return [];
+  const mPerDegLon = metresPerDegLon(pylon.lat);
+  const collars = [];
+  for (let band = 0; band < bandZ.length; band++) {
+    const z = base + bandZ[band];
+    const path = [];
+    for (let i = 0; i <= segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      path.push([
+        pylon.lon + (Math.cos(angle) * radiusM) / mPerDegLon,
+        pylon.lat + (Math.sin(angle) * radiusM) / METRES_PER_DEG_LAT,
+        z,
+      ]);
+    }
+    collars.push({ band, path });
+  }
+  return collars;
 }
