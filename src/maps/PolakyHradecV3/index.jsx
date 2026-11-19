@@ -12,7 +12,7 @@
 // so nothing here may require changes there.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DeckGL } from '@deck.gl/react';
-import { COORDINATE_SYSTEM, FlyToInterpolator } from '@deck.gl/core';
+import { COORDINATE_SYSTEM } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
@@ -138,9 +138,6 @@ const RIG_REFERENCE_RING_DASH = [6, 4];
  */
 const RIG_STACK_RING_WIDTH_SMOOTHED = 1.8;
 const RIG_STACK_RING_WIDTH_RAW = 1.0;
-
-/** Auto-zoom target when the rig is switched on (rings span 23 m). */
-const RIG_FOCUS_ZOOM = 18;
 
 /** Series mode: rolling median vs one ring per acquisition sample. */
 const SERIES_MODES = [
@@ -397,7 +394,6 @@ export default function PolakyHradecV3() {
   // expressed as a view-state update carrying a transition interpolator — the
   // same mechanism the controller uses, and it cannot throw on a missing ref.
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
-  const previousRigMode = useRef(RIG_OFF);
   // `?debugRig=1` prints the plan's acceptance gates; any other route ignores it.
   const debugRig = useMemo(
     () => new URLSearchParams(window.location.search).get('debugRig') === '1',
@@ -682,26 +678,8 @@ export default function PolakyHradecV3() {
     setZoom(plain.zoom);
   }, []);
 
-  // Auto-zoom to the focused tower the first time the rig is switched on; later
-  // window/scale changes must not move the camera.
-  useEffect(() => {
-    const wasOff = previousRigMode.current === RIG_OFF;
-    previousRigMode.current = rigMode;
-    if (!wasOff || rigMode === RIG_OFF || !focusedPylon) return;
-    setViewState(prev => ({
-      ...prev,
-      longitude: focusedPylon.lon,
-      latitude: focusedPylon.lat,
-      zoom: RIG_FOCUS_ZOOM,
-      pitch: 45,
-      bearing: 0,
-      transitionDuration: 900,
-      transitionInterpolator: new FlyToInterpolator({ speed: 1.4 }),
-    }));
-  }, [rigMode, focusedPylon]);
-
-  // `?debugRig=1` acceptance gates (tasks 2–4). Re-runs on window/scale change so
-  // the printed ring numbers follow the controls.
+  // `?debugRig=1` acceptance gates. Re-runs on a window change so the printed
+  // ring numbers follow the control.
   useEffect(() => {
     if (!debugRig || !rigStore) return;
     logRigDebug({ store: rigStore, windowDays });
