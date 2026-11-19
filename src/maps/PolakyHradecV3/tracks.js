@@ -101,11 +101,11 @@ export const RING_SMOOTHED_COUNT = 48;
 export const RING_RAW_COUNT = 120;
 
 /**
- * Ring stroke alpha. Slightly translucent so overlapping slices read as a stack
- * rather than a solid surface; raw mode is denser and fainter still.
+ * Ring stroke alpha. Fully opaque: the thin strokes and the section gaps do the
+ * separating, so translucency is not needed (and washes the Viridis key out).
  */
-export const RING_ALPHA_SMOOTHED = 180;
-export const RING_ALPHA_RAW = 120;
+export const RING_ALPHA_SMOOTHED = 255;
+export const RING_ALPHA_RAW = 255;
 
 /** Displacement exaggeration choices, displayed as ×500 / ×1000 / ×2000. */
 export const SCALE_OPTIONS = [0.5, 1.0, 2.0];
