@@ -4,12 +4,15 @@ Documentation previews for the arrow pages.
 
 Outputs (SVG, documentation aid only):
   arrow_2d_shapes.svg       four 2D shader shapes
-  arrow_3d_overview.svg     four 3D styles: split head + single
-  arrow_3d_<style>.svg      per-style split head / tail parts / single
+  arrow_2d_<style>.svg      per-style 2D card
+  arrow_3d_overview.svg     four 3D styles: axonometric head + single, front, side
+  arrow_3d_<style>.svg      per-style split head / single / front / side
+  arrow_3d_<style>_card.svg per-style 3D card (isometric + front + side)
 
 The 2D shapes are drawn from the same 40 deg / 2.24 x pen formulas as the
 DynamicArrowLayer shader; they are schematic, not a shader reimplementation.
-The 3D previews project the generated OBJ triangles onto XZ.
+The 3D previews are shaded axonometric and orthographic views of the generated
+OBJ triangles (X width, Y thickness, Z length).
 """
 
 from __future__ import annotations
@@ -65,35 +68,115 @@ def read_obj(path: Path):
     return verts, faces
 
 
-def triangles_path(verts, faces, box, pad=10):
-    """Project XZ triangles into a box; return (path, (minx, maxx, minz, maxz))."""
-    xs = [v[0] for v in verts]
-    zs = [v[2] for v in verts]
-    minx, maxx = min(xs), max(xs)
-    minz, maxz = min(zs), max(zs)
+# --------------------------------------------------------------------------- #
+# Small vector helpers for the shaded 3D previews
+# --------------------------------------------------------------------------- #
+
+YAW = math.radians(24.0)
+PITCH = math.radians(32.0)
+LIGHT_A = (-0.40, 0.90, -0.35)
+LIGHT_B = (0.75, 0.15, 0.65)
+
+
+def hex_rgb(value: str):
+    value = value.lstrip("#")
+    return tuple(int(value[i : i + 2], 16) for i in (0, 2, 4))
+
+
+def shade(value: str, factor: float) -> str:
+    r, g, b = hex_rgb(value)
+    return "#%02x%02x%02x" % tuple(max(0, min(255, round(c * factor))) for c in (r, g, b))
+
+
+def unit(v):
+    mag = math.sqrt(sum(c * c for c in v)) or 1.0
+    return tuple(c / mag for c in v)
+
+
+def sub(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def cross(a, b):
+    return (
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+
+
+def dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+LIGHT_A = unit(LIGHT_A)
+LIGHT_B = unit(LIGHT_B)
+
+
+def view_point(x, y, z, view):
+    """Return (screen_x, screen_y, depth); screen y is SVG-down, depth toward camera."""
+    if view == "iso":
+        cy, sy = math.cos(YAW), math.sin(YAW)
+        cp, sp = math.cos(PITCH), math.sin(PITCH)
+        x1 = x * cy - z * sy
+        z1 = x * sy + z * cy
+        return x1, z1 * cp - y * sp, z1 * sp + y * cp
+    if view == "front":
+        return x, z, y
+    if view == "side":
+        return z, y, x
+    raise ValueError(f"unknown view: {view}")
+
+
+def draw_obj_3d(path: Path, box, color: str, view: str = "iso", pad: int = 12):
+    """Shaded projection of an OBJ; returns the SVG body."""
+    verts, faces = read_obj(path)
+    if not faces:
+        return ""
     w, h = box
-    s = min((w - 2 * pad) / max(1e-9, maxx - minx), (h - 2 * pad) / max(1e-9, maxz - minz))
-    ox = (w - (maxx - minx) * s) / 2.0
-    oy = (h - (maxz - minz) * s) / 2.0
+    projected = [view_point(x, y, z, view) for x, y, z in verts]
+    us = [p[0] for p in projected]
+    vs = [p[1] for p in projected]
+    minu, maxu = min(us), max(us)
+    minv, maxv = min(vs), max(vs)
+    s = min((w - 2 * pad) / max(1e-9, maxu - minu), (h - 2 * pad) / max(1e-9, maxv - minv))
+    ox = (w - (maxu - minu) * s) / 2.0 - minu * s
+    oy = (h - (maxv - minv) * s) / 2.0 - minv * s
+    pts = [(ox + u * s, oy + v * s) for u, v, _ in projected]
 
-    def m(x, z):
-        return ox + (x - minx) * s, oy + (z - minz) * s
+    def face_color(a, b, c):
+        n = unit(cross(sub(b, a), sub(c, a)))
+        k = 0.48 + 0.46 * abs(dot(n, LIGHT_A)) + 0.14 * abs(dot(n, LIGHT_B))
+        return shade(color, min(1.0, k))
 
-    parts = []
-    seen = set()
+    order = sorted(range(len(faces)), key=lambda i: sum(projected[j][2] for j in faces[i]) / 3.0)
+    out = []
+    for i in order:
+        a, b, c = faces[i]
+        fill = face_color(verts[a], verts[b], verts[c])
+        out.append(
+            '<polygon points="%s" fill="%s" stroke="%s" stroke-width="0.8" stroke-linejoin="round"/>'
+            % (
+                " ".join(f"{pts[j][0]:.2f},{pts[j][1]:.2f}" for j in (a, b, c)),
+                fill,
+                fill,
+            )
+        )
+
+    # Boundary edges only: a clean silhouette without triangulation lines.
+    counts = {}
     for a, b, c in faces:
-        # The top and bottom caps project to the same XZ triangle with opposite
-        # winding; keeping both would cancel under the nonzero fill rule.
-        key = tuple(sorted((round(verts[i][0], 5), round(verts[i][2], 5)) for i in (a, b, c)))
-        if key in seen:
-            continue
-        seen.add(key)
-
-        pa, pb, pc = m(verts[a][0], verts[a][2]), m(verts[b][0], verts[b][2]), m(verts[c][0], verts[c][2])
-        if pa == pb or pb == pc or pa == pc:
-            continue
-        parts.append(f"M{pa[0]:.2f} {pa[1]:.2f}L{pb[0]:.2f} {pb[1]:.2f}L{pc[0]:.2f} {pc[1]:.2f}Z")
-    return " ".join(parts), (minx, maxx, minz, maxz)
+        for e in ((a, b), (b, c), (c, a)):
+            k = tuple(sorted(e))
+            counts[k] = counts.get(k, 0) + 1
+    stroke = shade(color, 0.72)
+    for (a, b), n in counts.items():
+        if n == 1:
+            out.append(
+                '<line x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" stroke="%s" stroke-width="1.1"/>'
+                % (pts[a][0], pts[a][1], pts[b][0], pts[b][1], stroke)
+            )
+    return "".join(out)
 
 
 def svg_doc(width, height, body):
@@ -144,7 +227,7 @@ def two_d_geometry(shape):
     }
 
 
-def draw_2d_shape(shape, box, pad=22):
+def draw_2d_shape(shape, box, pad=22, centerline=True):
     """Draw one 2D shape into a box; returns (svg, total length)."""
     g = two_d_geometry(shape)
     w, h = box
@@ -232,10 +315,11 @@ def draw_2d_shape(shape, box, pad=22):
             path = "M" + "L".join(f"{m(x, y)[0]:.2f} {m(x, y)[1]:.2f}" for x, y in wedge) + "Z"
             out.append(f'<path d="{path}" fill="{color}" stroke="{color}" stroke-width="1"/>')
 
-    # A subtle centerline to show the anchor/tail.
-    xa, ya = m(0.0, 0.0)
-    xb, yb = m(0.0, tip)
-    out.append(f'<line x1="{xa:.2f}" y1="{ya:.2f}" x2="{xb:.2f}" y2="{yb:.2f}" stroke="#999" stroke-width="0.6" stroke-dasharray="3 3" opacity="0.5"/>')
+    if centerline:
+        # A subtle centerline to show the anchor/tail.
+        xa, ya = m(0.0, 0.0)
+        xb, yb = m(0.0, tip)
+        out.append(f'<line x1="{xa:.2f}" y1="{ya:.2f}" x2="{xb:.2f}" y2="{yb:.2f}" stroke="#999" stroke-width="0.6" stroke-dasharray="3 3" opacity="0.5"/>')
     return "".join(out), tip
 
 
@@ -267,77 +351,148 @@ def make_2d_previews(out_dir: Path):
     (out_dir / "arrow_2d_shapes.svg").write_text(svg_doc(width, height, "".join(body)), encoding="utf-8")
 
 
+def make_2d_card(out_dir: Path, style: str):
+    """Compact per-style 2D card used as the registry 2D Preview."""
+    width, height = 800, 600
+    color = COLORS[style]
+    shape_id = "fill-head" if style == "filled" else style
+    body = [
+        text(28, 44, f"{LABELS[style]} — 2D", 22, 700, "#222"),
+        text(28, 70, f"DynamicArrowLayer · shape {shape_id}", 13, 400, "#666"),
+        f'<rect x="20" y="88" width="760" height="436" rx="10" fill="#fafafa" stroke="#e5e5e5"/>',
+    ]
+    svg, _ = draw_2d_shape(style, (720, 400), pad=18)
+    body.append(f'<g transform="translate(40,106)">{svg}</g>')
+
+    g = two_d_geometry(style)
+    body.append(text(28, 556, f"tail {TAIL_2D:g} m · pen {g['pen']:g} m · head {g['head_size']:g} m", 12, 400, "#555"))
+    if style == "filled":
+        body.append(text(28, 578, "data head 6.5–13 m from coh · width 0.8 × head · no shader reserve", 11, 400, "#888"))
+    else:
+        body.append(text(28, 578, f"+ {MIN_BARE_STEM:.2f} m shader-side minimum bare stem", 11, 400, "#888"))
+    body.append(text(772, 578, "schematic; the shader draws row 1", 10, 400, "#aaa", "end"))
+    (out_dir / f"arrow_2d_{style.replace('-', '_')}.svg").write_text(svg_doc(width, height, "".join(body)), encoding="utf-8")
+
+
+def make_2d_thumb(out_dir: Path, style: str):
+    """Arrow-only 2D thumbnail for the registry preview properties."""
+    size = 600
+    svg, _ = draw_2d_shape(style, (size - 48, size - 48), pad=10, centerline=False)
+    body = f'<g transform="translate(24,24)">{svg}</g>'
+    (out_dir / f"arrow_2d_{style.replace('-', '_')}_thumb.svg").write_text(svg_doc(size, size, body), encoding="utf-8")
+
+
 # --------------------------------------------------------------------------- #
 # 3D previews
 # --------------------------------------------------------------------------- #
 
 
-def draw_obj_in_box(path: Path, box, color, pad=12):
-    verts, faces = read_obj(path)
-    d, bbox = triangles_path(verts, faces, box, pad)
-    return f'<path d="{d}" fill="{color}" fill-opacity="0.9"/>', bbox
-
-
 def make_3d_style_preview(preview_dir: Path, meshes_dir: Path, shared_meshes_dir: Path, style: str, manifest: dict):
-    width, height = 1240, 430
+    width, height = 1240, 520
     color = COLORS[style]
-    files = manifest["files"]
-    head_name = f"arrow_head_{style.replace('-', '_')}.obj"
-    single_name = f"arrow_single_{style.replace('-', '_')}.obj"
     metrics = manifest["styles"][style]
+    head_path = meshes_dir / f"arrow_head_{style.replace('-', '_')}.obj"
+    single_path = meshes_dir / f"arrow_single_{style.replace('-', '_')}.obj"
+    rear_note = "capped round tail" if style == "round-cap" else "flat rear"
+
     body = [text(24, 34, f"3D arrow — {LABELS[style]}", 20, 700, "#222")]
-    rear_note = "capped round tail, tail 4.5" if style == "round-cap" else "flat rear, tail 4.0"
     body.append(
         text(
             24,
-            56,
-            f"Split head (socket at Z=0) · shared tail parts · single mesh ({rear_note})",
+            58,
+            "Shaded isometric views; front (XZ) and side (YZ) orthographic cross-checks of the single mesh.",
             12,
             400,
             "#666",
         )
     )
 
-    body.append(f'<rect x="20" y="76" width="300" height="300" rx="8" fill="#fafafa" stroke="#e5e5e5"/>')
-    body.append(f'<rect x="336" y="76" width="300" height="300" rx="8" fill="#fafafa" stroke="#e5e5e5"/>')
-    body.append(f'<rect x="652" y="76" width="340" height="300" rx="8" fill="#fafafa" stroke="#e5e5e5"/>')
-    body.append(f'<rect x="1008" y="76" width="212" height="300" rx="8" fill="#fafafa" stroke="#e5e5e5"/>')
+    for x, w in ((20, 378), (414, 378)):
+        body.append(f'<rect x="{x}" y="78" width="{w}" height="414" rx="10" fill="#fafafa" stroke="#e5e5e5"/>')
+    body.append('<rect x="808" y="78" width="224" height="196" rx="10" fill="#fafafa" stroke="#e5e5e5"/>')
+    body.append('<rect x="1040" y="78" width="180" height="196" rx="10" fill="#fafafa" stroke="#e5e5e5"/>')
+    body.append('<rect x="808" y="286" width="412" height="206" rx="10" fill="#fafafa" stroke="#e5e5e5"/>')
 
-    body.append(panel_title(36, 102, "Split head", "sharp finish", color))
-    head_svg, _ = draw_obj_in_box(meshes_dir / head_name, (276, 230), color)
-    body.append(f'<g transform="translate(32,120)">{head_svg}</g>')
+    body.append(panel_title(36, 104, "Split head", "isometric · sharp finish", color))
+    body.append(f'<g transform="translate(40,132)">{draw_obj_3d(head_path, (338, 330), color, "iso")}</g>')
+    body.append(text(36, 478, "socket at Z = 0 · 40° footprint", 10, 400, "#777"))
 
-    body.append(panel_title(352, 102, "Tail parts", "stem + round cap", color))
-    # The stem is a simple rod; a schematic rectangle reads better than its
-    # projected side-wall triangles. The cap is projected from the OBJ.
-    stem_rect = f'<rect x="12" y="62" width="96" height="96" rx="7" fill="{color}" fill-opacity="0.9"/>'
-    cap_svg, _ = draw_obj_in_box(shared_meshes_dir / "arrow_tail_round_end_rounded.obj", (120, 220), color)
-    body.append(f'<g transform="translate(348,130)">{stem_rect}</g>')
-    body.append(f'<g transform="translate(486,130)">{cap_svg}</g>')
-    body.append(text(362, 360, "stem (1.0 unit)", 10, 400, "#777"))
-    body.append(text(500, 360, "cap (0.5 deep)", 10, 400, "#777"))
+    body.append(panel_title(430, 104, "Single mesh", f"isometric · sharp · {rear_note}", color))
+    body.append(f'<g transform="translate(434,132)">{draw_obj_3d(single_path, (338, 330), color, "iso")}</g>')
+    body.append(text(430, 478, f"single total {metrics['single_total']:.3f}", 10, 400, "#777"))
 
-    single_note = "sharp finish · capped round tail" if style == "round-cap" else "sharp finish · flat rear"
-    body.append(panel_title(668, 102, "Single mesh", single_note, color))
-    single_svg, _ = draw_obj_in_box(meshes_dir / single_name, (316, 230), color)
-    body.append(f'<g transform="translate(664,120)">{single_svg}</g>')
+    body.append(panel_title(824, 104, "Front (XZ)", "face view", color))
+    body.append(f'<g transform="translate(824,132)">{draw_obj_3d(single_path, (192, 130), color, "front")}</g>')
+    body.append(text(824, 268, "span and overhang", 10, 400, "#777"))
 
-    body.append(panel_title(1024, 102, "Dimensions", "model units", "#333"))
+    body.append(panel_title(1056, 104, "Side (YZ)", "thickness", color))
+    body.append(f'<g transform="translate(1056,132)">{draw_obj_3d(single_path, (148, 130), color, "side")}</g>')
+    body.append(text(1056, 268, "pen 1.0 · 0.8 thick", 10, 400, "#777"))
+
+    body.append(panel_title(824, 312, "Dimensions", "model units", "#333"))
     lines = [
         "tail 4.5 (capped)" if style == "round-cap" else "tail 4.0",
         f"head span {metrics['span']:.3f}",
         f"socket→apex {metrics['socket_to_apex']:.3f}",
         f"overhang {metrics['overhang']:.3f}",
         f"single total {metrics['single_total']:.3f}",
-        f"pen 1.0 · thickness 0.8",
+        "pen 1.0 · thickness 0.8",
     ]
     for i, line in enumerate(lines):
-        body.append(text(1024, 132 + i * 20, line, 11, 400, "#555"))
-    body.append(text(1024, 282, "sharp + beveled", 10, 400, "#888"))
-    body.append(text(1024, 298, "variants generated", 10, 400, "#888"))
+        body.append(text(824, 340 + i * 20, line, 11, 400, "#555"))
+    body.append(text(824, 468, "sharp + beveled variants generated", 10, 400, "#888"))
 
-    body.append(text(24, 408, "Built by scripts/arrows/generate_arrows.py · sharp silhouette shown; beveled rims are in the OBJ set.", 11, 400, "#888"))
+    body.append(
+        text(
+            24,
+            512,
+            "Shaded from the OBJ triangles · beveled geometry is in the OBJ set, silhouettes shown sharp.",
+            11,
+            400,
+            "#888",
+        )
+    )
     (preview_dir / f"arrow_3d_{style.replace('-', '_')}.svg").write_text(svg_doc(width, height, "".join(body)), encoding="utf-8")
+
+
+def make_3d_card(preview_dir: Path, meshes_dir: Path, style: str, manifest: dict):
+    """Compact per-style 3D card used as the registry 3D Preview."""
+    width, height = 800, 600
+    color = COLORS[style]
+    metrics = manifest["styles"][style]
+    single_path = meshes_dir / f"arrow_single_{style.replace('-', '_')}.obj"
+    rear_note = "capped round tail" if style == "round-cap" else "flat rear"
+
+    body = [
+        text(28, 44, f"{LABELS[style]} — 3D", 22, 700, "#222"),
+        text(28, 70, f"Single mesh · sharp finish · {rear_note}", 13, 400, "#666"),
+        '<rect x="20" y="88" width="500" height="436" rx="10" fill="#fafafa" stroke="#e5e5e5"/>',
+        '<rect x="532" y="88" width="248" height="208" rx="10" fill="#fafafa" stroke="#e5e5e5"/>',
+        '<rect x="532" y="316" width="248" height="208" rx="10" fill="#fafafa" stroke="#e5e5e5"/>',
+    ]
+
+    body.append(text(36, 112, "Isometric", 13, 700, color))
+    body.append(f'<g transform="translate(40,124)">{draw_obj_3d(single_path, (460, 380), color, "iso")}</g>')
+
+    body.append(text(548, 112, "Front (XZ)", 12, 700, color))
+    body.append(f'<g transform="translate(548,124)">{draw_obj_3d(single_path, (216, 150), color, "front")}</g>')
+
+    body.append(text(548, 340, "Side (YZ)", 12, 700, color))
+    body.append(f'<g transform="translate(548,352)">{draw_obj_3d(single_path, (216, 150), color, "side")}</g>')
+
+    body.append(text(28, 556, f"total {metrics['single_total']:.3f} · span {metrics['span']:.3f} · overhang {metrics['overhang']:.3f}", 12, 400, "#555"))
+    body.append(text(28, 578, "pen 1.0 · thickness 0.8 · socket→apex " + f"{metrics['socket_to_apex']:.3f}", 11, 400, "#888"))
+    body.append(text(772, 578, "shaded OBJ · sharp silhouette", 10, 400, "#aaa", "end"))
+    (preview_dir / f"arrow_3d_{style.replace('-', '_')}_card.svg").write_text(svg_doc(width, height, "".join(body)), encoding="utf-8")
+
+
+def make_3d_thumb(preview_dir: Path, meshes_dir: Path, style: str):
+    """Arrow-only 3D thumbnail for the registry preview properties."""
+    size = 600
+    color = COLORS[style]
+    single_path = meshes_dir / f"arrow_single_{style.replace('-', '_')}.obj"
+    body = f'<g transform="translate(24,24)">{draw_obj_3d(single_path, (size - 48, size - 48), color, "iso")}</g>'
+    (preview_dir / f"arrow_3d_{style.replace('-', '_')}_thumb.svg").write_text(svg_doc(size, size, body), encoding="utf-8")
 
 
 def make_3d_overview(preview_dir: Path, meshes_dir: Path, manifest: dict):
@@ -346,8 +501,8 @@ def make_3d_overview(preview_dir: Path, meshes_dir: Path, manifest: dict):
     body.append(
         text(
             24,
-            56,
-            "Split head (socket origin) and single mesh (flat rear except the round-cap tail cap), projected from the OBJ triangles.",
+            58,
+            "Shaded isometric head and single, with front (XZ) and side (YZ) orthographic views of the single.",
             12,
             400,
             "#666",
@@ -359,28 +514,35 @@ def make_3d_overview(preview_dir: Path, meshes_dir: Path, manifest: dict):
     for i, style in enumerate(STYLES):
         y = top + i * row_h
         color = COLORS[style]
-        body.append(f'<rect x="20" y="{y}" width="1140" height="{row_h - 14}" rx="8" fill="#fafafa" stroke="#e5e5e5"/>')
+        body.append(f'<rect x="20" y="{y}" width="1140" height="{row_h - 14}" rx="10" fill="#fafafa" stroke="#e5e5e5"/>')
         body.append(panel_title(36, y + 28, LABELS[style], "", color))
 
-        head_svg, _ = draw_obj_in_box(meshes_dir / f"arrow_head_{style.replace('-', '_')}.obj", (220, 140), color)
-        body.append(f'<g transform="translate(36,{y + 40})">{head_svg}</g>')
-        body.append(text(40, y + 184, "split head", 10, 400, "#777"))
+        head_path = meshes_dir / f"arrow_head_{style.replace('-', '_')}.obj"
+        single_path = meshes_dir / f"arrow_single_{style.replace('-', '_')}.obj"
 
-        single_svg, _ = draw_obj_in_box(meshes_dir / f"arrow_single_{style.replace('-', '_')}.obj", (360, 140), color)
-        body.append(f'<g transform="translate(280,{y + 40})">{single_svg}</g>')
-        body.append(text(284, y + 184, "single", 10, 400, "#777"))
+        body.append(f'<g transform="translate(36,{y + 40})">{draw_obj_3d(head_path, (170, 132), color, "iso")}</g>')
+        body.append(text(40, y + 182, "split head · iso", 10, 400, "#777"))
+
+        body.append(f'<g transform="translate(220,{y + 40})">{draw_obj_3d(single_path, (280, 132), color, "iso")}</g>')
+        body.append(text(224, y + 182, "single · iso", 10, 400, "#777"))
+
+        body.append(f'<g transform="translate(510,{y + 40})">{draw_obj_3d(single_path, (130, 132), color, "front")}</g>')
+        body.append(text(514, y + 182, "front (XZ)", 10, 400, "#777"))
+
+        body.append(f'<g transform="translate(650,{y + 40})">{draw_obj_3d(single_path, (90, 132), color, "side")}</g>')
+        body.append(text(654, y + 182, "side (YZ)", 10, 400, "#777"))
 
         m = manifest["styles"][style]
-        body.append(text(680, y + 70, f"head span {m['span']:.3f}", 12, 400, "#444"))
-        body.append(text(680, y + 90, f"socket→apex {m['socket_to_apex']:.3f}", 12, 400, "#444"))
-        body.append(text(680, y + 110, f"overhang {m['overhang']:.3f}", 12, 400, "#444"))
-        body.append(text(680, y + 130, f"single total {m['single_total']:.3f}", 12, 400, "#444"))
-        body.append(text(680, y + 150, "pen 1.0 · thickness 0.8", 11, 400, "#777"))
+        body.append(text(760, y + 66, f"head span {m['span']:.3f}", 12, 400, "#444"))
+        body.append(text(760, y + 86, f"socket→apex {m['socket_to_apex']:.3f}", 12, 400, "#444"))
+        body.append(text(760, y + 106, f"overhang {m['overhang']:.3f}", 12, 400, "#444"))
+        body.append(text(760, y + 126, f"single total {m['single_total']:.3f}", 12, 400, "#444"))
+        body.append(text(760, y + 146, "pen 1.0 · thickness 0.8", 11, 400, "#777"))
 
-        tri_head = manifest["files"][f"arrow_head_{style.replace('-', '_')}.obj"]["tris"]
-        tri_single = manifest["files"][f"arrow_single_{style.replace('-', '_')}.obj"]["tris"]
-        body.append(text(980, y + 70, f"head {tri_head} tris", 11, 400, "#666"))
-        body.append(text(980, y + 90, f"single {tri_single} tris", 11, 400, "#666"))
+        tri_head = manifest["files"][head_path.name]["tris"]
+        tri_single = manifest["files"][single_path.name]["tris"]
+        body.append(text(1010, y + 66, f"head {tri_head} tris", 11, 400, "#666"))
+        body.append(text(1010, y + 86, f"single {tri_single} tris", 11, 400, "#666"))
 
     (preview_dir / "arrow_3d_overview.svg").write_text(svg_doc(width, height, "".join(body)), encoding="utf-8")
 
@@ -406,9 +568,14 @@ def main() -> int:
     manifest = json.loads((args.meshes / "manifest.json").read_text(encoding="utf-8"))
 
     make_2d_previews(args.out)
+    for style in STYLES:
+        make_2d_card(args.out, style)
+        make_2d_thumb(args.out, style)
     make_3d_overview(args.out, args.meshes, manifest)
     for style in STYLES:
         make_3d_style_preview(args.out, args.meshes, args.shared_meshes, style, manifest)
+        make_3d_card(args.out, args.meshes, style, manifest)
+        make_3d_thumb(args.out, args.meshes, style)
 
     print(f"Wrote previews to {args.out}")
     for path in sorted(args.out.glob("*.svg")):
