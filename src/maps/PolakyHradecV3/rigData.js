@@ -160,7 +160,12 @@ export function buildRigStore({
       continue;
     }
 
-    const height = getPylonHeight(pylonFeature) ?? 0;
+    const height = getPylonHeight(pylonFeature);
+    if (height == null) {
+      dropped += 1;
+      warnings.push(`pylon ${pylonFeature?.properties?.id ?? key}: no valid height, rig skipped`);
+      continue;
+    }
     const byTrack = {};
     const bands = {};
     const counts = {};
@@ -171,7 +176,11 @@ export function buildRigStore({
       byTrack[track.id] = linked;
       const bandLists = Array.from({ length: BAND_COUNT }, () => []);
       for (const feature of linked) {
-        const band = bandIndexOf(Number(feature?.properties?.H_REF), height);
+        const rawHRef = feature?.properties?.H_REF;
+        const band = bandIndexOf(
+          rawHRef == null || rawHRef === '' ? NaN : Number(rawHRef),
+          height,
+        );
         bandLists[band].push(feature);
         const props = feature?.properties ?? {};
         const distance = offsetMetres(lon, lat, Number(props.LON), Number(props.LAT));
@@ -220,7 +229,7 @@ export function buildRigStore({
     });
   }
 
-  if (dropped) warnings.push(`${dropped} pylon feature(s) dropped: no join key or coordinates`);
+  if (dropped) warnings.push(`${dropped} pylon feature(s) dropped: no join key, coordinates, or valid height`);
 
   // `null` means the COG sample is still in flight; only report an attempted
   // sample that came back incomplete.
@@ -235,13 +244,16 @@ export function buildRigStore({
 }
 
 /**
- * Eagerly loads all three tracks, one abortable request each.
+ * Eagerly loads all three tracks. The caller may pass a shared loader so the
+ * point cloud and the rig reuse one request/parse per track.
  *
  * @param {AbortSignal} [signal]
+ * @param {(trackId: string) => Promise<Array<any>>} [loadFeatures]
  * @returns {Promise<Record<string, Array<any>>>}
  */
-export async function loadRigTracks(signal) {
+export async function loadRigTracks(signal, loadFeatures = null) {
   const entries = await Promise.all(TRACKS.map(async (track) => {
+    if (loadFeatures) return [track.id, await loadFeatures(track.id)];
     const response = await fetch(track.url, { signal });
     if (!response.ok) throw new Error(`HTTP ${response.status} for ${track.url}`);
     const data = await response.json();

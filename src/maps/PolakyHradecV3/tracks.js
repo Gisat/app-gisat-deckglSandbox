@@ -10,6 +10,11 @@
  * their geometries over the same tower.
  */
 
+import {
+  FIXED_HEADING_TOWARD_ASC,
+  FIXED_HEADING_TOWARD_DESC,
+} from '../../layers/velocity/velocitySymbols';
+
 /**
  * Measurement tracks available on this map. The GeoJSON carries no orbit/track
  * property, so the orbit (which drives the arrow heading pair) is declared here.
@@ -40,14 +45,14 @@ export const TRACK_IDS = TRACKS.map(t => t.id);
 export const DEFAULT_TRACK_ID = '95D';
 
 /**
- * Look direction per track, degrees clockwise from north: where the sensor
- * points. The ring stack shifts along the opposite bearing (toward the sensor),
- * see `towardDeg` in `decomposition.js`, which also drives the least-squares row.
+ * Toward-sensor bearing per track, degrees clockwise from north. These reuse the
+ * shared arrow headings so the ring shift, the least-squares rows and the 3D
+ * point symbols cannot drift apart.
  */
-export const TRACK_LOOK_DEG = {
-  '95D': 280,
-  '44A': 80,
-  '146A': 80,
+export const TRACK_TOWARD_DEG = {
+  '95D': FIXED_HEADING_TOWARD_DESC,
+  '44A': FIXED_HEADING_TOWARD_ASC,
+  '146A': FIXED_HEADING_TOWARD_ASC,
 };
 
 /**

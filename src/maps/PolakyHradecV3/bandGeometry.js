@@ -432,7 +432,7 @@ export function buildSectionRingStacks({
   if (!pylon || !Array.isArray(grid) || grid.length < 2) return empty;
 
   const base = pylon.terrainElevation;
-  if (!Number.isFinite(base) || !Number.isFinite(pylon.height)) return empty;
+  if (!Number.isFinite(base) || !Number.isFinite(pylon.height) || pylon.height <= 0) return empty;
 
   const mPerDegLon = metresPerDegLon(pylon.lat);
   const towardRad = (towardDeg(activeTrackId) * Math.PI) / 180;

@@ -251,14 +251,12 @@ export function logRigDebug({ store, windowDays }) {
       + `worst shift error ${worstShift.toExponential(1)} m`,
     );
 
-    must(`${BAND_LABELS[band]} stack has rings`, rings.length > 0);
     // A track that stops before the union grid ends leaves the top step empty, so
     // the last ring sits at most one step below the ceiling.
     const step = (slot.zEnd - slot.zStart) / Math.max(1, expectedCount - 1);
     must(
       `${BAND_LABELS[band]} stack reaches the ceiling within one step`,
-      rings.length === 0
-        || (Math.max(...zs) <= slot.zEnd + 1e-6 && Math.max(...zs) >= slot.zEnd - step - 1e-6),
+      Math.max(...zs) <= slot.zEnd + 1e-6 && Math.max(...zs) >= slot.zEnd - step - 1e-6,
       `${fmt(Math.max(...zs) - slot.zEnd)} m from the ceiling`,
     );
     must(`${BAND_LABELS[band]} stack height increases with time`, ascending);

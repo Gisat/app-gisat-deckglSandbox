@@ -363,6 +363,9 @@ export default function PolakyHradecV3() {
   const [tracks, setTracks] = useState({});
   // In-flight fetches live in a ref so deduping does not trigger renders.
   const inFlight = useRef(new Map());
+  // Shared GeoJSON cache: the point cloud and the rig must not fetch/parse the
+  // same track twice.
+  const trackFeatureCache = useRef(new Map());
   const [pylonFeatures, setPylonFeatures] = useState([]);
   // Pylons load independently of the points; the default selection waits for
   // both loaders to settle so the pylon chart never flashes its empty hint.
@@ -416,6 +419,30 @@ export default function PolakyHradecV3() {
   // map symbols and legend. Settlement colouring uses its own fixed ramp.
   const velAvgPalette = getPolakyVelAvgColors(activeTrack.orbit);
 
+  // One request/parse per track, shared by the point cloud and the rig. The
+  // cache is cleared on failure so a retry starts a fresh request.
+  const fetchTrackFeatures = useCallback((id) => {
+    const cached = trackFeatureCache.current.get(id);
+    if (cached) return cached.promise;
+
+    const track = TRACKS.find(t => t.id === id);
+    if (!track) return Promise.reject(new Error(`Unknown track ${id}`));
+
+    const controller = new AbortController();
+    const promise = (async () => {
+      const res = await fetch(track.url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${track.url}`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : (data.features || []);
+    })();
+    trackFeatureCache.current.set(id, { promise, controller });
+    promise.catch(() => {
+      const entry = trackFeatureCache.current.get(id);
+      if (entry?.promise === promise) trackFeatureCache.current.delete(id);
+    });
+    return promise;
+  }, []);
+
   // Fetch a track once and cache it; later switches are instant. The cache is
   // cleared on failure so the selector's retry starts a fresh request.
   const loadTrack = useCallback((id) => {
@@ -429,10 +456,7 @@ export default function PolakyHradecV3() {
     const controller = new AbortController();
     const promise = (async () => {
       try {
-        const res = await fetch(track.url, { signal: controller.signal });
-        if (!res.ok) throw new Error(`HTTP ${res.status} for ${track.url}`);
-        const data = await res.json();
-        const loaded = Array.isArray(data) ? data : (data.features || []);
+        const loaded = await fetchTrackFeatures(id);
         if (controller.signal.aborted) return;
         setTracks(prev => ({
           ...prev,
@@ -452,16 +476,18 @@ export default function PolakyHradecV3() {
     })();
 
     inFlight.current.set(id, { promise, controller });
-  }, []);
+  }, [fetchTrackFeatures]);
 
   useEffect(() => {
     loadTrack(DEFAULT_TRACK_ID);
   }, [loadTrack]);
 
-  // Abort any pending track request when the map unmounts.
+  // Abort any pending track request and shared cache fetch on unmount.
   useEffect(() => () => {
     for (const { controller } of inFlight.current.values()) controller.abort();
     inFlight.current.clear();
+    for (const { controller } of trackFeatureCache.current.values()) controller.abort();
+    trackFeatureCache.current.clear();
   }, []);
 
   // A point belongs to exactly one track, so its highlight and timeline close on
@@ -537,7 +563,7 @@ export default function PolakyHradecV3() {
     const controller = new AbortController();
     (async () => {
       try {
-        const featuresByTrack = await loadRigTracks(controller.signal);
+        const featuresByTrack = await loadRigTracks(controller.signal, fetchTrackFeatures);
         if (controller.signal.aborted) return;
         setRigTracks({ status: 'ready', featuresByTrack, error: null });
       } catch (err) {
@@ -547,7 +573,7 @@ export default function PolakyHradecV3() {
       }
     })();
     return () => controller.abort();
-  }, []);
+  }, [fetchTrackFeatures]);
 
   // One COG terrain sample per tower, in parallel with the track load. This is
   // the rig's z anchor (see `terrainElevation.js` for why it is not `_median`).
@@ -576,16 +602,33 @@ export default function PolakyHradecV3() {
     return () => controller.abort();
   }, [pylonsLoaded, pylonFeatures]);
 
-  // Join the three tracks to the pylons once both loads have settled. Pure and
-  // cheap (18 towers), so it can be a memo rather than extra state.
-  const rigStore = useMemo(() => {
+  // Join the three tracks to the pylons once both loads have settled. The
+  // terrain-independent store is built once; COG samples are merged afterwards
+  // so their arrival does not re-scan every track property.
+  const rigBaseStore = useMemo(() => {
     if (rigTracks?.status !== 'ready' || !pylonsLoaded || pylonFeatures.length === 0) return null;
     return buildRigStore({
       pylonFeatures,
       featuresByTrack: rigTracks.featuresByTrack,
-      terrainElevations,
     });
-  }, [rigTracks, pylonsLoaded, pylonFeatures, terrainElevations]);
+  }, [rigTracks, pylonsLoaded, pylonFeatures]);
+
+  const rigStore = useMemo(() => {
+    if (!rigBaseStore || !terrainElevations) return rigBaseStore;
+
+    const pylons = new Map();
+    for (const [key, pylon] of rigBaseStore.pylons) {
+      pylons.set(key, { ...pylon, terrainElevation: terrainElevations.get(key) ?? null });
+    }
+    const missing = [...pylons.values()].filter(p => !Number.isFinite(p.terrainElevation));
+    const warnings = missing.length
+      ? [
+          ...rigBaseStore.warnings,
+          `${missing.length} pylon(s) without a terrain sample: ${missing.map(p => p.id).join(', ')}`,
+        ]
+      : rigBaseStore.warnings;
+    return { ...rigBaseStore, pylons, warnings };
+  }, [rigBaseStore, terrainElevations]);
 
   useEffect(() => {
     if (zRange != null || terrainWaitExpired) return undefined;
@@ -631,48 +674,37 @@ export default function PolakyHradecV3() {
     });
   }, [rigMode, focusedPylon, rigStore, activeTrackId, seriesMode, windowDays, scaleMPerMm]);
 
-  // Per-band ΔU/ΔE for every tower. The focused tower shows the numbers in the
-  // badge; all towers share the same vectors, so the compact arrows and the
-  // badge can never disagree.
-  const bandSolutions = useMemo(() => {
-    if (!rigEnabled || !rigStore || !rigStore.commonEpochMs) return EMPTY;
+  // Per-band ΔU/ΔE for the focused tower.
+  const focusedBandSolutions = useMemo(() => {
+    if (!rigEnabled || !focusedPylon || !rigStore || !rigStore.commonEpochMs) return EMPTY;
 
     const out = [];
-    for (const pylon of rigStore.pylons.values()) {
-      for (let band = 0; band < pylon.bandZ.length; band++) {
-        const weights = {};
-        const fields = {};
-        for (const trackId of TRACK_IDS) {
-          weights[trackId] = pylon.nByBandTrack[trackId][band];
-          fields[trackId] = bandMedianAt(
-            pylon.bands[trackId][band],
-            rigStore.commonEpochMs,
-            windowDays,
-          );
-        }
-        out.push({
-          pylonKey: pylon.key,
-          pylonId: pylon.id,
-          band,
-          bandZ: pylon.bandZ[band],
-          counts: weights,
-          solution: solveBand({
-            d95: fields['95D'],
-            d44: fields['44A'],
-            d146: fields['146A'],
-            inc: rigStore.incidence,
-            weights,
-          }),
-        });
+    for (let band = 0; band < focusedPylon.bandZ.length; band++) {
+      const weights = {};
+      const fields = {};
+      for (const trackId of TRACK_IDS) {
+        weights[trackId] = focusedPylon.nByBandTrack[trackId][band];
+        fields[trackId] = bandMedianAt(
+          focusedPylon.bands[trackId][band],
+          rigStore.commonEpochMs,
+          windowDays,
+        );
       }
+      out.push({
+        band,
+        bandZ: focusedPylon.bandZ[band],
+        counts: weights,
+        solution: solveBand({
+          d95: fields['95D'],
+          d44: fields['44A'],
+          d146: fields['146A'],
+          inc: rigStore.incidence,
+          weights,
+        }),
+      });
     }
     return out;
-  }, [rigEnabled, rigStore, windowDays]);
-
-  const focusedBandSolutions = useMemo(() => {
-    if (!focusedPylon) return EMPTY;
-    return bandSolutions.filter(entry => entry.pylonKey === focusedPylon.key);
-  }, [bandSolutions, focusedPylon]);
+  }, [rigEnabled, focusedPylon, rigStore, windowDays]);
 
   // The camera belongs to the controller (`initialViewState`), exactly like the
   // other maps here: React only mirrors the zoom for the arrow size band.

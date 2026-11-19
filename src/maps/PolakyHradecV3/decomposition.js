@@ -9,8 +9,8 @@
  * the toward-sensor bearings: `FIXED_HEADING_TOWARD_DESC = 100` for the
  * descending track and `FIXED_HEADING_TOWARD_ASC = 260` for both ascending ones.
  * Positive `VEL_*` is motion **toward** the sensor, so subsidence is negative.
- * `TRACK_LOOK_DEG` is where the sensor points (280 / 80), the opposite bearing;
- * the least-squares row must use `look + 180`.
+ * `TRACK_TOWARD_DEG` reuses those same headings, so the least-squares row and
+ * the ring shift follow one source of truth.
  *
  * LOS displacement for a motion vector is the dot product with the unit vector
  * pointing from the ground toward the sensor:
@@ -29,7 +29,7 @@
  */
 
 import {
-  TRACK_LOOK_DEG,
+  TRACK_TOWARD_DEG,
   LOW_CONFIDENCE_SCATTERERS,
   LOW_CONFIDENCE_RESIDUAL_MM,
   LOW_CONFIDENCE_CONDITION,
@@ -49,9 +49,9 @@ export const SOLVER_ARG_BY_TRACK = { '95D': 'd95', '44A': 'd44', '146A': 'd146' 
  * @returns {number}
  */
 export function towardDeg(trackId) {
-  const look = TRACK_LOOK_DEG[trackId];
-  if (!Number.isFinite(look)) return NaN;
-  return (((look + 180) % 360) + 360) % 360;
+  const toward = TRACK_TOWARD_DEG[trackId];
+  if (!Number.isFinite(toward)) return NaN;
+  return (((toward % 360) + 360) % 360);
 }
 
 /**
@@ -120,7 +120,10 @@ export function solveBand({ d95 = null, d44 = null, d146 = null, inc = {}, weigh
   for (const trackId of SOLVER_TRACK_IDS) {
     const value = values[SOLVER_ARG_BY_TRACK[trackId]];
     const count = Number(weights?.[trackId] ?? 0);
-    const incidence = Number(inc?.[trackId]);
+    const rawIncidence = inc?.[trackId];
+    const incidence = rawIncidence == null || rawIncidence === ''
+      ? NaN
+      : Number(rawIncidence);
     if (!Number.isFinite(value)) {
       skipped.push(trackId);
       continue;
