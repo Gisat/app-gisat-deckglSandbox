@@ -38,6 +38,7 @@ import {
   POLAKY_VEL_AVG_DOMAIN,
 } from './velAvgPalette';
 import TimelineChart from './TimelineChart';
+import { cartoDarkBasemapUrl } from '../basemaps';
 import {
   BAND_LABELS,
   DEFAULT_SCALE_M_PER_MM,
@@ -68,8 +69,11 @@ import { TERRAIN_URL, sampleTerrainElevations } from './terrainElevation';
 // Measurement tracks, join keys and rig constants live in `tracks.js`;
 // `rigData.js` owns the three-track store.
 
-
-const SATELLITE_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+// Basemap: CARTO Dark Matter, resolved through the shared `basemaps.js` helper so
+// the CARTO API key (`window.CARTO_API_KEY` / `VITE_CARTO_API_KEY`) is applied
+// like every other map in the sandbox.
+const BASEMAP_ATTRIBUTION_URL = 'https://carto.com/attributions';
+const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright';
 const PYLONS_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/sloupy.geojson';
 const PYLON_ASSET_BASE = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets';
 
@@ -865,9 +869,9 @@ export default function PolakyHradecV3() {
     });
 
     // zRange keeps the draped tiles from being frustum-culled in tilted views.
-    const satelliteLayer = new TileLayer({
-      id: 'satellite-base',
-      data: SATELLITE_TILE_URL,
+    const basemapLayer = new TileLayer({
+      id: 'basemap-dark',
+      data: cartoDarkBasemapUrl,
       minZoom: 0,
       maxZoom: 19,
       tileSize: 256,
@@ -879,9 +883,9 @@ export default function PolakyHradecV3() {
           data: undefined,
           image: props.data,
           bounds: [west, south, east, north],
-          // Cool and dim the imagery slightly while the rig is on so the rings and
-          // vectors keep their contrast against daylight satellite.
-          tintColor: rigEnabled ? [175, 182, 195] : [255, 255, 255],
+          // Ease the dark basemap back a little further while the rig is on, so the
+          // Viridis stack and the white 0 mm rings keep the brightest tones.
+          tintColor: rigEnabled ? [205, 210, 220] : [255, 255, 255],
           updateTriggers: { tintColor: [rigEnabled] },
         });
       },
@@ -1078,7 +1082,7 @@ export default function PolakyHradecV3() {
 
     return [
       terrainLayer,
-      satelliteLayer,
+      basemapLayer,
       ...pylonLayers,
       // Before the point symbols on purpose: later layers win overlapping pick
       // pixels, so arrows and spheres keep click priority over pylon hit volumes.
@@ -1408,6 +1412,27 @@ export default function PolakyHradecV3() {
             </div>
           </div>
         )}
+
+        <div style={{ marginTop: '6px', color: '#9a9a9a' }}>
+          Basemap:{' '}
+          <a
+            href={BASEMAP_ATTRIBUTION_URL}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: '#8a8a8a' }}
+          >
+            © CARTO
+          </a>
+          ,{' '}
+          <a
+            href={OSM_COPYRIGHT_URL}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: '#8a8a8a' }}
+          >
+            © OpenStreetMap contributors
+          </a>
+        </div>
       </div>
 
       {(selectedPylonKey != null || selectedFeature) && (
