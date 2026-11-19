@@ -1,3 +1,23 @@
+## [1.23.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.22.0...v1.23.0) (2026-11-19)
+
+### Features
+
+* **polaky:** add v3 multi-track pylon rig route ([417ae51](https://github.com/Gisat/app-gisat-deckglSandbox/commit/417ae51746850bf40ae23da2aae5ebf08ac3a58f))
+* **polaky:** CARTO Dark Matter basemap instead of satellite imagery ([5e8dbe9](https://github.com/Gisat/app-gisat-deckglSandbox/commit/5e8dbe965338b72c29399766744dd7172b569b40))
+* **polaky:** dark chart cards, single camera source ([fb59d1d](https://github.com/Gisat/app-gisat-deckglSandbox/commit/fb59d1de21f9868e3447634631505eea47beb192)), closes [#5aa9ff](https://github.com/Gisat/app-gisat-deckglSandbox/issues/5aa9ff)
+* **polaky:** open on the captured oblique view ([79f914e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/79f914e58c4d2d7c30d086356ef772798734d723))
+* **polaky:** open with pylon 9 focused ([294762d](https://github.com/Gisat/app-gisat-deckglSandbox/commit/294762dbe414390c274dcad0246cd87bca2d0c8c))
+* **polaky:** replace the fin rig with multi-elevation halo rings ([74c3cb7](https://github.com/Gisat/app-gisat-deckglSandbox/commit/74c3cb788a2593295a64f0030ddb4d23a42d9cf7))
+* **polaky:** separated 3-section moving ring stack ([05b855e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/05b855eba4fd2919967802145ccc58ce2d4e3ad5))
+
+### Bug Fixes
+
+* **polaky:** harden v3 rig data handling and loaders ([031b06f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/031b06f1bed401c3f23240c614c2645bf54d2c86))
+* **polaky:** hold the scene until the terrain is ready ([fb8d9ff](https://github.com/Gisat/app-gisat-deckglSandbox/commit/fb8d9ff52231f7ad610c330a10b39793890cfc4c))
+* **polaky:** mesh vector shafts, focused-only arrows, fins on the collar ([f4a7fe5](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f4a7fe54a0352b237cf48307f96be57290aaf3a1))
+* **polaky:** rigid fins on sampled terrain, legible baselines and vectors ([64367c0](https://github.com/Gisat/app-gisat-deckglSandbox/commit/64367c0f95e43c69028d83c0b6704eade3e547c2))
+* **polaky:** stop the camera flying on rig enable ([48bb8e1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/48bb8e1e57d0346494679f9fe9b65a68e5630abf))
+
 ## [1.22.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.21.0...v1.22.0) (2026-11-18)
 
 ### Features
