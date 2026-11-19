@@ -1,6 +1,6 @@
 // Forked from src/maps/PolakyHradecV2 for the Poláky/Hradec v3 multi-track rig.
 // v2 keeps the point-cloud / pylon work; v3 adds a rig that reads all three
-// tracks at once over the focused pylon (polar halo rings per structural band)
+// tracks at once over the focused pylon (three separated section ring stacks)
 // plus a per-band ΔU/ΔE least squares. The point cloud stays single-track: point
 // IDs are unique only within a track, so three point layers at once would break
 // selection, arrow orbit and the legend branch.
@@ -14,14 +14,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { COORDINATE_SYSTEM, FlyToInterpolator } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
-import {
-  BitmapLayer,
-  PathLayer,
-  ScatterplotLayer,
-  SolidPolygonLayer,
-} from '@deck.gl/layers';
+import { BitmapLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
-import { CylinderGeometry, ConeGeometry } from '@luma.gl/engine';
+import { CylinderGeometry } from '@luma.gl/engine';
 import { OBJLoader } from '@loaders.gl/obj';
 import { CogTerrainLayer } from '@gisatcz/deckgl-geolib';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
@@ -45,30 +40,18 @@ import {
 import TimelineChart from './TimelineChart';
 import {
   BAND_LABELS,
-  DASHED_TRACK_ID,
+  DEFAULT_SCALE_M_PER_MM,
   DEFAULT_TRACK_ID,
   DEFAULT_WINDOW_DAYS,
-  HALO_INNER_RADIUS_M,
-  HALO_OUTER_RADIUS_M,
-  HALO_SAMPLE_COUNT,
-  HALO_SEGMENTS,
-  HALO_TRACK_COLORS,
-  HALO_ZERO_RADIUS_M,
   RIG_MODES,
   RIG_OFF,
-  RIG_RINGS_VECTORS,
-  TRACK_HALO_SIDE,
+  RIG_RINGS,
+  SCALE_OPTIONS,
+  SECTION_Z_FRACTIONS,
   TRACK_IDS,
   TRACKS,
-  VECTOR_COLOR,
-  VECTOR_HEAD_LENGTH_M,
-  VECTOR_HEAD_RADIUS_M,
-  VECTOR_MAX_LENGTH_M,
-  VECTOR_MIN_LENGTH_M,
-  VECTOR_SCALE_M_PER_MM,
-  VECTOR_SHAFT_RADIUS_M,
   WINDOW_OPTIONS,
-  metresPerDegLon,
+  viridisColor,
 } from './tracks';
 import {
   buildRigStore,
@@ -77,14 +60,7 @@ import {
   getPylonPickFeature,
   loadRigTracks,
 } from './rigData';
-import {
-  bandMedianAt,
-  buildHaloRingFrame,
-  buildHaloRingGeometry,
-  coneOrientation,
-  haloBandSeries,
-  medianScatterer,
-} from './bandGeometry';
+import { bandMedianAt, buildSectionRingStacks, medianScatterer } from './bandGeometry';
 import { eastLabel, solveBand } from './decomposition';
 import { logRigDebug } from './debugRig';
 import { TERRAIN_URL, sampleTerrainElevations } from './terrainElevation';
@@ -134,62 +110,39 @@ const PYLON_HIT_MESH = new CylinderGeometry({
 const EMPTY = [];
 
 // ---------------------------------------------------------------------------
-// Multi-track rig — halo rings
+// Separated 3-section ring stack
 //
-// Ring vertices are `[lon, lat, terrainAtPylon + bandZ]` in LNGLAT metres — one
-// absolute z per band, sampled once from the draped COG (`terrainElevation.js`).
-// No terrain extension on any rig layer: a ring must stay strictly flat and
-// horizontal in world space, and per-vertex terrain offsets would bend it with
-// the field topography.
+// Rings are `[lon, lat, terrainAtPylon + sectionFraction × height]` in LNGLAT
+// metres — one absolute z per ring, anchored on the COG sample
+// (`terrainElevation.js`). No terrain extension on either ring layer: a ring must
+// stay strictly horizontal, and per-vertex terrain offsets would warp it.
 //
 // `terrainAtPylon` must come from the COG, not from `_median` / `H_dem`: the
 // InSAR heights sit on a different vertical datum (a smooth 43.9–46.1 m above the
 // COG at the 18 towers), so anchoring on them floats the rig ~45 m above the
 // steel. `baseElevation` stays in the rig store for reporting only.
 // ---------------------------------------------------------------------------
-const RIG_HALO_DISC_LAYER = 'rig-halo-discs';
-const RIG_HALO_ZERO_LAYER = 'rig-halo-zero-circle';
-const RIG_HALO_DIVIDER_LAYER = 'rig-halo-divider';
-const RIG_HALO_SCATTERER_LAYER = 'rig-halo-scatterers';
-const RIG_HALO_SOLID_LAYER = 'rig-halo-curves';
-const RIG_HALO_SOLID_GLOW_LAYER = 'rig-halo-curves-glow';
-const RIG_HALO_DASHED_LAYER = 'rig-halo-curves-dashed';
-const RIG_HALO_DASHED_GLOW_LAYER = 'rig-halo-curves-glow-dashed';
-const RIG_HALO_ANCHOR_LAYER = 'rig-halo-anchors';
-const RIG_VECTOR_SHAFT_LAYER = 'rig-vector-shafts';
-const RIG_VECTOR_HEAD_LAYER = 'rig-vector-heads';
+const RIG_REFERENCE_RING_LAYER = 'rig-reference-rings';
+const RIG_STACK_RING_LAYER = 'rig-stack-rings';
 const RIG_DEBUG_MARKER_LAYER = 'rig-debug-band-markers';
 
-/** The annulus reads as tinted glass: side hue, very low alpha. */
-const RIG_HALO_DISC_ALPHA = 22;
+/** 0 mm floor/ceiling rings per section: dashed white, thin, never picked. */
+const RIG_REFERENCE_RING_COLOR = [255, 255, 255, 200];
+const RIG_REFERENCE_RING_WIDTH = 1.5;
+const RIG_REFERENCE_RING_DASH = [6, 4];
 
-/** Two-pass curves: a wide translucent halo under a crisp core. */
-const RIG_CURVE_CORE_WIDTH = 3.5;
-const RIG_CURVE_GLOW_WIDTH = 8;
-const RIG_CURVE_GLOW_ALPHA = 75;
+/** One bold ring per timestep; raw mode is denser so it draws thinner. */
+const RIG_STACK_RING_WIDTH_SMOOTHED = 3.2;
+const RIG_STACK_RING_WIDTH_RAW = 2.0;
 
-/** Individual scatterers inside a ring: thin and faint. */
-const RIG_SCATTERER_WIDTH = 1;
-const RIG_SCATTERER_ALPHA = 45;
-
-/** Terminal nodes at each curve's first and last vertex. */
-const RIG_ANCHOR_RADIUS_PX = 4;
-
-/** Ring furniture: the 0 mm circle and the north-south divider. */
-const RIG_HALO_RULE_COLOR = [255, 255, 255, 185];
-const RIG_HALO_RULE_WIDTH = 1.5;
-
-/** Auto-zoom target when the rig is switched on (rings span 52 m). */
+/** Auto-zoom target when the rig is switched on (rings span 23 m). */
 const RIG_FOCUS_ZOOM = 18;
 
-/**
- * Unit meshes for the vector: a slim rod and a cone head, both with their long
- * axis on local +Z so one `coneOrientation(east, up)` orients shaft and head
- * identically. The shaft is a mesh rather than a pixel-width LineLayer because a
- * 4 px line swallowed the head and read as a floating cone.
- */
-const RIG_SHAFT_MESH = new CylinderGeometry({ radius: 1, height: 1, verticalAxis: 'z', nradial: 12 });
-const RIG_CONE_MESH = new ConeGeometry({ radius: 1, height: 1, verticalAxis: 'z', nradial: 12 });
+/** Series mode: rolling median vs one ring per acquisition sample. */
+const SERIES_MODES = [
+  { id: 'smoothed', label: 'Smoothed', title: 'Rolling median over the selected window · 48 rings per section' },
+  { id: 'raw', label: 'Raw', title: 'One ring per sampled acquisition · 120 rings per section' },
+];
 
 // Layer-id prefix shared by the 3D LOS point symbols (arrow parts and spheres).
 const POINT_LAYER_PREFIX = 'vel-avg-arrows';
@@ -391,9 +344,12 @@ function formatDateMs(ms) {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-function withAlpha(rgb, alpha) {
-  return [rgb[0], rgb[1], rgb[2], alpha];
+// `BAND_LABELS` is lowercase for ids; the tooltip uses the structural names.
+function bandTitle(bandIndex) {
+  const label = BAND_LABELS[bandIndex] ?? `band ${bandIndex}`;
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
+
 
 export default function PolakyHradecV3() {
   const { zRange, onZRangeUpdate } = useTerrainZRange();
@@ -427,7 +383,9 @@ export default function PolakyHradecV3() {
   // untouched. `rigTracks` holds the three raw feature lists, `rigStore` the
   // joined per-pylon index built once the pylons have loaded.
   const [rigMode, setRigMode] = useState(RIG_OFF);
+  const [seriesMode, setSeriesMode] = useState('smoothed');
   const [windowDays, setWindowDays] = useState(DEFAULT_WINDOW_DAYS);
+  const [scaleMPerMm, setScaleMPerMm] = useState(DEFAULT_SCALE_M_PER_MM);
   const [rigTracks, setRigTracks] = useState(null);
   const [terrainElevations, setTerrainElevations] = useState(null);
   const [hoveredRing, setHoveredRing] = useState(false);
@@ -639,109 +597,21 @@ export default function PolakyHradecV3() {
     return rigStore.pylons.get(selectedPylonKey) ?? null;
   }, [rigStore, selectedPylonKey]);
 
-  // Halo rings for the focused tower: three bands, one flat polar ring each, with
-  // a west (95D) and east (44A/146A) timeline. Only this tower is drawn.
-  const haloData = useMemo(() => {
-    const empty = {
-      discs: EMPTY,
-      zeroCircles: EMPTY,
-      dividers: EMPTY,
-      curves: EMPTY,
-      dashedCurves: EMPTY,
-      scatterers: EMPTY,
-      anchors: EMPTY,
-    };
-    if (!rigEnabled || !focusedPylon || !rigStore) return empty;
-    const base = focusedPylon.terrainElevation;
-    if (!Number.isFinite(base)) return empty;
-
-    const discs = [];
-    const zeroCircles = [];
-    const dividers = [];
-    const curves = [];
-    const dashedCurves = [];
-    const scatterers = [];
-    const anchors = [];
-
-    for (let band = 0; band < focusedPylon.bandZ.length; band++) {
-      const frame = buildHaloRingFrame({
-        pylon: focusedPylon,
-        base,
-        bandZ: focusedPylon.bandZ[band],
-        segments: HALO_SEGMENTS,
-      });
-
-      for (const disc of frame.discs) {
-        // Tint each half by the track that owns it: west = 95D, east = ascending.
-        const sideTrackId = disc.side === 'west' ? '95D' : '44A';
-        discs.push({
-          polygon: disc.polygon,
-          color: withAlpha(HALO_TRACK_COLORS[sideTrackId], RIG_HALO_DISC_ALPHA),
-        });
-      }
-      if (frame.zeroCircle.length > 0) zeroCircles.push({ path: frame.zeroCircle });
-      if (frame.divider.length > 0) dividers.push({ path: frame.divider });
-
-      for (const trackId of TRACK_IDS) {
-        const bandScatterers = focusedPylon.bands[trackId][band];
-        if (bandScatterers.length === 0) continue;
-
-        const prepared = haloBandSeries(
-          bandScatterers,
-          rigStore.grid,
-          windowDays,
-          HALO_SAMPLE_COUNT,
-        );
-        if (prepared.median.length < 2) continue;
-
-        const geometry = buildHaloRingGeometry({
-          pylon: focusedPylon,
-          base,
-          bandZ: focusedPylon.bandZ[band],
-          bandIndex: band,
-          trackId,
-          side: TRACK_HALO_SIDE[trackId],
-          series: prepared.median,
-          scatterers: prepared.scatterers,
-          times: prepared.times,
-        });
-
-        const color = withAlpha(HALO_TRACK_COLORS[trackId], 255);
-        const target = trackId === DASHED_TRACK_ID ? dashedCurves : curves;
-
-        // The tip is the last *present* sample, not the union-grid end: 95D stops
-        // on 2026-02-17 while the grid runs to 2026-03-04.
-        let lastIndex = prepared.median.length - 1;
-        while (lastIndex >= 0 && !Number.isFinite(prepared.median[lastIndex])) lastIndex -= 1;
-        const lastValue = lastIndex >= 0 ? prepared.median[lastIndex] : null;
-        const lastDateMs = lastIndex >= 0 ? prepared.times[lastIndex] : null;
-
-        for (const path of geometry.curve) {
-          target.push({
-            path,
-            color,
-            trackId,
-            bandIndex: band,
-            pylonKey: focusedPylon.key,
-            count: bandScatterers.length,
-            lastValue,
-            lastDateMs,
-          });
-        }
-        for (const runs of geometry.scatterers) {
-          for (const path of runs) {
-            scatterers.push({
-              path,
-              color: withAlpha(HALO_TRACK_COLORS[trackId], RIG_SCATTERER_ALPHA),
-            });
-          }
-        }
-        for (const position of geometry.anchors) anchors.push({ position, color });
-      }
-    }
-
-    return { discs, zeroCircles, dividers, curves, dashedCurves, scatterers, anchors };
-  }, [rigEnabled, focusedPylon, rigStore, windowDays]);
+  // Separated 3-section ring stack for the focused tower and the active track.
+  // Smoothed mode draws RING_SMOOTHED_COUNT bold rings per section, raw mode
+  // RING_RAW_COUNT acquisition-sampled rings — one ring per timestep either way.
+  const ringData = useMemo(() => {
+    const empty = { stacks: EMPTY, references: EMPTY };
+    if (rigMode !== RIG_RINGS || !focusedPylon || !rigStore) return empty;
+    return buildSectionRingStacks({
+      pylon: focusedPylon,
+      activeTrackId,
+      grid: rigStore.grid,
+      rawMode: seriesMode === 'raw',
+      windowDays,
+      scaleMPerMm,
+    });
+  }, [rigMode, focusedPylon, rigStore, activeTrackId, seriesMode, windowDays, scaleMPerMm]);
 
   // Per-band ΔU/ΔE for every tower. The focused tower shows the numbers in the
   // badge; all towers share the same vectors, so the compact arrows and the
@@ -786,68 +656,7 @@ export default function PolakyHradecV3() {
     return bandSolutions.filter(entry => entry.pylonKey === focusedPylon.key);
   }, [bandSolutions, focusedPylon]);
 
-  // Structural ΔU/ΔE arrows, only for the focused and hovered tower. The display
-  // length is scaled then clamped: 1.7 mm tilts still reach past the 3.5 m
-  // lattice, and a 20 mm vector cannot run off across the neighbouring tower.
-  const rigVectors = useMemo(() => {
-    if (rigMode !== RIG_RINGS_VECTORS || !rigStore) return { shafts: EMPTY, heads: EMPTY };
-    if (selectedPylonKey == null && hoveredPylonKey == null) return { shafts: EMPTY, heads: EMPTY };
 
-    const shafts = [];
-    const heads = [];
-
-    for (const entry of bandSolutions) {
-      if (entry.pylonKey !== selectedPylonKey && entry.pylonKey !== hoveredPylonKey) continue;
-      const { solution } = entry;
-      if (!solution.ok || !Number.isFinite(solution.dE) || !Number.isFinite(solution.dU)) continue;
-      const pylon = rigStore.pylons.get(entry.pylonKey);
-      if (!pylon || !Number.isFinite(pylon.terrainElevation)) continue;
-
-      const magnitude = Math.hypot(solution.dE, solution.dU);
-      if (!(magnitude > 1e-6)) continue;
-
-      const unitEast = solution.dE / magnitude;
-      const unitUp = solution.dU / magnitude;
-      const displayLength = Math.min(
-        VECTOR_MAX_LENGTH_M,
-        Math.max(VECTOR_MIN_LENGTH_M, magnitude * VECTOR_SCALE_M_PER_MM),
-      );
-      const east = unitEast * displayLength;
-      const up = unitUp * displayLength;
-
-      const z0 = pylon.terrainElevation + entry.bandZ;
-      const mPerDegLon = metresPerDegLon(pylon.lat);
-      const orientation = coneOrientation(east, up);
-
-      // Shaft and head split the same vector: the rod runs from the tower axis to
-      // the head base, the cone covers the last `headLength` metres.
-      const headLength = Math.min(VECTOR_HEAD_LENGTH_M, displayLength);
-      const shaftLength = Math.max(0.2, displayLength - headLength);
-
-      shafts.push({
-        pylonKey: entry.pylonKey,
-        position: [
-          pylon.lon + ((unitEast * shaftLength) / 2) / mPerDegLon,
-          pylon.lat,
-          z0 + (unitUp * shaftLength) / 2,
-        ],
-        orientation,
-        scale: [VECTOR_SHAFT_RADIUS_M, VECTOR_SHAFT_RADIUS_M, shaftLength],
-      });
-      heads.push({
-        pylonKey: entry.pylonKey,
-        position: [
-          pylon.lon + ((east - unitEast * (headLength / 2)) / mPerDegLon),
-          pylon.lat,
-          z0 + up - unitUp * (headLength / 2),
-        ],
-        orientation,
-        scale: [VECTOR_HEAD_RADIUS_M, VECTOR_HEAD_RADIUS_M, headLength],
-      });
-    }
-
-    return { shafts, heads };
-  }, [rigMode, bandSolutions, rigStore, selectedPylonKey, hoveredPylonKey]);
 
   // One controlled-view-state sink for every camera change, interactions
   // included. Transition props are one-shot: they must not be stored, or the
@@ -909,11 +718,11 @@ export default function PolakyHradecV3() {
       if (tracks[ring.trackId]?.status !== 'ready') loadTrack(ring.trackId);
     }
     setSelectedPylonKey(ring.pylonKey);
-    // The ring tip is the end of the record; open that band's median scatterer
-    // there, so the 2D timeline matches the curve the reader just clicked.
+    // Open the section's median scatterer at the clicked ring's timestep, so the
+    // 3D chart and the 2D timeline both match the ring under the cursor.
     const scatterer = medianScatterer(
       pylon.bands[ring.trackId]?.[ring.bandIndex] ?? EMPTY,
-      ring.lastDateMs,
+      ring.dateMs,
       windowDays,
     );
     if (scatterer) setSelectedId(scatterer.properties.ID);
@@ -1033,9 +842,9 @@ export default function PolakyHradecV3() {
     const nextSphereId = layerId.startsWith(POINT_LAYER_PREFIX)
       ? (info.object?.properties?.ID ?? null)
       : null;
-    // A ring curve is a pick target per timeline; the cursor mirrors that without
+    // Every stack ring is its own pick target; the cursor mirrors that without
     // touching the pylon/sphere hover state.
-    const nextRing = layerId === RIG_HALO_SOLID_LAYER || layerId === RIG_HALO_DASHED_LAYER;
+    const nextRing = layerId === RIG_STACK_RING_LAYER;
     setHoveredPylonKey(prev => (prev === nextPylonKey ? prev : nextPylonKey));
     setHoveredSphereId(prev => (prev === nextSphereId ? prev : nextSphereId));
     setHoveredRing(prev => (prev === nextRing ? prev : nextRing));
@@ -1215,199 +1024,74 @@ export default function PolakyHradecV3() {
       updateTriggers: colorUpdateTriggers,
     });
 
-    // ---- Multi-track rig ---------------------------------------------------
+    // ---- Separated 3-section ring stack ------------------------------------
     const rigLayers = [];
 
-    // Task 2's z-anchor gate, made reproducible: with `?debugRig=1` the focused
-    // tower gets one 1 m marker per band at `terrainAtPylon + bandZ`, the same
-    // absolute z the rings use, so it must land on the tower (lower third /
-    // mid-shaft / cross-arms). Not rendered on a normal visit.
+    // `?debugRig=1`: one small marker at each section floor and ceiling, in the
+    // same absolute z frame as the rings, so the stack frame can be eyeballed
+    // against the lattice.
     if (debugRig && focusedPylon && Number.isFinite(focusedPylon.terrainElevation)) {
+      const markers = [];
+      SECTION_Z_FRACTIONS.forEach(([startFraction, endFraction], band) => {
+        for (const fraction of [startFraction, endFraction]) {
+          markers.push({
+            band,
+            fraction,
+            position: [
+              focusedPylon.lon,
+              focusedPylon.lat,
+              focusedPylon.terrainElevation + fraction * focusedPylon.height,
+            ],
+          });
+        }
+      });
       rigLayers.push(new ScatterplotLayer({
         id: RIG_DEBUG_MARKER_LAYER,
-        data: focusedPylon.bandZ.map((bandZ, band) => ({
-          position: [
-            focusedPylon.lon,
-            focusedPylon.lat,
-            focusedPylon.terrainElevation + bandZ,
-          ],
-          band,
-        })),
+        data: markers,
         getPosition: (d) => d.position,
         radiusUnits: 'meters',
-        getRadius: 1,
+        getRadius: 0.8,
         getFillColor: (d) => (d.band === 1 ? [255, 140, 0, 220] : [255, 0, 255, 220]),
         pickable: false,
       }));
     }
 
-    // Halo rings: one flat annulus per structural band, split at the divider into
-    // a west (95D) and east (ascending) half. A ring is emitted as two simple
-    // closed polygons (outer arc, seam on the divider, inner arc back) rather than
-    // one polygon with a hole, so `.flat()` + `_normalize: false` tessellates
-    // cleanly. `_full3d` keeps the z through preprojection.
-    if (rigEnabled && haloData.discs.length > 0) {
-      rigLayers.push(new SolidPolygonLayer({
-        id: RIG_HALO_DISC_LAYER,
-        data: haloData.discs,
-        getPolygon: (d) => d.polygon.flat(),
-        getFillColor: (d) => d.color,
-        extruded: false,
-        _normalize: false,
-        _full3d: true,
-        pickable: false,
-      }));
-    }
+    if (rigMode === RIG_RINGS) {
+      // 0 mm floor/ceiling rings per section: dashed white, not pickable.
+      if (ringData.references.length > 0) {
+        rigLayers.push(new PathLayer({
+          id: RIG_REFERENCE_RING_LAYER,
+          data: ringData.references,
+          getPath: (d) => d.path,
+          getColor: RIG_REFERENCE_RING_COLOR,
+          getWidth: RIG_REFERENCE_RING_WIDTH,
+          widthUnits: 'pixels',
+          billboard: true,
+          jointRounded: true,
+          capRounded: true,
+          pickable: false,
+          extensions: [new PathStyleExtension({ dash: true })],
+          getDashArray: () => RIG_REFERENCE_RING_DASH,
+        }));
+      }
 
-    // 0 mm circle and the north-south divider that separates west from east.
-    if (haloData.zeroCircles.length > 0) {
-      rigLayers.push(new PathLayer({
-        id: RIG_HALO_ZERO_LAYER,
-        data: haloData.zeroCircles,
-        getPath: (d) => d.path,
-        getColor: RIG_HALO_RULE_COLOR,
-        getWidth: RIG_HALO_RULE_WIDTH,
-        widthUnits: 'pixels',
-        billboard: true,
-        jointRounded: true,
-        capRounded: false,
-        pickable: false,
-      }));
-    }
-    if (haloData.dividers.length > 0) {
-      rigLayers.push(new PathLayer({
-        id: RIG_HALO_DIVIDER_LAYER,
-        data: haloData.dividers,
-        getPath: (d) => d.path,
-        getColor: RIG_HALO_RULE_COLOR,
-        getWidth: RIG_HALO_RULE_WIDTH,
-        widthUnits: 'pixels',
-        billboard: true,
-        jointRounded: false,
-        capRounded: false,
-        pickable: false,
-      }));
-    }
-
-    // Faint individual scatterers inside each ring.
-    if (haloData.scatterers.length > 0) {
-      rigLayers.push(new PathLayer({
-        id: RIG_HALO_SCATTERER_LAYER,
-        data: haloData.scatterers,
-        getPath: (d) => d.path,
-        getColor: (d) => d.color,
-        getWidth: RIG_SCATTERER_WIDTH,
-        widthUnits: 'pixels',
-        billboard: true,
-        jointRounded: true,
-        capRounded: false,
-        pickable: false,
-      }));
-    }
-
-    // Bold band median: a wide translucent halo under a crisp core. Solid for
-    // 95D/44A, dashed for 146A. The core is pickable so a click can switch to
-    // that track and open its scatterer timeline.
-    if (haloData.curves.length > 0) {
-      rigLayers.push(new PathLayer({
-        id: RIG_HALO_SOLID_GLOW_LAYER,
-        data: haloData.curves,
-        getPath: (d) => d.path,
-        getColor: (d) => [d.color[0], d.color[1], d.color[2], RIG_CURVE_GLOW_ALPHA],
-        getWidth: RIG_CURVE_GLOW_WIDTH,
-        widthUnits: 'pixels',
-        billboard: true,
-        jointRounded: true,
-        capRounded: true,
-        pickable: false,
-      }));
-      rigLayers.push(new PathLayer({
-        id: RIG_HALO_SOLID_LAYER,
-        data: haloData.curves,
-        getPath: (d) => d.path,
-        getColor: (d) => d.color,
-        getWidth: RIG_CURVE_CORE_WIDTH,
-        widthUnits: 'pixels',
-        billboard: true,
-        jointRounded: true,
-        capRounded: true,
-        pickable: true,
-      }));
-    }
-    if (haloData.dashedCurves.length > 0) {
-      rigLayers.push(new PathLayer({
-        id: RIG_HALO_DASHED_GLOW_LAYER,
-        data: haloData.dashedCurves,
-        getPath: (d) => d.path,
-        getColor: (d) => [d.color[0], d.color[1], d.color[2], RIG_CURVE_GLOW_ALPHA],
-        getWidth: RIG_CURVE_GLOW_WIDTH,
-        widthUnits: 'pixels',
-        billboard: true,
-        jointRounded: false,
-        capRounded: false,
-        pickable: false,
-        extensions: [new PathStyleExtension({ dash: true })],
-        getDashArray: () => [10, 5],
-      }));
-      rigLayers.push(new PathLayer({
-        id: RIG_HALO_DASHED_LAYER,
-        data: haloData.dashedCurves,
-        getPath: (d) => d.path,
-        getColor: (d) => d.color,
-        getWidth: RIG_CURVE_CORE_WIDTH,
-        widthUnits: 'pixels',
-        billboard: true,
-        jointRounded: false,
-        capRounded: false,
-        pickable: true,
-        extensions: [new PathStyleExtension({ dash: true })],
-        getDashArray: () => [10, 5],
-      }));
-    }
-
-    // Terminal nodes: 2014 inner start and 2026 outer tip of every visible run.
-    if (haloData.anchors.length > 0) {
-      rigLayers.push(new ScatterplotLayer({
-        id: RIG_HALO_ANCHOR_LAYER,
-        data: haloData.anchors,
-        getPosition: (d) => d.position,
-        radiusUnits: 'pixels',
-        getRadius: RIG_ANCHOR_RADIUS_PX,
-        billboard: true,
-        getFillColor: (d) => d.color,
-        pickable: false,
-      }));
-    }
-
-    if (rigMode === RIG_RINGS_VECTORS && rigVectors.shafts.length > 0) {
-      // z is the sampled ground plus the band height, so shafts and heads share
-      // the rings' absolute frame (no per-vertex terrain offset). Only the
-      // focused/hovered tower is drawn, so one gold colour is enough.
-      const vectorColor = () => VECTOR_COLOR;
-      rigLayers.push(new SimpleMeshLayer({
-        id: RIG_VECTOR_SHAFT_LAYER,
-        data: rigVectors.shafts,
-        mesh: RIG_SHAFT_MESH,
-        coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
-        getPosition: (d) => d.position,
-        getOrientation: (d) => d.orientation,
-        getScale: (d) => d.scale,
-        getColor: vectorColor,
-        material: { ambient: 0.5, diffuse: 0.6, shininess: 16, specularColor: [40, 40, 40] },
-        pickable: false,
-      }));
-      rigLayers.push(new SimpleMeshLayer({
-        id: RIG_VECTOR_HEAD_LAYER,
-        data: rigVectors.heads,
-        mesh: RIG_CONE_MESH,
-        coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
-        getPosition: (d) => d.position,
-        getOrientation: (d) => d.orientation,
-        getScale: (d) => d.scale,
-        getColor: vectorColor,
-        material: { ambient: 0.5, diffuse: 0.6, shininess: 16, specularColor: [40, 40, 40] },
-        pickable: false,
-      }));
+      // One bold horizontal ring per timestep, stacked through the section. The
+      // ring is pickable so hover gives date + median LOS and click opens the
+      // section's median scatterer in both charts.
+      if (ringData.stacks.length > 0) {
+        rigLayers.push(new PathLayer({
+          id: RIG_STACK_RING_LAYER,
+          data: ringData.stacks,
+          getPath: (d) => d.path,
+          getColor: (d) => d.color,
+          getWidth: seriesMode === 'raw' ? RIG_STACK_RING_WIDTH_RAW : RIG_STACK_RING_WIDTH_SMOOTHED,
+          widthUnits: 'pixels',
+          billboard: true,
+          jointRounded: true,
+          capRounded: true,
+          pickable: true,
+        }));
+      }
     }
 
     return [
@@ -1440,13 +1124,17 @@ export default function PolakyHradecV3() {
     hoveredPylonKey,
     rigEnabled,
     rigMode,
-    haloData,
-    rigVectors,
+    seriesMode,
+    ringData,
     debugRig,
     focusedPylon,
   ]);
 
   const legendGradient = `linear-gradient(to right, ${colorScale.colors(11).join(', ')})`;
+  // Same 6-stop Viridis as the rings, so the bar is an exact time key.
+  const viridisGradient = `linear-gradient(to right, ${[0, 0.2, 0.4, 0.6, 0.8, 1]
+    .map(u => `rgb(${viridisColor(u).join(',')})`)
+    .join(', ')})`;
 
   return (
     <div style={{
@@ -1470,7 +1158,7 @@ export default function PolakyHradecV3() {
         onHover={handleHover}
         onClick={(info) => {
           const layerId = info.layer?.id ?? '';
-          if (layerId === RIG_HALO_SOLID_LAYER || layerId === RIG_HALO_DASHED_LAYER) {
+          if (layerId === RIG_STACK_RING_LAYER) {
             handleRingClick(info.object);
             return;
           }
@@ -1492,15 +1180,14 @@ export default function PolakyHradecV3() {
         }}
         getTooltip={({ object, layer }) => {
           const layerId = layer?.id ?? '';
-          if (layerId === RIG_HALO_SOLID_LAYER || layerId === RIG_HALO_DASHED_LAYER) {
+          if (layerId === RIG_STACK_RING_LAYER) {
             const ring = object;
             if (!ring) return null;
             return {
               text: [
-                `${ring.trackId} · ${BAND_LABELS[ring.bandIndex] ?? '–'} ring `
-                + `(${ring.count} scatterers)`,
-                `${formatDateMs(ring.lastDateMs)} · smoothed LOS: ${formatSignedMm(ring.lastValue)} mm`,
-                'Inward = negative · outward = positive',
+                `Pylon ${ring.pylonId ?? '–'} · ${bandTitle(ring.bandIndex)} (${ring.count} pts)`,
+                `${ring.trackId} · ${formatDateMs(ring.dateMs)}`,
+                `Median LOS: ${formatSignedMm(ring.valueMm)} mm`,
               ].join('\n'),
             };
           }
@@ -1619,18 +1306,52 @@ export default function PolakyHradecV3() {
 
         {rigEnabled && (
           <>
+            <div style={{ ...OVERLAY_TITLE_STYLE, marginTop: '6px' }}>Series</div>
+            <div role="group" aria-label="Series mode" style={{ display: 'flex', gap: '3px' }}>
+              {SERIES_MODES.map(mode => (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setSeriesMode(mode.id)}
+                  aria-pressed={seriesMode === mode.id}
+                  title={mode.title}
+                  style={trackButtonStyle(seriesMode === mode.id)}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
             <div style={{ ...OVERLAY_TITLE_STYLE, marginTop: '6px' }}>Window</div>
             <div role="group" aria-label="Smoothing window" style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
-              {WINDOW_OPTIONS.map(days => (
+              {WINDOW_OPTIONS.map(days => {
+                const active = seriesMode === 'smoothed' && windowDays === days;
+                return (
+                  <button
+                    key={days}
+                    type="button"
+                    onClick={() => setWindowDays(days)}
+                    aria-pressed={active}
+                    disabled={seriesMode === 'raw'}
+                    title={`Centred rolling mean over ${days} days`}
+                    style={{ ...trackButtonStyle(active), opacity: seriesMode === 'raw' ? 0.4 : 1 }}
+                  >
+                    {days} d
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ ...OVERLAY_TITLE_STYLE, marginTop: '6px' }}>Shift</div>
+            <div role="group" aria-label="Ring shift exaggeration" style={{ display: 'flex', gap: '3px' }}>
+              {SCALE_OPTIONS.map(scale => (
                 <button
-                  key={days}
+                  key={scale}
                   type="button"
-                  onClick={() => setWindowDays(days)}
-                  aria-pressed={windowDays === days}
-                  title={`Centred rolling mean over ${days} days`}
-                  style={trackButtonStyle(windowDays === days)}
+                  onClick={() => setScaleMPerMm(scale)}
+                  aria-pressed={scaleMPerMm === scale}
+                  title={`1 mm of LOS becomes ${scale} m of ring shift`}
+                  style={trackButtonStyle(scaleMPerMm === scale)}
                 >
-                  {days} d
+                  ×{Math.round(scale * 1000)}
                 </button>
               ))}
             </div>
@@ -1655,37 +1376,19 @@ export default function PolakyHradecV3() {
 
         {rigEnabled && (
           <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid #eee' }}>
-            <div style={OVERLAY_TITLE_STYLE}>Halo rings</div>
-            {TRACK_IDS.map(trackId => (
-              <div
-                key={trackId}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', lineHeight: '16px' }}
-              >
-                <span
-                  aria-hidden="true"
-                  style={{
-                    width: '18px',
-                    height: '0px',
-                    borderTop: trackId === DASHED_TRACK_ID
-                      ? `2px dashed rgb(${HALO_TRACK_COLORS[trackId].join(',')})`
-                      : `3px solid rgb(${HALO_TRACK_COLORS[trackId].join(',')})`,
-                  }}
-                />
-                <span style={{ fontWeight: 600 }}>{trackId}</span>
-                <span style={{ color: '#777' }}>
-                  {TRACK_HALO_SIDE[trackId]} arc{trackId === DASHED_TRACK_ID ? ' · dashed' : ''}
-                </span>
-              </div>
-            ))}
-            <div style={{ marginTop: '5px', color: '#555', lineHeight: '15px' }}>
-              Clockwise: 2014 north → 2026 south · inward = −mm, outward = +mm
+            <div style={OVERLAY_TITLE_STYLE}>Time (Viridis)</div>
+            <div style={{ width: '100%', height: '10px', borderRadius: '2px', background: viridisGradient }} />
+            <div style={{ display: 'flex', marginTop: '2px', color: '#555' }}>
+              <span style={{ flex: 1, textAlign: 'left' }}>2014</span>
+              <span style={{ flex: 1, textAlign: 'center' }}>2020</span>
+              <span style={{ flex: 1, textAlign: 'right' }}>2026</span>
+            </div>
+            <div style={{ marginTop: '4px', color: '#555', lineHeight: '15px' }}>
+              Vertical stack = time (2014 → 2026) · ring center shift = LOS displacement
+              {' '}(×{Math.round(scaleMPerMm * 1000)})
             </div>
             <div style={{ color: '#555', lineHeight: '15px' }}>
-              0 mm = {HALO_ZERO_RADIUS_M} m radius · ±10 mm = {HALO_INNER_RADIUS_M} /{' '}
-              {HALO_OUTER_RADIUS_M} m
-            </div>
-            <div style={{ color: '#555', lineHeight: '15px' }}>
-              LOS displacement, not vertical
+              White dashed = 0 mm · LOS, not vertical
             </div>
           </div>
         )}

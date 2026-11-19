@@ -41,35 +41,14 @@ export const DEFAULT_TRACK_ID = '95D';
 
 /**
  * Look direction per track, degrees clockwise from north: where the sensor
- * points. It only decides which side of the ring the curve is drawn on. The
- * least-squares row uses the opposite bearing (toward the sensor), see
- * `towardDeg` in `decomposition.js`.
+ * points. The ring stack shifts along the opposite bearing (toward the sensor),
+ * see `towardDeg` in `decomposition.js`, which also drives the least-squares row.
  */
 export const TRACK_LOOK_DEG = {
   '95D': 280,
   '44A': 80,
   '146A': 80,
 };
-
-/** One hue per track (fill alpha is applied by the map host). */
-export const HALO_TRACK_COLORS = {
-  '95D': [108, 79, 216],
-  '44A': [14, 159, 143],
-  '146A': [217, 119, 6],
-};
-
-/**
- * Ring side per track: 95D reads the west semicircle, both ascending tracks the
- * east one. The north-south divider is the seam between them.
- */
-export const TRACK_HALO_SIDE = {
-  '95D': 'west',
-  '44A': 'east',
-  '146A': 'east',
-};
-
-/** Only this track's curve is dashed, so the two ascending tracks never merge. */
-export const DASHED_TRACK_ID = '146A';
 
 /**
  * Band heights as a fraction of each tower's GeoJSON `height`. The transcript's
@@ -89,51 +68,64 @@ export const BAND_LABELS = ['base', 'mid', 'top'];
 export const BAND_COUNT = BAND_FRACTIONS.length;
 
 // ---------------------------------------------------------------------------
-// Halo rings
+// Separated 3-section ring stack
 //
-// One flat polar ring per structural band, centred on the tower axis. Time runs
-// clockwise from north (2014) to south (2026) on both semicircles; displacement
-// is radial — inward for negative LOS, outward for positive. The 0 mm circle at
-// 18 m clears the lattice and still fits inside the 50 m closest neighbour
-// spacing, so three rings never intersect a neighbouring tower.
-//
-// Unlike the old vertical fin walls these are strictly horizontal: no terrain extension and no
-// vertical channel, so they cannot bleed into each other in perspective.
+// Each tower section owns an empty vertical slot with air above and below it, so
+// a slot reads as a local 2014 → 2026 time axis and never as elevation. Inside a
+// slot there is one bold horizontal ring per timestep: its height encodes time,
+// its centre shift encodes LOS displacement, and its colour encodes time again
+// through Viridis. Rings stay strictly horizontal — no terrain extension — so the
+// three stacks cannot bleed into each other in perspective.
 // ---------------------------------------------------------------------------
 
-/** -10 mm boundary. */
-export const HALO_INNER_RADIUS_M = 10;
-/** 0 mm baseline circle: clears the tower, stays inside the neighbour spacing. */
-export const HALO_ZERO_RADIUS_M = 18;
-/** +10 mm boundary. */
-export const HALO_OUTER_RADIUS_M = 26;
-/** Metres of radius per millimetre of smoothed LOS displacement. */
-export const HALO_RADIAL_SCALE_M_PER_MM = 0.8;
-/** Vertices around a full ring (half are used per semicircle disc). */
-export const HALO_SEGMENTS = 96;
-/** Display vertices per curve, after smoothing. */
-export const HALO_SAMPLE_COUNT = 120;
+/** Vertical slots per section, as a fraction of the tower height. */
+export const SECTION_Z_FRACTIONS = [
+  [0.04, 0.28], // base / foundation
+  [0.38, 0.62], // mid-shaft lattice
+  [0.72, 0.96], // upper cross-arms
+];
 
-/** Polar sweep: each semicircle spans 150° of the ring, 30° shy of the divider. */
-export const HALO_ARC_DEG = 150;
-/** 95D starts NNW (345°) and sweeps clockwise to SSW (195°). */
-export const HALO_WEST_START_DEG = 345;
-/** The ascending tracks start NNE (15°) and sweep clockwise to SSE (165°). */
-export const HALO_EAST_START_DEG = 15;
+/** Wider than the cross-arms, under half of the 50.8 m closest tower spacing. */
+export const RING_RADIUS_M = 11.5;
+/** Vertices around one bold ring. */
+export const RING_SEGMENTS = 64;
+/** Bold rings per section in Smoothed mode. */
+export const RING_SMOOTHED_COUNT = 48;
+/** Sampled acquisition rings per section in Raw mode. */
+export const RING_RAW_COUNT = 120;
 
-// ---------------------------------------------------------------------------
-// Structural ΔU/ΔE vectors
-// ---------------------------------------------------------------------------
+/** Displacement exaggeration choices, displayed as ×500 / ×1000 / ×2000. */
+export const SCALE_OPTIONS = [0.5, 1.0, 2.0];
+/** 8 mm shift = 8 m, ~70% of the 11.5 m ring radius. */
+export const DEFAULT_SCALE_M_PER_MM = 1.0;
 
-/** Metres of arrow per millimetre of solved motion. */
-export const VECTOR_SCALE_M_PER_MM = 2.5;
-/** Even a 1.7 mm mid-shaft tilt must reach past the 3.5 m lattice. */
-export const VECTOR_MIN_LENGTH_M = 6.5;
-export const VECTOR_MAX_LENGTH_M = 22;
-export const VECTOR_SHAFT_RADIUS_M = 0.32;
-export const VECTOR_HEAD_LENGTH_M = 2.4;
-export const VECTOR_HEAD_RADIUS_M = 0.7;
-export const VECTOR_COLOR = [255, 210, 60, 255];
+/**
+ * Six-stop Viridis ramp for time, 2014 → 2026.
+ *
+ * @param {number} u Normalised time, 0 (2014) … 1 (2026).
+ * @returns {[number, number, number]} RGB.
+ */
+export function viridisColor(u) {
+  const stops = [
+    [68, 1, 84], // deep violet
+    [65, 68, 135], // indigo
+    [42, 120, 142], // teal blue
+    [34, 168, 132], // sea green
+    [122, 209, 81], // lime
+    [253, 231, 37], // bright yellow
+  ];
+  const t = Math.min(1, Math.max(0, Number.isFinite(u) ? u : 0));
+  const scaled = t * (stops.length - 1);
+  const index = Math.min(stops.length - 2, Math.floor(scaled));
+  const frac = scaled - index;
+  const from = stops[index];
+  const to = stops[index + 1];
+  return [
+    Math.round(from[0] + (to[0] - from[0]) * frac),
+    Math.round(from[1] + (to[1] - from[1]) * frac),
+    Math.round(from[2] + (to[2] - from[2]) * frac),
+  ];
+}
 
 /** Smoothing windows, in days. The cadence is irregular (6–24 d), so never in samples. */
 export const WINDOW_OPTIONS = [30, 90, 180, 365];
@@ -152,14 +144,12 @@ export function metresPerDegLon(latDeg) {
   return METRES_PER_DEG_LAT * Math.cos((latDeg * Math.PI) / 180);
 }
 
-/** Rig render modes. Rings are the primary reading; vectors are the optional extra. */
+/** Rig render modes: the ring stack is the only rig reading. */
 export const RIG_OFF = 'off';
 export const RIG_RINGS = 'rings';
-export const RIG_RINGS_VECTORS = 'rings-vectors';
 export const RIG_MODES = [
   { id: RIG_OFF, label: 'Off' },
   { id: RIG_RINGS, label: 'Rings' },
-  { id: RIG_RINGS_VECTORS, label: 'Rings + vectors' },
 ];
 
 /** Decomposition confidence thresholds (see `decomposition.js`). */

@@ -1,9 +1,9 @@
 /**
- * Poláky/Hradec v3 — pure time-series and halo-ring geometry.
+ * Poláky/Hradec v3 — pure time-series and ring-stack geometry.
  *
  * Pure module (same convention as `FeatureSpaceChart3D/curtainGeometry.js`):
- * no React, no deck.gl, no three. The map host turns the returned polygons and
- * paths into `SolidPolygonLayer` / `PathLayer` / `ScatterplotLayer` data.
+ * no React, no deck.gl, no three. The map host turns the returned circles into
+ * `PathLayer` data.
  *
  * Three rules this module exists to enforce:
  *
@@ -17,18 +17,17 @@
  *    the last value forward biases the mean and flattens real steps).
  */
 
+import { towardDeg } from './decomposition';
 import {
   BAND_LABELS,
-  HALO_ARC_DEG,
-  HALO_EAST_START_DEG,
-  HALO_INNER_RADIUS_M,
-  HALO_OUTER_RADIUS_M,
-  HALO_RADIAL_SCALE_M_PER_MM,
-  HALO_SEGMENTS,
-  HALO_WEST_START_DEG,
-  HALO_ZERO_RADIUS_M,
   METRES_PER_DEG_LAT,
+  RING_RADIUS_M,
+  RING_RAW_COUNT,
+  RING_SEGMENTS,
+  RING_SMOOTHED_COUNT,
+  SECTION_Z_FRACTIONS,
   metresPerDegLon,
+  viridisColor,
 } from './tracks';
 
 const DAY_MS = 86400000;
@@ -359,259 +358,143 @@ export function bandLabel(bandIndex) {
   return BAND_LABELS[bandIndex] ?? `band ${bandIndex}`;
 }
 
-/**
- * Euler orientation for the arrow-head cone in deck.gl's `[pitch, yaw, roll]`
- * convention, pointing the cone's local +Z along `(eastM, 0, upM)`.
- *
- * Derivation, from `@deck.gl/mesh-layers/dist/utils/matrix.js`
- * (`calculateTransformMatrix`, roll = 0): the local +Z axis maps to
- *
- *     col2 = (cos yaw · sin pitch,  sin yaw · sin pitch,  cos pitch)
- *
- * in world metres (x east, y north, z up). So yaw stays 0/180 (east/west) and
- * pitch = atan2(|east|, up) gives the elevation angle. Adding ±90° to yaw would
- * rotate the axis into ±Y, i.e. make the heads point north/south — see
- * `coneAxis`, which recomputes col2 so the debug block can assert the match.
- *
- * @param {number} eastM East component, metres.
- * @param {number} upM Vertical component, metres.
- * @returns {[number, number, number]}
- */
-export function coneOrientation(eastM, upM) {
-  if (!Number.isFinite(eastM) || !Number.isFinite(upM)) return [0, 0, 0];
-  if (eastM === 0 && upM === 0) return [0, 0, 0];
-  return [
-    (Math.atan2(Math.abs(eastM), upM) * 180) / Math.PI,
-    eastM < 0 ? 180 : 0,
-    0,
-  ];
-}
 
 /**
- * World-space local +Z axis produced by a deck.gl mesh orientation.
+ * Pointwise median of the **raw** acquisition values on the union grid.
  *
- * Mirrors the library matrix so orientation maths can be asserted instead of
- * eyeballed. Same convention as `coneOrientation`.
+ * Same reduction as `bandMedianSeries`, but it skips `smoothSeries` so the
+ * per-acquisition centres are preserved. Raw mode exists to show where the
+ * measurements actually are, not a 90-day average of them.
  *
- * @param {[number, number, number]} orientation `[pitch, yaw, roll]` in degrees.
- * @returns {[number, number, number]}
- */
-export function coneAxis([pitchDeg = 0, yawDeg = 0, rollDeg = 0]) {
-  const pitch = (pitchDeg * Math.PI) / 180;
-  const yaw = (yawDeg * Math.PI) / 180;
-  const roll = (rollDeg * Math.PI) / 180;
-  const sr = Math.sin(roll);
-  const sp = Math.sin(pitch);
-  const sw = Math.sin(yaw);
-  const cr = Math.cos(roll);
-  const cp = Math.cos(pitch);
-  const cw = Math.cos(yaw);
-  return [
-    sw * sr + cw * sp * cr,
-    -cw * sr + sw * sp * cr,
-    cp * cr,
-  ];
-}
-
-
-/**
- * Smoothed band series prepared for one ring.
- *
- * The band median is smoothed on the union grid and resampled to `count` uniform
- * steps in time; every individual scatterer is smoothed on its own dates and
- * interpolated onto those same steps, so faint scatterer curves and the bold
- * median share one time→angle mapping.
- *
- * @param {Array<any>} scatterers Features assigned to this band of this track.
+ * @param {Array<any>} scatterers
  * @param {number[]} grid Union date grid.
- * @param {number} windowDays
- * @param {number} count Display vertices per curve.
- * @returns {{
- *   median: Array<number|null>,
- *   times: number[],
- *   scatterers: Array<Array<number|null>>,
- * }}
+ * @returns {Array<number|null>} One value per grid epoch.
  */
-export function haloBandSeries(scatterers, grid, windowDays, count = 120) {
-  const empty = { median: [], times: [], scatterers: [] };
-  if (!Array.isArray(scatterers) || !Array.isArray(grid) || grid.length < 2) return empty;
-
-  const dense = bandMedianSeries(scatterers, windowDays, grid);
-  const display = resampleSeries(dense, grid, count);
-  if (display.series.length < 2) return empty;
-
-  const perScatterer = [];
-  for (const feature of scatterers) {
+export function rawBandMedianSeries(scatterers, grid) {
+  if (!Array.isArray(grid) || grid.length === 0) return [];
+  const columns = [];
+  for (const feature of scatterers ?? []) {
     const { dates, values } = featureSeries(feature);
-    if (dates.length < 2) continue;
-    const smoothed = smoothSeries(values, dates, windowDays);
-    perScatterer.push(interpolateSeries(display.grid, dates, smoothed));
+    if (dates.length === 0) continue;
+    columns.push(interpolateSeries(grid, dates, values));
   }
+  if (columns.length === 0) return grid.map(() => null);
 
-  return { median: display.series, times: display.grid, scatterers: perScatterer };
-}
-
-/**
- * Flat polar point on a ring: `radiusM` at `angleDeg`, clockwise from north.
- *
- * Both degrees factors are used, so east–west and north–south distances stay
- * true at this latitude.
- */
-function haloPoint(pylon, mPerDegLon, z, radiusM, angleDeg) {
-  const angle = (angleDeg * Math.PI) / 180;
-  return [
-    pylon.lon + (radiusM * Math.sin(angle)) / mPerDegLon,
-    pylon.lat + (radiusM * Math.cos(angle)) / METRES_PER_DEG_LAT,
-    z,
-  ];
-}
-
-/**
- * One band's polar frame: the two semicircular glass discs, the 0 mm circle and
- * the north–south divider.
- *
- * The annulus is split at the divider into a west and an east half instead of
- * being emitted as a single ring with a hole: each half is a simple closed
- * polygon (outer arc, radial seam on the divider, inner arc back), so
- * `getPolygon(...).flat()` + `_normalize: false` tessellates without holes or
- * degenerate seams. The seams sit exactly under the divider line.
- *
- * @param {{
- *   pylon: { lon: number, lat: number }, base: number, bandZ: number,
- *   segments?: number,
- * }} options
- * @returns {{
- *   discs: Array<{ side: 'west'|'east', polygon: number[][] }>,
- *   zeroCircle: number[][],
- *   divider: number[][],
- * }}
- */
-export function buildHaloRingFrame({ pylon, base, bandZ, segments = HALO_SEGMENTS }) {
-  const empty = { discs: [], zeroCircle: [], divider: [] };
-  if (!pylon || !Number.isFinite(pylon.lon) || !Number.isFinite(pylon.lat)) return empty;
-  if (!Number.isFinite(base) || !Number.isFinite(bandZ)) return empty;
-
-  const z = base + bandZ;
-  const mPerDegLon = metresPerDegLon(pylon.lat);
-  const half = Math.max(2, Math.round(segments / 2));
-  const outer = (deg) => haloPoint(pylon, mPerDegLon, z, HALO_OUTER_RADIUS_M, deg);
-  const inner = (deg) => haloPoint(pylon, mPerDegLon, z, HALO_INNER_RADIUS_M, deg);
-
-  // West: outer 180° → 360° (south → west → north), then inner back to 180°.
-  const west = [];
-  for (let i = 0; i <= half; i++) west.push(outer(180 + (180 * i) / half));
-  for (let i = half; i >= 0; i--) west.push(inner(180 + (180 * i) / half));
-
-  // East: outer 0° → 180° (north → east → south), then inner back to 0°.
-  const east = [];
-  for (let i = 0; i <= half; i++) east.push(outer((180 * i) / half));
-  for (let i = half; i >= 0; i--) east.push(inner((180 * i) / half));
-
-  const steps = Math.max(8, Math.round(segments));
-  const zeroCircle = [];
-  for (let i = 0; i <= steps; i++) {
-    zeroCircle.push(haloPoint(pylon, mPerDegLon, z, HALO_ZERO_RADIUS_M, (360 * i) / steps));
-  }
-
-  return {
-    discs: [
-      { side: 'west', polygon: west },
-      { side: 'east', polygon: east },
-    ],
-    zeroCircle,
-    divider: [outer(0), outer(180)],
-  };
-}
-
-/**
- * One track's polar timeline curve on a ring.
- *
- * Time runs clockwise from north: 95D sweeps the west semicircle from 345° (2014)
- * through 270° (due west, mid-record) to 195° (2026); both ascending tracks sweep
- * the east semicircle from 15° through 90° to 165°. Displacement is radial:
- *
- *     r = clamp(HALO_ZERO + value × scale, HALO_INNER, HALO_OUTER)
- *
- * so negative LOS bends inward toward the pylon and positive bends outward.
- *
- * @param {{
- *   pylon: { lon: number, lat: number }, base: number, bandZ: number,
- *   bandIndex?: number, trackId?: string, side: 'west'|'east',
- *   series: Array<number|null>, scatterers?: Array<Array<number|null>>,
- *   times?: number[],
- * }} options
- * @returns {{
- *   curve: number[][][],
- *   scatterers: number[][][],
- *   anchors: number[][],
- * }}
- */
-export function buildHaloRingGeometry({
-  pylon,
-  base,
-  bandZ,
-  bandIndex = 0,
-  trackId = '',
-  side,
-  series,
-  scatterers = [],
-  times,
-}) {
-  const empty = { curve: [], scatterers: [], anchors: [] };
-  if (!Array.isArray(series) || !Array.isArray(times) || series.length < 2) return empty;
-  if (!pylon || !Number.isFinite(pylon.lon) || !Number.isFinite(pylon.lat)) return empty;
-  if (!Number.isFinite(base) || !Number.isFinite(bandZ)) return empty;
-
-  const z = base + bandZ;
-  const mPerDegLon = metresPerDegLon(pylon.lat);
-  const startDeg = side === 'west' ? HALO_WEST_START_DEG : HALO_EAST_START_DEG;
-  const sweepDeg = side === 'west' ? -HALO_ARC_DEG : HALO_ARC_DEG;
-  const count = series.length;
-
-  const vertexAt = (value, index) => {
-    const u = count === 1 ? 0 : index / (count - 1);
-    const angle = startDeg + sweepDeg * u;
-    const radius = Math.min(
-      HALO_OUTER_RADIUS_M,
-      Math.max(
-        HALO_INNER_RADIUS_M,
-        HALO_ZERO_RADIUS_M + value * HALO_RADIAL_SCALE_M_PER_MM,
-      ),
-    );
-    return haloPoint(pylon, mPerDegLon, z, radius, angle);
-  };
-
-  const buildRuns = (values) => {
-    const runs = [];
-    let run = null;
-    for (let i = 0; i < count; i++) {
-      const value = values?.[i];
-      if (Number.isFinite(value)) {
-        if (!run) {
-          run = [];
-          runs.push(run);
-        }
-        run.push(vertexAt(value, i));
-      } else {
-        run = null;
-      }
+  const out = new Array(grid.length);
+  for (let i = 0; i < grid.length; i++) {
+    const samples = [];
+    for (const column of columns) {
+      const value = column[i];
+      if (Number.isFinite(value)) samples.push(value);
     }
-    return runs;
-  };
+    out[i] = samples.length === 0 ? null : median(samples);
+  }
+  return out;
+}
 
-  const curve = buildRuns(series);
-  const anchors = [];
-  for (const run of curve) {
-    if (run.length === 0) continue;
-    anchors.push(run[0]);
-    if (run.length > 1) anchors.push(run[run.length - 1]);
+/**
+ * Closed horizontal circle of `RING_RADIUS_M` around a centre, in `[lon, lat, z]`.
+ */
+function ringPath(center, mPerDegLon, z, radiusM = RING_RADIUS_M, segments = RING_SEGMENTS) {
+  const path = [];
+  for (let i = 0; i <= segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    path.push([
+      center.lon + (Math.sin(angle) * radiusM) / mPerDegLon,
+      center.lat + (Math.cos(angle) * radiusM) / METRES_PER_DEG_LAT,
+      z,
+    ]);
+  }
+  return path;
+}
+
+/**
+ * Separated 3-section ring stack for one tower and one track.
+ *
+ * Three vertical slots, each bracketed by a white 0 mm reference ring at its
+ * floor (2014) and ceiling (2026). Inside a slot, one bold horizontal ring per
+ * timestep: height encodes time, centre shift encodes LOS displacement along the
+ * track's toward-sensor bearing, colour is Viridis over the same time axis. The
+ * ring radius is constant, so a shift of +8 mm at ×1 moves the whole circle 8 m
+ * — no radius change, no vertical exaggeration of the values themselves.
+ *
+ * @param {{
+ *   pylon: any, activeTrackId: string, grid: number[],
+ *   rawMode?: boolean, windowDays?: number, scaleMPerMm?: number,
+ * }} options
+ * @returns {{
+ *   stacks: Array<{
+ *     path: number[][], color: number[], bandIndex: number, trackId: string,
+ *     dateMs: number, valueMm: number, pylonId: any, pylonKey: string, count: number,
+ *   }>,
+ *   references: Array<{ path: number[][], bandIndex: number, kind: 'floor'|'ceiling' }>,
+ * }}
+ */
+export function buildSectionRingStacks({
+  pylon,
+  activeTrackId,
+  grid,
+  rawMode = false,
+  windowDays = 90,
+  scaleMPerMm = 1,
+}) {
+  const empty = { stacks: [], references: [] };
+  if (!pylon || !Array.isArray(grid) || grid.length < 2) return empty;
+
+  const base = pylon.terrainElevation;
+  if (!Number.isFinite(base) || !Number.isFinite(pylon.height)) return empty;
+
+  const mPerDegLon = metresPerDegLon(pylon.lat);
+  const towardRad = (towardDeg(activeTrackId) * Math.PI) / 180;
+  const count = rawMode ? RING_RAW_COUNT : RING_SMOOTHED_COUNT;
+  const alpha = rawMode ? 190 : 245;
+
+  const stacks = [];
+  const references = [];
+
+  for (let bandIndex = 0; bandIndex < SECTION_Z_FRACTIONS.length; bandIndex++) {
+    const [startFraction, endFraction] = SECTION_Z_FRACTIONS[bandIndex];
+    const zStart = base + startFraction * pylon.height;
+    const zEnd = base + endFraction * pylon.height;
+
+    // 0 mm references: the floor is 2014, the ceiling is 2026.
+    references.push({ path: ringPath(pylon, mPerDegLon, zStart), bandIndex, kind: 'floor' });
+    references.push({ path: ringPath(pylon, mPerDegLon, zEnd), bandIndex, kind: 'ceiling' });
+
+    const scatterers = pylon.bands?.[activeTrackId]?.[bandIndex] ?? [];
+    if (scatterers.length === 0) continue;
+
+    const dense = rawMode
+      ? rawBandMedianSeries(scatterers, grid)
+      : bandMedianSeries(scatterers, windowDays, grid);
+    const display = resampleSeries(dense, grid, count);
+    if (display.series.length < 2) continue;
+
+    for (let i = 0; i < display.series.length; i++) {
+      const value = display.series[i];
+      if (!Number.isFinite(value)) continue;
+
+      const u = i / (display.series.length - 1);
+      const z = zStart + u * (zEnd - zStart);
+      const shiftM = value * scaleMPerMm;
+      const center = {
+        lon: pylon.lon + (shiftM * Math.sin(towardRad)) / mPerDegLon,
+        lat: pylon.lat + (shiftM * Math.cos(towardRad)) / METRES_PER_DEG_LAT,
+      };
+
+      stacks.push({
+        path: ringPath(center, mPerDegLon, z),
+        color: [...viridisColor(u), alpha],
+        bandIndex,
+        trackId: activeTrackId,
+        dateMs: display.grid[i],
+        valueMm: value,
+        pylonId: pylon.id,
+        pylonKey: pylon.key,
+        count: scatterers.length,
+      });
+    }
   }
 
-  return {
-    curve,
-    scatterers: scatterers.map((values) => buildRuns(values)),
-    anchors,
-    bandIndex,
-    trackId,
-  };
+  return { stacks, references };
 }
