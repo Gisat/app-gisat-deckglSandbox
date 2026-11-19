@@ -208,16 +208,17 @@ const SELECTION_COLOR = [66, 212, 244];
 const CHART_HOVER_COLOR = [255, 0, 0, 255];
 
 // Shared chrome for the map's floating cards (track selector, legend, status).
-// Opaque white on purpose: the map must not show through the controls.
+// Translucent graphite on purpose: the basemap is dark, so light cards glare and
+// an opaque fill would hide the terrain context around the controls.
 const OVERLAY_CARD_STYLE = {
   position: 'absolute',
   zIndex: 10,
-  padding: '8px 10px',
-  background: '#fff',
-  border: '1px solid #ddd',
+  padding: '6px 8px',
+  background: 'rgba(32, 35, 41, 0.92)',
+  border: '1px solid #484d55',
   borderRadius: '6px',
-  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-  color: '#333',
+  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.45)',
+  color: '#e8eaed',
   fontFamily: 'system-ui, sans-serif',
   fontSize: '11px',
 };
@@ -242,10 +243,10 @@ function trackButtonStyle(active, failed = false) {
   return {
     minHeight: '24px',
     padding: '4px 8px',
-    border: `1px solid ${failed ? '#a00000' : active ? '#0066cc' : '#ccc'}`,
+    border: `1px solid ${failed ? '#ff8a8a' : active ? '#5aa9ff' : '#4a4f57'}`,
     borderRadius: '4px',
-    background: active ? '#e6f0ff' : '#fff',
-    color: failed ? '#a00000' : '#333',
+    background: active ? '#2f4a6b' : '#2a2d33',
+    color: failed ? '#ff8a8a' : '#dfe3e8',
     cursor: 'pointer',
     fontFamily: 'inherit',
     fontSize: '11px',
@@ -391,7 +392,7 @@ export default function PolakyHradecV3() {
   // The rig has its own eager loader; the point-cloud state machine above is
   // untouched. `rigTracks` holds the three raw feature lists, `rigStore` the
   // joined per-pylon index built once the pylons have loaded.
-  const [rigMode, setRigMode] = useState(RIG_OFF);
+  const [rigMode, setRigMode] = useState(RIG_RINGS);
   const [seriesMode, setSeriesMode] = useState('smoothed');
   const [windowDays, setWindowDays] = useState(DEFAULT_WINDOW_DAYS);
   const [scaleMPerMm, setScaleMPerMm] = useState(DEFAULT_SCALE_M_PER_MM);
@@ -1175,7 +1176,7 @@ export default function PolakyHradecV3() {
       height: '100%',
       overflow: 'hidden',
       colorScheme: 'light',
-      background: '#ffffff',
+      background: '#14171b',
     }}>
       <DeckGL
         viewState={viewState}
@@ -1277,8 +1278,8 @@ export default function PolakyHradecV3() {
           left: '50%',
           transform: 'translateX(-50%)',
           maxWidth: '60%',
-          color: '#a00000',
-          border: '1px solid #a00000',
+          color: '#ff9b9b',
+          border: '1px solid #ff9b9b',
         }}>
           Failed to load Poláky {activeTrack.id} data: {error}
         </div>
@@ -1320,7 +1321,7 @@ export default function PolakyHradecV3() {
         </div>
         <div style={{ ...OVERLAY_TITLE_STYLE, marginTop: '8px', display: 'flex', alignItems: 'baseline', gap: '6px' }}>
           <span>Rig</span>
-          <span style={{ fontWeight: 400, color: '#777' }}>{rigStatusLabel}</span>
+          <span style={{ fontWeight: 400, color: '#9aa0a8' }}>{rigStatusLabel}</span>
         </div>
         <div role="group" aria-label="Rig mode" style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
           {RIG_MODES.map(mode => (
@@ -1397,45 +1398,48 @@ export default function PolakyHradecV3() {
         bottom: 12,
       }}
       >
-        <div style={OVERLAY_TITLE_STYLE}>VEL_AVG (mm/yr)</div>
-        <div style={{ width: '100%', height: '10px', borderRadius: '2px', background: legendGradient }} />
-        <div style={{ display: 'flex', marginTop: '2px', color: '#555' }}>
+        <div style={OVERLAY_TITLE_STYLE} title="|VEL_AVG| ≤ 0.5 mm/yr renders as a sphere">
+          VEL_AVG (mm/yr)
+        </div>
+        <div style={{ width: '100%', height: '7px', borderRadius: '2px', background: legendGradient }} />
+        <div style={{ display: 'flex', marginTop: '1px', color: '#b3b8bf' }}>
           <span style={{ flex: 1, textAlign: 'left' }}>{POLAKY_VEL_AVG_DOMAIN[0]}</span>
           <span style={{ flex: 1, textAlign: 'center' }}>0</span>
           <span style={{ flex: 1, textAlign: 'right' }}>+{POLAKY_VEL_AVG_DOMAIN[1]}</span>
         </div>
-        <div style={{ marginTop: '4px', color: '#555' }}>|VEL_AVG| ≤ 0.5 = sphere</div>
 
         {rigEnabled && (
-          <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid #eee' }}>
+          <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid #3b4048' }}>
             <div style={OVERLAY_TITLE_STYLE}>Time (Viridis)</div>
-            <div style={{ width: '100%', height: '10px', borderRadius: '2px', background: viridisGradient }} />
-            <div style={{ display: 'flex', marginTop: '2px', color: '#555' }}>
+            <div style={{ width: '100%', height: '7px', borderRadius: '2px', background: viridisGradient }} />
+            <div style={{ display: 'flex', marginTop: '1px', color: '#b3b8bf' }}>
               <span style={{ flex: 1, textAlign: 'left' }}>2014</span>
               <span style={{ flex: 1, textAlign: 'center' }}>2020</span>
               <span style={{ flex: 1, textAlign: 'right' }}>2026</span>
             </div>
-            <div style={{ marginTop: '4px', color: '#555', lineHeight: '15px' }}>
-              Vertical stack = time (2014 → 2026) · ring center shift = LOS displacement
-              {' '}(×{Math.round(scaleMPerMm * 1000)})
+            <div style={{ marginTop: '3px', color: '#b3b8bf', fontSize: '10px', lineHeight: '13px' }}>
+              Time ↑ 2014→2026 · shift = LOS ×{Math.round(scaleMPerMm * 1000)}
             </div>
-            <div style={{ color: '#555', lineHeight: '15px' }}>
-              White dashed = 0 mm · LOS, not vertical
+            <div style={{ color: '#9aa0a8', fontSize: '10px', lineHeight: '13px' }}>
+              White dashed = 0 mm · not vertical
             </div>
           </div>
         )}
 
         {rigEnabled && focusedPylon && (
-          <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid #eee' }}>
-            <div style={{ ...OVERLAY_TITLE_STYLE, marginBottom: '5px' }}>
+          <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid #3b4048' }}>
+            <div
+              style={{ ...OVERLAY_TITLE_STYLE, marginBottom: '3px' }}
+              title="North component dropped · fit is the LSQ residual"
+            >
               ΔU / ΔE · pylon {focusedPylon.id} ({focusedPylon.typ ?? '–'})
             </div>
             {focusedBandSolutions.map(({ band, bandZ, counts, solution }) => (
               <div
                 key={band}
-                style={{ display: 'flex', gap: '6px', alignItems: 'baseline', color: solution.lowConfidence ? '#a00000' : '#333' }}
+                style={{ display: 'flex', gap: '6px', alignItems: 'baseline', color: solution.lowConfidence ? '#ff8a8a' : '#e8eaed' }}
               >
-                <span style={{ width: '42px', color: '#777' }}>{bandZ.toFixed(1)} m</span>
+                <span style={{ width: '42px', color: '#9aa0a8' }}>{bandZ.toFixed(1)} m</span>
                 {solution.ok ? (
                   <span>
                     ΔU <b>{formatSignedMm(solution.dU, 1)}</b>
@@ -1453,19 +1457,16 @@ export default function PolakyHradecV3() {
                 )}
               </div>
             ))}
-            <div style={{ marginTop: '5px', color: '#777' }}>
-              North component dropped · fit is the LSQ residual
-            </div>
           </div>
         )}
 
-        <div style={{ marginTop: '6px', color: '#9a9a9a' }}>
+        <div style={{ marginTop: '4px', color: '#9aa0a8', fontSize: '9px' }}>
           Basemap:{' '}
           <a
             href={BASEMAP_ATTRIBUTION_URL}
             target="_blank"
             rel="noreferrer"
-            style={{ color: '#8a8a8a' }}
+            style={{ color: '#c6ccd4' }}
           >
             © CARTO
           </a>
@@ -1474,7 +1475,7 @@ export default function PolakyHradecV3() {
             href={OSM_COPYRIGHT_URL}
             target="_blank"
             rel="noreferrer"
-            style={{ color: '#8a8a8a' }}
+            style={{ color: '#c6ccd4' }}
           >
             © OpenStreetMap contributors
           </a>
