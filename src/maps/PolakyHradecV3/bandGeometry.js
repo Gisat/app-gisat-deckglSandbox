@@ -21,6 +21,8 @@ import { towardDeg } from './decomposition';
 import {
   BAND_LABELS,
   METRES_PER_DEG_LAT,
+  RING_ALPHA_RAW,
+  RING_ALPHA_SMOOTHED,
   RING_RADIUS_M,
   RING_RAW_COUNT,
   RING_SEGMENTS,
@@ -447,7 +449,7 @@ export function buildSectionRingStacks({
   const mPerDegLon = metresPerDegLon(pylon.lat);
   const towardRad = (towardDeg(activeTrackId) * Math.PI) / 180;
   const count = rawMode ? RING_RAW_COUNT : RING_SMOOTHED_COUNT;
-  const alpha = rawMode ? 190 : 245;
+  const alpha = rawMode ? RING_ALPHA_RAW : RING_ALPHA_SMOOTHED;
 
   const stacks = [];
   const references = [];

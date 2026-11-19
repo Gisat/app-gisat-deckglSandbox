@@ -17,6 +17,8 @@ import {
   DEFAULT_SCALE_M_PER_MM,
   METRES_PER_DEG_LAT,
   RING_RADIUS_M,
+  RING_ALPHA_RAW,
+  RING_ALPHA_SMOOTHED,
   RING_RAW_COUNT,
   RING_SMOOTHED_COUNT,
   SECTION_Z_FRACTIONS,
@@ -268,7 +270,7 @@ export function logRigDebug({ store, windowDays }) {
     );
     must(
       `${BAND_LABELS[band]} ring colours follow Viridis`,
-      rings.every((ring) => ring.color.length === 4 && ring.color[3] === 245),
+      rings.every((ring) => ring.color.length === 4 && ring.color[3] === RING_ALPHA_SMOOTHED),
     );
   }
 
@@ -286,7 +288,7 @@ export function logRigDebug({ store, windowDays }) {
     'raw mode uses sampled acquisitions and a lower alpha',
     raw.stacks.length > 0
       && raw.stacks.length <= 3 * RING_RAW_COUNT
-      && raw.stacks.every((ring) => ring.color[3] === 190),
+      && raw.stacks.every((ring) => ring.color[3] === RING_ALPHA_RAW),
   );
 
   // ---- Decomposition -------------------------------------------------------

@@ -78,11 +78,17 @@ export const BAND_COUNT = BAND_FRACTIONS.length;
 // three stacks cannot bleed into each other in perspective.
 // ---------------------------------------------------------------------------
 
-/** Vertical slots per section, as a fraction of the tower height. */
+/**
+ * Vertical slots per section, as a fraction of the tower height:
+ * 3 spans × 0.20 + 2 gaps × 0.16 + 0.04 bottom/top margin = 1.0.
+ *
+ * The gaps are deliberately taller than the old 0.10 (roughly two thirds of a
+ * span) so adjacent stacks never read as one continuous column.
+ */
 export const SECTION_Z_FRACTIONS = [
-  [0.04, 0.28], // base / foundation
-  [0.38, 0.62], // mid-shaft lattice
-  [0.72, 0.96], // upper cross-arms
+  [0.04, 0.24], // base / foundation
+  [0.40, 0.60], // mid-shaft lattice
+  [0.76, 0.96], // upper cross-arms
 ];
 
 /** Wider than the cross-arms, under half of the 50.8 m closest tower spacing. */
@@ -93,6 +99,13 @@ export const RING_SEGMENTS = 64;
 export const RING_SMOOTHED_COUNT = 48;
 /** Sampled acquisition rings per section in Raw mode. */
 export const RING_RAW_COUNT = 120;
+
+/**
+ * Ring stroke alpha. Slightly translucent so overlapping slices read as a stack
+ * rather than a solid surface; raw mode is denser and fainter still.
+ */
+export const RING_ALPHA_SMOOTHED = 180;
+export const RING_ALPHA_RAW = 120;
 
 /** Displacement exaggeration choices, displayed as ×500 / ×1000 / ×2000. */
 export const SCALE_OPTIONS = [0.5, 1.0, 2.0];
