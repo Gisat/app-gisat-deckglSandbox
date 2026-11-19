@@ -267,6 +267,9 @@ const INITIAL_VIEW_STATE = {
   maxPitch: 70,
 };
 
+// TEMP camera diagnostics: remove once the first-frame jump is understood.
+console.info('[polaky] module initial view', JSON.stringify(INITIAL_VIEW_STATE));
+
 const TERRAIN_OPTIONS = {
   type: 'terrain',
   useChannel: 1,
@@ -404,6 +407,8 @@ export default function PolakyHradecV3() {
   // same mechanism the controller uses, and it cannot throw on a missing ref.
   // Dev helper: settle-debounce timer for the camera log below.
   const cameraLogTimer = useRef(null);
+  // TEMP camera diagnostics: logs the first view state the controller reports.
+  const firstViewLogged = useRef(false);
   // `?debugRig=1` prints the plan's acceptance gates; any other route ignores it.
   const debugRig = useMemo(
     () => new URLSearchParams(window.location.search).get('debugRig') === '1',
@@ -705,6 +710,16 @@ export default function PolakyHradecV3() {
   // no React-owned view state to hand back, so the map cannot be re-seeded with a
   // stale camera after the first paint.
   const handleViewStateChange = useCallback(({ viewState: next }) => {
+    if (!firstViewLogged.current) {
+      firstViewLogged.current = true;
+      console.info('[polaky] first view state', JSON.stringify({
+        longitude: next.longitude,
+        latitude: next.latitude,
+        zoom: next.zoom,
+        pitch: next.pitch,
+        bearing: next.bearing,
+      }));
+    }
     setZoom(next.zoom);
 
     // Log once the camera stops moving, not on every frame of a drag.
