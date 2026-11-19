@@ -56,48 +56,95 @@ export const TRACK_TOWARD_DEG = {
 };
 
 /**
- * Band heights as a fraction of each tower's GeoJSON `height`. The transcript's
- * fixed 13 / 37 / 60 m put the top band above every tower in this dataset
- * (heights are 39.4–52.4 m); fractions follow the structure instead.
+ * Native OBJ heights (metres, Z-up, base centre at origin). The mesh scale in
+ * `index.jsx` divides each tower's real height by these, so they must match the
+ * `dunaj.obj` / `kocka.obj` / `portal.obj` headers exactly.
  */
-export const BAND_FRACTIONS = [0.25, 0.55, 0.85];
+export const PYLON_NATIVE_HEIGHTS = {
+  dunaj: 40.0,
+  kocka: 26.7,
+  portal: 29.169,
+};
 
 /**
- * Scatterer → band assignment, by `H_REF / height`: below 0.40 → base band,
- * below 0.70 → mid band, everything else (including conductors above the tower
- * top) → top band. Midpoints of the band fractions above.
+ * Per-type structural sections of the tower: the scatterer → section assignment
+ * thresholds (`assignFractions`), the band centre heights (`bandFractions`), the
+ * empty vertical slots the ring stacks are drawn in (`zSlots`), and the section
+ * names. All fractions are of each tower's own `height`.
+ *
+ * - `dunaj` — double-circuit lattice: base / mid / top.
+ * - `kocka` — barrel / cat-head tower: same three sections, upper cutoff lower.
+ * - `portal` — H-frame gantry: two sections, legs and cross-beam.
  */
-export const BAND_ASSIGN_FRACTIONS = [0.40, 0.70];
+export const PYLON_SECTION_LAYOUTS = {
+  dunaj: {
+    labels: ['base', 'mid', 'top'],
+    assignFractions: [0.40, 0.70],
+    bandFractions: [0.25, 0.55, 0.85],
+    zSlots: [
+      [0.04, 0.24],
+      [0.40, 0.60],
+      [0.76, 0.96],
+    ],
+  },
+  kocka: {
+    labels: ['base', 'mid', 'top'],
+    assignFractions: [0.35, 0.65],
+    bandFractions: [0.20, 0.50, 0.82],
+    zSlots: [
+      [0.04, 0.24],
+      [0.38, 0.58],
+      [0.70, 0.96],
+    ],
+  },
+  portal: {
+    labels: ['legs', 'cross-beam'],
+    assignFractions: [0.65],
+    bandFractions: [0.35, 0.85],
+    zSlots: [
+      [0.06, 0.44],
+      [0.68, 0.96],
+    ],
+  },
+};
 
-export const BAND_LABELS = ['base', 'mid', 'top'];
+/**
+ * Structural layout for a pylon type, defaulting to `dunaj` for unknown or
+ * missing types.
+ *
+ * @param {string|null|undefined} typ
+ * @returns {{ labels: string[], assignFractions: number[], bandFractions: number[], zSlots: number[][] }}
+ */
+export function getSectionLayout(typ) {
+  return Object.hasOwn(PYLON_SECTION_LAYOUTS, typ)
+    ? PYLON_SECTION_LAYOUTS[typ]
+    : PYLON_SECTION_LAYOUTS.dunaj;
+}
+
+// Compatibility exports: existing imports keep reading the dunaj layout. Never
+// use these to size per-tower arrays — a portal tower has two sections.
+export const BAND_FRACTIONS = PYLON_SECTION_LAYOUTS.dunaj.bandFractions;
+export const BAND_ASSIGN_FRACTIONS = PYLON_SECTION_LAYOUTS.dunaj.assignFractions;
+export const BAND_LABELS = PYLON_SECTION_LAYOUTS.dunaj.labels;
 export const BAND_COUNT = BAND_FRACTIONS.length;
+export const SECTION_Z_FRACTIONS = PYLON_SECTION_LAYOUTS.dunaj.zSlots;
 
 // ---------------------------------------------------------------------------
-// Separated 3-section ring stack
+// Separated section ring stack
 //
 // Each tower section owns an empty vertical slot with air above and below it, so
 // a slot reads as a local 2014 → 2026 time axis and never as elevation. Inside a
 // slot there is one bold horizontal ring per timestep: its height encodes time,
 // its centre shift encodes LOS displacement, and its colour encodes time again
 // through Viridis. Rings stay strictly horizontal — no terrain extension — so the
-// three stacks cannot bleed into each other in perspective.
+// stacks cannot bleed into each other in perspective.
+//
+// Slot fractions live on each pylon's `sectionSlots` (`PYLON_SECTION_LAYOUTS`);
+// the `SECTION_Z_FRACTIONS` compatibility export above is only the dunaj default.
 // ---------------------------------------------------------------------------
 
-/**
- * Vertical slots per section, as a fraction of the tower height:
- * 3 spans × 0.20 + 2 gaps × 0.16 + 0.04 bottom/top margin = 1.0.
- *
- * The gaps are deliberately taller than the old 0.10 (roughly two thirds of a
- * span) so adjacent stacks never read as one continuous column.
- */
-export const SECTION_Z_FRACTIONS = [
-  [0.04, 0.24], // base / foundation
-  [0.40, 0.60], // mid-shaft lattice
-  [0.76, 0.96], // upper cross-arms
-];
-
 /** Wider than the cross-arms, under half of the 50.8 m closest tower spacing. */
-export const RING_RADIUS_M = 11.5;
+export const RING_RADIUS_M = 15;
 /** Vertices around one bold ring. */
 export const RING_SEGMENTS = 64;
 /** Bold rings per section in Smoothed mode. */

@@ -12,8 +12,6 @@
 import { bandMedianAt, buildSectionRingStacks } from './bandGeometry';
 import { SOLVER_TRACK_IDS, losRow, solveBand, towardDeg } from './decomposition';
 import {
-  BAND_FRACTIONS,
-  BAND_LABELS,
   DEFAULT_SCALE_M_PER_MM,
   METRES_PER_DEG_LAT,
   RING_RADIUS_M,
@@ -21,8 +19,8 @@ import {
   RING_ALPHA_SMOOTHED,
   RING_RAW_COUNT,
   RING_SMOOTHED_COUNT,
-  SECTION_Z_FRACTIONS,
   TRACK_IDS,
+  getSectionLayout,
   metresPerDegLon,
 } from './tracks';
 
@@ -109,12 +107,19 @@ export function logRigDebug({ store, windowDays }) {
 
   const mPerDegLon = metresPerDegLon(pylon.lat);
 
+  // Per-type layout of the focused tower; `sectionCount` sizes every loop below
+  // so a two-section portal tower is checked as such.
+  const layout = getSectionLayout(pylon.typ);
+  const sectionLabels = pylon.sectionLabels ?? layout.labels;
+  const sections = pylon.sectionSlots ?? layout.zSlots;
+  const sectionCount = sections.length;
+
   // ---- Frame ---------------------------------------------------------------
   log(`pylon ${pylon.id} (${pylon.typ ?? '?'}) at ${fmt(pylon.lon, 5)}, ${fmt(pylon.lat, 5)}`);
   log(`  terrainElevation ${fmt(pylon.terrainElevation)} m (COG, the z anchor)`);
   log(`  baseElevation ${fmt(pylon.baseElevation)} m (DTM _median, reported only)`);
   log(`  _median - COG offset ${fmt(pylon.baseElevation - pylon.terrainElevation)} m`);
-  log(`  height ${fmt(pylon.height, 1)} m · bandZ ${pylon.bandZ.map((z) => fmt(z)).join(' / ')} m`);
+  log(`  height ${fmt(pylon.height, 1)} m · sections ${sectionCount} (${sectionLabels.join(' / ')}) · bandZ ${pylon.bandZ.map((z) => fmt(z)).join(' / ')} m`);
   for (const trackId of TRACK_IDS) {
     log(`  ${trackId} band counts ${pylon.nByBandTrack[trackId].join(' / ')}`);
   }
@@ -125,19 +130,21 @@ export function logRigDebug({ store, windowDays }) {
   );
   must(
     'bandZ equals the band fractions of the tower height',
-    pylon.bandZ.every((z, i) => Math.abs(z - BAND_FRACTIONS[i] * pylon.height) < 1e-6),
+    pylon.bandZ.every((z, i) => Math.abs(z - layout.bandFractions[i] * pylon.height) < 1e-6),
     pylon.bandZ.map((z) => fmt(z, 2)).join(' / '),
   );
   must(
-    'every pylon has three bands',
-    store.pylons.size === 18
-      && [...store.pylons.values()].every((p) => p.bandZ.length === BAND_LABELS.length),
+    'every pylon has the section count of its layout',
+    store.pylons.size > 0
+      && [...store.pylons.values()].every((p) => (
+        p.bandZ.length === (p.sectionLabels ?? getSectionLayout(p.typ).labels).length
+      )),
     `${store.pylons.size} pylons`,
   );
 
   // ---- Section slots -------------------------------------------------------
   const base = pylon.terrainElevation;
-  const slots = SECTION_Z_FRACTIONS.map(([startFraction, endFraction]) => ({
+  const slots = sections.map(([startFraction, endFraction]) => ({
     zStart: base + startFraction * pylon.height,
     zEnd: base + endFraction * pylon.height,
     startFraction,
@@ -146,17 +153,18 @@ export function logRigDebug({ store, windowDays }) {
 
   for (let band = 0; band < slots.length; band++) {
     const slot = slots[band];
+    const label = sectionLabels[band] ?? 'section';
     log(
-      `  section ${BAND_LABELS[band]}: z ${fmt(slot.zStart)}–${fmt(slot.zEnd)} m `
+      `  section ${label}: z ${fmt(slot.zStart)}–${fmt(slot.zEnd)} m `
       + `(${fmt(slot.startFraction * 100, 0)}–${fmt(slot.endFraction * 100, 0)}% of height)`,
     );
-    must(`${BAND_LABELS[band]} slot runs upward`, slot.zEnd > slot.zStart);
+    must(`${label} slot runs upward`, slot.zEnd > slot.zStart);
     must(
-      `${BAND_LABELS[band]} slot stays inside the tower`,
+      `${label} slot stays inside the tower`,
       slot.startFraction >= 0 && slot.endFraction <= 1,
     );
     must(
-      `${BAND_LABELS[band]} slot has air above and below`,
+      `${label} slot has air above and below`,
       band === 0 || slots[band - 1].zEnd < slot.zStart,
     );
   }
@@ -171,8 +179,17 @@ export function logRigDebug({ store, windowDays }) {
     scaleMPerMm: DEFAULT_SCALE_M_PER_MM,
   });
 
+  // Only populated sections emit floor + ceiling rings, so the count follows the
+  // sections that actually have scatterers for the debug track.
+  const populatedSections = sections.filter(
+    (_, band) => (pylon.bands?.[DEBUG_TRACK_ID]?.[band]?.length ?? 0) > 0,
+  ).length;
+
   log(`  references ${smoothed.references.length} · stacks ${smoothed.stacks.length}`);
-  must('six 0 mm reference rings (floor + ceiling per section)', smoothed.references.length === 6);
+  must(
+    `${populatedSections * 2} 0 mm reference rings (floor + ceiling per populated section)`,
+    smoothed.references.length === populatedSections * 2,
+  );
 
   const referenceZ = smoothed.references.map((reference) => reference.path[0][2]);
   must(
@@ -196,19 +213,20 @@ export function logRigDebug({ store, windowDays }) {
   );
 
   const toward = towardDeg(DEBUG_TRACK_ID);
-  const byBand = [0, 1, 2].map((band) => smoothed.stacks.filter((ring) => ring.bandIndex === band));
+  const byBand = sections.map((_, band) => smoothed.stacks.filter((ring) => ring.bandIndex === band));
   const expectedCount = RING_SMOOTHED_COUNT;
 
   for (let band = 0; band < byBand.length; band++) {
     const rings = byBand[band];
     const slot = slots[band];
+    const label = sectionLabels[band] ?? 'section';
     const sectionScatterers = pylon.bands[DEBUG_TRACK_ID]?.[band]?.length ?? 0;
 
     // A section with no scatterers for this track legitimately has no stack.
     if (rings.length === 0) {
-      log(`  ${BAND_LABELS[band]} stack: no rings (${sectionScatterers} scatterers for ${DEBUG_TRACK_ID})`);
+      log(`  ${label} stack: no rings (${sectionScatterers} scatterers for ${DEBUG_TRACK_ID})`);
       must(
-        `${BAND_LABELS[band]} empty stack means an empty section`,
+        `${label} empty stack means an empty section`,
         sectionScatterers === 0,
         `${sectionScatterers} scatterers`,
       );
@@ -245,7 +263,7 @@ export function logRigDebug({ store, windowDays }) {
     }
 
     log(
-      `  ${BAND_LABELS[band]} stack: ${rings.length} rings of ${expectedCount} steps, `
+      `  ${label} stack: ${rings.length} rings of ${expectedCount} steps, `
       + `z ${fmt(Math.min(...zs))}–${fmt(Math.max(...zs))} m, `
       + `shift |max| ${fmt(Math.max(...rings.map((r) => Math.abs(r.valueMm * DEFAULT_SCALE_M_PER_MM))))} m, `
       + `worst shift error ${worstShift.toExponential(1)} m`,
@@ -255,19 +273,19 @@ export function logRigDebug({ store, windowDays }) {
     // the last ring sits at most one step below the ceiling.
     const step = (slot.zEnd - slot.zStart) / Math.max(1, expectedCount - 1);
     must(
-      `${BAND_LABELS[band]} stack reaches the ceiling within one step`,
+      `${label} stack reaches the ceiling within one step`,
       Math.max(...zs) <= slot.zEnd + 1e-6 && Math.max(...zs) >= slot.zEnd - step - 1e-6,
       `${fmt(Math.max(...zs) - slot.zEnd)} m from the ceiling`,
     );
-    must(`${BAND_LABELS[band]} stack height increases with time`, ascending);
-    must(`${BAND_LABELS[band]} rings keep the constant radius`, radiiOk);
-    must(`${BAND_LABELS[band]} ring shift = value × ×1000 along ${fmt(toward, 0)}°`, shiftOk);
+    must(`${label} stack height increases with time`, ascending);
+    must(`${label} rings keep the constant radius`, radiiOk);
+    must(`${label} ring shift = value × ×1000 along ${fmt(toward, 0)}°`, shiftOk);
     must(
-      `${BAND_LABELS[band]} ring dates increase`,
+      `${label} ring dates increase`,
       rings.every((ring, i) => i === 0 || ring.dateMs > rings[i - 1].dateMs),
     );
     must(
-      `${BAND_LABELS[band]} ring colours follow Viridis`,
+      `${label} ring colours follow Viridis`,
       rings.every((ring) => ring.color.length === 4 && ring.color[3] === RING_ALPHA_SMOOTHED),
     );
   }
@@ -280,12 +298,12 @@ export function logRigDebug({ store, windowDays }) {
     windowDays,
     scaleMPerMm: DEFAULT_SCALE_M_PER_MM,
   });
-  const rawPerBand = [0, 1, 2].map((band) => raw.stacks.filter((ring) => ring.bandIndex === band));
+  const rawPerBand = sections.map((_, band) => raw.stacks.filter((ring) => ring.bandIndex === band));
   log(`  raw stacks ${rawPerBand.map((rings) => rings.length).join(' / ')} of ${RING_RAW_COUNT}`);
   must(
     'raw mode uses sampled acquisitions and a lower alpha',
     raw.stacks.length > 0
-      && raw.stacks.length <= 3 * RING_RAW_COUNT
+      && raw.stacks.length <= sectionCount * RING_RAW_COUNT
       && raw.stacks.every((ring) => ring.color[3] === RING_ALPHA_RAW),
   );
 
@@ -315,7 +333,7 @@ export function logRigDebug({ store, windowDays }) {
       weights,
     });
     log(
-      `  band ${BAND_LABELS[band]}: d95=${fmt(fields['95D'])} d44=${fmt(fields['44A'])} `
+      `  band ${sectionLabels[band] ?? 'section'}: d95=${fmt(fields['95D'])} d44=${fmt(fields['44A'])} `
       + `d146=${fmt(fields['146A'])} → ΔE=${fmt(solution.dE)} ΔU=${fmt(solution.dU)} `
       + `fit=${fmt(solution.residualMm)} mm cond=${fmt(solution.condition)} `
       + `used=${solution.used.join(',') || '—'} ${solution.lowConfidence ? 'LOW' : 'OK'}`,

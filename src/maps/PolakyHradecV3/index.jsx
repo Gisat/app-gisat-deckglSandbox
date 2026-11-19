@@ -1,6 +1,6 @@
 // Forked from src/maps/PolakyHradecV2 for the Poláky/Hradec v3 multi-track rig.
 // v2 keeps the point-cloud / pylon work; v3 adds a rig that reads all three
-// tracks at once over the focused pylon (three separated section ring stacks)
+// tracks at once over the focused pylon (up to three separated section ring stacks)
 // plus a per-band ΔU/ΔE least squares. The point cloud stays single-track: point
 // IDs are unique only within a track, so three point layers at once would break
 // selection, arrow orbit and the legend branch.
@@ -45,6 +45,7 @@ import {
   DEFAULT_SCALE_M_PER_MM,
   DEFAULT_TRACK_ID,
   DEFAULT_WINDOW_DAYS,
+  PYLON_NATIVE_HEIGHTS,
   RIG_MODES,
   RIG_OFF,
   RIG_RINGS,
@@ -52,7 +53,6 @@ import {
   RING_DISPLACEMENT_DOMAIN,
   SCALE_OPTIONS,
   SEASON_STOPS,
-  SECTION_Z_FRACTIONS,
   TRACK_IDS,
   TRACKS,
   WINDOW_OPTIONS,
@@ -65,6 +65,7 @@ import {
   getPylonJoinKey,
   getPylonPickFeature,
   loadRigTracks,
+  meanHeightByTyp,
 } from './rigData';
 import { bandMedianAt, buildSectionRingStacks, medianScatterer, ringColor } from './bandGeometry';
 import { eastLabel, solveBand } from './decomposition';
@@ -90,12 +91,13 @@ const PYLON_DEFAULT_AZIMUTH = 60;
 // from +X (east), hence yaw = 90 - azimuth. Adjust this offset if a model's
 // local forward axis turns out not to be +X after checking it on the imagery.
 const PYLON_OBJ_YAW_OFFSET = 0;
-// Native heights come from the OBJ headers (metres, Z-up, base centre at origin).
+// Native heights come from the OBJ headers (metres, Z-up, base centre at origin),
+// re-exported by `tracks.js` so the mesh scale and the rig fallback agree.
 // Each instance is scaled to its GeoJSON `height`; see `getPylonHeight` in rigData.
 const PYLON_MODELS = [
-  { typ: 'dunaj', nativeHeight: 40.0, mesh: `${PYLON_ASSET_BASE}/dunaj.obj` },
-  { typ: 'kocka', nativeHeight: 26.7, mesh: `${PYLON_ASSET_BASE}/kocka.obj` },
-  { typ: 'portal', nativeHeight: 29.169, mesh: `${PYLON_ASSET_BASE}/portal.obj` },
+  { typ: 'dunaj', nativeHeight: PYLON_NATIVE_HEIGHTS.dunaj, mesh: `${PYLON_ASSET_BASE}/dunaj.obj` },
+  { typ: 'kocka', nativeHeight: PYLON_NATIVE_HEIGHTS.kocka, mesh: `${PYLON_ASSET_BASE}/kocka.obj` },
+  { typ: 'portal', nativeHeight: PYLON_NATIVE_HEIGHTS.portal, mesh: `${PYLON_ASSET_BASE}/portal.obj` },
 ];
 
 // Invisible pick target. SimpleMeshLayer picks per triangle, so the gaps between
@@ -119,7 +121,7 @@ const PYLON_HIT_MESH = new CylinderGeometry({
 const EMPTY = [];
 
 // ---------------------------------------------------------------------------
-// Separated 3-section ring stack
+// Separated section ring stack
 //
 // Rings are `[lon, lat, terrainAtPylon + sectionFraction × height]` in LNGLAT
 // metres — one absolute z per ring, anchored on the COG sample
@@ -146,8 +148,8 @@ const RIG_REFERENCE_RING_DASH = [6, 4];
  * line merges the stack into a solid band instead of separate time slices. Raw
  * mode has 120 rings in the same slot and draws thinner still.
  */
-const RIG_STACK_RING_WIDTH_SMOOTHED = 1.8;
-const RIG_STACK_RING_WIDTH_RAW = 1.0;
+const RIG_STACK_RING_WIDTH_SMOOTHED = 1.5;
+const RIG_STACK_RING_WIDTH_RAW = 0.8;
 
 /** Series mode: rolling median vs one ring per acquisition sample. */
 const SERIES_MODES = [
@@ -352,9 +354,11 @@ function formatDateMs(ms) {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-// `BAND_LABELS` is lowercase for ids; the tooltip uses the structural names.
-function bandTitle(bandIndex) {
-  const label = BAND_LABELS[bandIndex] ?? `band ${bandIndex}`;
+// Section labels are lowercase for ids; the tooltip uses the structural names.
+// The ring carries its own `bandLabel` (per-type layout), with the dunaj labels
+// as a fallback for older rings.
+function bandTitle(ring) {
+  const label = ring?.bandLabel ?? BAND_LABELS[ring?.bandIndex] ?? 'section';
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
@@ -670,7 +674,7 @@ export default function PolakyHradecV3() {
     return rigStore.pylons.get(selectedPylonKey) ?? null;
   }, [rigStore, selectedPylonKey]);
 
-  // Separated 3-section ring stack for the focused tower and the active track.
+  // Separated section ring stack for the focused tower and the active track.
   // Smoothed mode draws RING_SMOOTHED_COUNT bold rings per section, raw mode
   // RING_RAW_COUNT acquisition-sampled rings — one ring per timestep either way.
   const ringData = useMemo(() => {
@@ -708,15 +712,17 @@ export default function PolakyHradecV3() {
   }, [rigStore]);
 
   // One small year label on the east edge of every white reference ring: the
-  // floor shows the start year, the ceiling the end year (six labels total). The
-  // +0.2 m lift keeps the text off the dashed stroke.
+  // floor shows the start year, the ceiling the end year. Only populated sections
+  // emit references, so the count follows the layout. The anchor sits exactly on
+  // the ring's z with a centre baseline, so the ring runs through the middle of
+  // the text.
   const ringYearLabels = useMemo(() => {
     if (rigMode !== RIG_RINGS || !ringYears || ringData.references.length === 0) return EMPTY;
     return ringData.references.map((reference) => {
       const point = reference.path[Math.floor((reference.path.length - 1) / 4)];
       return {
         text: String(reference.kind === 'floor' ? ringYears.startYear : ringYears.endYear),
-        position: [point[0], point[1], point[2] + 0.2],
+        position: [point[0], point[1], point[2]],
       };
     });
   }, [rigMode, ringYears, ringData]);
@@ -793,8 +799,6 @@ export default function PolakyHradecV3() {
 
   const pylonGroups = useMemo(() => {
     const groups = { kocka: [], dunaj: [], portal: [] };
-    const heightSums = { kocka: 0, dunaj: 0, portal: 0 };
-    const heightCounts = { kocka: 0, dunaj: 0, portal: 0 };
     let skipped = 0;
     for (const f of pylonFeatures) {
       const typ = f?.properties?.typ;
@@ -803,19 +807,11 @@ export default function PolakyHradecV3() {
         continue;
       }
       groups[typ].push(f);
-      const height = getPylonHeight(f);
-      if (height != null) {
-        heightSums[typ] += height;
-        heightCounts[typ] += 1;
-      }
     }
     if (skipped) console.warn(`Skipped ${skipped} pylon feature(s) with unknown typ`);
-    // Mean of the features that do carry a height, for those that do not.
-    const meanHeight = {};
-    for (const typ of Object.keys(groups)) {
-      meanHeight[typ] = heightCounts[typ] ? heightSums[typ] / heightCounts[typ] : null;
-    }
-    return { groups, meanHeight };
+    // Mean of the features that do carry a height, for those that do not. Shared
+    // with the rig store so the mesh/hit volume and the ring scaffold agree.
+    return { groups, meanHeight: meanHeightByTyp(pylonFeatures) };
   }, [pylonFeatures]);
 
   // Per-pylon pick targets: the feature plus the height and radius its hit
@@ -1093,7 +1089,7 @@ export default function PolakyHradecV3() {
       updateTriggers: colorUpdateTriggers,
     });
 
-    // ---- Separated 3-section ring stack ------------------------------------
+    // ---- Separated section ring stack ----------------------------------------
     const rigLayers = [];
 
     // `?debugRig=1`: one small marker at each section floor and ceiling, in the
@@ -1101,7 +1097,7 @@ export default function PolakyHradecV3() {
     // against the lattice.
     if (debugRig && focusedPylon && Number.isFinite(focusedPylon.terrainElevation)) {
       const markers = [];
-      SECTION_Z_FRACTIONS.forEach(([startFraction, endFraction], band) => {
+      (focusedPylon.sectionSlots ?? []).forEach(([startFraction, endFraction], band) => {
         for (const fraction of [startFraction, endFraction]) {
           markers.push({
             band,
@@ -1156,7 +1152,7 @@ export default function PolakyHradecV3() {
           sizeUnits: 'pixels',
           getTextAnchor: 'start',
           getAlignmentBaseline: 'center',
-          getPixelOffset: [3, 0],
+          getPixelOffset: [8, 0],
           fontFamily: 'system-ui, sans-serif',
           fontWeight: 600,
           characterSet: 'auto',
@@ -1284,7 +1280,7 @@ export default function PolakyHradecV3() {
             if (!ring) return null;
             return {
               text: [
-                `Pylon ${ring.pylonId ?? '–'} · ${bandTitle(ring.bandIndex)} (${ring.count} pts)`,
+                `Pylon ${ring.pylonId ?? '–'} · ${bandTitle(ring)} (${ring.count} pts)`,
                 `${ring.trackId} · ${formatDateMs(ring.dateMs)}`,
                 `Median LOS: ${formatSignedMm(ring.valueMm)} mm`,
               ].join('\n'),

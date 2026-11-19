@@ -27,7 +27,7 @@ import {
   RING_RAW_COUNT,
   RING_SEGMENTS,
   RING_SMOOTHED_COUNT,
-  SECTION_Z_FRACTIONS,
+  getSectionLayout,
   metresPerDegLon,
   seasonColor,
   viridisColor,
@@ -237,6 +237,28 @@ export function median(values) {
   return finite.length % 2 ? finite[mid] : (finite[mid - 1] + finite[mid]) / 2;
 }
 
+/** A section needs this many reliable scatterers before outliers are excluded. */
+const MIN_RELIABLE_COH = 0.55;
+const IRRELIABLE_CLASS = 'IRRELIABILITY';
+
+/**
+ * Scatterers used for a section's median: the reliable ones when at least two
+ * exist, otherwise the whole section. Sparse sections must never go blank, so
+ * the reliability filter only bites when it still leaves a usable sample.
+ *
+ * @param {Array<any>} scatterers
+ * @returns {Array<any>}
+ */
+function selectSectionScatterers(scatterers) {
+  const list = Array.isArray(scatterers) ? scatterers : [];
+  const reliable = list.filter((feature) => {
+    const props = feature?.properties;
+    return Number(props?.COH) >= MIN_RELIABLE_COH
+      && props?.CL_PRG !== IRRELIABLE_CLASS;
+  });
+  return reliable.length >= 2 ? reliable : list;
+}
+
 /**
  * Smoothed band median on the union grid: smooth every scatterer on its own
  * dates, interpolate the *smoothed* series onto `grid`, then take the pointwise
@@ -250,7 +272,7 @@ export function median(values) {
 export function bandMedianSeries(scatterers, windowDays, grid) {
   if (!Array.isArray(grid) || grid.length === 0) return [];
   const columns = [];
-  for (const feature of scatterers ?? []) {
+  for (const feature of selectSectionScatterers(scatterers)) {
     const { dates, values } = featureSeries(feature);
     if (dates.length === 0) continue;
     const smoothed = smoothSeries(values, dates, windowDays);
@@ -285,7 +307,7 @@ export function bandMedianSeries(scatterers, windowDays, grid) {
  */
 export function bandMedianAt(scatterers, epochMs, windowDays) {
   const samples = [];
-  for (const feature of scatterers ?? []) {
+  for (const feature of selectSectionScatterers(scatterers)) {
     const { dates, values } = featureSeries(feature);
     if (dates.length === 0) continue;
     const smoothed = smoothSeries(values, dates, windowDays);
@@ -339,7 +361,7 @@ export function resampleSeries(series, grid, count) {
  */
 export function medianScatterer(scatterers, epochMs, windowDays) {
   const candidates = [];
-  for (const feature of scatterers ?? []) {
+  for (const feature of selectSectionScatterers(scatterers)) {
     const { dates, values } = featureSeries(feature);
     if (dates.length === 0) continue;
     const smoothed = smoothSeries(values, dates, windowDays);
@@ -365,7 +387,7 @@ export function medianScatterer(scatterers, epochMs, windowDays) {
 export function rawBandMedianSeries(scatterers, grid) {
   if (!Array.isArray(grid) || grid.length === 0) return [];
   const columns = [];
-  for (const feature of scatterers ?? []) {
+  for (const feature of selectSectionScatterers(scatterers)) {
     const { dates, values } = featureSeries(feature);
     if (dates.length === 0) continue;
     columns.push(interpolateSeries(grid, dates, values));
@@ -437,16 +459,20 @@ export function ringColor(
 }
 
 /**
- * Separated 3-section ring stack for one tower and one track.
+ * Separated section ring stack for one tower and one track.
  *
- * Three vertical slots, each bracketed by a white 0 mm reference ring at its
- * floor (2014) and ceiling (2026). Inside a slot, one bold horizontal ring per
- * timestep: height encodes time, centre shift encodes LOS displacement along the
- * track's toward-sensor bearing, colour follows the selected ring-colour mode
- * (time / season / ring LOS displacement); the builder writes the default
- * Viridis colour (`ringColor` recolours without rebuilding geometry). The ring
- * radius is constant, so a shift of +8 mm at ×1 moves the whole circle 8 m — no
- * radius change, no vertical exaggeration of the values themselves.
+ * One vertical slot per section of the tower's layout (`pylon.sectionSlots`),
+ * each bracketed by a white 0 mm reference ring at its floor (2014) and ceiling
+ * (2026). Inside a slot, one bold horizontal ring per timestep: height encodes
+ * time, centre shift encodes LOS displacement along the track's toward-sensor
+ * bearing, colour follows the selected ring-colour mode (time / season / ring LOS
+ * displacement); the builder writes the default Viridis colour (`ringColor`
+ * recolours without rebuilding geometry). The ring radius is constant, so a
+ * shift of +8 mm at ×1 moves the whole circle 8 m — no radius change, no vertical
+ * exaggeration of the values themselves.
+ *
+ * Empty sections emit neither reference nor stack rings, so no white circles
+ * float in empty air.
  *
  * @param {{
  *   pylon: any, activeTrackId: string, grid: number[],
@@ -454,11 +480,13 @@ export function ringColor(
  * }} options
  * @returns {{
  *   stacks: Array<{
- *     path: number[][], color: number[], bandIndex: number, trackId: string,
- *     dateMs: number, valueMm: number, u: number,
+ *     path: number[][], color: number[], bandIndex: number, bandLabel: string,
+ *     trackId: string, dateMs: number, valueMm: number, u: number,
  *     pylonId: any, pylonKey: string, count: number,
  *   }>,
- *   references: Array<{ path: number[][], bandIndex: number, kind: 'floor'|'ceiling' }>,
+ *   references: Array<{
+ *     path: number[][], bandIndex: number, kind: 'floor'|'ceiling', bandLabel: string,
+ *   }>,
  * }}
  */
 export function buildSectionRingStacks({
@@ -479,21 +507,27 @@ export function buildSectionRingStacks({
   const towardRad = (towardDeg(activeTrackId) * Math.PI) / 180;
   const count = rawMode ? RING_RAW_COUNT : RING_SMOOTHED_COUNT;
   const alpha = rawMode ? RING_ALPHA_RAW : RING_ALPHA_SMOOTHED;
+  // Both halves of the layout come from one source, so slots and labels can
+  // never be paired across different tower types.
+  const layout = getSectionLayout(pylon.typ);
+  const slots = pylon.sectionSlots ?? layout.zSlots;
+  const labels = pylon.sectionLabels ?? layout.labels;
 
   const stacks = [];
   const references = [];
 
-  for (let bandIndex = 0; bandIndex < SECTION_Z_FRACTIONS.length; bandIndex++) {
-    const [startFraction, endFraction] = SECTION_Z_FRACTIONS[bandIndex];
+  for (let bandIndex = 0; bandIndex < slots.length; bandIndex++) {
+    const [startFraction, endFraction] = slots[bandIndex];
+    const bandLabel = labels[bandIndex] ?? 'section';
+    const scatterers = pylon.bands?.[activeTrackId]?.[bandIndex] ?? [];
+    if (scatterers.length === 0) continue;
+
     const zStart = base + startFraction * pylon.height;
     const zEnd = base + endFraction * pylon.height;
 
     // 0 mm references: the floor is 2014, the ceiling is 2026.
-    references.push({ path: ringPath(pylon, mPerDegLon, zStart), bandIndex, kind: 'floor' });
-    references.push({ path: ringPath(pylon, mPerDegLon, zEnd), bandIndex, kind: 'ceiling' });
-
-    const scatterers = pylon.bands?.[activeTrackId]?.[bandIndex] ?? [];
-    if (scatterers.length === 0) continue;
+    references.push({ path: ringPath(pylon, mPerDegLon, zStart), bandIndex, kind: 'floor', bandLabel });
+    references.push({ path: ringPath(pylon, mPerDegLon, zEnd), bandIndex, kind: 'ceiling', bandLabel });
 
     const dense = rawMode
       ? rawBandMedianSeries(scatterers, grid)
@@ -517,6 +551,7 @@ export function buildSectionRingStacks({
         path: ringPath(center, mPerDegLon, z),
         color: [...viridisColor(u), alpha],
         bandIndex,
+        bandLabel,
         trackId: activeTrackId,
         dateMs: display.grid[i],
         valueMm: value,

@@ -15,10 +15,10 @@
 
 import { median, unionGrid } from './bandGeometry';
 import {
-  BAND_FRACTIONS,
   BAND_ASSIGN_FRACTIONS,
-  BAND_COUNT,
   METRES_PER_DEG_LAT,
+  PYLON_NATIVE_HEIGHTS,
+  getSectionLayout,
   metresPerDegLon,
   TRACKS,
 } from './tracks';
@@ -51,23 +51,60 @@ export function getPylonHeight(feature) {
   return Number.isFinite(height) && height > 0 ? height : null;
 }
 
+/** Native OBJ height for a pylon type, or null for unknown / inherited keys. */
+export function getPylonNativeHeight(typ) {
+  return Object.hasOwn(PYLON_NATIVE_HEIGHTS, typ) ? PYLON_NATIVE_HEIGHTS[typ] : null;
+}
+
 /**
- * Structural band index from a scatterer's height above ground: below
- * `BAND_ASSIGN_FRACTIONS[0]` of the tower height → base, below the second
- * threshold → mid, everything else (including conductors above the tower top)
- * → top.
+ * Mean height per pylon type over the features that carry a valid height.
+ *
+ * Shared by the rig store and the map's mesh/hit-volume sizing, so the two
+ * height fallbacks cannot drift apart. Types without any valid height are
+ * absent from the result.
+ *
+ * @param {Array<any>} [pylonFeatures]
+ * @returns {Record<string, number>}
+ */
+export function meanHeightByTyp(pylonFeatures = []) {
+  const sums = new Map();
+  const counts = new Map();
+  for (const feature of pylonFeatures) {
+    const typ = feature?.properties?.typ;
+    const height = getPylonHeight(feature);
+    if (!typ || height == null) continue;
+    sums.set(typ, (sums.get(typ) ?? 0) + height);
+    counts.set(typ, (counts.get(typ) ?? 0) + 1);
+  }
+  // Null prototype: `typ` is external data, so a key like `constructor` must
+  // read as "no mean", not as an inherited Object member.
+  const means = Object.create(null);
+  for (const [typ, count] of counts) {
+    means[typ] = sums.get(typ) / count;
+  }
+  return means;
+}
+
+/**
+ * Structural section index from a scatterer's height above ground: below the
+ * first threshold → section 0, below the second → section 1, everything else
+ * (including conductors above the tower top) → the last section. The thresholds
+ * come from the tower type's layout (`getSectionLayout`); the default is the
+ * dunaj pair.
  *
  * @param {number} hRef `H_REF` of the scatterer, metres.
  * @param {number} height Tower height, metres.
- * @returns {number} 0..BAND_COUNT-1
+ * @param {number[]} [assignFractions] Per-layout thresholds, ascending.
+ * @returns {number} 0..`assignFractions.length`
  */
-export function bandIndexOf(hRef, height) {
-  if (!Number.isFinite(height) || height <= 0) return BAND_COUNT - 1;
+export function bandIndexOf(hRef, height, assignFractions = BAND_ASSIGN_FRACTIONS) {
+  const sectionCount = Math.max(1, assignFractions.length + 1);
+  if (!Number.isFinite(height) || height <= 0) return sectionCount - 1;
   const ratio = Number.isFinite(hRef) ? hRef / height : 1;
-  for (let i = 0; i < BAND_ASSIGN_FRACTIONS.length; i++) {
-    if (ratio < BAND_ASSIGN_FRACTIONS[i]) return i;
+  for (let i = 0; i < assignFractions.length; i++) {
+    if (ratio < assignFractions[i]) return i;
   }
-  return BAND_COUNT - 1;
+  return sectionCount - 1;
 }
 
 /** East/north distance in metres between two lon/lat pairs at this latitude. */
@@ -81,8 +118,9 @@ function offsetMetres(lonA, latA, lonB, latB) {
  * Builds the rig store from the already-loaded GeoJSON features.
  *
  * Pure: the caller owns fetching. `pylons` is keyed by join key and holds, per
- * pylon, the linked features of all three tracks, the band partition, the DTM
- * base elevation and the band heights in metres above that base.
+ * pylon, the linked features of all three tracks, the per-type section partition
+ * and layout, the DTM base elevation and the section heights in metres above
+ * that base.
  *
  * @param {{
  *   pylonFeatures: Array<any>,
@@ -143,6 +181,10 @@ export function buildRigStore({
     .filter(Number.isFinite);
   const commonEpochMs = trackLast.length ? Math.min(...trackLast) : null;
 
+  // Per-type mean height of the features that carry one, used as the second
+  // fallback when a tower's own `height` is missing.
+  const meanHeights = meanHeightByTyp(pylonFeatures);
+
   const pylons = new Map();
   let dropped = 0;
 
@@ -160,10 +202,18 @@ export function buildRigStore({
       continue;
     }
 
-    const height = getPylonHeight(pylonFeature);
+    const typ = pylonFeature?.properties?.typ ?? null;
+    const layout = getSectionLayout(typ);
+    const sectionCount = layout.labels.length;
+    const height =
+      getPylonHeight(pylonFeature)
+      ?? meanHeights[typ]
+      ?? getPylonNativeHeight(typ)
+      ?? null;
+
     if (height == null) {
       dropped += 1;
-      warnings.push(`pylon ${pylonFeature?.properties?.id ?? key}: no valid height, rig skipped`);
+      warnings.push(`pylon ${pylonFeature?.properties?.id ?? key}: no resolvable height, rig skipped`);
       continue;
     }
     const byTrack = {};
@@ -174,12 +224,13 @@ export function buildRigStore({
     for (const track of TRACKS) {
       const linked = pointsByKey.get(track.id)?.get(key) ?? [];
       byTrack[track.id] = linked;
-      const bandLists = Array.from({ length: BAND_COUNT }, () => []);
+      const bandLists = Array.from({ length: sectionCount }, () => []);
       for (const feature of linked) {
         const rawHRef = feature?.properties?.H_REF;
         const band = bandIndexOf(
           rawHRef == null || rawHRef === '' ? NaN : Number(rawHRef),
           height,
+          layout.assignFractions,
         );
         bandLists[band].push(feature);
         const props = feature?.properties ?? {};
@@ -219,8 +270,12 @@ export function buildRigStore({
       baseElevation,
       /** Draped COG ground elevation — the rig's absolute z anchor. */
       terrainElevation,
-      /** Band centre heights above the terrain anchor, metres. */
-      bandZ: BAND_FRACTIONS.map(fraction => fraction * height),
+      /** Per-type section names, lowercase (`base` / `mid` / …). */
+      sectionLabels: layout.labels,
+      /** Per-type vertical slots for the ring stacks, fractions of height. */
+      sectionSlots: layout.zSlots,
+      /** Section centre heights above the terrain anchor, metres. */
+      bandZ: layout.bandFractions.map(fraction => fraction * height),
       byTrack,
       bands,
       /** `nByBandTrack[trackId][bandIndex]`, the LSQ weights. */
