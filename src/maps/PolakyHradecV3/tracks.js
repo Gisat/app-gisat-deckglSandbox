@@ -118,22 +118,16 @@ export const SCALE_OPTIONS = [0.5, 1.0, 2.0];
 export const DEFAULT_SCALE_M_PER_MM = 1.0;
 
 /**
- * Six-stop Viridis ramp for time, 2014 → 2026.
+ * Linear RGB interpolation over a stop list, shared by every ring-colour ramp so
+ * the modes cannot drift apart.
  *
- * @param {number} u Normalised time, 0 (2014) … 1 (2026).
+ * @param {Array<[number, number, number]>} stops
+ * @param {number} t Normalised position, clamped to 0 … 1.
  * @returns {[number, number, number]} RGB.
  */
-export function viridisColor(u) {
-  const stops = [
-    [68, 1, 84], // deep violet
-    [65, 68, 135], // indigo
-    [42, 120, 142], // teal blue
-    [34, 168, 132], // sea green
-    [122, 209, 81], // lime
-    [253, 231, 37], // bright yellow
-  ];
-  const t = Math.min(1, Math.max(0, Number.isFinite(u) ? u : 0));
-  const scaled = t * (stops.length - 1);
+function sampleRamp(stops, t) {
+  const clamped = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0));
+  const scaled = clamped * (stops.length - 1);
   const index = Math.min(stops.length - 2, Math.floor(scaled));
   const frac = scaled - index;
   const from = stops[index];
@@ -143,6 +137,65 @@ export function viridisColor(u) {
     Math.round(from[1] + (to[1] - from[1]) * frac),
     Math.round(from[2] + (to[2] - from[2]) * frac),
   ];
+}
+
+/** Six-stop Viridis ramp, 2014 → 2026. */
+const VIRIDIS_STOPS = [
+  [68, 1, 84], // deep violet
+  [65, 68, 135], // indigo
+  [42, 120, 142], // teal blue
+  [34, 168, 132], // sea green
+  [122, 209, 81], // lime
+  [253, 231, 37], // bright yellow
+];
+
+/**
+ * Viridis colour for time, 2014 → 2026.
+ *
+ * @param {number} u Normalised time, 0 (2014) … 1 (2026).
+ * @returns {[number, number, number]} RGB.
+ */
+export function viridisColor(u) {
+  return sampleRamp(VIRIDIS_STOPS, u);
+}
+
+/** Ring colour modes, in switcher order. `time` is the default. */
+export const RING_COLOR_MODES = [
+  { id: 'time', label: 'Time', title: 'Chronological acquisition year (Viridis 2014 → 2026)' },
+  { id: 'season', label: 'Season', title: 'Annual thermal cycle (Winter ↔ Spring/Autumn ↔ Summer)' },
+  { id: 'displacement', label: 'Displacement', title: 'Ring LOS displacement (mm): Away/subsidence ↔ 0 ↔ Toward' },
+];
+export const DEFAULT_RING_COLOR_MODE = 'time';
+
+/**
+ * Ring LOS displacement domain, mm. The VEL_AVG palette is reused for this mode,
+ * but stretched over the displacement range: the ±2.5 mm/yr velocity domain
+ * saturates almost every ring at the ramp ends.
+ */
+export const RING_DISPLACEMENT_DOMAIN = [-10, 10];
+
+/** Season thermal ramp: Winter → Spring/Autumn → Summer. */
+export const SEASON_STOPS = [
+  [56, 142, 232],   // Winter (Jan) — cool ice-blue
+  [168, 175, 185],  // Spring / Autumn — muted neutral slate-gray
+  [239, 108, 68],   // Summer (Jul) — warm coral-orange
+];
+
+/**
+ * Thermal-cycle colour for one acquisition date. Winter (Jan–Feb) is cold blue,
+ * summer (Jul–Aug) is hot red; the phase is a smooth cosine over the year.
+ *
+ * @param {number} dateMs Epoch ms.
+ * @returns {[number, number, number]} RGB.
+ */
+export function seasonColor(dateMs) {
+  if (!Number.isFinite(dateMs)) return SEASON_STOPS[1].slice();
+  const d = new Date(dateMs);
+  const startOfYear = Date.UTC(d.getUTCFullYear(), 0, 1);
+  const dayOfYear = (dateMs - startOfYear) / 86400000;
+  // Smooth thermal cosine: 0 = late-Jan winter trough, 0.5 = spring/autumn, 1 = late-Jul summer peak
+  const phase = 0.5 * (1 - Math.cos(((dayOfYear - 20) / 365.25) * 2 * Math.PI));
+  return sampleRamp(SEASON_STOPS, phase);
 }
 
 /** Smoothing windows, in days. The cadence is irregular (6–24 d), so never in samples. */

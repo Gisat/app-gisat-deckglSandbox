@@ -19,6 +19,7 @@
 
 import { towardDeg } from './decomposition';
 import {
+  DEFAULT_RING_COLOR_MODE,
   METRES_PER_DEG_LAT,
   RING_ALPHA_RAW,
   RING_ALPHA_SMOOTHED,
@@ -28,6 +29,7 @@ import {
   RING_SMOOTHED_COUNT,
   SECTION_Z_FRACTIONS,
   metresPerDegLon,
+  seasonColor,
   viridisColor,
 } from './tracks';
 
@@ -399,14 +401,52 @@ function ringPath(center, mPerDegLon, z, radiusM = RING_RADIUS_M, segments = RIN
 }
 
 /**
+ * Displacement colour from the active orbit's VEL_AVG chroma scale, clamped to
+ * that scale's own domain. Falls back to neutral gray without a scale.
+ */
+function displacementRingRgb(scale, valueMm) {
+  if (typeof scale !== 'function' || !Number.isFinite(valueMm)) return [175, 182, 192];
+  const [min, max] = typeof scale.domain === 'function' ? scale.domain() : [];
+  return scale(
+    Number.isFinite(min) && Number.isFinite(max)
+      ? Math.max(min, Math.min(max, valueMm))
+      : valueMm,
+  ).rgb();
+}
+
+/**
+ * RGB for one ring under the selected colour mode.
+ *
+ * Kept separate from `buildSectionRingStacks` so a pure colour switch does not
+ * re-run the band smoothing and ring-geometry pipeline.
+ *
+ * @param {any} ring Ring object from `buildSectionRingStacks` (needs `u`,
+ *   `dateMs` and `valueMm`).
+ * @param {string} [ringColorMode]
+ * @param {Function|null} [displacementScale]
+ * @returns {[number, number, number]} RGB.
+ */
+export function ringColor(
+  ring,
+  ringColorMode = DEFAULT_RING_COLOR_MODE,
+  displacementScale = null,
+) {
+  if (ringColorMode === 'season') return seasonColor(ring.dateMs);
+  if (ringColorMode === 'displacement') return displacementRingRgb(displacementScale, ring.valueMm);
+  return viridisColor(ring.u);
+}
+
+/**
  * Separated 3-section ring stack for one tower and one track.
  *
  * Three vertical slots, each bracketed by a white 0 mm reference ring at its
  * floor (2014) and ceiling (2026). Inside a slot, one bold horizontal ring per
  * timestep: height encodes time, centre shift encodes LOS displacement along the
- * track's toward-sensor bearing, colour is Viridis over the same time axis. The
- * ring radius is constant, so a shift of +8 mm at ×1 moves the whole circle 8 m
- * — no radius change, no vertical exaggeration of the values themselves.
+ * track's toward-sensor bearing, colour follows the selected ring-colour mode
+ * (time / season / ring LOS displacement); the builder writes the default
+ * Viridis colour (`ringColor` recolours without rebuilding geometry). The ring
+ * radius is constant, so a shift of +8 mm at ×1 moves the whole circle 8 m — no
+ * radius change, no vertical exaggeration of the values themselves.
  *
  * @param {{
  *   pylon: any, activeTrackId: string, grid: number[],
@@ -415,7 +455,8 @@ function ringPath(center, mPerDegLon, z, radiusM = RING_RADIUS_M, segments = RIN
  * @returns {{
  *   stacks: Array<{
  *     path: number[][], color: number[], bandIndex: number, trackId: string,
- *     dateMs: number, valueMm: number, pylonId: any, pylonKey: string, count: number,
+ *     dateMs: number, valueMm: number, u: number,
+ *     pylonId: any, pylonKey: string, count: number,
  *   }>,
  *   references: Array<{ path: number[][], bandIndex: number, kind: 'floor'|'ceiling' }>,
  * }}
@@ -479,6 +520,7 @@ export function buildSectionRingStacks({
         trackId: activeTrackId,
         dateMs: display.grid[i],
         valueMm: value,
+        u,
         pylonId: pylon.id,
         pylonKey: pylon.key,
         count: scatterers.length,

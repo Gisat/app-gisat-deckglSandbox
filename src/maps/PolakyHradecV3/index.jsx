@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
-import { BitmapLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { BitmapLayer, PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { CylinderGeometry } from '@luma.gl/engine';
 import { OBJLoader } from '@loaders.gl/obj';
@@ -41,13 +41,17 @@ import TimelineChart from './TimelineChart';
 import { cartoDarkBasemapUrl } from '../basemaps';
 import {
   BAND_LABELS,
+  DEFAULT_RING_COLOR_MODE,
   DEFAULT_SCALE_M_PER_MM,
   DEFAULT_TRACK_ID,
   DEFAULT_WINDOW_DAYS,
   RIG_MODES,
   RIG_OFF,
   RIG_RINGS,
+  RING_COLOR_MODES,
+  RING_DISPLACEMENT_DOMAIN,
   SCALE_OPTIONS,
+  SEASON_STOPS,
   SECTION_Z_FRACTIONS,
   TRACK_IDS,
   TRACKS,
@@ -62,7 +66,7 @@ import {
   getPylonPickFeature,
   loadRigTracks,
 } from './rigData';
-import { bandMedianAt, buildSectionRingStacks, medianScatterer } from './bandGeometry';
+import { bandMedianAt, buildSectionRingStacks, medianScatterer, ringColor } from './bandGeometry';
 import { eastLabel, solveBand } from './decomposition';
 import { logRigDebug } from './debugRig';
 import { TERRAIN_URL, sampleTerrainElevations } from './terrainElevation';
@@ -128,6 +132,7 @@ const EMPTY = [];
 // steel. `baseElevation` stays in the rig store for reporting only.
 // ---------------------------------------------------------------------------
 const RIG_REFERENCE_RING_LAYER = 'rig-reference-rings';
+const RIG_REFERENCE_LABEL_LAYER = 'rig-reference-year-labels';
 const RIG_STACK_RING_LAYER = 'rig-stack-rings';
 const RIG_DEBUG_MARKER_LAYER = 'rig-debug-band-markers';
 
@@ -264,7 +269,7 @@ const INITIAL_VIEW_STATE = {
   bearing: 67.27,
   minZoom: 8,
   maxZoom: 18,
-  maxPitch: 70,
+  maxPitch: 85,
 };
 
 const TERRAIN_OPTIONS = {
@@ -390,6 +395,7 @@ export default function PolakyHradecV3() {
   // joined per-pylon index built once the pylons have loaded.
   const [rigMode, setRigMode] = useState(RIG_RINGS);
   const [seriesMode, setSeriesMode] = useState('smoothed');
+  const [ringColorMode, setRingColorMode] = useState(DEFAULT_RING_COLOR_MODE);
   const [windowDays, setWindowDays] = useState(DEFAULT_WINDOW_DAYS);
   const [scaleMPerMm, setScaleMPerMm] = useState(DEFAULT_SCALE_M_PER_MM);
   const [rigTracks, setRigTracks] = useState(null);
@@ -418,6 +424,12 @@ export default function PolakyHradecV3() {
   // Same per-orbit ramp for the chart's VEL_AVG colouring, so it matches the
   // map symbols and legend. Settlement colouring uses its own fixed ramp.
   const velAvgPalette = getPolakyVelAvgColors(activeTrack.orbit);
+  // Displacement rings reuse the VEL_AVG palette over the ±10 mm displacement
+  // domain, so the ramp matches the point symbols without saturating.
+  const displacementScale = useMemo(
+    () => buildPolakyVelAvgScale(activeTrack.orbit).domain([...RING_DISPLACEMENT_DOMAIN]),
+    [activeTrack.orbit],
+  );
 
   // One request/parse per track, shared by the point cloud and the rig. The
   // cache is cleared on failure so a retry starts a fresh request.
@@ -673,6 +685,41 @@ export default function PolakyHradecV3() {
       scaleMPerMm,
     });
   }, [rigMode, focusedPylon, rigStore, activeTrackId, seriesMode, windowDays, scaleMPerMm]);
+
+  // Colour is a cheap post-pass over the memoised geometry, so switching the
+  // colour mode never re-runs the band smoothing / median pipeline.
+  const ringStacks = useMemo(() => {
+    if (ringData.stacks.length === 0) return EMPTY;
+    return ringData.stacks.map((ring) => ({
+      ...ring,
+      color: [...ringColor(ring, ringColorMode, displacementScale), ring.color[3]],
+    }));
+  }, [ringData, ringColorMode, displacementScale]);
+
+  // First/last acquisition year of the union grid; display fallbacks while the
+  // rig is still loading.
+  const ringYears = useMemo(() => {
+    const grid = rigStore?.grid;
+    if (!Array.isArray(grid) || grid.length === 0) return null;
+    return {
+      startYear: new Date(grid[0]).getUTCFullYear(),
+      endYear: new Date(grid[grid.length - 1]).getUTCFullYear(),
+    };
+  }, [rigStore]);
+
+  // One small year label on the east edge of every white reference ring: the
+  // floor shows the start year, the ceiling the end year (six labels total). The
+  // +0.2 m lift keeps the text off the dashed stroke.
+  const ringYearLabels = useMemo(() => {
+    if (rigMode !== RIG_RINGS || !ringYears || ringData.references.length === 0) return EMPTY;
+    return ringData.references.map((reference) => {
+      const point = reference.path[Math.floor((reference.path.length - 1) / 4)];
+      return {
+        text: String(reference.kind === 'floor' ? ringYears.startYear : ringYears.endYear),
+        position: [point[0], point[1], point[2] + 0.2],
+      };
+    });
+  }, [rigMode, ringYears, ringData]);
 
   // Per-band ΔU/ΔE for the focused tower.
   const focusedBandSolutions = useMemo(() => {
@@ -1097,13 +1144,34 @@ export default function PolakyHradecV3() {
         }));
       }
 
+      // Start/end year on every section's floor/ceiling reference ring.
+      if (ringYearLabels.length > 0) {
+        rigLayers.push(new TextLayer({
+          id: RIG_REFERENCE_LABEL_LAYER,
+          data: ringYearLabels,
+          getPosition: (d) => d.position,
+          getText: (d) => d.text,
+          getColor: [232, 236, 241],
+          getSize: 2,
+          sizeUnits: 'pixels',
+          getTextAnchor: 'start',
+          getAlignmentBaseline: 'center',
+          getPixelOffset: [3, 0],
+          fontFamily: 'system-ui, sans-serif',
+          fontWeight: 600,
+          characterSet: 'auto',
+          billboard: true,
+          pickable: false,
+        }));
+      }
+
       // One thin horizontal ring per timestep, stacked through the section. The
       // ring stays pickable so hover gives date + median LOS and click opens the
       // section's median scatterer in both charts.
       if (ringData.stacks.length > 0) {
         rigLayers.push(new PathLayer({
           id: RIG_STACK_RING_LAYER,
-          data: ringData.stacks,
+          data: ringStacks,
           getPath: (d) => d.path,
           getColor: (d) => d.color,
           getWidth: seriesMode === 'raw' ? RIG_STACK_RING_WIDTH_RAW : RIG_STACK_RING_WIDTH_SMOOTHED,
@@ -1149,6 +1217,8 @@ export default function PolakyHradecV3() {
     rigMode,
     seriesMode,
     ringData,
+    ringStacks,
+    ringYearLabels,
     debugRig,
     focusedPylon,
   ]);
@@ -1158,6 +1228,12 @@ export default function PolakyHradecV3() {
   const viridisGradient = `linear-gradient(to right, ${[0, 0.2, 0.4, 0.6, 0.8, 1]
     .map(u => `rgb(${viridisColor(u).join(',')})`)
     .join(', ')})`;
+  const seasonGradient = `linear-gradient(to right, ${
+    SEASON_STOPS.map(stop => `rgb(${stop.join(',')})`).join(', ')
+  })`;
+  const legendStartYear = ringYears?.startYear ?? 2014;
+  const legendEndYear = ringYears?.endYear ?? 2026;
+  const legendMidYear = Math.round((legendStartYear + legendEndYear) / 2);
 
   return (
     <div style={{
@@ -1329,6 +1405,21 @@ export default function PolakyHradecV3() {
 
         {rigEnabled && (
           <>
+            <div style={{ ...OVERLAY_TITLE_STYLE, marginTop: '6px' }}>Color</div>
+            <div role="group" aria-label="Ring color mode" style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
+              {RING_COLOR_MODES.map(mode => (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setRingColorMode(mode.id)}
+                  aria-pressed={ringColorMode === mode.id}
+                  title={mode.title}
+                  style={trackButtonStyle(ringColorMode === mode.id)}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
             <div style={{ ...OVERLAY_TITLE_STYLE, marginTop: '6px' }}>Series</div>
             <div role="group" aria-label="Series mode" style={{ display: 'flex', gap: '3px' }}>
               {SERIES_MODES.map(mode => (
@@ -1400,15 +1491,44 @@ export default function PolakyHradecV3() {
 
         {rigEnabled && (
           <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid #3b4048' }}>
-            <div style={OVERLAY_TITLE_STYLE}>Time (Viridis)</div>
-            <div style={{ width: '100%', height: '7px', borderRadius: '2px', background: viridisGradient }} />
-            <div style={{ display: 'flex', marginTop: '1px', color: '#b3b8bf' }}>
-              <span style={{ flex: 1, textAlign: 'left' }}>2014</span>
-              <span style={{ flex: 1, textAlign: 'center' }}>2020</span>
-              <span style={{ flex: 1, textAlign: 'right' }}>2026</span>
-            </div>
+            {ringColorMode === 'time' && (
+              <>
+                <div style={OVERLAY_TITLE_STYLE}>Time (Viridis)</div>
+                <div style={{ width: '100%', height: '7px', borderRadius: '2px', background: viridisGradient }} />
+                <div style={{ display: 'flex', marginTop: '1px', color: '#b3b8bf' }}>
+                  <span style={{ flex: 1, textAlign: 'left' }}>{legendStartYear}</span>
+                  <span style={{ flex: 1, textAlign: 'center' }}>{legendMidYear}</span>
+                  <span style={{ flex: 1, textAlign: 'right' }}>{legendEndYear}</span>
+                </div>
+              </>
+            )}
+            {ringColorMode === 'season' && (
+              <>
+                <div style={OVERLAY_TITLE_STYLE}>Season (Thermal Cycle)</div>
+                <div style={{ width: '100%', height: '7px', borderRadius: '2px', background: seasonGradient }} />
+                <div style={{ display: 'flex', marginTop: '1px', color: '#b3b8bf' }}>
+                  <span style={{ flex: 1, textAlign: 'left' }}>Winter</span>
+                  <span style={{ flex: 1, textAlign: 'center' }}>Spring/Autumn</span>
+                  <span style={{ flex: 1, textAlign: 'right' }}>Summer</span>
+                </div>
+              </>
+            )}
+            {ringColorMode === 'displacement' && (
+              <>
+                <div style={OVERLAY_TITLE_STYLE}>LOS Displacement (mm)</div>
+                <div style={{ width: '100%', height: '7px', borderRadius: '2px', background: legendGradient }} />
+                <div style={{ display: 'flex', marginTop: '1px', color: '#b3b8bf' }}>
+                  <span style={{ flex: 1, textAlign: 'left' }}>{RING_DISPLACEMENT_DOMAIN[0]}</span>
+                  <span style={{ flex: 1, textAlign: 'center' }}>0</span>
+                  <span style={{ flex: 1, textAlign: 'right' }}>+{RING_DISPLACEMENT_DOMAIN[1]}</span>
+                </div>
+                <div style={{ color: '#9aa0a8', fontSize: '10px', lineHeight: '13px' }}>
+                  Away / subsidence ← 0 → Toward
+                </div>
+              </>
+            )}
             <div style={{ marginTop: '3px', color: '#b3b8bf', fontSize: '10px', lineHeight: '13px' }}>
-              Time ↑ 2014→2026 · shift = LOS ×{Math.round(scaleMPerMm * 1000)}
+              Ring height = time ↑ {legendStartYear}→{legendEndYear} · shift = LOS ×{Math.round(scaleMPerMm * 1000)}
             </div>
             <div style={{ color: '#9aa0a8', fontSize: '10px', lineHeight: '13px' }}>
               White dashed = 0 mm · not vertical
