@@ -398,6 +398,8 @@ export default function PolakyHradecV3() {
   // expressed as a view-state update carrying a transition interpolator — the
   // same mechanism the controller uses, and it cannot throw on a missing ref.
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
+  // Dev helper: settle-debounce timer for the camera log below.
+  const cameraLogTimer = useRef(null);
   // `?debugRig=1` prints the plan's acceptance gates; any other route ignores it.
   const debugRig = useMemo(
     () => new URLSearchParams(window.location.search).get('debugRig') === '1',
@@ -662,6 +664,29 @@ export default function PolakyHradecV3() {
 
 
 
+  // Prints the settled camera as a ready-to-paste default. Navigate to the view
+  // you want, wait half a second, and copy the `default:` line from the console.
+  const logCamera = useCallback((state) => {
+    const fixed = (value, digits) => Number(Number(value).toFixed(digits));
+    const camera = {
+      longitude: fixed(state.longitude, 6),
+      latitude: fixed(state.latitude, 6),
+      zoom: fixed(state.zoom, 2),
+      pitch: fixed(state.pitch, 2),
+      bearing: fixed(state.bearing, 2),
+    };
+    console.info(
+      `[polaky] camera ${JSON.stringify(camera)}\n`
+      + '[polaky] default: '
+      + JSON.stringify({
+        ...camera,
+        minZoom: INITIAL_VIEW_STATE.minZoom,
+        maxZoom: INITIAL_VIEW_STATE.maxZoom,
+        maxPitch: INITIAL_VIEW_STATE.maxPitch,
+      }, null, 0),
+    );
+  }, []);
+
   // One controlled-view-state sink for every camera change, interactions
   // included. Transition props are one-shot: they must not be stored, or the
   // next render would replay the flight and freeze drag input.
@@ -680,6 +705,14 @@ export default function PolakyHradecV3() {
     delete plain.transitionInterruption;
     setViewState(plain);
     setZoom(plain.zoom);
+
+    // Log once the camera stops moving, not on every frame of a drag.
+    if (cameraLogTimer.current) clearTimeout(cameraLogTimer.current);
+    cameraLogTimer.current = setTimeout(() => logCamera(plain), 500);
+  }, [logCamera]);
+
+  useEffect(() => () => {
+    if (cameraLogTimer.current) clearTimeout(cameraLogTimer.current);
   }, []);
 
   // `?debugRig=1` acceptance gates. Re-runs on a window change so the printed
