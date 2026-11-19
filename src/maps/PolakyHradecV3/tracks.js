@@ -134,10 +134,11 @@ export const SECTION_Z_FRACTIONS = PYLON_SECTION_LAYOUTS.dunaj.zSlots;
 //
 // Each tower section owns an empty vertical slot with air above and below it, so
 // a slot reads as a local 2014 → 2026 time axis and never as elevation. Inside a
-// slot there is one bold horizontal ring per timestep: its height encodes time,
-// its centre shift encodes LOS displacement, and its colour encodes time again
-// through Viridis. Rings stay strictly horizontal — no terrain extension — so the
-// stacks cannot bleed into each other in perspective.
+// slot there is one bold horizontal ring per time bucket (Smoothed) or per
+// acquisition pass (Raw): its height encodes real time, its centre shift encodes
+// LOS displacement, and its colour encodes time again through Viridis. Rings stay
+// strictly horizontal — no terrain extension — so the stacks cannot bleed into
+// each other in perspective.
 //
 // Slot fractions live on each pylon's `sectionSlots` (`PYLON_SECTION_LAYOUTS`);
 // the `SECTION_Z_FRACTIONS` compatibility export above is only the dunaj default.
@@ -147,10 +148,6 @@ export const SECTION_Z_FRACTIONS = PYLON_SECTION_LAYOUTS.dunaj.zSlots;
 export const RING_RADIUS_M = 15;
 /** Vertices around one bold ring. */
 export const RING_SEGMENTS = 64;
-/** Bold rings per section in Smoothed mode. */
-export const RING_SMOOTHED_COUNT = 48;
-/** Sampled acquisition rings per section in Raw mode. */
-export const RING_RAW_COUNT = 120;
 
 /**
  * Ring stroke alpha. Fully opaque: the thin strokes and the section gaps do the
@@ -245,9 +242,33 @@ export function seasonColor(dateMs) {
   return sampleRamp(SEASON_STOPS, phase);
 }
 
-/** Smoothing windows, in days. The cadence is irregular (6–24 d), so never in samples. */
-export const WINDOW_OPTIONS = [30, 90, 180, 365];
-export const DEFAULT_WINDOW_DAYS = 90;
+/**
+ * Time-bucket sizes for Smoothed mode. `days` buckets are fixed UTC spans;
+ * `months` buckets are calendar buckets. `smoothDays` is the centred rolling
+ * window applied on each scatterer's own dates before bucketing.
+ */
+export const BUCKET_OPTIONS = [
+  { id: '1w', label: '1w', title: '1-week buckets (7 days · 21 d smooth)', days: 7, smoothDays: 21 },
+  { id: '2w', label: '2w', title: '2-week buckets (14 days · 30 d smooth)', days: 14, smoothDays: 30 },
+  { id: '1m', label: '1m', title: '1-month calendar buckets (45 d smooth)', months: 1, smoothDays: 45 },
+  { id: '3m', label: '3m', title: '3-month quarterly buckets (90 d smooth)', months: 3, smoothDays: 90 },
+  { id: '6m', label: '6m', title: '6-month half-year buckets (180 d smooth)', months: 6, smoothDays: 180 },
+  { id: '9m', label: '9m', title: '9-month buckets (270 d smooth)', months: 9, smoothDays: 270 },
+  { id: '1y', label: '1y', title: '1-year calendar buckets (365 d smooth)', months: 12, smoothDays: 365 },
+];
+export const DEFAULT_BUCKET_ID = '3m';
+/** Thin stroke used by every stack ring, in both Smoothed and Raw modes. */
+export const RING_STROKE_WIDTH = 0.75;
+
+/**
+ * Bucket spec for a bucket id, defaulting to `3m` for unknown or missing ids.
+ *
+ * @param {string|null|undefined} bucketId
+ * @returns {{ id: string, label: string, title: string, days?: number, months?: number, smoothDays: number }}
+ */
+export function getBucketSpec(bucketId) {
+  return BUCKET_OPTIONS.find(b => b.id === bucketId) ?? BUCKET_OPTIONS[3];
+}
 
 /** Metres per degree of latitude at this latitude; longitude follows cos(lat). */
 export const METRES_PER_DEG_LAT = 111320;

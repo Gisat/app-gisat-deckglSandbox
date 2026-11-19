@@ -9,7 +9,7 @@
  * visible without opening the console details.
  */
 
-import { bandMedianAt, buildSectionRingStacks } from './bandGeometry';
+import { bandMedianAt, bucketKeyAndCenter, buildSectionRingStacks } from './bandGeometry';
 import { SOLVER_TRACK_IDS, losRow, solveBand, towardDeg } from './decomposition';
 import {
   DEFAULT_SCALE_M_PER_MM,
@@ -17,9 +17,8 @@ import {
   RING_RADIUS_M,
   RING_ALPHA_RAW,
   RING_ALPHA_SMOOTHED,
-  RING_RAW_COUNT,
-  RING_SMOOTHED_COUNT,
   TRACK_IDS,
+  getBucketSpec,
   getSectionLayout,
   metresPerDegLon,
 } from './tracks';
@@ -83,12 +82,27 @@ function ringCentre(path, mPerDegLon) {
 }
 
 /**
+ * True when every ring's z is the real-time position of its `u` inside the slot.
+ *
+ * @param {Array<any>} rings Rings of one section.
+ * @param {{ zStart: number, zEnd: number }} slot
+ * @returns {boolean}
+ */
+function zFollowsTime(rings, slot) {
+  return rings.every((ring) => {
+    const expected = slot.zStart + ring.u * (slot.zEnd - slot.zStart);
+    return Math.abs(ring.path[0][2] - expected) < 1e-6;
+  });
+}
+
+/**
  * Runs the debug block.
  *
- * @param {{ store: any, windowDays: number }} input
+ * @param {{ store: any, bucketId: string }} input
  * @returns {number} Number of failed checks.
  */
-export function logRigDebug({ store, windowDays }) {
+export function logRigDebug({ store, bucketId }) {
+  const spec = getBucketSpec(bucketId);
   const log = (message) => console.info(`[rig] ${message}`);
   let failures = 0;
   const must = (name, ok, detail) => {
@@ -96,7 +110,7 @@ export function logRigDebug({ store, windowDays }) {
     if (!ok) failures += 1;
   };
 
-  log(`window ${windowDays} d · union grid ${store.grid.length} epochs · shift ×${Math.round(DEFAULT_SCALE_M_PER_MM * 1000)}`);
+  log(`bucket ${spec.id} (${spec.smoothDays} d smooth) · union grid ${store.grid.length} epochs · shift ×${Math.round(DEFAULT_SCALE_M_PER_MM * 1000)}`);
   log(`common decomposition epoch ${fmtDate(store.commonEpochMs)}`);
 
   const pylon = findPylonById(store, DEBUG_PYLON_ID);
@@ -174,8 +188,9 @@ export function logRigDebug({ store, windowDays }) {
     pylon,
     activeTrackId: DEBUG_TRACK_ID,
     grid: store.grid,
+    trackDates: store.trackDates,
     rawMode: false,
-    windowDays,
+    bucketId: spec.id,
     scaleMPerMm: DEFAULT_SCALE_M_PER_MM,
   });
 
@@ -214,7 +229,6 @@ export function logRigDebug({ store, windowDays }) {
 
   const toward = towardDeg(DEBUG_TRACK_ID);
   const byBand = sections.map((_, band) => smoothed.stacks.filter((ring) => ring.bandIndex === band));
-  const expectedCount = RING_SMOOTHED_COUNT;
 
   for (let band = 0; band < byBand.length; band++) {
     const rings = byBand[band];
@@ -263,20 +277,13 @@ export function logRigDebug({ store, windowDays }) {
     }
 
     log(
-      `  ${label} stack: ${rings.length} rings of ${expectedCount} steps, `
+      `  ${label} stack: ${rings.length} rings, `
       + `z ${fmt(Math.min(...zs))}–${fmt(Math.max(...zs))} m, `
       + `shift |max| ${fmt(Math.max(...rings.map((r) => Math.abs(r.valueMm * DEFAULT_SCALE_M_PER_MM))))} m, `
       + `worst shift error ${worstShift.toExponential(1)} m`,
     );
 
-    // A track that stops before the union grid ends leaves the top step empty, so
-    // the last ring sits at most one step below the ceiling.
-    const step = (slot.zEnd - slot.zStart) / Math.max(1, expectedCount - 1);
-    must(
-      `${label} stack reaches the ceiling within one step`,
-      Math.max(...zs) <= slot.zEnd + 1e-6 && Math.max(...zs) >= slot.zEnd - step - 1e-6,
-      `${fmt(Math.max(...zs) - slot.zEnd)} m from the ceiling`,
-    );
+    must(`${label} ring z follows real time from the union grid`, zFollowsTime(rings, slot));
     must(`${label} stack height increases with time`, ascending);
     must(`${label} rings keep the constant radius`, radiiOk);
     must(`${label} ring shift = value × ×1000 along ${fmt(toward, 0)}°`, shiftOk);
@@ -288,23 +295,40 @@ export function logRigDebug({ store, windowDays }) {
       `${label} ring colours follow Viridis`,
       rings.every((ring) => ring.color.length === 4 && ring.color[3] === RING_ALPHA_SMOOTHED),
     );
+    must(
+      `${label} rings sit on ${spec.id} bucket centres`,
+      rings.every((ring) => (
+        ring.bucketId === spec.id
+        && bucketKeyAndCenter(ring.dateMs, spec).centerMs === ring.dateMs
+      )),
+    );
   }
 
   const raw = buildSectionRingStacks({
     pylon,
     activeTrackId: DEBUG_TRACK_ID,
     grid: store.grid,
+    trackDates: store.trackDates,
     rawMode: true,
-    windowDays,
+    bucketId: spec.id,
     scaleMPerMm: DEFAULT_SCALE_M_PER_MM,
   });
+  const rawDates = new Set(store.trackDates?.[DEBUG_TRACK_ID] ?? store.grid);
   const rawPerBand = sections.map((_, band) => raw.stacks.filter((ring) => ring.bandIndex === band));
-  log(`  raw stacks ${rawPerBand.map((rings) => rings.length).join(' / ')} of ${RING_RAW_COUNT}`);
+  log(`  raw stacks ${rawPerBand.map((rings) => rings.length).join(' / ')} of ${rawDates.size} acquisition dates`);
   must(
     'raw mode uses sampled acquisitions and a lower alpha',
     raw.stacks.length > 0
-      && raw.stacks.length <= sectionCount * RING_RAW_COUNT
+      && rawPerBand.every((rings) => rings.length <= rawDates.size)
       && raw.stacks.every((ring) => ring.color[3] === RING_ALPHA_RAW),
+  );
+  must(
+    'raw ring dates are acquisition dates of the active track',
+    raw.stacks.every((ring) => rawDates.has(ring.dateMs)),
+  );
+  must(
+    'raw rings follow real time from the union grid',
+    rawPerBand.every((rings, band) => zFollowsTime(rings, slots[band])),
   );
 
   // ---- Decomposition -------------------------------------------------------
@@ -322,7 +346,7 @@ export function logRigDebug({ store, windowDays }) {
     const fields = {};
     const weights = {};
     for (const trackId of SOLVER_TRACK_IDS) {
-      fields[trackId] = bandMedianAt(pylon.bands[trackId][band], store.commonEpochMs, windowDays);
+      fields[trackId] = bandMedianAt(pylon.bands[trackId][band], store.commonEpochMs, spec.id);
       weights[trackId] = pylon.nByBandTrack[trackId][band];
     }
     const solution = solveBand({
@@ -367,7 +391,7 @@ export function logRigDebug({ store, windowDays }) {
     const values = [];
     for (let band = 0; band < spot.bandZ.length; band++) {
       for (const trackId of TRACK_IDS) {
-        values.push(bandMedianAt(spot.bands[trackId][band], store.commonEpochMs, windowDays));
+        values.push(bandMedianAt(spot.bands[trackId][band], store.commonEpochMs, spec.id));
       }
     }
     must(

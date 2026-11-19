@@ -41,11 +41,13 @@ import TimelineChart from './TimelineChart';
 import { cartoDarkBasemapUrl } from '../basemaps';
 import {
   BAND_LABELS,
+  BUCKET_OPTIONS,
+  DEFAULT_BUCKET_ID,
   DEFAULT_RING_COLOR_MODE,
   DEFAULT_SCALE_M_PER_MM,
   DEFAULT_TRACK_ID,
-  DEFAULT_WINDOW_DAYS,
   PYLON_NATIVE_HEIGHTS,
+  RING_STROKE_WIDTH,
   RIG_MODES,
   RIG_OFF,
   RIG_RINGS,
@@ -55,7 +57,6 @@ import {
   SEASON_STOPS,
   TRACK_IDS,
   TRACKS,
-  WINDOW_OPTIONS,
   viridisColor,
 } from './tracks';
 import {
@@ -143,18 +144,13 @@ const RIG_REFERENCE_RING_COLOR = [255, 255, 255, 200];
 const RIG_REFERENCE_RING_WIDTH = 1.0;
 const RIG_REFERENCE_RING_DASH = [6, 4];
 
-/**
- * One ring per timestep. Kept thin: 48 rings share ~11 m of height, so a fat
- * line merges the stack into a solid band instead of separate time slices. Raw
- * mode has 120 rings in the same slot and draws thinner still.
- */
-const RIG_STACK_RING_WIDTH_SMOOTHED = 1.5;
-const RIG_STACK_RING_WIDTH_RAW = 0.8;
+// Every stack ring uses the same thin stroke in both series modes, so dense
+// stacks stay readable and the time slices never merge into a solid band.
 
-/** Series mode: rolling median vs one ring per acquisition sample. */
+/** Series mode: time-bucket medians vs one ring per acquisition pass. */
 const SERIES_MODES = [
-  { id: 'smoothed', label: 'Smoothed', title: 'Rolling median over the selected window · 48 rings per section' },
-  { id: 'raw', label: 'Raw', title: 'One ring per sampled acquisition · 120 rings per section' },
+  { id: 'smoothed', label: 'Smoothed', title: 'One ring per selected time bucket · band median per bucket' },
+  { id: 'raw', label: 'Raw', title: 'One ring per acquisition pass of the active track' },
 ];
 
 // Layer-id prefix shared by the 3D LOS point symbols (arrow parts and spheres).
@@ -400,7 +396,7 @@ export default function PolakyHradecV3() {
   const [rigMode, setRigMode] = useState(RIG_RINGS);
   const [seriesMode, setSeriesMode] = useState('smoothed');
   const [ringColorMode, setRingColorMode] = useState(DEFAULT_RING_COLOR_MODE);
-  const [windowDays, setWindowDays] = useState(DEFAULT_WINDOW_DAYS);
+  const [bucketId, setBucketId] = useState(DEFAULT_BUCKET_ID);
   const [scaleMPerMm, setScaleMPerMm] = useState(DEFAULT_SCALE_M_PER_MM);
   const [rigTracks, setRigTracks] = useState(null);
   const [terrainElevations, setTerrainElevations] = useState(null);
@@ -675,8 +671,9 @@ export default function PolakyHradecV3() {
   }, [rigStore, selectedPylonKey]);
 
   // Separated section ring stack for the focused tower and the active track.
-  // Smoothed mode draws RING_SMOOTHED_COUNT bold rings per section, raw mode
-  // RING_RAW_COUNT acquisition-sampled rings — one ring per timestep either way.
+  // Smoothed mode draws one bold ring per non-empty time bucket; Raw mode draws
+  // one ring per acquisition pass of the active track. Ring z is linear in real
+  // time on the union grid either way.
   const ringData = useMemo(() => {
     const empty = { stacks: EMPTY, references: EMPTY };
     if (rigMode !== RIG_RINGS || !focusedPylon || !rigStore) return empty;
@@ -684,11 +681,12 @@ export default function PolakyHradecV3() {
       pylon: focusedPylon,
       activeTrackId,
       grid: rigStore.grid,
+      trackDates: rigStore.trackDates,
       rawMode: seriesMode === 'raw',
-      windowDays,
+      bucketId,
       scaleMPerMm,
     });
-  }, [rigMode, focusedPylon, rigStore, activeTrackId, seriesMode, windowDays, scaleMPerMm]);
+  }, [rigMode, focusedPylon, rigStore, activeTrackId, seriesMode, bucketId, scaleMPerMm]);
 
   // Colour is a cheap post-pass over the memoised geometry, so switching the
   // colour mode never re-runs the band smoothing / median pipeline.
@@ -740,7 +738,7 @@ export default function PolakyHradecV3() {
         fields[trackId] = bandMedianAt(
           focusedPylon.bands[trackId][band],
           rigStore.commonEpochMs,
-          windowDays,
+          bucketId,
         );
       }
       out.push({
@@ -757,7 +755,7 @@ export default function PolakyHradecV3() {
       });
     }
     return out;
-  }, [rigEnabled, focusedPylon, rigStore, windowDays]);
+  }, [rigEnabled, focusedPylon, rigStore, bucketId]);
 
   // The camera belongs to the controller (`initialViewState`), exactly like the
   // other maps here: React only mirrors the zoom for the arrow size band.
@@ -765,12 +763,12 @@ export default function PolakyHradecV3() {
     setZoom(next.zoom);
   }, []);
 
-  // `?debugRig=1` acceptance gates. Re-runs on a window change so the printed
+  // `?debugRig=1` acceptance gates. Re-runs on a bucket change so the printed
   // ring numbers follow the control.
   useEffect(() => {
     if (!debugRig || !rigStore) return;
-    logRigDebug({ store: rigStore, windowDays });
-  }, [debugRig, rigStore, windowDays]);
+    logRigDebug({ store: rigStore, bucketId });
+  }, [debugRig, rigStore, bucketId]);
 
   // Clicking a ring curve switches to that track, focuses its pylon and opens the
   // timeline of the band's median scatterer at the curve tip. The pylon chart stays
@@ -792,10 +790,10 @@ export default function PolakyHradecV3() {
     const scatterer = medianScatterer(
       pylon.bands[ring.trackId]?.[ring.bandIndex] ?? EMPTY,
       ring.dateMs,
-      windowDays,
+      bucketId,
     );
     if (scatterer) setSelectedId(scatterer.properties.ID);
-  }, [rigStore, activeTrackId, tracks, loadTrack, windowDays]);
+  }, [rigStore, activeTrackId, tracks, loadTrack, bucketId]);
 
   const pylonGroups = useMemo(() => {
     const groups = { kocka: [], dunaj: [], portal: [] };
@@ -1161,16 +1159,17 @@ export default function PolakyHradecV3() {
         }));
       }
 
-      // One thin horizontal ring per timestep, stacked through the section. The
-      // ring stays pickable so hover gives date + median LOS and click opens the
-      // section's median scatterer in both charts.
+      // One thin horizontal ring per time bucket (or per acquisition pass in
+      // Raw), stacked through the section. The ring stays pickable so hover gives
+      // date + median LOS and click opens the section's median scatterer in both
+      // charts.
       if (ringData.stacks.length > 0) {
         rigLayers.push(new PathLayer({
           id: RIG_STACK_RING_LAYER,
           data: ringStacks,
           getPath: (d) => d.path,
           getColor: (d) => d.color,
-          getWidth: seriesMode === 'raw' ? RIG_STACK_RING_WIDTH_RAW : RIG_STACK_RING_WIDTH_SMOOTHED,
+          getWidth: RING_STROKE_WIDTH,
           widthUnits: 'pixels',
           billboard: true,
           jointRounded: true,
@@ -1211,7 +1210,6 @@ export default function PolakyHradecV3() {
     rigEnabled,
     terrainReady,
     rigMode,
-    seriesMode,
     ringData,
     ringStacks,
     ringYearLabels,
@@ -1281,7 +1279,7 @@ export default function PolakyHradecV3() {
             return {
               text: [
                 `Pylon ${ring.pylonId ?? '–'} · ${bandTitle(ring)} (${ring.count} pts)`,
-                `${ring.trackId} · ${formatDateMs(ring.dateMs)}`,
+                `${ring.trackId} · ${formatDateMs(ring.dateMs)} (${seriesMode === 'raw' ? 'raw pass' : ring.bucketId})`,
                 `Median LOS: ${formatSignedMm(ring.valueMm)} mm`,
               ].join('\n'),
             };
@@ -1431,21 +1429,21 @@ export default function PolakyHradecV3() {
                 </button>
               ))}
             </div>
-            <div style={{ ...OVERLAY_TITLE_STYLE, marginTop: '6px' }}>Window</div>
-            <div role="group" aria-label="Smoothing window" style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
-              {WINDOW_OPTIONS.map(days => {
-                const active = seriesMode === 'smoothed' && windowDays === days;
+            <div style={{ ...OVERLAY_TITLE_STYLE, marginTop: '6px' }}>Bucket</div>
+            <div role="group" aria-label="Time bucket" style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
+              {BUCKET_OPTIONS.map(spec => {
+                const active = seriesMode === 'smoothed' && bucketId === spec.id;
                 return (
                   <button
-                    key={days}
+                    key={spec.id}
                     type="button"
-                    onClick={() => setWindowDays(days)}
+                    onClick={() => setBucketId(spec.id)}
                     aria-pressed={active}
                     disabled={seriesMode === 'raw'}
-                    title={`Centred rolling mean over ${days} days`}
+                    title={spec.title}
                     style={{ ...trackButtonStyle(active), opacity: seriesMode === 'raw' ? 0.4 : 1 }}
                   >
-                    {days} d
+                    {spec.label}
                   </button>
                 );
               })}
