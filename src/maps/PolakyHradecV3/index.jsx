@@ -267,9 +267,6 @@ const INITIAL_VIEW_STATE = {
   maxPitch: 70,
 };
 
-// TEMP camera diagnostics: remove once the first-frame jump is understood.
-console.info('[polaky] module initial view', JSON.stringify(INITIAL_VIEW_STATE));
-
 const TERRAIN_OPTIONS = {
   type: 'terrain',
   useChannel: 1,
@@ -405,10 +402,11 @@ export default function PolakyHradecV3() {
   // Controlled view state. deck.gl 9.4 removed `Deck.flyTo`, so camera moves are
   // expressed as a view-state update carrying a transition interpolator — the
   // same mechanism the controller uses, and it cannot throw on a missing ref.
+  // The scene waits for the terrain layer's first elevation range; after 6 s it
+  // renders anyway so an unreachable COG cannot leave a blank map.
+  const [terrainWaitExpired, setTerrainWaitExpired] = useState(false);
   // Dev helper: settle-debounce timer for the camera log below.
   const cameraLogTimer = useRef(null);
-  // TEMP camera diagnostics: logs the first view state the controller reports.
-  const firstViewLogged = useRef(false);
   // `?debugRig=1` prints the plan's acceptance gates; any other route ignores it.
   const debugRig = useMemo(
     () => new URLSearchParams(window.location.search).get('debugRig') === '1',
@@ -601,6 +599,14 @@ export default function PolakyHradecV3() {
     });
   }, [rigTracks, pylonsLoaded, pylonFeatures, terrainElevations]);
 
+  useEffect(() => {
+    if (zRange != null || terrainWaitExpired) return undefined;
+    const timer = setTimeout(() => setTerrainWaitExpired(true), 6000);
+    return () => clearTimeout(timer);
+  }, [zRange, terrainWaitExpired]);
+
+  const terrainReady = zRange != null || terrainWaitExpired;
+
   const rigReady = rigStore != null;
   const rigEnabled = rigMode !== RIG_OFF;
   const rigStatusLabel = rigTracks?.status === 'error'
@@ -710,16 +716,6 @@ export default function PolakyHradecV3() {
   // no React-owned view state to hand back, so the map cannot be re-seeded with a
   // stale camera after the first paint.
   const handleViewStateChange = useCallback(({ viewState: next }) => {
-    if (!firstViewLogged.current) {
-      firstViewLogged.current = true;
-      console.info('[polaky] first view state', JSON.stringify({
-        longitude: next.longitude,
-        latitude: next.latitude,
-        zoom: next.zoom,
-        pitch: next.pitch,
-        bearing: next.bearing,
-      }));
-    }
     setZoom(next.zoom);
 
     // Log once the camera stops moving, not on every frame of a drag.
@@ -916,6 +912,12 @@ export default function PolakyHradecV3() {
       pickable: false,
       terrainOptions: TERRAIN_OPTIONS,
     });
+
+    // Nothing terrain-dependent is drawn until the terrain layer has reported its
+    // elevation bounds. Before that the drape, the towers and the rig are placed
+    // against a default range and the whole scene snaps when the real range
+    // arrives — which reads as a camera jump even though the camera never moves.
+    if (!terrainReady) return [terrainLayer];
 
     // zRange keeps the draped tiles from being frustum-culled in tilted views.
     const basemapLayer = new TileLayer({
@@ -1158,6 +1160,7 @@ export default function PolakyHradecV3() {
     selectedPylonKey,
     hoveredPylonKey,
     rigEnabled,
+    terrainReady,
     rigMode,
     seriesMode,
     ringData,
@@ -1262,14 +1265,14 @@ export default function PolakyHradecV3() {
         className="deckgl-map"
       />
 
-      {isLoading && (
+      {(isLoading || !terrainReady) && (
         <div style={{
           ...OVERLAY_CARD_STYLE,
           top: 10,
           left: '50%',
           transform: 'translateX(-50%)',
         }}>
-          Loading data...
+          {terrainReady ? 'Loading data...' : 'Loading terrain...'}
         </div>
       )}
 

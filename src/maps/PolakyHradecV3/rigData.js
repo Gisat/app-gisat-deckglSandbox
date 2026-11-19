@@ -230,9 +230,9 @@ export function buildRigStore({
 
   if (dropped) warnings.push(`${dropped} pylon feature(s) dropped: no join key or coordinates`);
 
-  if (terrainElevations === null) {
-    warnings.push('terrain not sampled: the rig cannot be anchored');
-  } else {
+  // `null` means the COG sample is still in flight; only report an attempted
+  // sample that came back incomplete.
+  if (terrainElevations) {
     const missing = [...pylons.values()].filter(p => !Number.isFinite(p.terrainElevation));
     if (missing.length) {
       warnings.push(`${missing.length} pylon(s) without a terrain sample: ${missing.map(p => p.id).join(', ')}`);
