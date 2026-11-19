@@ -1,3 +1,11 @@
+## [1.24.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.23.0...v1.24.0) (2026-11-19)
+
+### Features
+
+* **polaky:** ring color modes and reference year labels ([6f0c74a](https://github.com/Gisat/app-gisat-deckglSandbox/commit/6f0c74aa706a3c30a1601c8aa4d7bf1930808214))
+* **polaky:** time-bucket smoothed rings and per-pass raw rings ([1716eaa](https://github.com/Gisat/app-gisat-deckglSandbox/commit/1716eaafdcc302ac669e0ad6eb9f0eefdb1c97c8))
+* **polaky:** type-aware pylon section layouts ([50d22eb](https://github.com/Gisat/app-gisat-deckglSandbox/commit/50d22ebf3ef4fb2712534c5af8c97536cec687bd))
+
 ## [1.23.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.22.0...v1.23.0) (2026-11-19)
 
 ### Features
