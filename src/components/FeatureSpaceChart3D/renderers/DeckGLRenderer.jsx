@@ -267,13 +267,13 @@ function axisSegments(edges, enabled) {
   ].filter((segment) => enabled[segment.key]);
 }
 
-function cubeLayer(edges, enabled) {
+function cubeLayer(edges, enabled, color = [225, 225, 225, 255]) {
   return new LineLayer({
     id: 'feature-space-cube',
     data: cubeSegments(edges, enabled),
     getSourcePosition: (d) => d.source,
     getTargetPosition: (d) => d.target,
-    getColor: [225, 225, 225, 255],
+    getColor: color,
     widthUnits: 'pixels',
     getWidth: GRID_WIDTH,
     pickable: false,
@@ -286,7 +286,11 @@ function cubeLayer(edges, enabled) {
  * grid stays on the far faces behind the data. All geometry is generated in
  * cube space and stays depth-tested with the points.
  */
-function axisOverlay({ edges, far, ticks, titles, enabled }) {
+function axisOverlay({ edges, far, ticks, titles, enabled, colors = null }) {
+  // Light ink for a white card (default), light-on-dark ink for the graphite card.
+  const tickColor = colors?.tick ?? TICK_LABEL_COLOR;
+  const titleColor = colors?.title ?? TITLE_LABEL_COLOR;
+  const gridLineColor = colors?.grid ?? GRID_COLOR;
   const c = CUBE;
   const [fx, fy, fz] = far;
   const tickOff = c + 0.08;
@@ -303,17 +307,17 @@ function axisOverlay({ edges, far, ticks, titles, enabled }) {
     titleLabels.push({
       position,
       text: titles[slot],
-      color: TITLE_LABEL_COLOR,
+      color: titleColor,
       size: TITLE_SIZE,
       direction: AXIS_DIRECTIONS[slot],
     });
   };
   const pushTick = (slot, position, label) => {
     if (!enabled[slot]) return;
-    tickLabels.push({ position, text: label, color: TICK_LABEL_COLOR, size: TICK_LABEL_SIZE });
+    tickLabels.push({ position, text: label, color: tickColor, size: TICK_LABEL_SIZE });
   };
   const pushGrid = (source, target) => {
-    lines.push({ source, target, color: GRID_COLOR, width: GRID_WIDTH });
+    lines.push({ source, target, color: gridLineColor, width: GRID_WIDTH });
   };
   // A tick at the very end of the domain maps to ±CUBE, where its grid line
   // would land exactly on a wireframe edge and z-fight with it.
@@ -367,8 +371,21 @@ function axisOverlay({ edges, far, ticks, titles, enabled }) {
  * @param {{ by?: 'velAvg'|'settlement', domain?: [number, number] }} [props.timelineColor]  timeline colour key
  * @param {boolean} [props.symmetricTimelineZ]  pin the timeline Z domain symmetrically around 0
  */
-export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover, onPointClick, zoomOutScatter = false, velAvgPalette = null, velAvgDomain = null, timelineColor = null, symmetricTimelineZ = false }) {
+export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange, markerStyle, profile, onHover, onPointClick, zoomOutScatter = false, velAvgPalette = null, velAvgDomain = null, timelineColor = null, symmetricTimelineZ = false, dark = false }) {
   const [tooltip, setTooltip] = useState(null);
+
+  // Axis ink follows the host card: the light defaults are tuned for a white card,
+  // the dark set for a graphite one (v3). Axis shaft colours stay categorical.
+  const axisColors = useMemo(
+    () => (dark
+      ? { tick: [206, 212, 219], title: [232, 236, 241], grid: [70, 76, 84, 255] }
+      : { tick: TICK_LABEL_COLOR, title: TITLE_LABEL_COLOR, grid: GRID_COLOR }),
+    [dark],
+  );
+  const cubeColor = useMemo(
+    () => (dark ? [104, 110, 118, 255] : [225, 225, 225, 255]),
+    [dark],
+  );
 
   // Controlled camera: the axis labels are sized from the live clip-space depth
   // (see `labelSizeFactor`), so a re-render per interaction is required. Clone
@@ -524,8 +541,8 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
           y: makeTicks([domains.y.min, domains.y.max], axisTickFormatter(axes.y, [domains.y.min, domains.y.max])),
           z: makeTicks([domains.z.min, domains.z.max], axisTickFormatter(axes.z, [domains.z.min, domains.z.max])),
         };
-    return axisOverlay({ edges: axisEdgeSigns(signs), far: signs, ticks, titles, enabled });
-  }, [axes, domains, frame, signs]);
+    return axisOverlay({ edges: axisEdgeSigns(signs), far: signs, ticks, titles, enabled, colors: axisColors });
+  }, [axes, domains, frame, signs, axisColors]);
 
   const view = useMemo(() => new OrbitView({ orbitAxis: 'Z', fovy: 45 }), []);
 
@@ -768,7 +785,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
   }, [frame, markerStyle]);
 
   const staticLayers = useMemo(() => {
-    const base = [cubeLayer(axisEdgeSigns(signs), axis.enabled)];
+    const base = [cubeLayer(axisEdgeSigns(signs), axis.enabled, cubeColor)];
     const axisLineLayer = axis.lines.length > 0
       ? new LineLayer({
           id: 'feature-space-axes',
@@ -827,7 +844,7 @@ export function DeckGLRenderer({ points, axes, colorScale, sizeDomain, sizeRange
         });
 
     return [...base, ...axisLines, markerLayer];
-  }, [axis, signs, frame, profileLayers, scatterData, colorScale, axes.color, axes.size, sizeDomain, sizeRange, markerStyle]);
+  }, [axis, signs, frame, profileLayers, scatterData, colorScale, axes.color, axes.size, sizeDomain, sizeRange, markerStyle, cubeColor]);
 
   // Labels live in their own memo: only their sizes depend on the camera, so
   // orbiting/zooming refreshes ~20 glyphs instead of every point attribute.

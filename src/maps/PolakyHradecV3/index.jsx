@@ -402,7 +402,6 @@ export default function PolakyHradecV3() {
   // Controlled view state. deck.gl 9.4 removed `Deck.flyTo`, so camera moves are
   // expressed as a view-state update carrying a transition interpolator — the
   // same mechanism the controller uses, and it cannot throw on a missing ref.
-  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
   // Dev helper: settle-debounce timer for the camera log below.
   const cameraLogTimer = useRef(null);
   // `?debugRig=1` prints the plan's acceptance gates; any other route ignores it.
@@ -701,28 +700,16 @@ export default function PolakyHradecV3() {
     );
   }, []);
 
-  // One controlled-view-state sink for every camera change, interactions
-  // included. Transition props are one-shot: they must not be stored, or the
-  // next render would replay the flight and freeze drag input.
+  // The camera belongs to the controller (`initialViewState`), exactly like the
+  // other maps here: React only mirrors the zoom for the arrow size band. There is
+  // no React-owned view state to hand back, so the map cannot be re-seeded with a
+  // stale camera after the first paint.
   const handleViewStateChange = useCallback(({ viewState: next }) => {
-    const plain = {
-      ...next,
-      // Keep the map constraints from INITIAL_VIEW_STATE: in controlled mode the
-      // controller only sees what the app hands back.
-      minZoom: INITIAL_VIEW_STATE.minZoom,
-      maxZoom: INITIAL_VIEW_STATE.maxZoom,
-      maxPitch: INITIAL_VIEW_STATE.maxPitch,
-    };
-    delete plain.transitionDuration;
-    delete plain.transitionInterpolator;
-    delete plain.transitionEasing;
-    delete plain.transitionInterruption;
-    setViewState(plain);
-    setZoom(plain.zoom);
+    setZoom(next.zoom);
 
     // Log once the camera stops moving, not on every frame of a drag.
     if (cameraLogTimer.current) clearTimeout(cameraLogTimer.current);
-    cameraLogTimer.current = setTimeout(() => logCamera(plain), 500);
+    cameraLogTimer.current = setTimeout(() => logCamera(next), 500);
   }, [logCamera]);
 
   useEffect(() => () => {
@@ -1179,7 +1166,7 @@ export default function PolakyHradecV3() {
       background: '#14171b',
     }}>
       <DeckGL
-        viewState={viewState}
+        initialViewState={INITIAL_VIEW_STATE}
         onViewStateChange={handleViewStateChange}
         getCursor={() => (
           hoveredPylonKey != null || hoveredSphereId != null || hoveredRing ? 'pointer' : 'grab'
@@ -1510,6 +1497,7 @@ export default function PolakyHradecV3() {
               <FeatureSpaceChart
                 featureCollection={pylonFeatureCollection}
                 embedded
+                dark
                 showTimeline
                 defaultChartType="timeline"
                 profileDisabled

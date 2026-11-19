@@ -47,19 +47,19 @@ export default function TimelineChart({ feature, trackLabel = '–', onClose }) 
     flexDirection: 'column',
     boxSizing: 'border-box',
     padding: '8px 10px 10px',
-    background: '#fff',
-    border: '1px solid #ddd',
+    background: 'rgba(32, 35, 41, 0.95)',
+    border: '1px solid #484d55',
     borderRadius: '8px',
-    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25)',
+    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.45)',
     fontFamily: 'system-ui, sans-serif',
   };
 
   const header = (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '4px' }}>
-      <div style={{ fontSize: '11px', fontWeight: 600, color: '#333' }}>
+      <div style={{ fontSize: '11px', fontWeight: 600, color: '#e8eaed' }}>
         Point {props.ID ?? '–'} · {trackLabel}
       </div>
-      <div style={{ fontSize: '11px', color: '#555' }}>
+      <div style={{ fontSize: '11px', color: '#b3b8bf' }}>
         VEL_AVG <b>{formatNumber(props.VEL_AVG, 2)}</b> mm/yr
       </div>
       <button
@@ -73,9 +73,9 @@ export default function TimelineChart({ feature, trackLabel = '–', onClose }) 
           lineHeight: '18px',
           padding: 0,
           fontSize: '16px',
-          color: '#555',
+          color: '#b3b8bf',
           background: 'none',
-          border: '1px solid #ccc',
+          border: '1px solid #4a4f57',
           borderRadius: '4px',
           cursor: 'pointer',
         }}
@@ -94,7 +94,7 @@ export default function TimelineChart({ feature, trackLabel = '–', onClose }) 
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#999',
+          color: '#9aa0a8',
           fontSize: '12px',
         }}>
           No d_* timeline data for this point.
@@ -133,13 +133,13 @@ export default function TimelineChart({ feature, trackLabel = '–', onClose }) 
             tickSize: 4,
             tickPadding: 6,
           }}
-          colors={['#228BE6']}
+          colors={['#5aa9ff']}
           // nivo 0.99 has no `enableLine`; omitting the `lines` layer removes the
           // connecting line while keeping the per-sample dots, mesh and crosshair.
           layers={['grid', 'markers', 'axes', 'areas', 'crosshair', 'points', 'slices', 'mesh', 'legends']}
           pointSize={3.5}
           enablePoints={true}
-          pointColor="#228BE6"
+          pointColor="#5aa9ff"
           pointBorderWidth={0}
           enableArea={false}
           enableGridX={false}
@@ -149,12 +149,12 @@ export default function TimelineChart({ feature, trackLabel = '–', onClose }) 
           tooltip={({ point }) => (
             <div style={{
               padding: '4px 8px',
-              background: '#fff',
-              border: '1px solid #ccc',
+              background: '#2a2d33',
+              border: '1px solid #4a4f57',
               borderRadius: '4px',
-              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
+              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.45)',
               fontSize: '11px',
-              color: '#333',
+              color: '#e8eaed',
               fontFamily: 'system-ui, sans-serif',
             }}>
               <div>{formatDate(point.data.x)}</div>
@@ -162,19 +162,19 @@ export default function TimelineChart({ feature, trackLabel = '–', onClose }) 
             </div>
           )}
           theme={{
-            textColor: '#333',
+            textColor: '#e8eaed',
             fontSize: 11,
             fontFamily: 'system-ui, sans-serif',
             axis: {
-              domain: { line: { stroke: '#ccc' } },
-              legend: { text: { fill: '#333', fontSize: 11 } },
+              domain: { line: { stroke: '#4a4f57' } },
+              legend: { text: { fill: '#e8eaed', fontSize: 11 } },
               ticks: {
-                line: { stroke: '#ccc' },
-                text: { fill: '#555', fontSize: 10 },
+                line: { stroke: '#4a4f57' },
+                text: { fill: '#b3b8bf', fontSize: 10 },
               },
             },
-            grid: { line: { stroke: '#eee' } },
-            crosshair: { line: { stroke: '#999', strokeWidth: 1, strokeOpacity: 0.6 } },
+            grid: { line: { stroke: '#33373d' } },
+            crosshair: { line: { stroke: '#c6ccd4', strokeWidth: 1, strokeOpacity: 0.6 } },
           }}
         />
       </div>
