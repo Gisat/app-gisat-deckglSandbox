@@ -126,14 +126,18 @@ const RIG_REFERENCE_RING_LAYER = 'rig-reference-rings';
 const RIG_STACK_RING_LAYER = 'rig-stack-rings';
 const RIG_DEBUG_MARKER_LAYER = 'rig-debug-band-markers';
 
-/** 0 mm floor/ceiling rings per section: dashed white, thin, never picked. */
+/** 0 mm floor/ceiling rings per section: dashed white, hairline, never picked. */
 const RIG_REFERENCE_RING_COLOR = [255, 255, 255, 200];
-const RIG_REFERENCE_RING_WIDTH = 1.5;
+const RIG_REFERENCE_RING_WIDTH = 1.0;
 const RIG_REFERENCE_RING_DASH = [6, 4];
 
-/** One bold ring per timestep; raw mode is denser so it draws thinner. */
-const RIG_STACK_RING_WIDTH_SMOOTHED = 3.2;
-const RIG_STACK_RING_WIDTH_RAW = 2.0;
+/**
+ * One ring per timestep. Kept thin: 48 rings share ~11 m of height, so a fat
+ * line merges the stack into a solid band instead of separate time slices. Raw
+ * mode has 120 rings in the same slot and draws thinner still.
+ */
+const RIG_STACK_RING_WIDTH_SMOOTHED = 1.8;
+const RIG_STACK_RING_WIDTH_RAW = 1.0;
 
 /** Auto-zoom target when the rig is switched on (rings span 23 m). */
 const RIG_FOCUS_ZOOM = 18;
@@ -1075,8 +1079,8 @@ export default function PolakyHradecV3() {
         }));
       }
 
-      // One bold horizontal ring per timestep, stacked through the section. The
-      // ring is pickable so hover gives date + median LOS and click opens the
+      // One thin horizontal ring per timestep, stacked through the section. The
+      // ring stays pickable so hover gives date + median LOS and click opens the
       // section's median scatterer in both charts.
       if (ringData.stacks.length > 0) {
         rigLayers.push(new PathLayer({
