@@ -19,15 +19,17 @@
 
 import { towardDeg } from './decomposition';
 import {
+  DEFAULT_BUCKET_ID,
+  DEFAULT_RING_COLOR_MODE,
   METRES_PER_DEG_LAT,
   RING_ALPHA_RAW,
   RING_ALPHA_SMOOTHED,
   RING_RADIUS_M,
-  RING_RAW_COUNT,
   RING_SEGMENTS,
-  RING_SMOOTHED_COUNT,
-  SECTION_Z_FRACTIONS,
+  getBucketSpec,
+  getSectionLayout,
   metresPerDegLon,
+  seasonColor,
   viridisColor,
 } from './tracks';
 
@@ -235,6 +237,113 @@ export function median(values) {
   return finite.length % 2 ? finite[mid] : (finite[mid - 1] + finite[mid]) / 2;
 }
 
+/** A section needs this many reliable scatterers before outliers are excluded. */
+const MIN_RELIABLE_COH = 0.55;
+const IRRELIABLE_CLASS = 'IRRELIABILITY';
+
+/**
+ * Scatterers used for a section's median: the reliable ones when at least two
+ * exist, otherwise the whole section. Sparse sections must never go blank, so
+ * the reliability filter only bites when it still leaves a usable sample.
+ *
+ * @param {Array<any>} scatterers
+ * @returns {Array<any>}
+ */
+function selectSectionScatterers(scatterers) {
+  const list = Array.isArray(scatterers) ? scatterers : [];
+  const reliable = list.filter((feature) => {
+    const props = feature?.properties;
+    return Number(props?.COH) >= MIN_RELIABLE_COH
+      && props?.CL_PRG !== IRRELIABLE_CLASS;
+  });
+  return reliable.length >= 2 ? reliable : list;
+}
+
+/**
+ * UTC bucket key and centre for one instant.
+ *
+ * Fixed-day buckets (`spec.days`) are aligned to whole spans since the Unix
+ * epoch. Calendar buckets (`spec.months`) start on a UTC month boundary, with the
+ * bucket index counted in months so 1m / 3m / 6m / 1y align to the calendar.
+ *
+ * @param {number} epochMs
+ * @param {any} bucketSpec Spec from `getBucketSpec`.
+ * @returns {{ key: number|null, centerMs: number }} `key` is null for a
+ *   non-finite input; callers filter those out.
+ */
+export function bucketKeyAndCenter(epochMs, bucketSpec) {
+  if (!Number.isFinite(epochMs)) return { key: null, centerMs: NaN };
+  const spec = bucketSpec ?? getBucketSpec(DEFAULT_BUCKET_ID);
+
+  if (Number.isFinite(spec.months)) {
+    const months = Math.max(1, spec.months);
+    const date = new Date(epochMs);
+    const monthTotal = date.getUTCFullYear() * 12 + date.getUTCMonth();
+    const key = Math.floor(monthTotal / months) * months;
+    const startYear = Math.floor(key / 12);
+    const startMonth = key - startYear * 12;
+    const startMs = Date.UTC(startYear, startMonth, 1);
+    const endMs = Date.UTC(startYear, startMonth + months, 1);
+    return { key, centerMs: Math.round((startMs + endMs) / 2) };
+  }
+
+  const spanMs = Math.max(1, spec.days) * DAY_MS;
+  const key = Math.floor(epochMs / spanMs);
+  return { key, centerMs: (key + 0.5) * spanMs };
+}
+
+/**
+ * Bucketed band median: one value per non-empty UTC time bucket.
+ *
+ * Two-level median per bucket, never one flat median over all samples: each
+ * scatterer is smoothed on its own dates, reduced to its own median inside the
+ * bucket, and only then are the per-scatterer medians reduced spatially. This
+ * stops a densely sampled scatterer from outvoting the rest of the section.
+ *
+ * @param {Array<any>} scatterers Features assigned to one band of one track.
+ * @param {string} [bucketId]
+ * @returns {Array<{ key: number, dateMs: number, valueMm: number }>} Sorted by
+ *   bucket centre. Empty buckets are omitted, never carried forward.
+ */
+export function bucketedBandSeries(scatterers, bucketId = DEFAULT_BUCKET_ID) {
+  const spec = getBucketSpec(bucketId);
+  const centres = new Map();
+  const perScatterer = new Map();
+
+  for (const feature of selectSectionScatterers(scatterers)) {
+    const { dates, values } = featureSeries(feature);
+    if (dates.length === 0) continue;
+    const smoothed = smoothSeries(values, dates, spec.smoothDays);
+
+    const byKey = new Map();
+    for (let i = 0; i < smoothed.length; i++) {
+      const value = smoothed[i];
+      if (!Number.isFinite(value)) continue;
+      const { key, centerMs } = bucketKeyAndCenter(dates[i], spec);
+      if (key === null) continue;
+      if (!centres.has(key)) centres.set(key, centerMs);
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key).push(value);
+    }
+
+    for (const [key, bucketValues] of byKey) {
+      const valueMm = median(bucketValues);
+      if (valueMm === null) continue;
+      if (!perScatterer.has(key)) perScatterer.set(key, []);
+      perScatterer.get(key).push(valueMm);
+    }
+  }
+
+  const out = [];
+  for (const [key, samples] of perScatterer) {
+    const valueMm = median(samples);
+    if (valueMm === null) continue;
+    out.push({ key, dateMs: centres.get(key), valueMm });
+  }
+  out.sort((a, b) => a.dateMs - b.dateMs || a.key - b.key);
+  return out;
+}
+
 /**
  * Smoothed band median on the union grid: smooth every scatterer on its own
  * dates, interpolate the *smoothed* series onto `grid`, then take the pointwise
@@ -248,7 +357,7 @@ export function median(values) {
 export function bandMedianSeries(scatterers, windowDays, grid) {
   if (!Array.isArray(grid) || grid.length === 0) return [];
   const columns = [];
-  for (const feature of scatterers ?? []) {
+  for (const feature of selectSectionScatterers(scatterers)) {
     const { dates, values } = featureSeries(feature);
     if (dates.length === 0) continue;
     const smoothed = smoothSeries(values, dates, windowDays);
@@ -278,12 +387,13 @@ export function bandMedianSeries(scatterers, windowDays, grid) {
  *
  * @param {Array<any>} scatterers
  * @param {number} epochMs
- * @param {number} windowDays
+ * @param {string} [bucketId] Bucket id; its `smoothDays` is the rolling window.
  * @returns {number|null}
  */
-export function bandMedianAt(scatterers, epochMs, windowDays) {
+export function bandMedianAt(scatterers, epochMs, bucketId = DEFAULT_BUCKET_ID) {
+  const windowDays = getBucketSpec(bucketId).smoothDays;
   const samples = [];
-  for (const feature of scatterers ?? []) {
+  for (const feature of selectSectionScatterers(scatterers)) {
     const { dates, values } = featureSeries(feature);
     if (dates.length === 0) continue;
     const smoothed = smoothSeries(values, dates, windowDays);
@@ -332,12 +442,13 @@ export function resampleSeries(series, grid, count) {
  *
  * @param {Array<any>} scatterers
  * @param {number} epochMs
- * @param {number} windowDays
+ * @param {string} [bucketId] Bucket id; its `smoothDays` is the rolling window.
  * @returns {any|null}
  */
-export function medianScatterer(scatterers, epochMs, windowDays) {
+export function medianScatterer(scatterers, epochMs, bucketId = DEFAULT_BUCKET_ID) {
+  const windowDays = getBucketSpec(bucketId).smoothDays;
   const candidates = [];
-  for (const feature of scatterers ?? []) {
+  for (const feature of selectSectionScatterers(scatterers)) {
     const { dates, values } = featureSeries(feature);
     if (dates.length === 0) continue;
     const smoothed = smoothSeries(values, dates, windowDays);
@@ -363,7 +474,7 @@ export function medianScatterer(scatterers, epochMs, windowDays) {
 export function rawBandMedianSeries(scatterers, grid) {
   if (!Array.isArray(grid) || grid.length === 0) return [];
   const columns = [];
-  for (const feature of scatterers ?? []) {
+  for (const feature of selectSectionScatterers(scatterers)) {
     const { dates, values } = featureSeries(feature);
     if (dates.length === 0) continue;
     columns.push(interpolateSeries(grid, dates, values));
@@ -399,34 +510,88 @@ function ringPath(center, mPerDegLon, z, radiusM = RING_RADIUS_M, segments = RIN
 }
 
 /**
- * Separated 3-section ring stack for one tower and one track.
+ * Displacement colour from the active orbit's VEL_AVG chroma scale, clamped to
+ * that scale's own domain. Falls back to neutral gray without a scale.
+ */
+function displacementRingRgb(scale, valueMm) {
+  if (typeof scale !== 'function' || !Number.isFinite(valueMm)) return [175, 182, 192];
+  const [min, max] = typeof scale.domain === 'function' ? scale.domain() : [];
+  return scale(
+    Number.isFinite(min) && Number.isFinite(max)
+      ? Math.max(min, Math.min(max, valueMm))
+      : valueMm,
+  ).rgb();
+}
+
+/**
+ * RGB for one ring under the selected colour mode.
  *
- * Three vertical slots, each bracketed by a white 0 mm reference ring at its
- * floor (2014) and ceiling (2026). Inside a slot, one bold horizontal ring per
- * timestep: height encodes time, centre shift encodes LOS displacement along the
- * track's toward-sensor bearing, colour is Viridis over the same time axis. The
- * ring radius is constant, so a shift of +8 mm at ×1 moves the whole circle 8 m
- * — no radius change, no vertical exaggeration of the values themselves.
+ * Kept separate from `buildSectionRingStacks` so a pure colour switch does not
+ * re-run the band smoothing and ring-geometry pipeline.
+ *
+ * @param {any} ring Ring object from `buildSectionRingStacks` (needs `u`,
+ *   `dateMs` and `valueMm`).
+ * @param {string} [ringColorMode]
+ * @param {Function|null} [displacementScale]
+ * @returns {[number, number, number]} RGB.
+ */
+export function ringColor(
+  ring,
+  ringColorMode = DEFAULT_RING_COLOR_MODE,
+  displacementScale = null,
+) {
+  if (ringColorMode === 'season') return seasonColor(ring.dateMs);
+  if (ringColorMode === 'displacement') return displacementRingRgb(displacementScale, ring.valueMm);
+  return viridisColor(ring.u);
+}
+
+/**
+ * Separated section ring stack for one tower and one track.
+ *
+ * One vertical slot per section of the tower's layout (`pylon.sectionSlots`),
+ * each bracketed by a white 0 mm reference ring at its floor (2014) and ceiling
+ * (2026). Inside a slot, one bold horizontal ring per time bucket (Smoothed) or
+ * per acquisition pass of the active track (Raw). Ring height is strictly linear
+ * in real time: `u = (dateMs - gridStart) / (gridEnd - gridStart)` from the union
+ * grid, clamped to `[0, 1]`, and the same `u` drives z and the Viridis time
+ * colour. The centre shift encodes LOS displacement along the track's
+ * toward-sensor bearing; colour follows `ringColorMode` (the map host recolours
+ * without rebuilding geometry). The ring radius is constant, so a shift of
+ * +8 mm at ×1 moves the whole circle 8 m — no radius change, no vertical
+ * exaggeration of the values themselves.
+ *
+ * Smoothed buckets that contain no finite sample are omitted, never
+ * interpolated. Empty sections emit neither reference nor stack rings, so no
+ * white circles float in empty air.
  *
  * @param {{
  *   pylon: any, activeTrackId: string, grid: number[],
- *   rawMode?: boolean, windowDays?: number, scaleMPerMm?: number,
- * }} options
+ *   trackDates?: Record<string, number[]>|null,
+ *   rawMode?: boolean, bucketId?: string, scaleMPerMm?: number,
+ *   ringColorMode?: string, displacementScale?: Function|null,
+ * }} options `grid` is the union time axis and the z anchor; `trackDates` is the
+ *   per-track acquisition date list used by Raw mode (falls back to `grid`).
  * @returns {{
  *   stacks: Array<{
- *     path: number[][], color: number[], bandIndex: number, trackId: string,
- *     dateMs: number, valueMm: number, pylonId: any, pylonKey: string, count: number,
+ *     path: number[][], color: number[], bandIndex: number, bandLabel: string,
+ *     trackId: string, dateMs: number, valueMm: number, u: number,
+ *     pylonId: any, pylonKey: string, count: number, bucketId?: string,
  *   }>,
- *   references: Array<{ path: number[][], bandIndex: number, kind: 'floor'|'ceiling' }>,
+ *   references: Array<{
+ *     path: number[][], bandIndex: number, kind: 'floor'|'ceiling', bandLabel: string,
+ *   }>,
  * }}
  */
 export function buildSectionRingStacks({
   pylon,
   activeTrackId,
   grid,
+  trackDates = null,
   rawMode = false,
-  windowDays = 90,
+  bucketId = DEFAULT_BUCKET_ID,
   scaleMPerMm = 1,
+  ringColorMode = DEFAULT_RING_COLOR_MODE,
+  displacementScale = null,
 }) {
   const empty = { stacks: [], references: [] };
   if (!pylon || !Array.isArray(grid) || grid.length < 2) return empty;
@@ -436,53 +601,76 @@ export function buildSectionRingStacks({
 
   const mPerDegLon = metresPerDegLon(pylon.lat);
   const towardRad = (towardDeg(activeTrackId) * Math.PI) / 180;
-  const count = rawMode ? RING_RAW_COUNT : RING_SMOOTHED_COUNT;
   const alpha = rawMode ? RING_ALPHA_RAW : RING_ALPHA_SMOOTHED;
+  // Both halves of the layout come from one source, so slots and labels can
+  // never be paired across different tower types.
+  const layout = getSectionLayout(pylon.typ);
+  const slots = pylon.sectionSlots ?? layout.zSlots;
+  const labels = pylon.sectionLabels ?? layout.labels;
+
+  // The z anchor is the union grid, never the entry list: Raw dates span only
+  // the active track's record and would otherwise stretch to the whole slot.
+  const gridStartMs = grid[0];
+  const gridEndMs = grid[grid.length - 1];
+  const gridSpanMs = Math.max(1, gridEndMs - gridStartMs);
+  const activeDates = rawMode ? (trackDates?.[activeTrackId] ?? grid) : null;
 
   const stacks = [];
   const references = [];
 
-  for (let bandIndex = 0; bandIndex < SECTION_Z_FRACTIONS.length; bandIndex++) {
-    const [startFraction, endFraction] = SECTION_Z_FRACTIONS[bandIndex];
+  for (let bandIndex = 0; bandIndex < slots.length; bandIndex++) {
+    const [startFraction, endFraction] = slots[bandIndex];
+    const bandLabel = labels[bandIndex] ?? 'section';
+    const scatterers = pylon.bands?.[activeTrackId]?.[bandIndex] ?? [];
+    if (scatterers.length === 0) continue;
+
     const zStart = base + startFraction * pylon.height;
     const zEnd = base + endFraction * pylon.height;
 
     // 0 mm references: the floor is 2014, the ceiling is 2026.
-    references.push({ path: ringPath(pylon, mPerDegLon, zStart), bandIndex, kind: 'floor' });
-    references.push({ path: ringPath(pylon, mPerDegLon, zEnd), bandIndex, kind: 'ceiling' });
+    references.push({ path: ringPath(pylon, mPerDegLon, zStart), bandIndex, kind: 'floor', bandLabel });
+    references.push({ path: ringPath(pylon, mPerDegLon, zEnd), bandIndex, kind: 'ceiling', bandLabel });
 
-    const scatterers = pylon.bands?.[activeTrackId]?.[bandIndex] ?? [];
-    if (scatterers.length === 0) continue;
+    let entries;
+    if (rawMode) {
+      if (!Array.isArray(activeDates) || activeDates.length < 2) continue;
+      const rawValues = rawBandMedianSeries(scatterers, activeDates);
+      entries = [];
+      for (let i = 0; i < rawValues.length; i++) {
+        const valueMm = rawValues[i];
+        if (!Number.isFinite(valueMm)) continue;
+        entries.push({ dateMs: activeDates[i], valueMm });
+      }
+    } else {
+      entries = bucketedBandSeries(scatterers, bucketId);
+    }
+    if (entries.length === 0) continue;
 
-    const dense = rawMode
-      ? rawBandMedianSeries(scatterers, grid)
-      : bandMedianSeries(scatterers, windowDays, grid);
-    const display = resampleSeries(dense, grid, count);
-    if (display.series.length < 2) continue;
-
-    for (let i = 0; i < display.series.length; i++) {
-      const value = display.series[i];
-      if (!Number.isFinite(value)) continue;
-
-      const u = i / (display.series.length - 1);
+    for (const entry of entries) {
+      const { dateMs, valueMm } = entry;
+      const u = Math.min(1, Math.max(0, (dateMs - gridStartMs) / gridSpanMs));
       const z = zStart + u * (zEnd - zStart);
-      const shiftM = value * scaleMPerMm;
+      const shiftM = valueMm * scaleMPerMm;
       const center = {
         lon: pylon.lon + (shiftM * Math.sin(towardRad)) / mPerDegLon,
         lat: pylon.lat + (shiftM * Math.cos(towardRad)) / METRES_PER_DEG_LAT,
       };
 
-      stacks.push({
+      const ring = {
         path: ringPath(center, mPerDegLon, z),
-        color: [...viridisColor(u), alpha],
+        color: [...ringColor({ u, dateMs, valueMm }, ringColorMode, displacementScale), alpha],
         bandIndex,
+        bandLabel,
         trackId: activeTrackId,
-        dateMs: display.grid[i],
-        valueMm: value,
+        dateMs,
+        valueMm,
+        u,
         pylonId: pylon.id,
         pylonKey: pylon.key,
         count: scatterers.length,
-      });
+      };
+      if (!rawMode) ring.bucketId = bucketId;
+      stacks.push(ring);
     }
   }
 

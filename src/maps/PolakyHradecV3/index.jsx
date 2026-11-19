@@ -1,6 +1,6 @@
 // Forked from src/maps/PolakyHradecV2 for the Poláky/Hradec v3 multi-track rig.
 // v2 keeps the point-cloud / pylon work; v3 adds a rig that reads all three
-// tracks at once over the focused pylon (three separated section ring stacks)
+// tracks at once over the focused pylon (up to three separated section ring stacks)
 // plus a per-band ΔU/ΔE least squares. The point cloud stays single-track: point
 // IDs are unique only within a track, so three point layers at once would break
 // selection, arrow orbit and the legend branch.
@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
-import { BitmapLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { BitmapLayer, PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { CylinderGeometry } from '@luma.gl/engine';
 import { OBJLoader } from '@loaders.gl/obj';
@@ -41,17 +41,22 @@ import TimelineChart from './TimelineChart';
 import { cartoDarkBasemapUrl } from '../basemaps';
 import {
   BAND_LABELS,
+  BUCKET_OPTIONS,
+  DEFAULT_BUCKET_ID,
+  DEFAULT_RING_COLOR_MODE,
   DEFAULT_SCALE_M_PER_MM,
   DEFAULT_TRACK_ID,
-  DEFAULT_WINDOW_DAYS,
+  PYLON_NATIVE_HEIGHTS,
+  RING_STROKE_WIDTH,
   RIG_MODES,
   RIG_OFF,
   RIG_RINGS,
+  RING_COLOR_MODES,
+  RING_DISPLACEMENT_DOMAIN,
   SCALE_OPTIONS,
-  SECTION_Z_FRACTIONS,
+  SEASON_STOPS,
   TRACK_IDS,
   TRACKS,
-  WINDOW_OPTIONS,
   viridisColor,
 } from './tracks';
 import {
@@ -61,8 +66,9 @@ import {
   getPylonJoinKey,
   getPylonPickFeature,
   loadRigTracks,
+  meanHeightByTyp,
 } from './rigData';
-import { bandMedianAt, buildSectionRingStacks, medianScatterer } from './bandGeometry';
+import { bandMedianAt, buildSectionRingStacks, medianScatterer, ringColor } from './bandGeometry';
 import { eastLabel, solveBand } from './decomposition';
 import { logRigDebug } from './debugRig';
 import { TERRAIN_URL, sampleTerrainElevations } from './terrainElevation';
@@ -86,12 +92,13 @@ const PYLON_DEFAULT_AZIMUTH = 60;
 // from +X (east), hence yaw = 90 - azimuth. Adjust this offset if a model's
 // local forward axis turns out not to be +X after checking it on the imagery.
 const PYLON_OBJ_YAW_OFFSET = 0;
-// Native heights come from the OBJ headers (metres, Z-up, base centre at origin).
+// Native heights come from the OBJ headers (metres, Z-up, base centre at origin),
+// re-exported by `tracks.js` so the mesh scale and the rig fallback agree.
 // Each instance is scaled to its GeoJSON `height`; see `getPylonHeight` in rigData.
 const PYLON_MODELS = [
-  { typ: 'dunaj', nativeHeight: 40.0, mesh: `${PYLON_ASSET_BASE}/dunaj.obj` },
-  { typ: 'kocka', nativeHeight: 26.7, mesh: `${PYLON_ASSET_BASE}/kocka.obj` },
-  { typ: 'portal', nativeHeight: 29.169, mesh: `${PYLON_ASSET_BASE}/portal.obj` },
+  { typ: 'dunaj', nativeHeight: PYLON_NATIVE_HEIGHTS.dunaj, mesh: `${PYLON_ASSET_BASE}/dunaj.obj` },
+  { typ: 'kocka', nativeHeight: PYLON_NATIVE_HEIGHTS.kocka, mesh: `${PYLON_ASSET_BASE}/kocka.obj` },
+  { typ: 'portal', nativeHeight: PYLON_NATIVE_HEIGHTS.portal, mesh: `${PYLON_ASSET_BASE}/portal.obj` },
 ];
 
 // Invisible pick target. SimpleMeshLayer picks per triangle, so the gaps between
@@ -115,7 +122,7 @@ const PYLON_HIT_MESH = new CylinderGeometry({
 const EMPTY = [];
 
 // ---------------------------------------------------------------------------
-// Separated 3-section ring stack
+// Separated section ring stack
 //
 // Rings are `[lon, lat, terrainAtPylon + sectionFraction × height]` in LNGLAT
 // metres — one absolute z per ring, anchored on the COG sample
@@ -128,6 +135,7 @@ const EMPTY = [];
 // steel. `baseElevation` stays in the rig store for reporting only.
 // ---------------------------------------------------------------------------
 const RIG_REFERENCE_RING_LAYER = 'rig-reference-rings';
+const RIG_REFERENCE_LABEL_LAYER = 'rig-reference-year-labels';
 const RIG_STACK_RING_LAYER = 'rig-stack-rings';
 const RIG_DEBUG_MARKER_LAYER = 'rig-debug-band-markers';
 
@@ -136,18 +144,13 @@ const RIG_REFERENCE_RING_COLOR = [255, 255, 255, 200];
 const RIG_REFERENCE_RING_WIDTH = 1.0;
 const RIG_REFERENCE_RING_DASH = [6, 4];
 
-/**
- * One ring per timestep. Kept thin: 48 rings share ~11 m of height, so a fat
- * line merges the stack into a solid band instead of separate time slices. Raw
- * mode has 120 rings in the same slot and draws thinner still.
- */
-const RIG_STACK_RING_WIDTH_SMOOTHED = 1.8;
-const RIG_STACK_RING_WIDTH_RAW = 1.0;
+// Every stack ring uses the same thin stroke in both series modes, so dense
+// stacks stay readable and the time slices never merge into a solid band.
 
-/** Series mode: rolling median vs one ring per acquisition sample. */
+/** Series mode: time-bucket medians vs one ring per acquisition pass. */
 const SERIES_MODES = [
-  { id: 'smoothed', label: 'Smoothed', title: 'Rolling median over the selected window · 48 rings per section' },
-  { id: 'raw', label: 'Raw', title: 'One ring per sampled acquisition · 120 rings per section' },
+  { id: 'smoothed', label: 'Smoothed', title: 'One ring per selected time bucket · band median per bucket' },
+  { id: 'raw', label: 'Raw', title: 'One ring per acquisition pass of the active track' },
 ];
 
 // Layer-id prefix shared by the 3D LOS point symbols (arrow parts and spheres).
@@ -264,7 +267,7 @@ const INITIAL_VIEW_STATE = {
   bearing: 67.27,
   minZoom: 8,
   maxZoom: 18,
-  maxPitch: 70,
+  maxPitch: 85,
 };
 
 const TERRAIN_OPTIONS = {
@@ -347,9 +350,11 @@ function formatDateMs(ms) {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-// `BAND_LABELS` is lowercase for ids; the tooltip uses the structural names.
-function bandTitle(bandIndex) {
-  const label = BAND_LABELS[bandIndex] ?? `band ${bandIndex}`;
+// Section labels are lowercase for ids; the tooltip uses the structural names.
+// The ring carries its own `bandLabel` (per-type layout), with the dunaj labels
+// as a fallback for older rings.
+function bandTitle(ring) {
+  const label = ring?.bandLabel ?? BAND_LABELS[ring?.bandIndex] ?? 'section';
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
@@ -390,7 +395,8 @@ export default function PolakyHradecV3() {
   // joined per-pylon index built once the pylons have loaded.
   const [rigMode, setRigMode] = useState(RIG_RINGS);
   const [seriesMode, setSeriesMode] = useState('smoothed');
-  const [windowDays, setWindowDays] = useState(DEFAULT_WINDOW_DAYS);
+  const [ringColorMode, setRingColorMode] = useState(DEFAULT_RING_COLOR_MODE);
+  const [bucketId, setBucketId] = useState(DEFAULT_BUCKET_ID);
   const [scaleMPerMm, setScaleMPerMm] = useState(DEFAULT_SCALE_M_PER_MM);
   const [rigTracks, setRigTracks] = useState(null);
   const [terrainElevations, setTerrainElevations] = useState(null);
@@ -418,6 +424,12 @@ export default function PolakyHradecV3() {
   // Same per-orbit ramp for the chart's VEL_AVG colouring, so it matches the
   // map symbols and legend. Settlement colouring uses its own fixed ramp.
   const velAvgPalette = getPolakyVelAvgColors(activeTrack.orbit);
+  // Displacement rings reuse the VEL_AVG palette over the ±10 mm displacement
+  // domain, so the ramp matches the point symbols without saturating.
+  const displacementScale = useMemo(
+    () => buildPolakyVelAvgScale(activeTrack.orbit).domain([...RING_DISPLACEMENT_DOMAIN]),
+    [activeTrack.orbit],
+  );
 
   // One request/parse per track, shared by the point cloud and the rig. The
   // cache is cleared on failure so a retry starts a fresh request.
@@ -658,9 +670,10 @@ export default function PolakyHradecV3() {
     return rigStore.pylons.get(selectedPylonKey) ?? null;
   }, [rigStore, selectedPylonKey]);
 
-  // Separated 3-section ring stack for the focused tower and the active track.
-  // Smoothed mode draws RING_SMOOTHED_COUNT bold rings per section, raw mode
-  // RING_RAW_COUNT acquisition-sampled rings — one ring per timestep either way.
+  // Separated section ring stack for the focused tower and the active track.
+  // Smoothed mode draws one bold ring per non-empty time bucket; Raw mode draws
+  // one ring per acquisition pass of the active track. Ring z is linear in real
+  // time on the union grid either way.
   const ringData = useMemo(() => {
     const empty = { stacks: EMPTY, references: EMPTY };
     if (rigMode !== RIG_RINGS || !focusedPylon || !rigStore) return empty;
@@ -668,11 +681,49 @@ export default function PolakyHradecV3() {
       pylon: focusedPylon,
       activeTrackId,
       grid: rigStore.grid,
+      trackDates: rigStore.trackDates,
       rawMode: seriesMode === 'raw',
-      windowDays,
+      bucketId,
       scaleMPerMm,
     });
-  }, [rigMode, focusedPylon, rigStore, activeTrackId, seriesMode, windowDays, scaleMPerMm]);
+  }, [rigMode, focusedPylon, rigStore, activeTrackId, seriesMode, bucketId, scaleMPerMm]);
+
+  // Colour is a cheap post-pass over the memoised geometry, so switching the
+  // colour mode never re-runs the band smoothing / median pipeline.
+  const ringStacks = useMemo(() => {
+    if (ringData.stacks.length === 0) return EMPTY;
+    return ringData.stacks.map((ring) => ({
+      ...ring,
+      color: [...ringColor(ring, ringColorMode, displacementScale), ring.color[3]],
+    }));
+  }, [ringData, ringColorMode, displacementScale]);
+
+  // First/last acquisition year of the union grid; display fallbacks while the
+  // rig is still loading.
+  const ringYears = useMemo(() => {
+    const grid = rigStore?.grid;
+    if (!Array.isArray(grid) || grid.length === 0) return null;
+    return {
+      startYear: new Date(grid[0]).getUTCFullYear(),
+      endYear: new Date(grid[grid.length - 1]).getUTCFullYear(),
+    };
+  }, [rigStore]);
+
+  // One small year label on the east edge of every white reference ring: the
+  // floor shows the start year, the ceiling the end year. Only populated sections
+  // emit references, so the count follows the layout. The anchor sits exactly on
+  // the ring's z with a centre baseline, so the ring runs through the middle of
+  // the text.
+  const ringYearLabels = useMemo(() => {
+    if (rigMode !== RIG_RINGS || !ringYears || ringData.references.length === 0) return EMPTY;
+    return ringData.references.map((reference) => {
+      const point = reference.path[Math.floor((reference.path.length - 1) / 4)];
+      return {
+        text: String(reference.kind === 'floor' ? ringYears.startYear : ringYears.endYear),
+        position: [point[0], point[1], point[2]],
+      };
+    });
+  }, [rigMode, ringYears, ringData]);
 
   // Per-band ΔU/ΔE for the focused tower.
   const focusedBandSolutions = useMemo(() => {
@@ -687,7 +738,7 @@ export default function PolakyHradecV3() {
         fields[trackId] = bandMedianAt(
           focusedPylon.bands[trackId][band],
           rigStore.commonEpochMs,
-          windowDays,
+          bucketId,
         );
       }
       out.push({
@@ -704,7 +755,7 @@ export default function PolakyHradecV3() {
       });
     }
     return out;
-  }, [rigEnabled, focusedPylon, rigStore, windowDays]);
+  }, [rigEnabled, focusedPylon, rigStore, bucketId]);
 
   // The camera belongs to the controller (`initialViewState`), exactly like the
   // other maps here: React only mirrors the zoom for the arrow size band.
@@ -712,12 +763,12 @@ export default function PolakyHradecV3() {
     setZoom(next.zoom);
   }, []);
 
-  // `?debugRig=1` acceptance gates. Re-runs on a window change so the printed
+  // `?debugRig=1` acceptance gates. Re-runs on a bucket change so the printed
   // ring numbers follow the control.
   useEffect(() => {
     if (!debugRig || !rigStore) return;
-    logRigDebug({ store: rigStore, windowDays });
-  }, [debugRig, rigStore, windowDays]);
+    logRigDebug({ store: rigStore, bucketId });
+  }, [debugRig, rigStore, bucketId]);
 
   // Clicking a ring curve switches to that track, focuses its pylon and opens the
   // timeline of the band's median scatterer at the curve tip. The pylon chart stays
@@ -739,15 +790,13 @@ export default function PolakyHradecV3() {
     const scatterer = medianScatterer(
       pylon.bands[ring.trackId]?.[ring.bandIndex] ?? EMPTY,
       ring.dateMs,
-      windowDays,
+      bucketId,
     );
     if (scatterer) setSelectedId(scatterer.properties.ID);
-  }, [rigStore, activeTrackId, tracks, loadTrack, windowDays]);
+  }, [rigStore, activeTrackId, tracks, loadTrack, bucketId]);
 
   const pylonGroups = useMemo(() => {
     const groups = { kocka: [], dunaj: [], portal: [] };
-    const heightSums = { kocka: 0, dunaj: 0, portal: 0 };
-    const heightCounts = { kocka: 0, dunaj: 0, portal: 0 };
     let skipped = 0;
     for (const f of pylonFeatures) {
       const typ = f?.properties?.typ;
@@ -756,19 +805,11 @@ export default function PolakyHradecV3() {
         continue;
       }
       groups[typ].push(f);
-      const height = getPylonHeight(f);
-      if (height != null) {
-        heightSums[typ] += height;
-        heightCounts[typ] += 1;
-      }
     }
     if (skipped) console.warn(`Skipped ${skipped} pylon feature(s) with unknown typ`);
-    // Mean of the features that do carry a height, for those that do not.
-    const meanHeight = {};
-    for (const typ of Object.keys(groups)) {
-      meanHeight[typ] = heightCounts[typ] ? heightSums[typ] / heightCounts[typ] : null;
-    }
-    return { groups, meanHeight };
+    // Mean of the features that do carry a height, for those that do not. Shared
+    // with the rig store so the mesh/hit volume and the ring scaffold agree.
+    return { groups, meanHeight: meanHeightByTyp(pylonFeatures) };
   }, [pylonFeatures]);
 
   // Per-pylon pick targets: the feature plus the height and radius its hit
@@ -1046,7 +1087,7 @@ export default function PolakyHradecV3() {
       updateTriggers: colorUpdateTriggers,
     });
 
-    // ---- Separated 3-section ring stack ------------------------------------
+    // ---- Separated section ring stack ----------------------------------------
     const rigLayers = [];
 
     // `?debugRig=1`: one small marker at each section floor and ceiling, in the
@@ -1054,7 +1095,7 @@ export default function PolakyHradecV3() {
     // against the lattice.
     if (debugRig && focusedPylon && Number.isFinite(focusedPylon.terrainElevation)) {
       const markers = [];
-      SECTION_Z_FRACTIONS.forEach(([startFraction, endFraction], band) => {
+      (focusedPylon.sectionSlots ?? []).forEach(([startFraction, endFraction], band) => {
         for (const fraction of [startFraction, endFraction]) {
           markers.push({
             band,
@@ -1097,16 +1138,38 @@ export default function PolakyHradecV3() {
         }));
       }
 
-      // One thin horizontal ring per timestep, stacked through the section. The
-      // ring stays pickable so hover gives date + median LOS and click opens the
-      // section's median scatterer in both charts.
+      // Start/end year on every section's floor/ceiling reference ring.
+      if (ringYearLabels.length > 0) {
+        rigLayers.push(new TextLayer({
+          id: RIG_REFERENCE_LABEL_LAYER,
+          data: ringYearLabels,
+          getPosition: (d) => d.position,
+          getText: (d) => d.text,
+          getColor: [232, 236, 241],
+          getSize: 2,
+          sizeUnits: 'pixels',
+          getTextAnchor: 'start',
+          getAlignmentBaseline: 'center',
+          getPixelOffset: [8, 0],
+          fontFamily: 'system-ui, sans-serif',
+          fontWeight: 600,
+          characterSet: 'auto',
+          billboard: true,
+          pickable: false,
+        }));
+      }
+
+      // One thin horizontal ring per time bucket (or per acquisition pass in
+      // Raw), stacked through the section. The ring stays pickable so hover gives
+      // date + median LOS and click opens the section's median scatterer in both
+      // charts.
       if (ringData.stacks.length > 0) {
         rigLayers.push(new PathLayer({
           id: RIG_STACK_RING_LAYER,
-          data: ringData.stacks,
+          data: ringStacks,
           getPath: (d) => d.path,
           getColor: (d) => d.color,
-          getWidth: seriesMode === 'raw' ? RIG_STACK_RING_WIDTH_RAW : RIG_STACK_RING_WIDTH_SMOOTHED,
+          getWidth: RING_STROKE_WIDTH,
           widthUnits: 'pixels',
           billboard: true,
           jointRounded: true,
@@ -1147,8 +1210,9 @@ export default function PolakyHradecV3() {
     rigEnabled,
     terrainReady,
     rigMode,
-    seriesMode,
     ringData,
+    ringStacks,
+    ringYearLabels,
     debugRig,
     focusedPylon,
   ]);
@@ -1158,6 +1222,12 @@ export default function PolakyHradecV3() {
   const viridisGradient = `linear-gradient(to right, ${[0, 0.2, 0.4, 0.6, 0.8, 1]
     .map(u => `rgb(${viridisColor(u).join(',')})`)
     .join(', ')})`;
+  const seasonGradient = `linear-gradient(to right, ${
+    SEASON_STOPS.map(stop => `rgb(${stop.join(',')})`).join(', ')
+  })`;
+  const legendStartYear = ringYears?.startYear ?? 2014;
+  const legendEndYear = ringYears?.endYear ?? 2026;
+  const legendMidYear = Math.round((legendStartYear + legendEndYear) / 2);
 
   return (
     <div style={{
@@ -1208,8 +1278,8 @@ export default function PolakyHradecV3() {
             if (!ring) return null;
             return {
               text: [
-                `Pylon ${ring.pylonId ?? '–'} · ${bandTitle(ring.bandIndex)} (${ring.count} pts)`,
-                `${ring.trackId} · ${formatDateMs(ring.dateMs)}`,
+                `Pylon ${ring.pylonId ?? '–'} · ${bandTitle(ring)} (${ring.count} pts)`,
+                `${ring.trackId} · ${formatDateMs(ring.dateMs)} (${seriesMode === 'raw' ? 'raw pass' : ring.bucketId})`,
                 `Median LOS: ${formatSignedMm(ring.valueMm)} mm`,
               ].join('\n'),
             };
@@ -1329,6 +1399,21 @@ export default function PolakyHradecV3() {
 
         {rigEnabled && (
           <>
+            <div style={{ ...OVERLAY_TITLE_STYLE, marginTop: '6px' }}>Color</div>
+            <div role="group" aria-label="Ring color mode" style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
+              {RING_COLOR_MODES.map(mode => (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setRingColorMode(mode.id)}
+                  aria-pressed={ringColorMode === mode.id}
+                  title={mode.title}
+                  style={trackButtonStyle(ringColorMode === mode.id)}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
             <div style={{ ...OVERLAY_TITLE_STYLE, marginTop: '6px' }}>Series</div>
             <div role="group" aria-label="Series mode" style={{ display: 'flex', gap: '3px' }}>
               {SERIES_MODES.map(mode => (
@@ -1344,21 +1429,21 @@ export default function PolakyHradecV3() {
                 </button>
               ))}
             </div>
-            <div style={{ ...OVERLAY_TITLE_STYLE, marginTop: '6px' }}>Window</div>
-            <div role="group" aria-label="Smoothing window" style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
-              {WINDOW_OPTIONS.map(days => {
-                const active = seriesMode === 'smoothed' && windowDays === days;
+            <div style={{ ...OVERLAY_TITLE_STYLE, marginTop: '6px' }}>Bucket</div>
+            <div role="group" aria-label="Time bucket" style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
+              {BUCKET_OPTIONS.map(spec => {
+                const active = seriesMode === 'smoothed' && bucketId === spec.id;
                 return (
                   <button
-                    key={days}
+                    key={spec.id}
                     type="button"
-                    onClick={() => setWindowDays(days)}
+                    onClick={() => setBucketId(spec.id)}
                     aria-pressed={active}
                     disabled={seriesMode === 'raw'}
-                    title={`Centred rolling mean over ${days} days`}
+                    title={spec.title}
                     style={{ ...trackButtonStyle(active), opacity: seriesMode === 'raw' ? 0.4 : 1 }}
                   >
-                    {days} d
+                    {spec.label}
                   </button>
                 );
               })}
@@ -1400,15 +1485,44 @@ export default function PolakyHradecV3() {
 
         {rigEnabled && (
           <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid #3b4048' }}>
-            <div style={OVERLAY_TITLE_STYLE}>Time (Viridis)</div>
-            <div style={{ width: '100%', height: '7px', borderRadius: '2px', background: viridisGradient }} />
-            <div style={{ display: 'flex', marginTop: '1px', color: '#b3b8bf' }}>
-              <span style={{ flex: 1, textAlign: 'left' }}>2014</span>
-              <span style={{ flex: 1, textAlign: 'center' }}>2020</span>
-              <span style={{ flex: 1, textAlign: 'right' }}>2026</span>
-            </div>
+            {ringColorMode === 'time' && (
+              <>
+                <div style={OVERLAY_TITLE_STYLE}>Time (Viridis)</div>
+                <div style={{ width: '100%', height: '7px', borderRadius: '2px', background: viridisGradient }} />
+                <div style={{ display: 'flex', marginTop: '1px', color: '#b3b8bf' }}>
+                  <span style={{ flex: 1, textAlign: 'left' }}>{legendStartYear}</span>
+                  <span style={{ flex: 1, textAlign: 'center' }}>{legendMidYear}</span>
+                  <span style={{ flex: 1, textAlign: 'right' }}>{legendEndYear}</span>
+                </div>
+              </>
+            )}
+            {ringColorMode === 'season' && (
+              <>
+                <div style={OVERLAY_TITLE_STYLE}>Season (Thermal Cycle)</div>
+                <div style={{ width: '100%', height: '7px', borderRadius: '2px', background: seasonGradient }} />
+                <div style={{ display: 'flex', marginTop: '1px', color: '#b3b8bf' }}>
+                  <span style={{ flex: 1, textAlign: 'left' }}>Winter</span>
+                  <span style={{ flex: 1, textAlign: 'center' }}>Spring/Autumn</span>
+                  <span style={{ flex: 1, textAlign: 'right' }}>Summer</span>
+                </div>
+              </>
+            )}
+            {ringColorMode === 'displacement' && (
+              <>
+                <div style={OVERLAY_TITLE_STYLE}>LOS Displacement (mm)</div>
+                <div style={{ width: '100%', height: '7px', borderRadius: '2px', background: legendGradient }} />
+                <div style={{ display: 'flex', marginTop: '1px', color: '#b3b8bf' }}>
+                  <span style={{ flex: 1, textAlign: 'left' }}>{RING_DISPLACEMENT_DOMAIN[0]}</span>
+                  <span style={{ flex: 1, textAlign: 'center' }}>0</span>
+                  <span style={{ flex: 1, textAlign: 'right' }}>+{RING_DISPLACEMENT_DOMAIN[1]}</span>
+                </div>
+                <div style={{ color: '#9aa0a8', fontSize: '10px', lineHeight: '13px' }}>
+                  Away / subsidence ← 0 → Toward
+                </div>
+              </>
+            )}
             <div style={{ marginTop: '3px', color: '#b3b8bf', fontSize: '10px', lineHeight: '13px' }}>
-              Time ↑ 2014→2026 · shift = LOS ×{Math.round(scaleMPerMm * 1000)}
+              Ring height = time ↑ {legendStartYear}→{legendEndYear} · shift = LOS ×{Math.round(scaleMPerMm * 1000)}
             </div>
             <div style={{ color: '#9aa0a8', fontSize: '10px', lineHeight: '13px' }}>
               White dashed = 0 mm · not vertical
