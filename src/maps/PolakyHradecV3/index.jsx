@@ -152,11 +152,13 @@ const SERIES_MODES = [
 // Layer-id prefix shared by the 3D LOS point symbols (arrow parts and spheres).
 const POINT_LAYER_PREFIX = 'vel-avg-arrows';
 
-// Pre-selection opened once on mount: Pylon 10 and one of its linked InSAR
-// points, so the map highlight and both charts are visible without a click.
-// The pylon is resolved by its business id and then mapped to the join key;
-// the join key itself (currently "0") is never hardcoded.
-const DEFAULT_PYLON_ID = 10;
+// Pre-selection opened once on mount: Pylon 9 and one of its linked InSAR points,
+// so the map highlight and both charts are visible without a click. The pylon is
+// resolved by its business id and then mapped to the join key; the join key
+// itself (currently "8") is never hardcoded, and the start point is looked up
+// among that tower's own points so the two defaults can never disagree.
+const DEFAULT_PYLON_ID = 9;
+// Preferred start point; only used while it is still linked to the default pylon.
 const DEFAULT_POINT_ID = 59054;
 
 // The chart's VEL_AVG ramps, shared with the map legend and the 3D chart.
@@ -523,7 +525,16 @@ export default function PolakyHradecV3() {
     didApplyDefaultSelection.current = true;
     const pylon = pylonFeatures.find(f => Number(f?.properties?.id) === DEFAULT_PYLON_ID);
     const pylonKey = pylon ? getPylonJoinKey(pylon) : null;
-    const point = features.find(f => String(f?.properties?.ID) === String(DEFAULT_POINT_ID));
+    // The default point must belong to the default pylon: the pylon chart draws
+    // that tower's points, so a point from another tower would desynchronise the
+    // timeline. Prefer DEFAULT_POINT_ID when it is still linked, else take the
+    // first linked point of the default track.
+    const linked = pylonKey == null
+      ? EMPTY
+      : features.filter(feature => getPointJoinKey(feature) === pylonKey);
+    const point = linked.find(feature => (
+      String(feature?.properties?.ID) === String(DEFAULT_POINT_ID)
+    )) ?? linked[0] ?? null;
     // A missing pylon or point is skipped silently; the other default still applies.
     if (pylonKey != null) setSelectedPylonKey(pylonKey);
     if (point) setSelectedId(point.properties.ID);
