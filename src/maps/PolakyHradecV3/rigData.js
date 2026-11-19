@@ -13,7 +13,7 @@
  * constant and no COG sampling here.
  */
 
-import { unionGrid } from './bandGeometry';
+import { median, unionGrid } from './bandGeometry';
 import {
   BAND_FRACTIONS,
   BAND_ASSIGN_FRACTIONS,
@@ -68,14 +68,6 @@ export function bandIndexOf(hRef, height) {
     if (ratio < BAND_ASSIGN_FRACTIONS[i]) return i;
   }
   return BAND_COUNT - 1;
-}
-
-/** Median of a numeric list, or null. */
-function medianOf(values) {
-  const finite = values.filter(Number.isFinite).sort((a, b) => a - b);
-  if (finite.length === 0) return null;
-  const mid = finite.length >> 1;
-  return finite.length % 2 ? finite[mid] : (finite[mid - 1] + finite[mid]) / 2;
 }
 
 /** East/north distance in metres between two lon/lat pairs at this latitude. */
@@ -135,9 +127,9 @@ export function buildRigStore({
       const angle = Number(feature?.properties?.INC_ANG);
       if (Number.isFinite(angle)) angles.push(angle);
     }
-    const median = medianOf(angles);
-    incidence[track.id] = median;
-    if (median == null) warnings.push(`${track.id}: no INC_ANG values`);
+    const incidenceMedian = median(angles);
+    incidence[track.id] = incidenceMedian;
+    if (incidenceMedian == null) warnings.push(`${track.id}: no INC_ANG values`);
   }
 
   // One vertex per acquisition of any track: the union grid is the ring time axis.
@@ -204,7 +196,7 @@ export function buildRigStore({
     const hDems = allLinked
       .map(feature => Number(feature?.properties?.H_dem))
       .filter(Number.isFinite);
-    const baseElevation = medianOf(medians) ?? medianOf(hDems) ?? 0;
+    const baseElevation = median(medians) ?? median(hDems) ?? 0;
     const terrainElevation = terrainElevations?.get(key) ?? null;
 
     pylons.set(key, {

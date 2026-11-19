@@ -19,7 +19,6 @@
 
 import { towardDeg } from './decomposition';
 import {
-  BAND_LABELS,
   METRES_PER_DEG_LAT,
   RING_ALPHA_RAW,
   RING_ALPHA_SMOOTHED,
@@ -349,17 +348,6 @@ export function medianScatterer(scatterers, epochMs, windowDays) {
   candidates.sort((a, b) => a.value - b.value);
   return candidates[candidates.length >> 1].feature;
 }
-
-/**
- * Human label for a band index.
- *
- * @param {number} bandIndex
- * @returns {string}
- */
-export function bandLabel(bandIndex) {
-  return BAND_LABELS[bandIndex] ?? `band ${bandIndex}`;
-}
-
 
 /**
  * Pointwise median of the **raw** acquisition values on the union grid.

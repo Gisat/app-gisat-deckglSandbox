@@ -57,6 +57,7 @@ import {
 import {
   buildRigStore,
   getPointJoinKey,
+  getPylonHeight,
   getPylonJoinKey,
   getPylonPickFeature,
   loadRigTracks,
@@ -86,7 +87,7 @@ const PYLON_DEFAULT_AZIMUTH = 60;
 // local forward axis turns out not to be +X after checking it on the imagery.
 const PYLON_OBJ_YAW_OFFSET = 0;
 // Native heights come from the OBJ headers (metres, Z-up, base centre at origin).
-// Each instance is scaled to its GeoJSON `height`; see getPylonHeight below.
+// Each instance is scaled to its GeoJSON `height`; see `getPylonHeight` in rigData.
 const PYLON_MODELS = [
   { typ: 'dunaj', nativeHeight: 40.0, mesh: `${PYLON_ASSET_BASE}/dunaj.obj` },
   { typ: 'kocka', nativeHeight: 26.7, mesh: `${PYLON_ASSET_BASE}/kocka.obj` },
@@ -254,8 +255,7 @@ function trackButtonStyle(active, failed = false) {
   };
 }
 
-// Camera captured from the map (see the `[polaky] default:` log) — an oblique
-// ENE view of the Poláky line at z15.34.
+// Camera captured from the map — an oblique ENE view of the Poláky line at z15.34.
 const INITIAL_VIEW_STATE = {
   longitude: 13.362612,
   latitude: 50.33776,
@@ -294,13 +294,6 @@ function getPointElevation(feature) {
   const hDem = Number(feature?.properties?.H_dem);
   if (Number.isFinite(h) && Number.isFinite(hDem)) return h - hDem;
   return 0;
-}
-
-// GeoJSON height is the real tower height in metres, so it is used to scale the
-// native-size OBJ; features without a height fall back to their type mean.
-function getPylonHeight(feature) {
-  const height = Number(feature?.properties?.height);
-  return Number.isFinite(height) && height > 0 ? height : null;
 }
 
 // Hit volume radius: wide enough to cover the lattice legs plus a small margin,
@@ -399,14 +392,9 @@ export default function PolakyHradecV3() {
   const [rigTracks, setRigTracks] = useState(null);
   const [terrainElevations, setTerrainElevations] = useState(null);
   const [hoveredRing, setHoveredRing] = useState(false);
-  // Controlled view state. deck.gl 9.4 removed `Deck.flyTo`, so camera moves are
-  // expressed as a view-state update carrying a transition interpolator — the
-  // same mechanism the controller uses, and it cannot throw on a missing ref.
   // The scene waits for the terrain layer's first elevation range; after 6 s it
   // renders anyway so an unreachable COG cannot leave a blank map.
   const [terrainWaitExpired, setTerrainWaitExpired] = useState(false);
-  // Dev helper: settle-debounce timer for the camera log below.
-  const cameraLogTimer = useRef(null);
   // `?debugRig=1` prints the plan's acceptance gates; any other route ignores it.
   const debugRig = useMemo(
     () => new URLSearchParams(window.location.search).get('debugRig') === '1',
@@ -686,45 +674,10 @@ export default function PolakyHradecV3() {
     return bandSolutions.filter(entry => entry.pylonKey === focusedPylon.key);
   }, [bandSolutions, focusedPylon]);
 
-
-
-  // Prints the settled camera as a ready-to-paste default. Navigate to the view
-  // you want, wait half a second, and copy the `default:` line from the console.
-  const logCamera = useCallback((state) => {
-    const fixed = (value, digits) => Number(Number(value).toFixed(digits));
-    const camera = {
-      longitude: fixed(state.longitude, 6),
-      latitude: fixed(state.latitude, 6),
-      zoom: fixed(state.zoom, 2),
-      pitch: fixed(state.pitch, 2),
-      bearing: fixed(state.bearing, 2),
-    };
-    console.info(
-      `[polaky] camera ${JSON.stringify(camera)}\n`
-      + '[polaky] default: '
-      + JSON.stringify({
-        ...camera,
-        minZoom: INITIAL_VIEW_STATE.minZoom,
-        maxZoom: INITIAL_VIEW_STATE.maxZoom,
-        maxPitch: INITIAL_VIEW_STATE.maxPitch,
-      }, null, 0),
-    );
-  }, []);
-
   // The camera belongs to the controller (`initialViewState`), exactly like the
-  // other maps here: React only mirrors the zoom for the arrow size band. There is
-  // no React-owned view state to hand back, so the map cannot be re-seeded with a
-  // stale camera after the first paint.
+  // other maps here: React only mirrors the zoom for the arrow size band.
   const handleViewStateChange = useCallback(({ viewState: next }) => {
     setZoom(next.zoom);
-
-    // Log once the camera stops moving, not on every frame of a drag.
-    if (cameraLogTimer.current) clearTimeout(cameraLogTimer.current);
-    cameraLogTimer.current = setTimeout(() => logCamera(next), 500);
-  }, [logCamera]);
-
-  useEffect(() => () => {
-    if (cameraLogTimer.current) clearTimeout(cameraLogTimer.current);
   }, []);
 
   // `?debugRig=1` acceptance gates. Re-runs on a window change so the printed
