@@ -251,12 +251,14 @@ function trackButtonStyle(active, failed = false) {
   };
 }
 
+// Camera captured from the map (see the `[polaky] default:` log) — an oblique
+// ENE view of the Poláky line at z15.34.
 const INITIAL_VIEW_STATE = {
-  longitude: 13.3607,
+  longitude: 13.362612,
   latitude: 50.33776,
-  zoom: 15,
-  pitch: 50,
-  bearing: 0,
+  zoom: 15.34,
+  pitch: 69.05,
+  bearing: 67.27,
   minZoom: 8,
   maxZoom: 18,
   maxPitch: 70,
