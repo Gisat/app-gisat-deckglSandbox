@@ -1,3 +1,19 @@
+## [1.25.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.24.0...v1.25.0) (2026-11-20)
+
+### Features
+
+* **polaky:** 3D pylon inspector with section rings and scatterers ([eb39581](https://github.com/Gisat/app-gisat-deckglSandbox/commit/eb39581f18dcf24734e427a5d760cdeae0a3feb7))
+* **polaky:** chart-local section filter with hoverable labels ([99010a7](https://github.com/Gisat/app-gisat-deckglSandbox/commit/99010a74e444181db13a5603d295350bec8419ba))
+* **polaky:** ring hover/selection highlights and section timeline chart ([2601145](https://github.com/Gisat/app-gisat-deckglSandbox/commit/2601145354756e112fbb8dcf4ff503a00ab16430))
+* **polaky:** show structural section names on ring labels ([40e2da3](https://github.com/Gisat/app-gisat-deckglSandbox/commit/40e2da358d6494c741da6e99d96b2a88c4c8c034))
+* **polaky:** structural section labels on the ring rig ([ca9ddbd](https://github.com/Gisat/app-gisat-deckglSandbox/commit/ca9ddbd6b69133819dc1d9c95fe9a3e4f8668455))
+
+### Bug Fixes
+
+* **polaky:** align section labels, section slice and ring picking ([a4fcc09](https://github.com/Gisat/app-gisat-deckglSandbox/commit/a4fcc09ebafce8d18a3f381f53465f8ed9cefe76))
+* **polaky:** use the point/pylon selection cyan for ring highlights ([f5246f8](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f5246f82ea77f647bb3bc4378b55f9c75c03ae43))
+* **polaky:** widen the click tap window so thin ring picks register ([883ab64](https://github.com/Gisat/app-gisat-deckglSandbox/commit/883ab646548818aa87409b2f7e63a1d8d79b3be2))
+
 ## [1.24.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.23.0...v1.24.0) (2026-11-19)
 
 ### Features
