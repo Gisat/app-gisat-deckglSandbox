@@ -73,7 +73,7 @@ export const PYLON_NATIVE_HEIGHTS = {
  * names. All fractions are of each tower's own `height`.
  *
  * - `dunaj` — double-circuit lattice: base / mid / top.
- * - `kocka` — barrel / cat-head tower: same three sections, upper cutoff lower.
+ * - `kocka` — barrel / cat-head tower: base / shaft / head, upper cutoff lower.
  * - `portal` — H-frame gantry: two sections, legs and cross-beam.
  */
 export const PYLON_SECTION_LAYOUTS = {
@@ -88,7 +88,7 @@ export const PYLON_SECTION_LAYOUTS = {
     ],
   },
   kocka: {
-    labels: ['base', 'mid', 'top'],
+    labels: ['base', 'shaft', 'head'],
     assignFractions: [0.35, 0.65],
     bandFractions: [0.20, 0.50, 0.82],
     zSlots: [
@@ -119,6 +119,19 @@ export function getSectionLayout(typ) {
   return Object.hasOwn(PYLON_SECTION_LAYOUTS, typ)
     ? PYLON_SECTION_LAYOUTS[typ]
     : PYLON_SECTION_LAYOUTS.dunaj;
+}
+
+/**
+ * Display name for one section label. Every hyphen/word part is capitalised so
+ * `cross-beam` reads `Cross-Beam` in the map tooltip, the 3D card and the
+ * section timeline card alike.
+ *
+ * @param {string|null|undefined} label
+ * @returns {string}
+ */
+export function sectionTitle(label) {
+  const text = label ?? 'section';
+  return text.replace(/\b\w/g, c => c.toUpperCase());
 }
 
 // Compatibility exports: existing imports keep reading the dunaj layout. Never

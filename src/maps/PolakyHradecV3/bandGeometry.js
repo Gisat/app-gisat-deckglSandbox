@@ -435,32 +435,6 @@ export function resampleSeries(series, grid, count) {
 }
 
 /**
- * The scatterer whose smoothed value at `epochMs` is the median of the band.
- *
- * Used by the ring click to open a concrete 2D timeline without inventing an
- * "average point" the dataset does not contain.
- *
- * @param {Array<any>} scatterers
- * @param {number} epochMs
- * @param {string} [bucketId] Bucket id; its `smoothDays` is the rolling window.
- * @returns {any|null}
- */
-export function medianScatterer(scatterers, epochMs, bucketId = DEFAULT_BUCKET_ID) {
-  const windowDays = getBucketSpec(bucketId).smoothDays;
-  const candidates = [];
-  for (const feature of selectSectionScatterers(scatterers)) {
-    const { dates, values } = featureSeries(feature);
-    if (dates.length === 0) continue;
-    const smoothed = smoothSeries(values, dates, windowDays);
-    const value = interpolateAt(epochMs, dates, smoothed);
-    if (Number.isFinite(value)) candidates.push({ feature, value });
-  }
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => a.value - b.value);
-  return candidates[candidates.length >> 1].feature;
-}
-
-/**
  * Pointwise median of the **raw** acquisition values on the union grid.
  *
  * Same reduction as `bandMedianSeries`, but it skips `smoothSeries` so the
@@ -675,4 +649,157 @@ export function buildSectionRingStacks({
   }
 
   return { stacks, references };
+}
+
+/**
+ * Full-section curves for the clicked ring's card: one curve per scatterer plus
+ * the exact band median curve that drives the 3D ring centres.
+ *
+ * The point curves iterate **all** scatterers of the section (the chart shows
+ * the whole section), while the median curve reduces only the reliable
+ * scatterers. Both are produced in one pass: the per-scatterer samples that the
+ * point curves need are reused to build the smoothed median, so the smoothing
+ * and bucketing pipeline never runs twice.
+ *
+ * Smoothed point curves snap to the same bucketed `centerMs` timestamps as the
+ * rings; raw curves keep the acquisitions of the active track, so the exact
+ * match of the clicked `dateMs` works in both modes.
+ *
+ * @param {{
+ *   scatterers: Array<any>, rawMode?: boolean, bucketId?: string,
+ *   activeDates?: number[],
+ * }} options
+ * @returns {{
+ *   pointSeries: Array<{ id: string, data: Array<{ x: Date, y: number }> }>,
+ *   medianSeries: Array<{ x: Date, y: number }>,
+ *   pointSamples: Array<{ id: string, dates: number[], values: number[] }>,
+ * }} `pointSamples` feeds `buildSectionSlice` for the clicked timestep.
+ */
+export function buildSectionSeries({
+  scatterers,
+  rawMode = false,
+  bucketId = DEFAULT_BUCKET_ID,
+  activeDates = [],
+}) {
+  const spec = getBucketSpec(bucketId);
+  const list = Array.isArray(scatterers) ? scatterers : [];
+  // Median reduction set: reliable scatterers when at least two exist, matching
+  // `bucketedBandSeries` / `rawBandMedianSeries`.
+  const medianFeatures = new Set(selectSectionScatterers(list));
+  const grid = Array.isArray(activeDates) ? activeDates : [];
+
+  const pointSeries = [];
+  const pointSamples = [];
+  const centres = new Map();
+  const perScatterer = new Map();
+  const rawColumns = [];
+
+  for (const feature of list) {
+    const { dates, values } = featureSeries(feature);
+    if (dates.length === 0) continue;
+    const id = String(feature?.properties?.ID ?? '');
+    const isMedianFeature = medianFeatures.has(feature);
+
+    let sampleDates;
+    let sampleValues;
+
+    if (rawMode) {
+      sampleDates = [];
+      sampleValues = [];
+      for (let i = 0; i < dates.length; i++) {
+        const valueMm = values[i];
+        if (!Number.isFinite(valueMm)) continue;
+        sampleDates.push(dates[i]);
+        sampleValues.push(valueMm);
+      }
+      if (isMedianFeature && grid.length > 0) {
+        rawColumns.push(interpolateSeries(grid, dates, values));
+      }
+    } else {
+      const smoothed = smoothSeries(values, dates, spec.smoothDays);
+      const centers = new Map();
+      const byKey = new Map();
+      for (let i = 0; i < smoothed.length; i++) {
+        const value = smoothed[i];
+        if (!Number.isFinite(value)) continue;
+        const { key, centerMs } = bucketKeyAndCenter(dates[i], spec);
+        if (key === null) continue;
+        if (!centers.has(key)) centers.set(key, centerMs);
+        if (!byKey.has(key)) byKey.set(key, []);
+        byKey.get(key).push(value);
+      }
+
+      // One per-scatterer median per bucket, then reused for both the point
+      // curve and the cross-scatterer median below.
+      const bucketMedians = [];
+      for (const [key, bucketValues] of byKey) {
+        const valueMm = median(bucketValues);
+        if (valueMm === null) continue;
+        bucketMedians.push({ key, dateMs: centers.get(key), valueMm });
+      }
+      bucketMedians.sort((a, b) => a.dateMs - b.dateMs);
+
+      sampleDates = bucketMedians.map(b => b.dateMs);
+      sampleValues = bucketMedians.map(b => b.valueMm);
+
+      if (isMedianFeature) {
+        for (const { key, dateMs, valueMm } of bucketMedians) {
+          if (!centres.has(key)) centres.set(key, dateMs);
+          if (!perScatterer.has(key)) perScatterer.set(key, []);
+          perScatterer.get(key).push(valueMm);
+        }
+      }
+    }
+
+    pointSeries.push({
+      id,
+      data: sampleDates.map((dateMs, i) => ({ x: new Date(dateMs), y: sampleValues[i] })),
+    });
+    pointSamples.push({ id, dates: sampleDates, values: sampleValues });
+  }
+
+  let medianSeries = [];
+  if (rawMode) {
+    if (grid.length > 0 && rawColumns.length > 0) {
+      for (let i = 0; i < grid.length; i++) {
+        const columnValues = [];
+        for (const column of rawColumns) {
+          if (Number.isFinite(column[i])) columnValues.push(column[i]);
+        }
+        const valueMm = median(columnValues);
+        if (valueMm !== null) medianSeries.push({ x: new Date(grid[i]), y: valueMm });
+      }
+    }
+  } else {
+    for (const [key, bucketValues] of perScatterer) {
+      const valueMm = median(bucketValues);
+      if (valueMm === null) continue;
+      medianSeries.push({ x: new Date(centres.get(key)), y: valueMm });
+    }
+    medianSeries.sort((a, b) => a.x - b.x);
+  }
+
+  return { pointSeries, medianSeries, pointSamples };
+}
+
+/**
+ * Per-point values at the clicked ring's timestep.
+ *
+ * @param {{
+ *   pointSamples: Array<{ id: string, dates: number[], values: number[] }>,
+ *   targetDateMs: number,
+ * }} options
+ * @returns {{ sliceDots: Array<{ id: string, valueMm: number }> }}
+ */
+export function buildSectionSlice({ pointSamples, targetDateMs }) {
+  const targetMs = Number.isFinite(targetDateMs) ? targetDateMs : null;
+  const sliceDots = [];
+  if (targetMs === null) return { sliceDots };
+
+  for (const { id, dates, values } of pointSamples ?? []) {
+    const exactIndex = dates.indexOf(targetMs);
+    const valueMm = exactIndex >= 0 ? values[exactIndex] : interpolateAt(targetMs, dates, values);
+    if (Number.isFinite(valueMm)) sliceDots.push({ id, valueMm });
+  }
+  return { sliceDots };
 }
