@@ -333,7 +333,7 @@ function formatDateMs(ms) {
 // as a fallback for older rings.
 function bandTitle(ring) {
   const label = ring?.bandLabel ?? BAND_LABELS[ring?.bandIndex] ?? 'section';
-  return label.charAt(0).toUpperCase() + label.slice(1);
+  return label.replace(/\b\w/g, c => c.toUpperCase());
 }
 
 
@@ -715,10 +715,8 @@ export default function PolakyHradecV3() {
   }, [rigMode, ringYears, ringData]);
 
   // One structural label per populated section, on the same east edge as the
-  // year ticks but at the stack's vertical midpoint: `<Name> (<lo>–<hi> m)` with
-  // the span read from the section's own slot fractions, so it always matches the
-  // rings it names. Only sections with scatterers emit reference rings, so no
-  // label floats over an empty slot.
+  // year ticks but at the stack's vertical midpoint. Only sections with
+  // scatterers emit reference rings, so no label floats over an empty slot.
   const ringSectionLabels = useMemo(() => {
     if (rigMode !== RIG_RINGS || !focusedPylon || ringData.references.length === 0) return EMPTY;
     if (!Number.isFinite(focusedPylon.height)) return EMPTY;
@@ -735,17 +733,13 @@ export default function PolakyHradecV3() {
       const ceiling = ceilings.get(floor.bandIndex);
       const slot = focusedPylon.sectionSlots?.[floor.bandIndex];
       if (!ceiling || !slot) continue;
-      const [startFraction, endFraction] = slot;
-      if (!Number.isFinite(startFraction) || !Number.isFinite(endFraction)) continue;
 
       // Same east-edge vertex as `ringYearLabels`; lift only z to the midpoint.
       const eastPoint = floor.path[Math.floor((floor.path.length - 1) / 4)];
       const zMid = (floor.path[0][2] + ceiling.path[0][2]) / 2;
-      const zMin = Math.round(startFraction * focusedPylon.height);
-      const zMax = Math.round(endFraction * focusedPylon.height);
 
       labels.push({
-        text: `${bandTitle(floor)} (${zMin}–${zMax} m)`,
+        text: bandTitle(floor),
         position: [eastPoint[0], eastPoint[1], zMid],
       });
     }
