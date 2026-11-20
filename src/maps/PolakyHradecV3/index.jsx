@@ -158,6 +158,11 @@ const SERIES_MODES = [
 // Layer-id prefix shared by the 3D LOS point symbols (arrow parts and spheres).
 const POINT_LAYER_PREFIX = 'vel-avg-arrows';
 
+// mjolnir's tap recogniser (which emits `onClick`) rejects presses longer than
+// 250 ms. Selecting a 0.75 px stack ring is a slow, deliberate click, so widen
+// the tap window; the 9 px movement threshold still keeps map drags as drags.
+const EVENT_RECOGNIZER_OPTIONS = { click: { time: 1500 } };
+
 // Pre-selection opened once on mount: Pylon 9 and one of its linked InSAR points,
 // so the map highlight and both charts are visible without a click. The pylon is
 // resolved by its business id and then mapped to the join key; the join key
@@ -1288,6 +1293,7 @@ export default function PolakyHradecV3() {
           hoveredPylonKey != null || hoveredSphereId != null || hoveredRing != null ? 'pointer' : 'grab'
         )}
         controller
+        eventRecognizerOptions={EVENT_RECOGNIZER_OPTIONS}
         layers={layers}
         // Small tolerance so near-misses on thin steel and arrow tips still hit.
         pickingRadius={6}
