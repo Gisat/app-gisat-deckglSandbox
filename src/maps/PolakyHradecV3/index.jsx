@@ -1704,10 +1704,6 @@ export default function PolakyHradecV3() {
                   hoveredPointId={hoveredPointId}
                   activeSectionIndex={activeSelectedRing?.bandIndex ?? null}
                   onSelectSection={(bandIndex) => {
-                    if (bandIndex == null) {
-                      setSelectedRing(null);
-                      return;
-                    }
                     const match = ringStacks.find(
                       r => r.pylonKey === focusedPylon.key && r.bandIndex === bandIndex,
                     );

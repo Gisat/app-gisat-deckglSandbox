@@ -3,7 +3,7 @@
 // track's scatterers coloured by KTEMP / VEL_AVG / section. Everything is in
 // metres with [0,0,0] at the tower base centre (+X east, +Y north, +Z up), so
 // `H_REF` (already ground-relative in this dataset) is used as local z directly.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { COORDINATE_SYSTEM, OrbitView } from '@deck.gl/core';
 import { PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
@@ -34,6 +34,9 @@ const KTEMP_STOPS = [[56, 142, 232], [45, 190, 175], [245, 145, 55]];
 const SECTION_COLORS = [[90, 169, 255], [79, 209, 197], [246, 173, 85]];
 const NEUTRAL_COLOR = [140, 148, 158];
 const SELECTION_COLOR = [66, 212, 244];
+// Hovered section label: brighter than the active cyan so the click target
+// reads before the user commits.
+const LABEL_HOVER_COLOR = [170, 240, 255];
 const HOVER_COLOR = [255, 0, 0];
 const DIM_ALPHA = 45;
 
@@ -166,7 +169,7 @@ function rgbCss(rgb) {
  * @param {{
  *   pylon: any, pylonFeature: any, activeTrack: any, colorScale: any,
  *   selectedPointId: any, hoveredPointId: any, activeSectionIndex: number|null,
- *   onSelectSection: (bandIndex: number|null) => void,
+ *   onSelectSection: (bandIndex: number) => void,
  *   onPointHover: (id: any) => void, onPointClick: (id: any) => void,
  *   onClose: () => void,
  * }} props
@@ -185,6 +188,14 @@ export default function PylonScatter3DChart({
   onClose,
 }) {
   const [colorMode, setColorMode] = useState('ktemp');
+  const [hoveredSectionIndex, setHoveredSectionIndex] = useState(null);
+  // The chart's own section filter. It mirrors the ring selection (so a map ring
+  // click still dims the cloud) but clearing it here must NOT clear the ring
+  // anchor: that would close the lower SectionRingChart card.
+  const [filterSectionIndex, setFilterSectionIndex] = useState(activeSectionIndex ?? null);
+  useEffect(() => {
+    setFilterSectionIndex(activeSectionIndex ?? null);
+  }, [activeSectionIndex]);
 
   const pylonTyp = pylon?.typ ?? null;
   const pylonId = pylon?.id ?? '–';
@@ -269,8 +280,8 @@ export default function PylonScatter3DChart({
 
     // Cyan bracket on the section selected from the map: two rings at its exact
     // cut heights, matching the ring stack's own highlight colour.
-    const activeBounds = Number.isInteger(activeSectionIndex)
-      ? sectionBounds[activeSectionIndex]
+    const activeBounds = Number.isInteger(filterSectionIndex)
+      ? sectionBounds[filterSectionIndex]
       : null;
     if (activeBounds) {
       for (const z of [activeBounds.lo, activeBounds.hi]) {
@@ -282,7 +293,7 @@ export default function PylonScatter3DChart({
       }
     }
     return rings;
-  }, [layout, pylonHeight, activeSectionIndex, sectionBounds]);
+  }, [layout, pylonHeight, filterSectionIndex, sectionBounds]);
 
   // One label per structural section, doubling as the chart's section pick
   // target: clicking a label forwards its index so the ring stack can highlight
@@ -296,12 +307,13 @@ export default function PylonScatter3DChart({
       const bounds = sectionBounds[index];
       return {
         sectionIndex: index,
-        active: index === activeSectionIndex,
+        active: index === filterSectionIndex,
+        hovered: index === hoveredSectionIndex,
         text: `${sectionTitle(label)} (${counts[index]}) pts`,
         position: [13.5, 0, bounds ? (bounds.lo + bounds.hi) / 2 : pylonHeight / 2],
       };
     });
-  }, [points, layout, sectionBounds, pylonHeight, activeSectionIndex]);
+  }, [points, layout, sectionBounds, pylonHeight, filterSectionIndex, hoveredSectionIndex]);
 
   // 11-stop sample of the same per-orbit ramp the map symbols use.
   const velLegendBackground = useMemo(
@@ -336,14 +348,14 @@ export default function PylonScatter3DChart({
       if (hoveredPointId != null && String(point.id) === String(hoveredPointId)) {
         return [...HOVER_COLOR, 255];
       }
-      const dimmed = activeSectionIndex != null && point.sectionIndex !== activeSectionIndex;
+      const dimmed = filterSectionIndex != null && point.sectionIndex !== filterSectionIndex;
       return [...pointColor(point), dimmed ? DIM_ALPHA : 255];
     };
 
     // A thin cyan outline only on points inside the selected section, so the
     // dimmed cloud still reads as one group.
     const getLineColor = (point) => (
-      activeSectionIndex != null && point.sectionIndex === activeSectionIndex
+      filterSectionIndex != null && point.sectionIndex === filterSectionIndex
         ? [66, 212, 244, 220]
         : [0, 0, 0, 0]
     );
@@ -386,9 +398,13 @@ export default function PylonScatter3DChart({
       coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
       getPosition: (label) => label.position,
       getText: (label) => label.text,
-      // The active section's label carries the same cyan as its bracket rings.
-      getColor: (label) => (label.active ? [...SELECTION_COLOR] : [232, 236, 241]),
-      getSize: 11,
+      // Hover paints the label brighter; the active section keeps the same cyan
+      // as its bracket rings.
+      getColor: (label) => {
+        if (label.hovered) return LABEL_HOVER_COLOR;
+        return label.active ? SELECTION_COLOR : [232, 236, 241];
+      },
+      getSize: (label) => (label.hovered ? 12 : 11),
       sizeUnits: 'pixels',
       getTextAnchor: 'start',
       getAlignmentBaseline: 'center',
@@ -416,8 +432,8 @@ export default function PylonScatter3DChart({
       // deck.gl keeps the attribute buffers unless an update trigger changes;
       // the accessors alone are not compared, so recolouring needs these.
       updateTriggers: {
-        getFillColor: [colorMode, colorScale, activeSectionIndex, selectedPointId, hoveredPointId],
-        getLineColor: [activeSectionIndex],
+        getFillColor: [colorMode, colorScale, filterSectionIndex, selectedPointId, hoveredPointId],
+        getLineColor: [filterSectionIndex],
       },
     }));
 
@@ -431,13 +447,13 @@ export default function PylonScatter3DChart({
     points,
     colorMode,
     colorScale,
-    activeSectionIndex,
+    filterSectionIndex,
     selectedPointId,
     hoveredPointId,
   ]);
 
-  const chipLabel = Number.isInteger(activeSectionIndex) && layout.labels[activeSectionIndex]
-    ? sectionTitle(layout.labels[activeSectionIndex])
+  const chipLabel = Number.isInteger(filterSectionIndex) && layout.labels[filterSectionIndex]
+    ? sectionTitle(layout.labels[filterSectionIndex])
     : null;
 
   return (
@@ -452,11 +468,14 @@ export default function PylonScatter3DChart({
         {chipLabel && (
           <button
             type="button"
-            onClick={() => onSelectSection(null)}
+            onClick={() => setFilterSectionIndex(null)}
             aria-label={`Clear ${chipLabel} section filter`}
+            title={`Clear the ${chipLabel} section filter`}
             style={{
-              padding: '1px 6px',
+              flexShrink: 0,
+              padding: '2px 8px',
               fontSize: '10px',
+              whiteSpace: 'nowrap',
               color: '#42d4f4',
               background: 'rgba(66, 212, 244, 0.12)',
               border: '1px solid #42d4f4',
@@ -573,12 +592,28 @@ export default function PylonScatter3DChart({
                 : null
             )}
             onHover={({ object, layer }) => {
+              if (layer?.id === 'chart-section-labels') {
+                setHoveredSectionIndex(object?.sectionIndex ?? null);
+                onPointHover(null);
+                return;
+              }
+              setHoveredSectionIndex(null);
               const isPoint = layer?.id === 'chart-pylon-scatterers';
               onPointHover(isPoint ? object?.id ?? null : null);
             }}
             onClick={({ object, layer }) => {
-              if (!object) return;
+              if (!object) {
+                // Empty chart space clears only the chart filter; the ring
+                // selection and its lower card stay open.
+                if (filterSectionIndex != null) setFilterSectionIndex(null);
+                return;
+              }
               if (layer?.id === 'chart-section-labels') {
+                if (object.sectionIndex === filterSectionIndex) {
+                  setFilterSectionIndex(null);
+                  return;
+                }
+                setFilterSectionIndex(object.sectionIndex);
                 onSelectSection(object.sectionIndex);
                 return;
               }
@@ -589,7 +624,7 @@ export default function PylonScatter3DChart({
       </div>
 
       <div style={CAPTION_STYLE}>
-        {`Drag to orbit · Scroll to zoom · Click a section label to filter · Z: H_REF (0–${pylonHeight.toFixed(0)} m) · Size: COH`}
+        {`Drag to orbit · Scroll to zoom · Click label to filter · Click empty space to clear · Z: H_REF (0–${pylonHeight.toFixed(0)} m) · Size: COH`}
       </div>
     </div>
   );
