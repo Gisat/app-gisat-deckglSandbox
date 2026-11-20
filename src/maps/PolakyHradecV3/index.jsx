@@ -39,6 +39,8 @@ import {
 } from './velAvgPalette';
 import TimelineChart from './TimelineChart';
 import SectionRingChart from './SectionRingChart';
+import PylonScatter3DChart from './PylonScatter3DChart';
+import { PYLON_MODELS, getPylonOrientation } from './pylonModels';
 import { cartoDarkBasemapUrl } from '../basemaps';
 import {
   BAND_LABELS,
@@ -47,7 +49,6 @@ import {
   DEFAULT_RING_COLOR_MODE,
   DEFAULT_SCALE_M_PER_MM,
   DEFAULT_TRACK_ID,
-  PYLON_NATIVE_HEIGHTS,
   RING_STROKE_WIDTH,
   RIG_MODES,
   RIG_OFF,
@@ -83,24 +84,8 @@ import { TERRAIN_URL, sampleTerrainElevations } from './terrainElevation';
 const BASEMAP_ATTRIBUTION_URL = 'https://carto.com/attributions';
 const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright';
 const PYLONS_URL = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/sloupy.geojson';
-const PYLON_ASSET_BASE = 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/assets';
 
 const PYLON_COLOR = [183, 188, 193, 255];
-// Fallback bearing (degrees clockwise from north) for features without
-// `azimuth`; the current GeoJSON provides it for every tower.
-const PYLON_DEFAULT_AZIMUTH = 60;
-// Compasses measure clockwise from north, deck.gl yaw rotates counter-clockwise
-// from +X (east), hence yaw = 90 - azimuth. Adjust this offset if a model's
-// local forward axis turns out not to be +X after checking it on the imagery.
-const PYLON_OBJ_YAW_OFFSET = 0;
-// Native heights come from the OBJ headers (metres, Z-up, base centre at origin),
-// re-exported by `tracks.js` so the mesh scale and the rig fallback agree.
-// Each instance is scaled to its GeoJSON `height`; see `getPylonHeight` in rigData.
-const PYLON_MODELS = [
-  { typ: 'dunaj', nativeHeight: PYLON_NATIVE_HEIGHTS.dunaj, mesh: `${PYLON_ASSET_BASE}/dunaj.obj` },
-  { typ: 'kocka', nativeHeight: PYLON_NATIVE_HEIGHTS.kocka, mesh: `${PYLON_ASSET_BASE}/kocka.obj` },
-  { typ: 'portal', nativeHeight: PYLON_NATIVE_HEIGHTS.portal, mesh: `${PYLON_ASSET_BASE}/portal.obj` },
-];
 
 // Invisible pick target. SimpleMeshLayer picks per triangle, so the gaps between
 // lattice members are not hit-testable; a solid cylinder around the tower
@@ -311,21 +296,6 @@ function getPointElevation(feature) {
 // scaled with the tower so tall pylons stay proportionate.
 function getPylonHitRadius(height) {
   return Math.max(PYLON_HIT_RADIUS_MIN_M, height * PYLON_HIT_RADIUS_FACTOR);
-}
-
-// Per-feature azimuth from the GeoJSON, normalised to 0-360; only features
-// missing the value fall back to the default bearing.
-function getPylonAzimuth(feature) {
-  const raw = feature?.properties?.azimuth;
-  if (raw === null || raw === undefined || raw === '') return PYLON_DEFAULT_AZIMUTH;
-  const azimuth = Number(raw);
-  return Number.isFinite(azimuth) ? ((azimuth % 360) + 360) % 360 : PYLON_DEFAULT_AZIMUTH;
-}
-
-// deck.gl orientation is [pitch, yaw, roll] in degrees, so the compass bearing
-// only drives yaw.
-function getPylonOrientation(feature) {
-  return [0, 90 - getPylonAzimuth(feature) + PYLON_OBJ_YAW_OFFSET, 0];
 }
 
 function getRgba(feature, scale) {
@@ -1729,42 +1699,75 @@ export default function PolakyHradecV3() {
               flex: hasLowerChart ? '5 1 0' : '1 1 auto',
               minHeight: 0,
             }}>
-              <FeatureSpaceChart
-                featureCollection={pylonFeatureCollection}
-                embedded
-                dark
-                showTimeline
-                defaultChartType="timeline"
-                profileDisabled
-                defaultPreset="custom"
-                defaultCustomAxes={{ x: 'lon', y: 'lat', z: 'H_REF', color: 'VEL_AVG', size: 'COH' }}
-                attributeKeys={chartAttributeKeys}
-                colorPalette={BLUE_PALETTE}
-                velAvgPalette={velAvgPalette}
-                velAvgDomain={POLAKY_VEL_AVG_DOMAIN}
-                timelineColor={SETTLEMENT_COLOR}
-                symmetricTimelineZ
-                timelineColorPicker
-                onPointHover={setHoveredPointId}
-                // The chart's own point click never goes through the DeckGL
-                // handler, so it has to release the ring explicitly; otherwise a
-                // cyan ring would stay on the map behind the TimelineChart.
-                onPointClick={(id) => {
-                  setSelectedId(id);
-                  setSelectedRing(null);
-                }}
-                onClose={() => {
-                  setSelectedPylonKey(null);
-                  setHoveredPointId(null);
-                  setSelectedRing(null);
-                }}
-                emptyHint={`No ${activeTrack.id} InSAR points are linked to this pylon.`}
-                title={(
-                  <span style={CHART_TITLE_STYLE}>
-                    {`Pylon ${selectedPylon?.properties?.id ?? selectedPylonKey} · ${activeTrack.id}`}
-                  </span>
-                )}
-              />
+              {rigEnabled && focusedPylon ? (
+                <PylonScatter3DChart
+                  key={focusedPylon.key}
+                  pylon={focusedPylon}
+                  pylonFeature={selectedPylon}
+                  activeTrack={activeTrack}
+                  colorScale={colorScale}
+                  selectedPointId={selectedId}
+                  hoveredPointId={hoveredPointId}
+                  activeSectionIndex={activeSelectedRing?.bandIndex ?? null}
+                  onSelectSection={(bandIndex) => {
+                    if (bandIndex == null) {
+                      setSelectedRing(null);
+                      return;
+                    }
+                    const match = ringStacks.find(
+                      r => r.pylonKey === focusedPylon.key && r.bandIndex === bandIndex,
+                    );
+                    if (match) handleRingClick(match);
+                  }}
+                  onPointHover={setHoveredPointId}
+                  onPointClick={(id) => {
+                    setSelectedRing(null);
+                    setSelectedId(id);
+                  }}
+                  onClose={() => {
+                    setSelectedPylonKey(null);
+                    setSelectedRing(null);
+                    setHoveredPointId(null);
+                  }}
+                />
+              ) : (
+                <FeatureSpaceChart
+                  featureCollection={pylonFeatureCollection}
+                  embedded
+                  dark
+                  showTimeline
+                  defaultChartType="timeline"
+                  profileDisabled
+                  defaultPreset="custom"
+                  defaultCustomAxes={{ x: 'lon', y: 'lat', z: 'H_REF', color: 'VEL_AVG', size: 'COH' }}
+                  attributeKeys={chartAttributeKeys}
+                  colorPalette={BLUE_PALETTE}
+                  velAvgPalette={velAvgPalette}
+                  velAvgDomain={POLAKY_VEL_AVG_DOMAIN}
+                  timelineColor={SETTLEMENT_COLOR}
+                  symmetricTimelineZ
+                  timelineColorPicker
+                  onPointHover={setHoveredPointId}
+                  // The chart's own point click never goes through the DeckGL
+                  // handler, so it has to release the ring explicitly; otherwise a
+                  // cyan ring would stay on the map behind the TimelineChart.
+                  onPointClick={(id) => {
+                    setSelectedId(id);
+                    setSelectedRing(null);
+                  }}
+                  onClose={() => {
+                    setSelectedPylonKey(null);
+                    setHoveredPointId(null);
+                    setSelectedRing(null);
+                  }}
+                  emptyHint={`No ${activeTrack.id} InSAR points are linked to this pylon.`}
+                  title={(
+                    <span style={CHART_TITLE_STYLE}>
+                      {`Pylon ${selectedPylon?.properties?.id ?? selectedPylonKey} · ${activeTrack.id}`}
+                    </span>
+                  )}
+                />
+              )}
             </div>
           )}
 
