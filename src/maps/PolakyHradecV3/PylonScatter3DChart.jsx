@@ -14,6 +14,7 @@ import {
   RING_SEGMENTS,
   getSectionLayout,
   metresPerDegLon,
+  sectionTitle,
 } from './tracks';
 import { bandIndexOf } from './rigData';
 import { POLAKY_VEL_AVG_DOMAIN } from './velAvgPalette';
@@ -118,15 +119,6 @@ function rampColor(stops, t) {
   ];
 }
 
-// Every hyphen part is capitalised, so the portal layout reads `Cross-Beam`.
-function sectionTitle(label) {
-  const text = label ?? 'section';
-  return text
-    .split('-')
-    .map(part => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
-    .join('-');
-}
-
 function formatValue(value, digits) {
   if (value == null || value === '') return '–';
   const num = Number(value);
@@ -212,9 +204,10 @@ export default function PylonScatter3DChart({
     [pylonTyp],
   );
 
-  // One local-frame datum per InSAR scatterer. Section assignment goes through
-  // the same `bandIndexOf` the rig uses, so the chart cannot disagree with the
-  // rings; a missing `H_REF` falls back to `H - H_dem` and then to the base.
+  // One local-frame datum per InSAR scatterer. Section membership uses the rig's
+  // exact rule (raw `H_REF`, missing → NaN → last section) so the chart counts
+  // and filter match `pylon.bands`; the derived height below is only for the
+  // plotted local z and the tooltip.
   const points = useMemo(() => {
     if (!(pylonHeight > 0) || !Number.isFinite(pylonLon) || !Number.isFinite(pylonLat)) return EMPTY;
     const mPerDegLon = metresPerDegLon(pylonLat);
@@ -225,10 +218,10 @@ export default function PylonScatter3DChart({
       if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
 
       const props = feature?.properties ?? {};
-      const hRefRaw = numeric(props.H_REF);
+      const rawHRef = numeric(props.H_REF);
       const hMinusDem = numeric(props.H) - numeric(props.H_dem);
-      const hRef = Number.isFinite(hRefRaw) ? hRefRaw : Number.isFinite(hMinusDem) ? hMinusDem : 0;
-      const sectionIndex = bandIndexOf(hRef, pylonHeight, layout.assignFractions);
+      const hRef = Number.isFinite(rawHRef) ? rawHRef : Number.isFinite(hMinusDem) ? hMinusDem : 0;
+      const sectionIndex = bandIndexOf(rawHRef, pylonHeight, layout.assignFractions);
 
       out.push({
         id: props.ID ?? null,

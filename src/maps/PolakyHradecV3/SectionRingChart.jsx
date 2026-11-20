@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { ResponsiveLine } from '@nivo/line';
-import { buildSectionTimelineSlice } from './bandGeometry';
+import { buildSectionSeries, buildSectionSlice } from './bandGeometry';
+import { sectionTitle } from './tracks';
 
 // Stable empty input: the card stays mounted for one frame after the ring clears.
 const EMPTY = [];
@@ -17,13 +18,6 @@ function formatSignedMm(value, digits = 2) {
 function formatDateMs(ms) {
   if (!Number.isFinite(ms)) return '–';
   return new Date(ms).toISOString().slice(0, 10);
-}
-
-// Section labels are lowercase ids; the header capitalises them like the ring
-// tooltip does.
-function sectionTitle(bandLabel) {
-  const label = bandLabel ?? 'section';
-  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function swatch(color) {
@@ -61,18 +55,25 @@ export default function SectionRingChart({
 }) {
   const scatterers = pylon?.bands?.[ring?.trackId]?.[ring?.bandIndex] ?? EMPTY;
 
-  const slice = useMemo(() => buildSectionTimelineSlice({
+  // The curves are date-independent, so they are only rebuilt when the section
+  // or the bucketing controls change; stepping through rings only re-runs the
+  // cheap slice lookup below.
+  const series = useMemo(() => buildSectionSeries({
     scatterers,
     rawMode,
     bucketId,
     activeDates,
+  }), [scatterers, rawMode, bucketId, activeDates]);
+
+  const { sliceDots } = useMemo(() => buildSectionSlice({
+    pointSamples: series.pointSamples,
     targetDateMs: ring?.dateMs,
-  }), [scatterers, rawMode, bucketId, activeDates, ring?.dateMs]);
+  }), [series, ring?.dateMs]);
 
   const chartData = useMemo(() => [
-    ...slice.pointSeries.map(({ id, data }) => ({ id, data })),
-    { id: 'median', data: slice.medianSeries },
-  ], [slice]);
+    ...series.pointSeries,
+    { id: 'median', data: series.medianSeries },
+  ], [series]);
 
   const cardStyle = {
     position: 'relative',
@@ -120,7 +121,7 @@ export default function SectionRingChart({
     </div>
   );
 
-  if (slice.pointSeries.length === 0 && slice.medianSeries.length === 0) {
+  if (series.pointSeries.length === 0 && series.medianSeries.length === 0) {
     return (
       <div style={cardStyle}>
         {header}
@@ -164,7 +165,7 @@ export default function SectionRingChart({
             strokeWidth={2.8}
           />
         )}
-        {slice.sliceDots.map(dot => (
+        {sliceDots.map(dot => (
           <circle
             key={dot.id}
             cx={sliceX}

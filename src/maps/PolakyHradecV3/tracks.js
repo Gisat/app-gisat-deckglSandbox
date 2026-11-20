@@ -121,6 +121,19 @@ export function getSectionLayout(typ) {
     : PYLON_SECTION_LAYOUTS.dunaj;
 }
 
+/**
+ * Display name for one section label. Every hyphen/word part is capitalised so
+ * `cross-beam` reads `Cross-Beam` in the map tooltip, the 3D card and the
+ * section timeline card alike.
+ *
+ * @param {string|null|undefined} label
+ * @returns {string}
+ */
+export function sectionTitle(label) {
+  const text = label ?? 'section';
+  return text.replace(/\b\w/g, c => c.toUpperCase());
+}
+
 // Compatibility exports: existing imports keep reading the dunaj layout. Never
 // use these to size per-tower arrays — a portal tower has two sections.
 export const BAND_FRACTIONS = PYLON_SECTION_LAYOUTS.dunaj.bandFractions;
