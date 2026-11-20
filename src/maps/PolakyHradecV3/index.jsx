@@ -38,6 +38,7 @@ import {
   POLAKY_VEL_AVG_DOMAIN,
 } from './velAvgPalette';
 import TimelineChart from './TimelineChart';
+import SectionRingChart from './SectionRingChart';
 import { cartoDarkBasemapUrl } from '../basemaps';
 import {
   BAND_LABELS,
@@ -68,7 +69,7 @@ import {
   loadRigTracks,
   meanHeightByTyp,
 } from './rigData';
-import { bandMedianAt, buildSectionRingStacks, medianScatterer, ringColor } from './bandGeometry';
+import { bandMedianAt, buildSectionRingStacks, ringColor } from './bandGeometry';
 import { eastLabel, solveBand } from './decomposition';
 import { logRigDebug } from './debugRig';
 import { TERRAIN_URL, sampleTerrainElevations } from './terrainElevation';
@@ -137,6 +138,7 @@ const EMPTY = [];
 const RIG_REFERENCE_RING_LAYER = 'rig-reference-rings';
 const RIG_REFERENCE_LABEL_LAYER = 'rig-reference-year-labels';
 const RIG_STACK_RING_LAYER = 'rig-stack-rings';
+const RIG_HIGHLIGHT_RING_LAYER = 'rig-highlight-rings';
 const RIG_DEBUG_MARKER_LAYER = 'rig-debug-band-markers';
 
 /** 0 mm floor/ceiling rings per section: dashed white, hairline, never picked. */
@@ -400,10 +402,11 @@ export default function PolakyHradecV3() {
   const [scaleMPerMm, setScaleMPerMm] = useState(DEFAULT_SCALE_M_PER_MM);
   const [rigTracks, setRigTracks] = useState(null);
   const [terrainElevations, setTerrainElevations] = useState(null);
-  const [hoveredRing, setHoveredRing] = useState(false);
-  // The scene waits for the terrain layer's first elevation range; after 6 s it
-  // renders anyway so an unreachable COG cannot leave a blank map.
-  const [terrainWaitExpired, setTerrainWaitExpired] = useState(false);
+  const [hoveredRing, setHoveredRing] = useState(null);
+  // Clicked stack ring, kept as an anchor (pylon/section/date): `activeSelectedRing`
+  // below re-resolves it to the closest ring of the current stacks, so the cyan
+  // highlight and the section chart follow Shift / Bucket / Series / Track changes.
+  const [selectedRing, setSelectedRing] = useState(null);
   // `?debugRig=1` prints the plan's acceptance gates; any other route ignores it.
   const debugRig = useMemo(
     () => new URLSearchParams(window.location.search).get('debugRig') === '1',
@@ -642,14 +645,6 @@ export default function PolakyHradecV3() {
     return { ...rigBaseStore, pylons, warnings };
   }, [rigBaseStore, terrainElevations]);
 
-  useEffect(() => {
-    if (zRange != null || terrainWaitExpired) return undefined;
-    const timer = setTimeout(() => setTerrainWaitExpired(true), 6000);
-    return () => clearTimeout(timer);
-  }, [zRange, terrainWaitExpired]);
-
-  const terrainReady = zRange != null || terrainWaitExpired;
-
   const rigReady = rigStore != null;
   const rigEnabled = rigMode !== RIG_OFF;
   const rigStatusLabel = rigTracks?.status === 'error'
@@ -697,6 +692,24 @@ export default function PolakyHradecV3() {
       color: [...ringColor(ring, ringColorMode, displacementScale), ring.color[3]],
     }));
   }, [ringData, ringColorMode, displacementScale]);
+
+  // The clicked ring re-resolved against the current stacks: after a Shift /
+  // Bucket / Series / Track change the anchor date may no longer exist, so the
+  // closest ring of the same pylon and section becomes the highlighted one.
+  // Requiring the pylon to still be the selected one keeps a stale ring from
+  // rendering against another tower.
+  const activeSelectedRing = useMemo(() => {
+    if (rigMode !== RIG_RINGS || selectedRing == null) return null;
+    if (selectedPylonKey !== selectedRing.pylonKey) return null;
+    let best = null;
+    for (const ring of ringStacks) {
+      if (ring.pylonKey !== selectedRing.pylonKey) continue;
+      if (ring.bandIndex !== selectedRing.bandIndex) continue;
+      if (best == null || Math.abs(ring.dateMs - selectedRing.dateMs)
+          < Math.abs(best.dateMs - selectedRing.dateMs)) best = ring;
+    }
+    return best;
+  }, [rigMode, selectedRing, selectedPylonKey, ringStacks]);
 
   // First/last acquisition year of the union grid; display fallbacks while the
   // rig is still loading.
@@ -770,13 +783,11 @@ export default function PolakyHradecV3() {
     logRigDebug({ store: rigStore, bucketId });
   }, [debugRig, rigStore, bucketId]);
 
-  // Clicking a ring curve switches to that track, focuses its pylon and opens the
-  // timeline of the band's median scatterer at the curve tip. The pylon chart stays
-  // single-track, as the shared chart keys points on `ID`.
+  // Clicking a ring curve switches to that track, focuses its pylon, highlights
+  // the ring in cyan and opens the section's multi-point timeline card. The
+  // anchor (not the ring object) is stored so a control change can re-resolve it.
   const handleRingClick = useCallback((ring) => {
     if (!ring || !rigStore) return;
-    const pylon = rigStore.pylons.get(ring.pylonKey);
-    if (!pylon) return;
 
     if (ring.trackId !== activeTrackId) {
       setActiveTrackId(ring.trackId);
@@ -785,15 +796,14 @@ export default function PolakyHradecV3() {
       if (tracks[ring.trackId]?.status !== 'ready') loadTrack(ring.trackId);
     }
     setSelectedPylonKey(ring.pylonKey);
-    // Open the section's median scatterer at the clicked ring's timestep, so the
-    // 3D chart and the 2D timeline both match the ring under the cursor.
-    const scatterer = medianScatterer(
-      pylon.bands[ring.trackId]?.[ring.bandIndex] ?? EMPTY,
-      ring.dateMs,
-      bucketId,
-    );
-    if (scatterer) setSelectedId(scatterer.properties.ID);
-  }, [rigStore, activeTrackId, tracks, loadTrack, bucketId]);
+    setSelectedId(null);
+    setSelectedRing({
+      pylonKey: ring.pylonKey,
+      bandIndex: ring.bandIndex,
+      trackId: ring.trackId,
+      dateMs: ring.dateMs,
+    });
+  }, [rigStore, activeTrackId, tracks, loadTrack]);
 
   const pylonGroups = useMemo(() => {
     const groups = { kocka: [], dunaj: [], portal: [] };
@@ -832,6 +842,11 @@ export default function PolakyHradecV3() {
     if (selectedId == null) return null;
     return features.find(f => String(f.properties?.ID) === String(selectedId)) ?? null;
   }, [features, selectedId]);
+
+  // The lower-right panel keeps the section chart only while it has something to
+  // show; the two cards stay mutually exclusive (ring click clears the point,
+  // point click clears the ring).
+  const hasLowerChart = Boolean(selectedFeature || activeSelectedRing);
 
   // Attributes offered by the 3D chart: the geometry-derived position, then
   // every numeric GeoJSON property except LON/LAT (duplicates of the geometry),
@@ -900,8 +915,9 @@ export default function PolakyHradecV3() {
       ? (info.object?.properties?.ID ?? null)
       : null;
     // Every stack ring is its own pick target; the cursor mirrors that without
-    // touching the pylon/sphere hover state.
-    const nextRing = layerId === RIG_STACK_RING_LAYER;
+    // touching the pylon/sphere hover state. The object is kept so the map can
+    // draw a white highlight ring over the hovered one.
+    const nextRing = layerId === RIG_STACK_RING_LAYER ? (info.object ?? null) : null;
     setHoveredPylonKey(prev => (prev === nextPylonKey ? prev : nextPylonKey));
     setHoveredSphereId(prev => (prev === nextSphereId ? prev : nextSphereId));
     setHoveredRing(prev => (prev === nextRing ? prev : nextRing));
@@ -925,6 +941,10 @@ export default function PolakyHradecV3() {
     return { arrowFeatures: arrows, sphereFeatures: spheres };
   }, [features, hiddenPointKey]);
 
+  // Every layer is built on the first render, like v2: `zRange` starts as `null`
+  // and the COG reports its bounds a frame or two later. The draped content then
+  // settles vertically under a stationary camera; the controller-owned initial
+  // view is never blocked, and an unreachable COG cannot blank the map.
   const layers = useMemo(() => {
     const terrainLayer = new CogTerrainLayer({
       id: 'terrain-elevation',
@@ -938,12 +958,6 @@ export default function PolakyHradecV3() {
       pickable: false,
       terrainOptions: TERRAIN_OPTIONS,
     });
-
-    // Nothing terrain-dependent is drawn until the terrain layer has reported its
-    // elevation bounds. Before that the drape, the towers and the rig are placed
-    // against a default range and the whole scene snaps when the real range
-    // arrives — which reads as a camera jump even though the camera never moves.
-    if (!terrainReady) return [terrainLayer];
 
     // zRange keeps the draped tiles from being frustum-culled in tilted views.
     const basemapLayer = new TileLayer({
@@ -1161,8 +1175,7 @@ export default function PolakyHradecV3() {
 
       // One thin horizontal ring per time bucket (or per acquisition pass in
       // Raw), stacked through the section. The ring stays pickable so hover gives
-      // date + median LOS and click opens the section's median scatterer in both
-      // charts.
+      // date + median LOS and click opens the section chart for that timestep.
       if (ringData.stacks.length > 0) {
         rigLayers.push(new PathLayer({
           id: RIG_STACK_RING_LAYER,
@@ -1175,6 +1188,35 @@ export default function PolakyHradecV3() {
           jointRounded: true,
           capRounded: true,
           pickable: true,
+        }));
+      }
+
+      // Hover / selection highlight rings: white follows the cursor, cyan marks
+      // the clicked ring the section chart is sliced at. Not pickable, so the
+      // thin stack rings underneath keep both hover and click.
+      const highlightRings = [];
+      if (activeSelectedRing) {
+        highlightRings.push({
+          path: activeSelectedRing.path,
+          color: [SELECTION_COLOR[0], SELECTION_COLOR[1], SELECTION_COLOR[2], 255],
+          width: 2.8,
+        });
+      }
+      if (hoveredRing) {
+        highlightRings.push({ path: hoveredRing.path, color: [255, 255, 255, 255], width: 3.2 });
+      }
+      if (highlightRings.length > 0) {
+        rigLayers.push(new PathLayer({
+          id: RIG_HIGHLIGHT_RING_LAYER,
+          data: highlightRings,
+          getPath: (d) => d.path,
+          getColor: (d) => d.color,
+          getWidth: (d) => d.width,
+          widthUnits: 'pixels',
+          billboard: true,
+          jointRounded: true,
+          capRounded: true,
+          pickable: false,
         }));
       }
     }
@@ -1208,10 +1250,11 @@ export default function PolakyHradecV3() {
     selectedPylonKey,
     hoveredPylonKey,
     rigEnabled,
-    terrainReady,
     rigMode,
     ringData,
     ringStacks,
+    hoveredRing,
+    activeSelectedRing,
     ringYearLabels,
     debugRig,
     focusedPylon,
@@ -1242,7 +1285,7 @@ export default function PolakyHradecV3() {
         initialViewState={INITIAL_VIEW_STATE}
         onViewStateChange={handleViewStateChange}
         getCursor={() => (
-          hoveredPylonKey != null || hoveredSphereId != null || hoveredRing ? 'pointer' : 'grab'
+          hoveredPylonKey != null || hoveredSphereId != null || hoveredRing != null ? 'pointer' : 'grab'
         )}
         controller
         layers={layers}
@@ -1260,16 +1303,21 @@ export default function PolakyHradecV3() {
             if (key == null) return;
             setHoveredPointId(null);
             setSelectedPylonKey(key);
+            // A ring belongs to the pylon it was clicked on; focusing another
+            // tower must not leave a stale cyan highlight behind.
+            setSelectedRing(null);
             return;
           }
           if (layerId.startsWith(POINT_LAYER_PREFIX)) {
             setHoveredPointId(null);
             setSelectedId(info.object?.properties?.ID ?? null);
+            setSelectedRing(null);
             return;
           }
           setSelectedId(null);
           setSelectedPylonKey(null);
           setHoveredPointId(null);
+          setSelectedRing(null);
         }}
         getTooltip={({ object, layer }) => {
           const layerId = layer?.id ?? '';
@@ -1320,14 +1368,14 @@ export default function PolakyHradecV3() {
         className="deckgl-map"
       />
 
-      {(isLoading || !terrainReady) && (
+      {isLoading && (
         <div style={{
           ...OVERLAY_CARD_STYLE,
           top: 10,
           left: '50%',
           transform: 'translateX(-50%)',
         }}>
-          {terrainReady ? 'Loading data...' : 'Loading terrain...'}
+          Loading data...
         </div>
       )}
 
@@ -1586,16 +1634,16 @@ export default function PolakyHradecV3() {
         </div>
       </div>
 
-      {(selectedPylonKey != null || selectedFeature) && (
+      {(selectedPylonKey != null || hasLowerChart) && (
         <div style={{
           position: 'absolute',
           right: 12,
           bottom: 12,
           width: '460px',
           maxWidth: 'calc(100% - 24px)',
-          // One card keeps its natural height; both split the available height
+          // One card keeps its natural height; two split the available height
           // in the same 560:320 proportion as their standalone sizes.
-          height: selectedPylonKey != null && selectedFeature
+          height: selectedPylonKey != null && hasLowerChart
             ? 'calc(100% - 24px)'
             : selectedPylonKey != null
               ? 'min(560px, calc(100% - 24px))'
@@ -1608,7 +1656,7 @@ export default function PolakyHradecV3() {
           {selectedPylonKey != null && (
             <div style={{
               position: 'relative',
-              flex: selectedFeature ? '5 1 0' : '1 1 auto',
+              flex: hasLowerChart ? '5 1 0' : '1 1 auto',
               minHeight: 0,
             }}>
               <FeatureSpaceChart
@@ -1628,10 +1676,17 @@ export default function PolakyHradecV3() {
                 symmetricTimelineZ
                 timelineColorPicker
                 onPointHover={setHoveredPointId}
-                onPointClick={setSelectedId}
+                // The chart's own point click never goes through the DeckGL
+                // handler, so it has to release the ring explicitly; otherwise a
+                // cyan ring would stay on the map behind the TimelineChart.
+                onPointClick={(id) => {
+                  setSelectedId(id);
+                  setSelectedRing(null);
+                }}
                 onClose={() => {
                   setSelectedPylonKey(null);
                   setHoveredPointId(null);
+                  setSelectedRing(null);
                 }}
                 emptyHint={`No ${activeTrack.id} InSAR points are linked to this pylon.`}
                 title={(
@@ -1653,6 +1708,23 @@ export default function PolakyHradecV3() {
                 feature={selectedFeature}
                 trackLabel={activeTrack.id}
                 onClose={() => setSelectedId(null)}
+              />
+            </div>
+          )}
+
+          {!selectedFeature && activeSelectedRing && focusedPylon && (
+            <div style={{
+              position: 'relative',
+              flex: selectedPylonKey != null ? '3 1 0' : '1 1 auto',
+              minHeight: 0,
+            }}>
+              <SectionRingChart
+                ring={activeSelectedRing}
+                pylon={focusedPylon}
+                rawMode={seriesMode === 'raw'}
+                bucketId={bucketId}
+                activeDates={rigStore?.trackDates?.[activeTrackId] ?? rigStore?.grid ?? EMPTY}
+                onClose={() => setSelectedRing(null)}
               />
             </div>
           )}

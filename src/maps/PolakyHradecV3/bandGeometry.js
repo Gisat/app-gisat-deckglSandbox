@@ -676,3 +676,118 @@ export function buildSectionRingStacks({
 
   return { stacks, references };
 }
+
+/**
+ * Everything the section chart needs for one clicked ring: the full-section
+ * point curves, the exact median curve that drives the 3D ring centres, the
+ * per-point values at the ring's timestep, and the median at that timestep.
+ *
+ * The point curves iterate **all** scatterers of the section (the chart shows
+ * the whole section), while the median curve goes through the same
+ * `rawBandMedianSeries` / `bucketedBandSeries` pipeline as the rings, so the
+ * chart and the 3D stack can never disagree.
+ *
+ * Smoothed point curves snap to the same bucketed `centerMs` timestamps as the
+ * rings; raw curves keep the acquisitions of the active track, so the exact
+ * match of `targetDateMs` works in both modes.
+ *
+ * @param {{
+ *   scatterers: Array<any>, rawMode?: boolean, bucketId?: string,
+ *   activeDates?: number[], targetDateMs: number,
+ * }} options
+ * @returns {{
+ *   pointSeries: Array<{ id: string, data: Array<{ x: Date, y: number }>, sliceValueMm: number|null }>,
+ *   medianSeries: Array<{ x: Date, y: number }>,
+ *   sliceDots: Array<{ id: string, valueMm: number }>,
+ *   medianAtSlice: number|null,
+ * }}
+ */
+export function buildSectionTimelineSlice({
+  scatterers,
+  rawMode = false,
+  bucketId = DEFAULT_BUCKET_ID,
+  activeDates = [],
+  targetDateMs,
+}) {
+  const spec = getBucketSpec(bucketId);
+  const list = Array.isArray(scatterers) ? scatterers : [];
+  const targetMs = Number.isFinite(targetDateMs) ? targetDateMs : null;
+
+  const pointSeries = [];
+  const sliceDots = [];
+
+  for (const feature of list) {
+    const { dates, values } = featureSeries(feature);
+    if (dates.length === 0) continue;
+    const id = String(feature?.properties?.ID ?? '');
+
+    let samples;
+    if (rawMode) {
+      samples = [];
+      for (let i = 0; i < dates.length; i++) {
+        const valueMm = values[i];
+        if (!Number.isFinite(valueMm)) continue;
+        samples.push({ dateMs: dates[i], valueMm });
+      }
+    } else {
+      const smoothed = smoothSeries(values, dates, spec.smoothDays);
+      const centers = new Map();
+      const byKey = new Map();
+      for (let i = 0; i < smoothed.length; i++) {
+        const value = smoothed[i];
+        if (!Number.isFinite(value)) continue;
+        const { key, centerMs } = bucketKeyAndCenter(dates[i], spec);
+        if (key === null) continue;
+        if (!centers.has(key)) centers.set(key, centerMs);
+        if (!byKey.has(key)) byKey.set(key, []);
+        byKey.get(key).push(value);
+      }
+      samples = [];
+      for (const [key, bucketValues] of byKey) {
+        const valueMm = median(bucketValues);
+        if (valueMm === null) continue;
+        samples.push({ dateMs: centers.get(key), valueMm });
+      }
+      samples.sort((a, b) => a.dateMs - b.dateMs);
+    }
+
+    const sampleDates = samples.map(s => s.dateMs);
+    const sampleValues = samples.map(s => s.valueMm);
+    const exact = targetMs === null ? undefined : samples.find(s => s.dateMs === targetMs);
+    const sliceValueMm = exact
+      ? exact.valueMm
+      : (targetMs === null ? null : interpolateAt(targetMs, sampleDates, sampleValues));
+
+    pointSeries.push({
+      id,
+      data: samples.map(s => ({ x: new Date(s.dateMs), y: s.valueMm })),
+      sliceValueMm,
+    });
+    if (Number.isFinite(sliceValueMm)) sliceDots.push({ id, valueMm: sliceValueMm });
+  }
+
+  let medianSeries;
+  if (rawMode) {
+    const raw = rawBandMedianSeries(list, activeDates);
+    medianSeries = [];
+    for (let i = 0; i < raw.length; i++) {
+      const y = raw[i];
+      if (!Number.isFinite(y)) continue;
+      medianSeries.push({ x: new Date(activeDates[i]), y });
+    }
+  } else {
+    medianSeries = bucketedBandSeries(list, bucketId)
+      .map(b => ({ x: new Date(b.dateMs), y: b.valueMm }));
+  }
+
+  const medianDates = medianSeries.map(p => p.x.getTime());
+  const medianValues = medianSeries.map(p => p.y);
+  const exactMedian = targetMs === null
+    ? undefined
+    : medianSeries.find(p => p.x.getTime() === targetMs);
+  const medianAtSlice = exactMedian
+    ? exactMedian.y
+    : (targetMs === null ? null : interpolateAt(targetMs, medianDates, medianValues));
+
+  return { pointSeries, medianSeries, sliceDots, medianAtSlice };
+}
