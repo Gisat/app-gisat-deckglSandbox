@@ -73,7 +73,7 @@ export const PYLON_NATIVE_HEIGHTS = {
  * names. All fractions are of each tower's own `height`.
  *
  * - `dunaj` — double-circuit lattice: base / mid / top.
- * - `kocka` — barrel / cat-head tower: same three sections, upper cutoff lower.
+ * - `kocka` — barrel / cat-head tower: base / shaft / head, upper cutoff lower.
  * - `portal` — H-frame gantry: two sections, legs and cross-beam.
  */
 export const PYLON_SECTION_LAYOUTS = {
@@ -88,7 +88,7 @@ export const PYLON_SECTION_LAYOUTS = {
     ],
   },
   kocka: {
-    labels: ['base', 'mid', 'top'],
+    labels: ['base', 'shaft', 'head'],
     assignFractions: [0.35, 0.65],
     bandFractions: [0.20, 0.50, 0.82],
     zSlots: [

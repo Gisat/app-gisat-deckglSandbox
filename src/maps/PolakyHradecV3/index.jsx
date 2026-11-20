@@ -137,6 +137,7 @@ const EMPTY = [];
 // ---------------------------------------------------------------------------
 const RIG_REFERENCE_RING_LAYER = 'rig-reference-rings';
 const RIG_REFERENCE_LABEL_LAYER = 'rig-reference-year-labels';
+const RIG_SECTION_LABEL_LAYER = 'rig-section-labels';
 const RIG_STACK_RING_LAYER = 'rig-stack-rings';
 const RIG_HIGHLIGHT_RING_LAYER = 'rig-highlight-rings';
 const RIG_DEBUG_MARKER_LAYER = 'rig-debug-band-markers';
@@ -743,6 +744,44 @@ export default function PolakyHradecV3() {
     });
   }, [rigMode, ringYears, ringData]);
 
+  // One structural label per populated section, on the same east edge as the
+  // year ticks but at the stack's vertical midpoint: `<Name> (<lo>–<hi> m)` with
+  // the span read from the section's own slot fractions, so it always matches the
+  // rings it names. Only sections with scatterers emit reference rings, so no
+  // label floats over an empty slot.
+  const ringSectionLabels = useMemo(() => {
+    if (rigMode !== RIG_RINGS || !focusedPylon || ringData.references.length === 0) return EMPTY;
+    if (!Number.isFinite(focusedPylon.height)) return EMPTY;
+
+    // References come in floor/ceiling pairs per band; index the ceilings once.
+    const ceilings = new Map();
+    for (const reference of ringData.references) {
+      if (reference.kind === 'ceiling') ceilings.set(reference.bandIndex, reference);
+    }
+
+    const labels = [];
+    for (const floor of ringData.references) {
+      if (floor.kind !== 'floor') continue;
+      const ceiling = ceilings.get(floor.bandIndex);
+      const slot = focusedPylon.sectionSlots?.[floor.bandIndex];
+      if (!ceiling || !slot) continue;
+      const [startFraction, endFraction] = slot;
+      if (!Number.isFinite(startFraction) || !Number.isFinite(endFraction)) continue;
+
+      // Same east-edge vertex as `ringYearLabels`; lift only z to the midpoint.
+      const eastPoint = floor.path[Math.floor((floor.path.length - 1) / 4)];
+      const zMid = (floor.path[0][2] + ceiling.path[0][2]) / 2;
+      const zMin = Math.round(startFraction * focusedPylon.height);
+      const zMax = Math.round(endFraction * focusedPylon.height);
+
+      labels.push({
+        text: `${bandTitle(floor)} (${zMin}–${zMax} m)`,
+        position: [eastPoint[0], eastPoint[1], zMid],
+      });
+    }
+    return labels.length > 0 ? labels : EMPTY;
+  }, [rigMode, focusedPylon, ringData]);
+
   // Per-band ΔU/ΔE for the focused tower.
   const focusedBandSolutions = useMemo(() => {
     if (!rigEnabled || !focusedPylon || !rigStore || !rigStore.commonEpochMs) return EMPTY;
@@ -1157,11 +1196,35 @@ export default function PolakyHradecV3() {
         }));
       }
 
-      // Start/end year on every section's floor/ceiling reference ring.
+      // Start/end year on every section's floor/ceiling reference ring; they sit
+      // on the ring z while the section label sits at the midpoint.
       if (ringYearLabels.length > 0) {
         rigLayers.push(new TextLayer({
           id: RIG_REFERENCE_LABEL_LAYER,
           data: ringYearLabels,
+          getPosition: (d) => d.position,
+          getText: (d) => d.text,
+          getColor: [179, 184, 191],
+          getSize: 2,
+          sizeUnits: 'pixels',
+          getTextAnchor: 'start',
+          getAlignmentBaseline: 'center',
+          getPixelOffset: [8, 0.5],
+          fontFamily: 'system-ui, sans-serif',
+          fontWeight: 600,
+          characterSet: 'auto',
+          billboard: true,
+          pickable: false,
+        }));
+      }
+
+      // Structural name + elevation span per populated section, on the east edge at
+      // the stack midpoint. Slightly larger and lighter-offset than the year ticks,
+      // which stay at the floor/ceiling so the three never collide.
+      if (ringSectionLabels.length > 0) {
+        rigLayers.push(new TextLayer({
+          id: RIG_SECTION_LABEL_LAYER,
+          data: ringSectionLabels,
           getPosition: (d) => d.position,
           getText: (d) => d.text,
           getColor: [232, 236, 241],
@@ -1169,7 +1232,7 @@ export default function PolakyHradecV3() {
           sizeUnits: 'pixels',
           getTextAnchor: 'start',
           getAlignmentBaseline: 'center',
-          getPixelOffset: [8, 0],
+          getPixelOffset: [15, 0],
           fontFamily: 'system-ui, sans-serif',
           fontWeight: 600,
           characterSet: 'auto',
@@ -1261,6 +1324,7 @@ export default function PolakyHradecV3() {
     hoveredRing,
     activeSelectedRing,
     ringYearLabels,
+    ringSectionLabels,
     debugRig,
     focusedPylon,
   ]);
