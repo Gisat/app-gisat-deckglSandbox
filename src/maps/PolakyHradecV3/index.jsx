@@ -1191,19 +1191,19 @@ export default function PolakyHradecV3() {
         }));
       }
 
-      // Hover / selection highlight rings: white follows the cursor, cyan marks
-      // the clicked ring the section chart is sliced at. Not pickable, so the
-      // thin stack rings underneath keep both hover and click.
+      // Hover / selection highlight rings: both use the same cyan as the point
+      // and pylon highlights, so every "active" thing on the map reads alike.
+      // Not pickable, so the thin stack rings underneath keep hover and click.
       const highlightRings = [];
       if (activeSelectedRing) {
         highlightRings.push({
           path: activeSelectedRing.path,
-          color: [SELECTION_COLOR[0], SELECTION_COLOR[1], SELECTION_COLOR[2], 255],
+          color: [...SELECTION_COLOR, 255],
           width: 2.8,
         });
       }
       if (hoveredRing) {
-        highlightRings.push({ path: hoveredRing.path, color: [255, 255, 255, 255], width: 3.2 });
+        highlightRings.push({ path: hoveredRing.path, color: [...SELECTION_COLOR, 255], width: 3.2 });
       }
       if (highlightRings.length > 0) {
         rigLayers.push(new PathLayer({
