@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { DeckGL } from 'deck.gl';
 import { MapView } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
-import { BitmapLayer } from '@deck.gl/layers';
+import { BitmapLayer, PolygonLayer } from '@deck.gl/layers';
 import TileserverErrorModal from './TileserverErrorModal';
 import CrawlBoxOverlay from './CrawlBoxOverlay';
 import CrawlCommandPanel from './CrawlCommandPanel';
@@ -261,6 +261,30 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
         }
     }));
 
+    // Persistent outline of the drawn crawl bbox. The CrawlBoxOverlay that the
+    // drag happens on unmounts as soon as drawing ends, so without this layer
+    // the box would vanish the moment the selection is made. A deck.gl layer
+    // also re-projects correctly on pan/zoom (the canvas overlay could not),
+    // and it stays until `crawlBbox` is cleared (Clear button / new selection).
+    if (crawlBbox) {
+        const [w, s, e, n] = crawlBbox;
+        layers.push(new PolygonLayer({
+            id: 'crawl-bbox',
+            data: [{
+                polygon: [[w, s], [e, s], [e, n], [w, n], [w, s]],
+            }],
+            getPolygon: d => d.polygon,
+            filled: true,
+            getFillColor: [0, 102, 204, 30],
+            stroked: true,
+            getLineColor: [0, 102, 204, 255],
+            getLineWidth: 2,
+            lineWidthUnits: 'pixels',
+            lineWidthMinPixels: 2,
+            pickable: false,
+        }));
+    }
+
     // Outline layer last so it draws above the tiles/basemap. Uses the frozen
     // tile while the menu is open so the outline does not vanish/change when
     // the pointer moves off the map onto the menu.
@@ -306,11 +330,11 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
                 {enableCrawl && !drawMode && !crawlBbox && (
                     <button
                         type="button"
-                        className="titiler-timing-toggle"
+                        className="titiler-timing-toggle titiler-crawl-toggle"
                         onClick={() => setDrawMode(true)}
-                        title="Drag a rectangle on the map to get the fetch-tiles.mjs command for it"
+                        title="Drag a rectangle on the map to get the fetch-tiles.mjs command that builds its MBTiles cache"
                     >
-                        Select area to crawl
+                        Select area for MBTiles cache
                     </button>
                 )}
                 {enableCrawl && drawMode && (

@@ -143,9 +143,9 @@ function CrawlCommandPanel({ bbox, zoom, sourceId, baseUrl, tilejson, onClear })
     const clampedLat = Math.abs(bbox?.[1] ?? 0) > MAX_LAT || Math.abs(bbox?.[3] ?? 0) > MAX_LAT;
 
     return (
-        <div className="crawl-panel" role="group" aria-label="Crawl the drawn bbox">
+        <div className="crawl-panel" role="group" aria-label="Fetch the MBTiles cache for the drawn bbox">
             <div className="crawl-panel-head">
-                <span className="crawl-panel-title">Crawl drawn area</span>
+                <span className="crawl-panel-title">Fetch MBTiles cache</span>
                 <button type="button" className="crawl-panel-close" onClick={onClear} title="Clear the drawn bbox">
                     Clear
                 </button>
