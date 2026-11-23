@@ -22,6 +22,7 @@ import CogTerrainKernel from './CogTerrainKernel';
 import NepalMap from './Nepal';
 import MisicuniDam from './Misicuni_dam/index.jsx';
 import TabqaDam from './Tabqa_dam/index.jsx';
+import ArrowGallery from './ArrowGallery/index.jsx';
 import GisatDataService from './GisatDataService/index.jsx';
 import SelectionDrawing3D from './SelectionDrawing3D/index.jsx';
 import FeatureScatterChart3D from './FeatureScatterChart3D/index.jsx';
@@ -39,10 +40,12 @@ import ManilaRGBTS from './TileserverRS/ManilaRGB';
 import IoLulcTS from './TileserverRS/IoLulc';
 import PolakyHradec from './PolakyHradec/index.jsx';
 import PolakyHradecV2 from './PolakyHradecV2/index.jsx';
+import PolakyHradecV3 from './PolakyHradecV3/index.jsx';
 
 const mapApps = [
     { category: 'ČEPS', name: 'Poláky, Hradec', path: '/polaky-hradec', component: PolakyHradec, description: 'Poláky (Hradec) InSAR arrows / near-zero spheres coloured by VEL_AVG on satellite-draped 3D terrain with per-point displacement timelines; clickable 3D pylon meshes (kocka/dunaj/portal) group their linked InSAR points into a 3D feature-space chart' },
     { category: 'ČEPS', name: 'Poláky, Hradec v2', path: '/polaky-hradec-v2', component: PolakyHradecV2, description: 'Poláky (Hradec) v2 — work in progress; forked from v1 at 1.20.1' },
+    { category: 'ČEPS', name: 'Poláky, Hradec v3', path: '/polaky-hradec-v3', component: PolakyHradecV3, description: 'Poláky (Hradec) v3 — forked from v2; the focused pylon shows three separated section stacks (base, mid-shaft, upper cross-arms), one bold horizontal ring per timestep: height is time 2014 → 2026, ring colour is a Viridis time key, and the ring centre shifts along the track toward-sensor bearing by the median LOS displacement (Smoothed 48 / Raw 120 rings, ×500–×2000). Dashed white rings mark 0 mm at each section floor and ceiling; hover shows date and median LOS, click opens the section median scatterer in both charts. COG-sampled ground anchor, focused point cloud hidden, subtractive basemap tint',},
     { category: '3DFLUS', name: 'P1 Metro D: buildings & DEM', path: '/metro-d-dem', component: MetroD_DEM },
     { category: '3DFLUS', name: 'P1 Metro D: Google 3D Tiles', path: '/metro-d-google-3d-tiles', component: MetroD_Google3DTiles },
     { category: '3DFLUS', name: 'P1 Metro D: 3D arrows', path: '/metro-d-3d-arrows', component: MetroDarrows3D },
@@ -65,6 +68,7 @@ const mapApps = [
     { category: 'Other', name: 'Deck.gl-raster COG', path: '/deck.gl-raster', component: devSeedCOG },
     { category: 'Other', name: 'Nepal', path: '/nepal', component: NepalMap, description: 'Nepal COP30 terrain COG with satellite imagery overlay' },
     { category: 'Other', name: 'Fehmarnsundbrucke', path: '/fehmarnsundbrucke', component: Fehmarnsundbrucke, description: 'Fehmarnsundbrücke 3D OBJ model on a Carto light basemap' },
+    { category: 'Other', name: 'Arrow Gallery', path: '/arrow-gallery', component: ArrowGallery, description: '2D shader arrows and 3D split/single meshes with live pen and tail controls' },
     // { name: 'Test Gisat Geotiff', path: '/test-gisat-geotiff', component: GisatGeotiffMap, description: 'Testing Gisat Geotiff rendering' },
     { category: '3DFLUS CCN', name: 'COG Terrain Kernel', path: '/cog-kernel', component: CogTerrainKernel, description: 'Showcase kernel calculation and hover features with deck.gl-geotiff' },
     { category: '3DFLUS CCN', name: 'Gisat Data Service', path: '/gisat-data-service', component: GisatDataService },

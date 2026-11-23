@@ -1,0 +1,579 @@
+{
+  "generated_by": "scripts/arrows/generate_arrows.py",
+  "model": {
+    "pen_width": 1.0,
+    "thickness": 0.8,
+    "tail_length": 4.0,
+    "head_angle_deg": 40.0,
+    "head_size_ratio": 2.24,
+    "bevel_size": 0.08,
+    "bevel_steps": 3
+  },
+  "styles": {
+    "filled": {
+      "span": 3.0,
+      "socket_to_apex": 3.0,
+      "overhang": 0.0,
+      "single_total": 7.0
+    },
+    "round-cap": {
+      "span": 3.238097349045873,
+      "socket_to_apex": 1.873738709727311,
+      "overhang": 1.3643586393185618,
+      "single_total": 6.373738709727311
+    },
+    "square-cap": {
+      "span": 3.339255718273476,
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.187655095115959,
+      "single_total": 6.151600623157517
+    },
+    "vertical-cut": {
+      "span": 3.795723826860412,
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.644123203702895,
+      "single_total": 6.151600623157517
+    }
+  },
+  "files": {
+    "arrow_head_filled.obj": {
+      "style": "filled",
+      "mode": "head",
+      "finish": "sharp",
+      "verts": 10,
+      "tris": 16,
+      "bbox": {
+        "x": [
+          -1.75,
+          1.75
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -3.0,
+          0.0
+        ]
+      },
+      "sha256": "5cf696d2e389d977089547e37a23133248e302c1e0c44533b8dbfd2d030ce0c3",
+      "socket_to_apex": 3.0,
+      "overhang": 0.0,
+      "span": 3.0
+    },
+    "arrow_head_filled_beveled.obj": {
+      "style": "filled",
+      "mode": "head",
+      "finish": "beveled",
+      "verts": 44,
+      "tris": 84,
+      "bbox": {
+        "x": [
+          -1.75,
+          1.75
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -3.0,
+          0.0
+        ]
+      },
+      "sha256": "76271ab1406ee36dbc7626cbecf7b7cbd341d481f696c5fe8072101796b40384",
+      "socket_to_apex": 3.0,
+      "overhang": 0.0,
+      "span": 3.0,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_head_round_cap.obj": {
+      "style": "round-cap",
+      "mode": "head",
+      "finish": "sharp",
+      "verts": 54,
+      "tris": 104,
+      "bbox": {
+        "x": [
+          -2.377681,
+          2.377681
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -1.873739,
+          1.364359
+        ]
+      },
+      "sha256": "d1b02631b0060b8e5275899c9e5428deada7a71c2b99acfaa09f756c1e444d1b",
+      "socket_to_apex": 1.873738709727311,
+      "overhang": 1.3643586393185618,
+      "span": 3.238097349045873
+    },
+    "arrow_head_round_cap_beveled.obj": {
+      "style": "round-cap",
+      "mode": "head",
+      "finish": "beveled",
+      "verts": 220,
+      "tris": 436,
+      "bbox": {
+        "x": [
+          -2.377681,
+          2.377681
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -1.873739,
+          1.364359
+        ]
+      },
+      "sha256": "ff4ba94137afe2d6d0b11712c9be6fc49dd34f753cb1013489996ece147ed0c5",
+      "socket_to_apex": 1.873738709727311,
+      "overhang": 1.3643586393185618,
+      "span": 3.238097349045873,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_head_square_cap.obj": {
+      "style": "square-cap",
+      "mode": "head",
+      "finish": "sharp",
+      "verts": 14,
+      "tris": 24,
+      "bbox": {
+        "x": [
+          -2.262605,
+          2.262605
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -2.151601,
+          1.187655
+        ]
+      },
+      "sha256": "d6054fa901d962e91b4eaf9a6b3a65599afca38f9ea1f065e0e69354ce2a4402",
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.187655095115959,
+      "span": 3.339255718273476
+    },
+    "arrow_head_square_cap_beveled.obj": {
+      "style": "square-cap",
+      "mode": "head",
+      "finish": "beveled",
+      "verts": 60,
+      "tris": 116,
+      "bbox": {
+        "x": [
+          -2.262605,
+          2.262605
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -2.151601,
+          1.187655
+        ]
+      },
+      "sha256": "62f7d22408f317f203f7ddc07e095e02100771cafbdbca1b578e538bc58ea60e",
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.187655095115959,
+      "span": 3.339255718273476,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_head_vertical_cut.obj": {
+      "style": "vertical-cut",
+      "mode": "head",
+      "finish": "sharp",
+      "verts": 14,
+      "tris": 24,
+      "bbox": {
+        "x": [
+          -1.879583,
+          1.879583
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -2.151601,
+          1.644123
+        ]
+      },
+      "sha256": "b6cdb4aa16cdfadb842f78a4f572c25c085f3f6dcb3d0d02b6c36cf91307ed27",
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.644123203702895,
+      "span": 3.795723826860412
+    },
+    "arrow_head_vertical_cut_beveled.obj": {
+      "style": "vertical-cut",
+      "mode": "head",
+      "finish": "beveled",
+      "verts": 60,
+      "tris": 116,
+      "bbox": {
+        "x": [
+          -1.879583,
+          1.879583
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -2.151601,
+          1.644123
+        ]
+      },
+      "sha256": "6a64c0c6912bb48aa97e66285b9f1419b97cea16ea3e70c29b7b5442bec6a458",
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.644123203702895,
+      "span": 3.795723826860412,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_single_filled.obj": {
+      "style": "filled",
+      "mode": "single",
+      "finish": "sharp",
+      "verts": 14,
+      "tris": 24,
+      "bbox": {
+        "x": [
+          -1.75,
+          1.75
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -7.0,
+          0.0
+        ]
+      },
+      "sha256": "66c635993683900397b8ee6df7dad508c4174f1aad5eeab47f9ada40dca14f5c",
+      "tail": 4.0,
+      "socket_to_apex": 3.0,
+      "overhang": 0.0,
+      "total_length": 7.0
+    },
+    "arrow_single_filled_beveled.obj": {
+      "style": "filled",
+      "mode": "single",
+      "finish": "beveled",
+      "verts": 56,
+      "tris": 108,
+      "bbox": {
+        "x": [
+          -1.75,
+          1.75
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -7.0,
+          0.0
+        ]
+      },
+      "sha256": "014ac01c2c38159623e57c2034f813b258645a5c16f79d230ffbc8b4e3ce3854",
+      "tail": 4.0,
+      "socket_to_apex": 3.0,
+      "overhang": 0.0,
+      "total_length": 7.0,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_single_round_cap.obj": {
+      "style": "round-cap",
+      "mode": "single",
+      "finish": "sharp",
+      "verts": 72,
+      "tris": 140,
+      "bbox": {
+        "x": [
+          -2.377681,
+          2.377681
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -6.373739,
+          0.0
+        ]
+      },
+      "sha256": "232e16d405c66de994c5ddb06356711de82e3c53c8ed9d6d145b6f1f05b04bf0",
+      "tail": 4.5,
+      "socket_to_apex": 1.873738709727311,
+      "overhang": 1.3643586393185618,
+      "total_length": 6.373738709727311
+    },
+    "arrow_single_round_cap_beveled.obj": {
+      "style": "round-cap",
+      "mode": "single",
+      "finish": "beveled",
+      "verts": 288,
+      "tris": 572,
+      "bbox": {
+        "x": [
+          -2.377681,
+          2.377681
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -6.373739,
+          0.0
+        ]
+      },
+      "sha256": "7ac1320fd6d7f19ac4a1465957ec1c3c752de3794399081952b8967803277e56",
+      "tail": 4.5,
+      "socket_to_apex": 1.873738709727311,
+      "overhang": 1.3643586393185618,
+      "total_length": 6.373738709727311,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_single_square_cap.obj": {
+      "style": "square-cap",
+      "mode": "single",
+      "finish": "sharp",
+      "verts": 18,
+      "tris": 32,
+      "bbox": {
+        "x": [
+          -2.262605,
+          2.262605
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -6.151601,
+          0.0
+        ]
+      },
+      "sha256": "093752c28c76514359185581e42cb9f6d81760ed7d0e67ad311489d67c516a92",
+      "tail": 4.0,
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.187655095115959,
+      "total_length": 6.151600623157517
+    },
+    "arrow_single_square_cap_beveled.obj": {
+      "style": "square-cap",
+      "mode": "single",
+      "finish": "beveled",
+      "verts": 72,
+      "tris": 140,
+      "bbox": {
+        "x": [
+          -2.262605,
+          2.262605
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -6.151601,
+          0.0
+        ]
+      },
+      "sha256": "41241b41972785e25838bfdae00795995afcc1daffac28535dc090d77299766f",
+      "tail": 4.0,
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.187655095115959,
+      "total_length": 6.151600623157517,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_single_vertical_cut.obj": {
+      "style": "vertical-cut",
+      "mode": "single",
+      "finish": "sharp",
+      "verts": 18,
+      "tris": 32,
+      "bbox": {
+        "x": [
+          -1.879583,
+          1.879583
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -6.151601,
+          0.0
+        ]
+      },
+      "sha256": "302143caa4e524f91866365dcd0c5cc1cf37cb55992bf12432d8d0ed521ce2b5",
+      "tail": 4.0,
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.644123203702895,
+      "total_length": 6.151600623157517
+    },
+    "arrow_single_vertical_cut_beveled.obj": {
+      "style": "vertical-cut",
+      "mode": "single",
+      "finish": "beveled",
+      "verts": 72,
+      "tris": 140,
+      "bbox": {
+        "x": [
+          -1.879583,
+          1.879583
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -6.151601,
+          0.0
+        ]
+      },
+      "sha256": "15cdf46d4436bc07ad38f599c5e5457fc6ef4b8b1257aec85bdd0ed63e962f2d",
+      "tail": 4.0,
+      "socket_to_apex": 2.151600623157517,
+      "overhang": 1.644123203702895,
+      "total_length": 6.151600623157517,
+      "bevel_size": 0.08,
+      "bevel_steps": 3
+    },
+    "arrow_tail_round_end_rounded.obj": {
+      "style": "shared",
+      "mode": "cap",
+      "finish": "beveled",
+      "verts": 72,
+      "tris": 140,
+      "bbox": {
+        "x": [
+          -0.5,
+          0.5
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -0.5,
+          0.0
+        ]
+      },
+      "sha256": "7d4d26fda97704f576e0bacc946dc735e3fcb8fb0814a0d5d05c86786e374197",
+      "depth": 0.5
+    },
+    "arrow_tail_round_end_sharp.obj": {
+      "style": "shared",
+      "mode": "cap",
+      "finish": "sharp",
+      "verts": 18,
+      "tris": 32,
+      "bbox": {
+        "x": [
+          -0.5,
+          0.5
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -0.5,
+          0.0
+        ]
+      },
+      "sha256": "8019acee3dcb0dcbd95d0e001f2c780ca6ae535470d594a0480c3fcd5b958e7c",
+      "depth": 0.5
+    },
+    "arrow_tail_unit.obj": {
+      "style": "shared",
+      "mode": "stem",
+      "finish": "sharp",
+      "verts": 8,
+      "tris": 12,
+      "bbox": {
+        "x": [
+          -0.5,
+          0.5
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -1.0,
+          0.0
+        ]
+      },
+      "sha256": "177153b33a7c894fb29806edd3b0f2c5c6f4c5df048fa5b1a13df001fd1226d8",
+      "tail": 1.0
+    },
+    "arrow_tail_unit_beveled.obj": {
+      "style": "shared",
+      "mode": "stem",
+      "finish": "beveled",
+      "verts": 52,
+      "tris": 100,
+      "bbox": {
+        "x": [
+          -0.5,
+          0.5
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -1.0,
+          0.0
+        ]
+      },
+      "sha256": "172de7b3107f3379be825ef728b1d194492438cbb3ea683b7cf88001c675501b",
+      "tail": 1.0
+    },
+    "arrow_tail_unit_rounded.obj": {
+      "style": "shared",
+      "mode": "stem",
+      "finish": "rounded",
+      "verts": 56,
+      "tris": 108,
+      "bbox": {
+        "x": [
+          -0.5,
+          0.5
+        ],
+        "y": [
+          -0.4,
+          0.4
+        ],
+        "z": [
+          -1.0,
+          0.0
+        ]
+      },
+      "sha256": "192d7c42a9f6b573a54dd0ed266aac744333bbbb6aec130b9f83c4ed38d7d844",
+      "tail": 1.0
+    }
+  }
+}

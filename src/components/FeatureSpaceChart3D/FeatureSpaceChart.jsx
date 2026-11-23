@@ -103,6 +103,9 @@ export function FeatureSpaceChart({
   title = '3D feature space',
   onClose,
   emptyHint,
+  // Dark chrome for hosts that draw the chart on a dark basemap (v3). Default
+  // false keeps every other route pixel-identical.
+  dark = false,
 }) {
   const [renderer, setRenderer] = useState(defaultRenderer);
   const [presetKey, setPresetKey] = useState(defaultPreset);
@@ -318,6 +321,8 @@ export function FeatureSpaceChart({
   const rendererProps = {
     points,
     axes,
+    // Let the renderer invert its axis ink for a dark host card.
+    dark,
     colorScale,
     colorDomain,
     sizeDomain,
@@ -347,22 +352,27 @@ export function FeatureSpaceChart({
       : `${points.length} pts`;
 
   return (
-    <div style={embedded ? embeddedPanelStyle : panelStyle}>
+    <div
+      style={{
+        ...(embedded ? embeddedPanelStyle : panelStyle),
+        ...(dark ? DARK_THEME_VARS : LIGHT_THEME_VARS),
+      }}
+    >
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
           padding: '10px 12px',
-          borderBottom: '1px solid #eee',
+          borderBottom: '1px solid var(--fc-header-border)',
           flexWrap: 'wrap',
         }}
       >
         <strong style={{ fontSize: '13px' }}>{title}</strong>
         <span
           style={{
-            background: '#e6f0ff',
-            color: '#0066cc',
+            background: 'var(--fc-chip-bg)',
+            color: 'var(--fc-chip-text)',
             borderRadius: '10px',
             padding: '1px 8px',
             fontWeight: 600,
@@ -391,9 +401,9 @@ export function FeatureSpaceChart({
               lineHeight: '18px',
               padding: 0,
               fontSize: '16px',
-              color: '#555',
+              color: 'var(--fc-muted)',
               background: 'none',
-              border: '1px solid #ccc',
+              border: '1px solid var(--fc-control-border)',
               borderRadius: '4px',
               cursor: 'pointer',
             }}
@@ -410,7 +420,7 @@ export function FeatureSpaceChart({
           alignItems: 'center',
           gap: '3px',
           padding: '6px 12px',
-          borderBottom: '1px solid #eee',
+          borderBottom: '1px solid var(--fc-header-border)',
           flexWrap: 'wrap',
         }}
         title={
@@ -441,7 +451,7 @@ export function FeatureSpaceChart({
           alignItems: 'center',
           gap: '8px',
           padding: '6px 12px',
-          borderBottom: '1px solid #eee',
+          borderBottom: '1px solid var(--fc-header-border)',
           flexWrap: 'wrap',
         }}
       >
@@ -490,7 +500,7 @@ export function FeatureSpaceChart({
             alignItems: 'center',
             gap: '3px',
             padding: '6px 12px',
-            borderBottom: '1px solid #eee',
+            borderBottom: '1px solid var(--fc-header-border)',
             flexWrap: 'wrap',
           }}
           title="Axis preset"
@@ -514,7 +524,7 @@ export function FeatureSpaceChart({
             alignItems: 'center',
             gap: '3px',
             padding: '6px 12px',
-            borderBottom: '1px solid #eee',
+            borderBottom: '1px solid var(--fc-header-border)',
             flexWrap: 'wrap',
           }}
           title="Chart type"
@@ -563,8 +573,8 @@ export function FeatureSpaceChart({
             flexDirection: 'column',
             gap: '8px',
             padding: '8px 12px',
-            borderBottom: '1px solid #eee',
-            background: '#fafafa',
+            borderBottom: '1px solid var(--fc-header-border)',
+            background: 'var(--fc-surface-alt)',
           }}
         >
           <div style={{ display: 'flex', gap: '3px' }} title="Profile view">
@@ -640,7 +650,7 @@ export function FeatureSpaceChart({
                   title="Lon/Lat basis: X = longitude, Y = latitude (equal ground scale)"
                 >
                   <span style={axisPickerLabel}>X / Y axis</span>
-                  <span style={{ fontSize: '11px', color: '#333' }}>Longitude / Latitude</span>
+                  <span style={{ fontSize: '11px', color: 'var(--fc-text)' }}>Longitude / Latitude</span>
                 </span>
               )}
               <label style={axisPickerStyle}>
@@ -675,7 +685,7 @@ export function FeatureSpaceChart({
           )}
 
           {profileView !== 'aggregate' && sizeByOffset && (
-            <span style={{ fontSize: '11px', color: '#999' }}>
+            <span style={{ fontSize: '11px', color: 'var(--fc-subtle)' }}>
               {'Marker/sphere size shows the perpendicular offset from the line: larger marker = further from the line (normalised by the selection buffer).'}
             </span>
           )}
@@ -720,7 +730,7 @@ export function FeatureSpaceChart({
                 />
                 <span>Interpolate</span>
               </label>
-              <span style={{ fontSize: '11px', color: '#666' }}>
+              <span style={{ fontSize: '11px', color: 'var(--fc-muted)' }}>
                 {`${aggregateBins} bins${aggStepTouched ? '' : ' (auto)'}`}
               </span>
             </div>
@@ -728,7 +738,7 @@ export function FeatureSpaceChart({
 
           {profileView === 'trend' && trendLines === 'points' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '11px', color: '#666' }}>settlement</span>
+              <span style={{ fontSize: '11px', color: 'var(--fc-muted)' }}>settlement</span>
               <span
                 style={{
                   flex: 1,
@@ -738,13 +748,13 @@ export function FeatureSpaceChart({
                   background: `linear-gradient(to right, ${DISPLACEMENT_RAMP.join(', ')})`,
                 }}
               />
-              <span style={{ fontSize: '11px', color: '#666' }}>
+              <span style={{ fontSize: '11px', color: 'var(--fc-muted)' }}>
                 {`${formatValue('TD_730', DISPLACEMENT_DOMAIN[0])} \u2013 ${formatValue('TD_730', DISPLACEMENT_DOMAIN[1])}`}
               </span>
             </div>
           )}
 
-          <span style={{ fontSize: '11px', color: '#999' }}>
+          <span style={{ fontSize: '11px', color: 'var(--fc-subtle)' }}>
             {profileView === 'aggregate'
               ? 'Each bin shows the median value of the samples whose along-line distance falls in it; the line connects the bins (no gaps) and the shaded ribbon is the interquartile range (25\u201375 pct). Interpolated bins are flagged in the tooltip.'
               : profileView === 'trend'
@@ -766,7 +776,7 @@ export function FeatureSpaceChart({
                 }`}
           </span>
           {profileView === 'trend' && trendLines === 'windows' && (
-            <span style={{ fontSize: '11px', color: '#999' }}>
+            <span style={{ fontSize: '11px', color: 'var(--fc-subtle)' }}>
               {'The shaded band is the \u00b11\u03c3 uncertainty of each window\u2019s trend displacement (its paired STD_*); it widens for longer windows because a longer accumulation carries more error.'}
             </span>
           )}
@@ -780,8 +790,8 @@ export function FeatureSpaceChart({
             gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
             gap: '6px',
             padding: '8px 12px',
-            borderBottom: '1px solid #eee',
-            background: '#fafafa',
+            borderBottom: '1px solid var(--fc-header-border)',
+            background: 'var(--fc-surface-alt)',
           }}
         >
           {[
@@ -839,8 +849,8 @@ export function FeatureSpaceChart({
         <div
           style={{
             padding: '6px 12px',
-            borderTop: '1px solid #eee',
-            color: '#888',
+            borderTop: '1px solid var(--fc-header-border)',
+            color: 'var(--fc-subtle)',
             fontSize: '11px',
           }}
         >
@@ -854,8 +864,8 @@ export function FeatureSpaceChart({
         <div
           style={{
             padding: '6px 12px',
-            borderTop: '1px solid #eee',
-            color: '#888',
+            borderTop: '1px solid var(--fc-header-border)',
+            color: 'var(--fc-subtle)',
             fontSize: '11px',
             display: 'flex',
             justifyContent: 'space-between',
@@ -887,8 +897,8 @@ function LoadingState({ renderer }) {
 function EmptyState({ total, skipped, emptyHint }) {
   return (
     <div style={centeredState}>
-      <div style={{ fontWeight: 600, marginBottom: '6px', color: '#666' }}>No points to plot</div>
-      <div style={{ color: '#999', fontSize: '11px', textAlign: 'center', maxWidth: '260px' }}>
+      <div style={{ fontWeight: 600, marginBottom: '6px', color: 'var(--fc-muted)' }}>No points to plot</div>
+      <div style={{ color: 'var(--fc-subtle)', fontSize: '11px', textAlign: 'center', maxWidth: '260px' }}>
         {total === 0
           ? (emptyHint ?? 'Draw a polygon, circle or line selection on the map.')
           : `All ${total} selected points lack a value for an active axis/color/size field${skipped ? ` (${skipped} skipped)` : ''}.`}
@@ -900,8 +910,8 @@ function EmptyState({ total, skipped, emptyHint }) {
 function ProfileEmptyState() {
   return (
     <div style={centeredState}>
-      <div style={{ fontWeight: 600, marginBottom: '6px', color: '#666' }}>No line profile yet</div>
-      <div style={{ color: '#999', fontSize: '11px', textAlign: 'center', maxWidth: '260px' }}>
+      <div style={{ fontWeight: 600, marginBottom: '6px', color: 'var(--fc-muted)' }}>No line profile yet</div>
+      <div style={{ color: 'var(--fc-subtle)', fontSize: '11px', textAlign: 'center', maxWidth: '260px' }}>
         Draw a line selection on the map to see the profile.
       </div>
     </div>
@@ -915,11 +925,50 @@ const centeredState = {
   flexDirection: 'column',
   alignItems: 'center',
   justifyContent: 'center',
-  color: '#999',
+  color: 'var(--fc-subtle)',
   fontFamily: 'system-ui, sans-serif',
   fontSize: '12px',
   textAlign: 'center',
   padding: '16px',
+};
+
+// Chart chrome theme, expressed as CSS custom properties so the module-level
+// style constants below can stay shared. The light set is the historical look;
+// `dark` only swaps these variables on the chart root.
+const LIGHT_THEME_VARS = {
+  '--fc-panel-bg': 'rgba(255, 255, 255, 0.97)',
+  '--fc-panel-border': '#ddd',
+  '--fc-text': '#333',
+  '--fc-muted': '#666',
+  '--fc-subtle': '#999',
+  '--fc-disabled': '#aaa',
+  '--fc-header-border': '#eee',
+  '--fc-surface': '#fff',
+  '--fc-surface-alt': '#fafafa',
+  '--fc-control-border': '#ccc',
+  '--fc-active-bg': '#e6f0ff',
+  '--fc-chip-bg': '#e6f0ff',
+  '--fc-chip-text': '#0066cc',
+  '--fc-panel-shadow': '-2px 0 12px rgba(0, 0, 0, 0.12)',
+  '--fc-card-shadow': '0 4px 16px rgba(0, 0, 0, 0.25)',
+};
+
+const DARK_THEME_VARS = {
+  '--fc-panel-bg': 'rgba(32, 35, 41, 0.95)',
+  '--fc-panel-border': '#484d55',
+  '--fc-text': '#e8eaed',
+  '--fc-muted': '#b3b8bf',
+  '--fc-subtle': '#9aa0a8',
+  '--fc-disabled': '#6b7078',
+  '--fc-header-border': '#3b4048',
+  '--fc-surface': '#2a2d33',
+  '--fc-surface-alt': '#25282e',
+  '--fc-control-border': '#4a4f57',
+  '--fc-active-bg': '#2f4a6b',
+  '--fc-chip-bg': '#2f4a6b',
+  '--fc-chip-text': '#8fc4ff',
+  '--fc-panel-shadow': '-2px 0 12px rgba(0, 0, 0, 0.45)',
+  '--fc-card-shadow': '0 4px 16px rgba(0, 0, 0, 0.45)',
 };
 
 const panelStyle = {
@@ -929,15 +978,15 @@ const panelStyle = {
   bottom: 0,
   width: 'min(45%, 720px)',
   minWidth: '380px',
-  background: 'rgba(255, 255, 255, 0.97)',
-  borderLeft: '1px solid #ddd',
-  boxShadow: '-2px 0 12px rgba(0,0,0,0.12)',
+  background: 'var(--fc-panel-bg)',
+  borderLeft: '1px solid var(--fc-panel-border)',
+  boxShadow: 'var(--fc-panel-shadow)',
   zIndex: 1100,
   display: 'flex',
   flexDirection: 'column',
   fontFamily: 'system-ui, sans-serif',
   fontSize: '12px',
-  color: '#333',
+  color: 'var(--fc-text)',
   pointerEvents: 'auto',
 };
 
@@ -946,26 +995,26 @@ const embeddedPanelStyle = {
   position: 'relative',
   width: '100%',
   height: '100%',
-  background: 'rgba(255, 255, 255, 0.97)',
-  border: '1px solid #ddd',
+  background: 'var(--fc-panel-bg)',
+  border: '1px solid var(--fc-panel-border)',
   borderRadius: '8px',
-  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25)',
+  boxShadow: 'var(--fc-card-shadow)',
   overflow: 'hidden',
   display: 'flex',
   flexDirection: 'column',
   fontFamily: 'system-ui, sans-serif',
   fontSize: '12px',
-  color: '#333',
+  color: 'var(--fc-text)',
   pointerEvents: 'auto',
 };
 
 function buttonStyle(active, disabled = false) {
   return {
     padding: '4px 8px',
-    border: active ? '1px solid #0066cc' : '1px solid #ccc',
+    border: `1px solid ${active ? 'var(--fc-chip-text)' : 'var(--fc-control-border)'}`,
     borderRadius: '4px',
-    background: active ? '#e6f0ff' : '#fff',
-    color: disabled ? '#aaa' : '#333',
+    background: active ? 'var(--fc-active-bg)' : 'var(--fc-surface)',
+    color: disabled ? 'var(--fc-disabled)' : 'var(--fc-text)',
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.5 : 1,
     fontSize: '11px',
@@ -975,10 +1024,10 @@ function buttonStyle(active, disabled = false) {
 
 const selectStyle = {
   padding: '3px 6px',
-  border: '1px solid #ccc',
+  border: '1px solid var(--fc-control-border)',
   borderRadius: '4px',
-  background: '#fff',
-  color: '#333',
+  background: 'var(--fc-surface)',
+  color: 'var(--fc-text)',
   fontSize: '11px',
   cursor: 'pointer',
 };
@@ -993,7 +1042,7 @@ const selectPrefixStyle = {
   fontSize: '11px',
   fontWeight: 600,
   lineHeight: 1,
-  color: '#666',
+  color: 'var(--fc-muted)',
   pointerEvents: 'none',
 };
 
@@ -1016,16 +1065,16 @@ const axisPickerStyle = {
 
 const axisPickerLabel = {
   fontSize: '11px',
-  color: '#666',
+  color: 'var(--fc-muted)',
   textTransform: 'uppercase',
 };
 
 const numberInputStyle = {
   padding: '3px 6px',
-  border: '1px solid #ccc',
+  border: '1px solid var(--fc-control-border)',
   borderRadius: '4px',
-  background: '#fff',
-  color: '#333',
+  background: 'var(--fc-surface)',
+  color: 'var(--fc-text)',
   fontSize: '11px',
   width: '72px',
 };
@@ -1035,7 +1084,7 @@ const checkboxStyle = {
   alignItems: 'center',
   gap: '4px',
   fontSize: '11px',
-  color: '#333',
+  color: 'var(--fc-text)',
   cursor: 'pointer',
 };
 

@@ -1,3 +1,62 @@
+## [1.25.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.24.0...v1.25.0) (2026-11-20)
+
+### Features
+
+* **polaky:** 3D pylon inspector with section rings and scatterers ([eb39581](https://github.com/Gisat/app-gisat-deckglSandbox/commit/eb39581f18dcf24734e427a5d760cdeae0a3feb7))
+* **polaky:** chart-local section filter with hoverable labels ([99010a7](https://github.com/Gisat/app-gisat-deckglSandbox/commit/99010a74e444181db13a5603d295350bec8419ba))
+* **polaky:** ring hover/selection highlights and section timeline chart ([2601145](https://github.com/Gisat/app-gisat-deckglSandbox/commit/2601145354756e112fbb8dcf4ff503a00ab16430))
+* **polaky:** show structural section names on ring labels ([40e2da3](https://github.com/Gisat/app-gisat-deckglSandbox/commit/40e2da358d6494c741da6e99d96b2a88c4c8c034))
+* **polaky:** structural section labels on the ring rig ([ca9ddbd](https://github.com/Gisat/app-gisat-deckglSandbox/commit/ca9ddbd6b69133819dc1d9c95fe9a3e4f8668455))
+
+### Bug Fixes
+
+* **polaky:** align section labels, section slice and ring picking ([a4fcc09](https://github.com/Gisat/app-gisat-deckglSandbox/commit/a4fcc09ebafce8d18a3f381f53465f8ed9cefe76))
+* **polaky:** use the point/pylon selection cyan for ring highlights ([f5246f8](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f5246f82ea77f647bb3bc4378b55f9c75c03ae43))
+* **polaky:** widen the click tap window so thin ring picks register ([883ab64](https://github.com/Gisat/app-gisat-deckglSandbox/commit/883ab646548818aa87409b2f7e63a1d8d79b3be2))
+
+## [1.24.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.23.0...v1.24.0) (2026-11-19)
+
+### Features
+
+* **polaky:** ring color modes and reference year labels ([6f0c74a](https://github.com/Gisat/app-gisat-deckglSandbox/commit/6f0c74aa706a3c30a1601c8aa4d7bf1930808214))
+* **polaky:** time-bucket smoothed rings and per-pass raw rings ([1716eaa](https://github.com/Gisat/app-gisat-deckglSandbox/commit/1716eaafdcc302ac669e0ad6eb9f0eefdb1c97c8))
+* **polaky:** type-aware pylon section layouts ([50d22eb](https://github.com/Gisat/app-gisat-deckglSandbox/commit/50d22ebf3ef4fb2712534c5af8c97536cec687bd))
+
+## [1.23.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.22.0...v1.23.0) (2026-11-19)
+
+### Features
+
+* **polaky:** add v3 multi-track pylon rig route ([417ae51](https://github.com/Gisat/app-gisat-deckglSandbox/commit/417ae51746850bf40ae23da2aae5ebf08ac3a58f))
+* **polaky:** CARTO Dark Matter basemap instead of satellite imagery ([5e8dbe9](https://github.com/Gisat/app-gisat-deckglSandbox/commit/5e8dbe965338b72c29399766744dd7172b569b40))
+* **polaky:** dark chart cards, single camera source ([fb59d1d](https://github.com/Gisat/app-gisat-deckglSandbox/commit/fb59d1de21f9868e3447634631505eea47beb192)), closes [#5aa9ff](https://github.com/Gisat/app-gisat-deckglSandbox/issues/5aa9ff)
+* **polaky:** open on the captured oblique view ([79f914e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/79f914e58c4d2d7c30d086356ef772798734d723))
+* **polaky:** open with pylon 9 focused ([294762d](https://github.com/Gisat/app-gisat-deckglSandbox/commit/294762dbe414390c274dcad0246cd87bca2d0c8c))
+* **polaky:** replace the fin rig with multi-elevation halo rings ([74c3cb7](https://github.com/Gisat/app-gisat-deckglSandbox/commit/74c3cb788a2593295a64f0030ddb4d23a42d9cf7))
+* **polaky:** separated 3-section moving ring stack ([05b855e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/05b855eba4fd2919967802145ccc58ce2d4e3ad5))
+
+### Bug Fixes
+
+* **polaky:** harden v3 rig data handling and loaders ([031b06f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/031b06f1bed401c3f23240c614c2645bf54d2c86))
+* **polaky:** hold the scene until the terrain is ready ([fb8d9ff](https://github.com/Gisat/app-gisat-deckglSandbox/commit/fb8d9ff52231f7ad610c330a10b39793890cfc4c))
+* **polaky:** mesh vector shafts, focused-only arrows, fins on the collar ([f4a7fe5](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f4a7fe54a0352b237cf48307f96be57290aaf3a1))
+* **polaky:** rigid fins on sampled terrain, legible baselines and vectors ([64367c0](https://github.com/Gisat/app-gisat-deckglSandbox/commit/64367c0f95e43c69028d83c0b6704eade3e547c2))
+* **polaky:** stop the camera flying on rig enable ([48bb8e1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/48bb8e1e57d0346494679f9fe9b65a68e5630abf))
+
+## [1.22.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.21.0...v1.22.0) (2026-11-18)
+
+### Features
+
+* **arrows:** add 2D/3D arrow gallery and 3D mesh generator ([d5c3ee2](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d5c3ee2f5d2280651610cfc40bb9130d27d52b25))
+* **arrows:** finish-aware 3D gallery with beveled split heads ([cea46a2](https://github.com/Gisat/app-gisat-deckglSandbox/commit/cea46a28d4713f7812b4ec3adfe21ffa8ce054ef))
+
+### Bug Fixes
+
+* **arrows:** align 3D gallery heads and stems with 2D ([d1fadd1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d1fadd189695c8672e8716281b2fc6b54cb068f4))
+* **arrows:** anchor the last column label and widen margins ([050c038](https://github.com/Gisat/app-gisat-deckglSandbox/commit/050c03823c4b78621ad49200a431a30175d27ee4))
+* **arrows:** correct gallery filled head and cap round-cap single tail ([c07920f](https://github.com/Gisat/app-gisat-deckglSandbox/commit/c07920f5dbca6131ab6ad5173a1f64bad94efffd))
+* **arrows:** fit arrow gallery on narrower viewports ([dc03ae8](https://github.com/Gisat/app-gisat-deckglSandbox/commit/dc03ae8965c4b13c155f4c14d6b70de0eca836d4))
+* **arrows:** rebuild beveled heads from the live pen ([471c74b](https://github.com/Gisat/app-gisat-deckglSandbox/commit/471c74b217fe13915f3a1b62015fca3f81e9f6bb))
+
 ## [1.21.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.20.1...v1.21.0) (2026-11-11)
 
 ### Features
