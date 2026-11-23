@@ -274,3 +274,34 @@
    Styled as a real button: it is an action, so it must read as one — a bare
    dashed divider looked like an unfinished label rather than something to press.
    --------------------------------------------------------------------------- */
+.titiler-timing-reset {
+    flex: 0 0 auto;
+    align-self: stretch;
+    margin-top: 6px;
+    padding: 5px 8px;
+    border: 1px solid #c9d3de;
+    border-radius: 5px;
+    background-color: #eef1f5;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-align: center;
+    color: #2c3e50;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.titiler-timing-reset:hover {
+    background-color: #e2e8f0;
+    border-color: #b8c4d0;
+}
+
+.titiler-timing-reset:active {
+    background-color: #d6dee8;
+}
+
+.titiler-timing-reset:focus-visible {
+    outline: 2px solid #2c3e50;
+    outline-offset: 1px;
+}

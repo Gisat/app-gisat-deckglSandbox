@@ -14,7 +14,7 @@ import { copyText } from './clipboard';
 import './TileInspectorOverlay.css';
 // Shared with the TiTiler category: the timing hook is a pure measurement
 // utility (settle-debounce + quiescence) with no TiTiler-specific behavior.
-import { useTileTiming } from '../../TiTilerDemo/shared/useTileTiming';
+import { useTileSessionStats } from './useTileSessionStats';
 import { useTileServerHealth } from './useTileServerHealth';
 // Endpoint-panel styling is shared verbatim with the TiTiler switcher (the
 // Tileserver-RS panel is a single-endpoint degenerate case of the same UI).
@@ -194,14 +194,18 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
 
     const {
         timingEnabled,
-        ttf,
-        tta,
-        tileCount,
-        headline,
-        handleViewStateChange,
-        handleTileLoad,
         handleToggleTiming,
-    } = useTileTiming({ setViewState, onForceReload: forceReload });
+        count: tileCount,
+        avgMs,
+        resetStats,
+    } = useTileSessionStats({ tileUrlPrefix: `${baseUrl}/data/${sourceId}/` });
+
+    // deck.gl hands back the new camera on pan/zoom. The stats are
+    // session-cumulative, so there is no measurement window to open/close here —
+    // this is just the state update the map needs.
+    const handleViewStateChange = useCallback(({ viewState: next }) => {
+        setViewState(next);
+    }, []);
 
     const {
         modal,
@@ -245,7 +249,6 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
         maxZoom: maxZoom,
         tileSize: 256,
         onTileError: handleTileError,
-        onTileLoad: handleTileLoad,
         renderSubLayers: props => {
             const { west, south, east, north } = props.tile.bbox;
             // BitmapLayer must be pickable for deck.gl to report the picked
@@ -343,24 +346,26 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
                 <div className="titiler-timing" role="group" aria-label="Tile timing">
                     <button
                         type="button"
-                        className={`titiler-timing-toggle${timingEnabled ? ' titiler-timing-toggle-on' : ''}`}
+                        className={`titiler-timing-toggle titiler-timing-main${timingEnabled ? ' titiler-timing-toggle-on' : ''}`}
                         aria-pressed={timingEnabled}
                         onClick={handleToggleTiming}
-                        title={timingEnabled ? 'Stop timing (restores base map)' : 'Start timing (hides base map)'}
+                        title={timingEnabled ? 'Timing is ON — base map hidden, stats shown. Click for Timing OFF.' : 'Timing is OFF — base map shown. Click for Timing ON (hides base map).'}
                     >
-                        {timingEnabled ? '● Timing on' : '○ Timing off'}
+                        {timingEnabled ? 'Timing ON' : 'Timing OFF'}
                     </button>
                     {timingEnabled && (
                         <div className="titiler-timing-stats">
-                            <div className="titiler-timing-note">base map hidden while timing</div>
-                            <div><b>First tile:</b> {ttf != null ? `${ttf.toFixed(0)} ms` : '—'}</div>
-                            <div><b>All tiles:</b> {tta != null ? `${tta.toFixed(0)} ms` : '—'}</div>
-                            <div><b>Tiles:</b> {tileCount}</div>
-                            <div className="titiler-timing-headline">
-                                {headline
-                                    ? `First (uncached) load: ${headline.ttf.toFixed(0)} ms → all in ${headline.tta.toFixed(0)} ms · ${headline.count} tiles`
-                                    : 'First (uncached) load: measuring…'}
-                            </div>
+                            <div className="titiler-timing-note">session totals · base map hidden while timing</div>
+                            <div><b>Tiles drawn:</b> {tileCount}</div>
+                            <div><b>Avg per tile:</b> {avgMs != null ? `${avgMs.toFixed(1)} ms` : '—'}</div>
+                            <button
+                                type="button"
+                                className="titiler-timing-reset"
+                                onClick={resetStats}
+                                title="Zero the session counters and start measuring again"
+                            >
+                                Reset Stats
+                            </button>
                         </div>
                     )}
                 </div>
