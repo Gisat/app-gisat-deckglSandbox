@@ -115,7 +115,6 @@ function tileserverProxyInstrumentation() {
                         if (inFlightAtStart > probeMaxInflightAtStart) {
                             probeMaxInflightAtStart = inFlightAtStart;
                         }
-                        // eslint-disable-next-line no-console
                         console.warn(
                             `[ts-proxy] WARN health probe started while ${inFlightAtStart} proxied request(s) in flight (total inflight ${inflight})`,
                         );
@@ -135,7 +134,6 @@ function tileserverProxyInstrumentation() {
                     if (why === 'finish') tileFinished += 1;
                     else tileAborted += 1;
                     if (verbose) {
-                        // eslint-disable-next-line no-console
                         console.log(
                             `[ts-proxy] ${why} ${res.statusCode} ${ms.toFixed(0)}ms inflight@start=${inFlightAtStart} ${url}`,
                         );
@@ -159,7 +157,6 @@ function tileserverProxyInstrumentation() {
                     `finished=${tileFinished} aborted=${tileAborted} ` +
                     `probes=${probeCount} probeWaited=${probeWaited} probeMaxBehind=${probeMaxInflightAtStart} ` +
                     `inflight=${inflight} peakInflight=${peakInflight}`;
-                // eslint-disable-next-line no-console
                 console.log(line);
                 // Roll the window so the next report is a fresh interval.
                 tileLatencies.length = 0;
@@ -171,7 +168,6 @@ function tileserverProxyInstrumentation() {
                 probeMaxInflightAtStart = 0;
                 peakInflight = 0;
             }, 10000);
-            // eslint-disable-next-line no-console
             console.log('[ts-proxy] instrumentation enabled (interval report every 10s; set TILESERVER_PROXY_INSTRUMENT=verbose for per-request lines, =0 to disable)');
             server.httpServer?.on('close', () => clearInterval(report));
         },
