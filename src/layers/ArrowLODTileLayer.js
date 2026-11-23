@@ -2,6 +2,7 @@ import { CompositeLayer } from '@deck.gl/core';
 import { WebMercatorViewport } from '@deck.gl/core';
 import { load } from '@loaders.gl/core';
 import { ArrowLoader } from '@loaders.gl/arrow';
+import { getLodTier } from './lodTiers';
 
 const DEFAULT_PROPS = {
     dataUrl: null,
@@ -12,7 +13,11 @@ const DEFAULT_PROPS = {
         longitude: 'longitude',
         height: 'height',
         size: 'size',
-        color: 'color'
+        color: 'color',
+        // Optional LOS unit-vector columns. Only requested when a map sets them,
+        // so other consumers keep the same request URLs.
+        losEast: null,
+        losNorth: null
     },
     timeSeries: {
         dates: 'dates',
@@ -96,6 +101,9 @@ export default class ArrowLODTileLayer extends CompositeLayer {
             const meanVelocityColumn = table.getChild('mean_velocity');
             const displacementsColumn = table.getChild('displacements'); // animation mode
             const displacementColumn = table.getChild('displacement');   // static mode
+            // Optional LOS unit-vector components (requested via columnMap).
+            const losEastColumn = table.getChild('los_east');
+            const losNorthColumn = table.getChild('los_north');
 
             // Try alternative column names if primary ones fail
             const altLonColumn = !lonColumn ? table.getChild('x') : null;
@@ -105,6 +113,9 @@ export default class ArrowLODTileLayer extends CompositeLayer {
                 tableIndex,
                 numRows: table.numRows,
                 schema: table.schema,
+                // Raw Arrow table, stable across re-renders: consumers can key
+                // derived per-row caches on it.
+                arrowTable: table,
 
                 // Pre-cached column references
                 columns: {
@@ -115,6 +126,8 @@ export default class ArrowLODTileLayer extends CompositeLayer {
                     meanVelocity: meanVelocityColumn,
                     displacements: displacementsColumn,
                     displacement: displacementColumn,
+                    losEast: losEastColumn,
+                    losNorth: losNorthColumn,
 
                     // Alternative column names
                     altLongitude: altLonColumn,
@@ -179,7 +192,18 @@ export default class ArrowLODTileLayer extends CompositeLayer {
                 },
 
                 getMeanVelocity: (rowIndex) => {
-                    return meanVelocityColumn ? meanVelocityColumn.get(rowIndex) : 1;
+                    return meanVelocityColumn ? meanVelocityColumn.get(rowIndex) : null;
+                },
+
+                // Horizontal LOS unit vector (east, north). Null when the tile
+                // was served without the optional direction columns, so callers
+                // can fall back to a neutral heading instead of dropping points.
+                getLosVector: (rowIndex) => {
+                    if (!losEastColumn || !losNorthColumn) return null;
+                    const east = losEastColumn.get(rowIndex);
+                    const north = losNorthColumn.get(rowIndex);
+                    if (east == null || north == null) return null;
+                    return { east, north };
                 }
             };
         });
@@ -205,7 +229,7 @@ export default class ArrowLODTileLayer extends CompositeLayer {
         const maxTy = Math.floor(maxLat / gridSize) + tileBuffer;
 
         const zoom = viewport.zoom;
-        const targetTier = this._getTargetTier(zoom);
+        const targetTier = getLodTier(zoom);
 
         const neededTiles = [];
         const visibleArrowTables = [];
@@ -336,6 +360,16 @@ export default class ArrowLODTileLayer extends CompositeLayer {
                 color_col: columnMap.color,
                 displacements_col: timeSeries.displacements
             });
+
+            // Optional LOS direction columns: request only when configured, so
+            // consumers that do not need them keep byte-identical URLs (and
+            // therefore the same cache keys).
+            if (columnMap.losEast) {
+                params.append('los_east_col', columnMap.losEast);
+            }
+            if (columnMap.losNorth) {
+                params.append('los_north_col', columnMap.losNorth);
+            }
 
             if (this.props.is3D) {
                 params.append('is3D', 'true');
@@ -472,12 +506,6 @@ export default class ArrowLODTileLayer extends CompositeLayer {
             if (key.includes('global_t0')) continue;
             tileCache.delete(key);
         }
-    }
-
-    _getTargetTier(zoom) {
-        if (zoom >= 15) return 2;
-        if (zoom >= 13) return 1;
-        return 0;
     }
 
     _reportStatus() {

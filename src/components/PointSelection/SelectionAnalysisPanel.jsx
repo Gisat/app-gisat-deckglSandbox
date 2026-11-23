@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SelectionControls } from './SelectionControls';
 import { DrawingOverlay } from './DrawingOverlay';
 import { TimeSeriesChart } from './TimeSeriesChart';
@@ -33,8 +33,30 @@ export function SelectionAnalysisPanel({
     // Positioning
     top,
     left,
+
+    // Optional content rendered directly under the selection card. The card's
+    // height changes with the drawing mode / selection state, so it is measured
+    // instead of assuming a fixed offset.
+    belowSelectionPanel,
 }) {
     const [showLineProfileChart, setShowLineProfileChart] = useState(false);
+
+    const selectionCardRef = useRef(null);
+    const [selectionCardHeight, setSelectionCardHeight] = useState(null);
+
+    useEffect(() => {
+        const element = selectionCardRef.current;
+        if (!element) return undefined;
+
+        const updateHeight = () => setSelectionCardHeight(element.offsetHeight);
+        updateHeight();
+
+        if (typeof ResizeObserver === 'undefined') return undefined;
+
+        const observer = new ResizeObserver(updateHeight);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, []);
 
     const handleClear = () => {
         setShowLineProfileChart(false);
@@ -83,7 +105,19 @@ export function SelectionAnalysisPanel({
                 backendFeatureCount={backendFeatureCount}
                 top={top}
                 left={left}
+                containerRef={selectionCardRef}
             />
+
+            {belowSelectionPanel && selectionCardHeight != null && (
+                <div style={{
+                    position: 'absolute',
+                    top: `calc(${top || '130px'} + ${selectionCardHeight}px + 8px)`,
+                    left: left || '10px',
+                    zIndex: 999,
+                }}>
+                    {belowSelectionPanel}
+                </div>
+            )}
 
             <DrawingOverlay
                 viewState={viewState}
