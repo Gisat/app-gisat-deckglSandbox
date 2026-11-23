@@ -6,3 +6,9 @@ window.CARTO_API_KEY = null;
 // from the TITILER_API_BASE env var; null => client falls back to
 // VITE_TITILER_API_BASE or the local '/titiler/api/v1' default.
 window.TITILER_API_BASE = null;
+// Absolute, fully-qualified URL of the tileserver-rs stack, for the Tileserver-RS
+// demo panel (display + copy-to-clipboard). Injected at runtime by serve_web.py
+// from the TILESERVER_PUBLIC_URL env var; null => client falls back to
+// VITE_TILESERVER_PUBLIC_URL or `window.location.origin + '/tileserver-api'`
+// (the endpoint the browser actually requests through the same-origin proxy).
+window.TILESERVER_PUBLIC_URL = null;

@@ -41,4 +41,42 @@ const TILESERVER_ENDPOINT = {
     startCommand: 'docker compose -f deploy/tileserver/docker-compose.yml up -d --build',
 };
 
-export { TILESERVER_ENDPOINT };
+// Upstream origin of the local stack (deploy/tileserver/docker-compose.yml maps
+// 8080:8080). Only used for the panel tooltip — never as a request target,
+// because the browser must go through the same-origin proxy (COEP-safe).
+const TILESERVER_UPSTREAM_ORIGIN = 'http://localhost:8080';
+
+/**
+ * Fully-qualified URL of the endpoint, for display and copy-to-clipboard.
+ *
+ * `baseUrl` above is same-origin (a bare proxy path), which is useless once
+ * copied out of the browser — this adds protocol + host + port so the value can
+ * be pasted into curl / Postman / another tool.
+ *
+ * Precedence mirrors the TiTiler knob (see public/config.js):
+ *   1. window.TILESERVER_PUBLIC_URL       — runtime, injected by serve_web.py
+ *      from the TILESERVER_PUBLIC_URL env var (no rebuild; per-deployment).
+ *   2. import.meta.env.VITE_TILESERVER_PUBLIC_URL — build-time fallback for
+ *      static hosts that cannot run serve_web.py.
+ *   3. Default: `window.location.origin + '/tileserver-api'` — the endpoint the
+ *      browser actually requests, fully qualified. Correct in `npm run dev`
+ *      (Vite proxy) and for a same-origin deployment; set the knob for anything
+ *      else (a tileserver on another host, a different prefix).
+ *
+ * Read once per page load, which is correct for a per-deployment knob.
+ */
+function getTileserverPublicUrl() {
+    const trim = (v) => String(v).replace(/\/+$/, '');
+    if (typeof window !== 'undefined' && window.TILESERVER_PUBLIC_URL) {
+        return trim(window.TILESERVER_PUBLIC_URL);
+    }
+    if (import.meta.env.VITE_TILESERVER_PUBLIC_URL) {
+        return trim(import.meta.env.VITE_TILESERVER_PUBLIC_URL);
+    }
+    if (typeof window !== 'undefined' && window.location) {
+        return window.location.origin + TILESERVER_ENDPOINT.baseUrl;
+    }
+    return TILESERVER_ENDPOINT.baseUrl;
+}
+
+export { TILESERVER_ENDPOINT, TILESERVER_UPSTREAM_ORIGIN, getTileserverPublicUrl };

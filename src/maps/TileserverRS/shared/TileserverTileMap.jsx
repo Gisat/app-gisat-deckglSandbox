@@ -9,7 +9,8 @@ import CrawlBoxOverlay from './CrawlBoxOverlay';
 import CrawlCommandPanel from './CrawlCommandPanel';
 import { TileOutline, TileContextMenu } from './TileInspectorOverlay';
 import { useTileHoverInspector } from './useTileHoverInspector';
-import { TILESERVER_ENDPOINT } from './endpoints';
+import { TILESERVER_ENDPOINT, TILESERVER_UPSTREAM_ORIGIN, getTileserverPublicUrl } from './endpoints';
+import { copyText } from './clipboard';
 import './TileInspectorOverlay.css';
 // Shared with the TiTiler category: the timing hook is a pure measurement
 // utility (settle-debounce + quiescence) with no TiTiler-specific behavior.
@@ -45,6 +46,19 @@ import '../../TiTilerDemo/shared/TiTilerEndpointSwitch.css';
 function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile = '0/0/0.png', inspectTiles = false, enableCrawl = false }) {
     const [viewState, setViewState] = useState(initialViewState);
     const { baseUrl, healthUrl, startCommand } = TILESERVER_ENDPOINT;
+    // Absolute URL (protocol + host + port) shown in the panel and copied on
+    // click. Resolved once per page load; see getTileserverPublicUrl().
+    const publicUrl = getTileserverPublicUrl();
+    const [endpointCopied, setEndpointCopied] = useState(false);
+    const copiedTimer = useRef(null);
+    useEffect(() => () => clearTimeout(copiedTimer.current), []);
+    const handleCopyEndpoint = useCallback(async () => {
+        const ok = await copyText(publicUrl);
+        if (!ok) return; // clipboard unavailable: leave the text selectable by hand
+        setEndpointCopied(true);
+        clearTimeout(copiedTimer.current);
+        copiedTimer.current = setTimeout(() => setEndpointCopied(false), 1500);
+    }, [publicUrl]);
     // Bumped on retry/timing toggle to recreate the TileLayer and force a full tile reload.
     const [tileLayerKey, setTileLayerKey] = useState(0);
     // Right-click menu state: client coords of the click + the tile under it.
@@ -278,16 +292,17 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
             </div>
             <div className="titiler-endpoint-switch" role="group" aria-label="tileserver-rs endpoint">
                 <span className="titiler-endpoint-title">tileserver-rs endpoint</span>
-                <div className="titiler-endpoint-options">
-                    <button
-                        type="button"
-                        className="titiler-endpoint-btn titiler-endpoint-btn-active titiler-source-static"
-                        title={`${baseUrl}\nStart: ${startCommand}`}
-                    >
-                        {TILESERVER_ENDPOINT.label}
-                    </button>
-                </div>
-                <div className="titiler-endpoint-url" title={baseUrl}>{baseUrl}</div>
+                <button
+                    type="button"
+                    className={`titiler-endpoint-url titiler-endpoint-url-copy${endpointCopied ? ' titiler-endpoint-url-copied' : ''}`}
+                    onClick={handleCopyEndpoint}
+                    title={`Click to copy\n\nRequested as ${baseUrl} (proxied to ${TILESERVER_UPSTREAM_ORIGIN})\nStart: ${startCommand}`}
+                >
+                    <span className="titiler-endpoint-url-text">{publicUrl}</span>
+                    <span className="titiler-endpoint-url-action" aria-hidden="true">
+                        {endpointCopied ? 'Copied' : 'Copy'}
+                    </span>
+                </button>
                 {enableCrawl && !drawMode && !crawlBbox && (
                     <button
                         type="button"

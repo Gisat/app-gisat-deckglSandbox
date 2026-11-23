@@ -200,3 +200,77 @@
     font-style: italic;
     color: #b9770e;
 }
+
+
+/* ---------------------------------------------------------------------------
+   tileserver-rs endpoint URL (click-to-copy)
+   Reuses .titiler-endpoint-url from TiTilerEndpointSwitch.css for the mono
+   type + colour, but overrides the box model: it is a <button> that shows the
+   full absolute URL with a small Copy affordance on the right.
+   --------------------------------------------------------------------------- */
+.titiler-endpoint-url-copy {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    max-width: 100%;
+    padding: 5px 7px;
+    background-color: #f7f9fb;
+    border: 1px solid #dde4ec;
+    border-radius: 5px;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.titiler-endpoint-url-copy:hover {
+    background-color: #eef3f8;
+    border-color: #b8c4d0;
+}
+
+.titiler-endpoint-url-copy:focus-visible {
+    outline: 2px solid #2c3e50;
+    outline-offset: 1px;
+}
+
+/* The URL truncates (never wraps) so the panel keeps one line. */
+.titiler-endpoint-url-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.titiler-endpoint-url-action {
+    flex: 0 0 auto;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    color: #2c3e50;
+    opacity: 0.7;
+}
+
+.titiler-endpoint-url-copy:hover .titiler-endpoint-url-action {
+    opacity: 1;
+}
+
+/* Copied feedback: same green as the crawl panel's copy confirmation. */
+.titiler-endpoint-url-copied {
+    background-color: #eafaf1;
+    border-color: #27ae60;
+}
+
+.titiler-endpoint-url-copied .titiler-endpoint-url-action {
+    color: #27ae60;
+    opacity: 1;
+}
+
+/* ---------------------------------------------------------------------------
+   Session tile-stats reset (Tileserver-RS endpoint panel)
+   Sits under the count/average rows inside .titiler-timing-stats.
+   Styled as a real button: it is an action, so it must read as one — a bare
+   dashed divider looked like an unfinished label rather than something to press.
+   --------------------------------------------------------------------------- */

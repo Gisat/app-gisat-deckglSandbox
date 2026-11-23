@@ -20,6 +20,12 @@ CARTO_API_KEY = os.environ.get('CARTO_API_KEY', '')
 # TITILER_API_BASE=/titiler/api/v1 (relative, same-origin) or an absolute HTTPS
 # URL. Default '' leaves the client's bundled default (local /titiler/api/v1).
 TITILER_API_BASE = os.environ.get('TITILER_API_BASE', '')
+# Absolute, fully-qualified URL of the tileserver-rs stack, shown (and copied)
+# by the Tileserver-RS demo panel. Set this when the stack is not reachable at
+# this app's origin under /tileserver-api (e.g. https://tiles.example.com).
+# Default '' lets the client fall back to its bundled default,
+# `window.location.origin + '/tileserver-api'` — the URL the browser requests.
+TILESERVER_PUBLIC_URL = os.environ.get('TILESERVER_PUBLIC_URL', '')
 
 
 class SPAHandler(http.server.SimpleHTTPRequestHandler):
@@ -68,6 +74,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             f'window.BACKEND_API_URL = {json.dumps(BACKEND_API_URL or None)};',
             f'window.CARTO_API_KEY = {json.dumps(CARTO_API_KEY or None)};',
             f'window.TITILER_API_BASE = {json.dumps(TITILER_API_BASE or None)};',
+            f'window.TILESERVER_PUBLIC_URL = {json.dumps(TILESERVER_PUBLIC_URL or None)};',
             '',
         ]
         self.wfile.write('\n'.join(lines).encode())
