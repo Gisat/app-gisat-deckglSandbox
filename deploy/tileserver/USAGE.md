@@ -12,8 +12,9 @@ proven raster source.
   tile server (axum + GDAL). The `stac` feature (implies `raster`/GDAL) stays
   enabled in the build args.
 - **Two sources** (see `config.toml`): `manila-rgb`, a true-color RGB COG, and
-  `eugw-lcmh`, a STAC dynamic mosaic. See [`DEMOS.md`](DEMOS.md) for what each
-  source is, why it was chosen, and the asset verification notes.
+  `io-lulc`, a STAC dynamic mosaic of Impact Observatory 10 m annual land cover.
+  See [`DEMOS.md`](DEMOS.md) for what each source is, why it was chosen, and
+  the asset verification notes.
 - **Caching:** `[cache]` enabled (512 MB, TTL 3600 s). With the local build
   the rendered PNG of every canonical tile request is cached in-process —
   repeat requests (same source/z/x/y) are served from memory.
@@ -108,7 +109,7 @@ for i in 1 2 3; do curl -s -o /dev/null -w "req $i: %{time_total}s\n" "$TILE"; d
 | Piece | Where |
 | --- | --- |
 | Manila RGB COG source | `config.toml` → `[[sources]]` `manila-rgb` |
-| EUGW LCMH STAC mosaic source + colormap | `config.toml` → `[[sources]]` `eugw-lcmh` + `[sources.colormap]` |
+| IO LULC STAC mosaic source + colormap | `config.toml` → `[[sources]]` `io-lulc` + `[sources.colormap]` |
 | Global raster defaults (resampling, tile size) | `config.toml` → `[raster]` |
 | In-process tile cache | `config.toml` → `[cache]` |
 | Renderer pool (burst/load tuning) | `config.toml` → `[render]` |

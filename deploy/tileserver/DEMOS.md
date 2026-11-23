@@ -16,33 +16,51 @@ Both sources live in `deploy/tileserver/config.toml`.
 - Source: remote COG on Gisat object storage, read over HTTP range requests via
   GDAL `/vsicurl/` (no local download).
 
-## `eugw-lcmh` — STAC dynamic mosaic
+## `io-lulc` — STAC dynamic mosaic
 
-- `EUGW_LCMH` on the openEO/VITO STAC API (`https://stac.openeo.vito.be`) is a
-  **spatial tile grid**: each item is one 1500×1500 COG (EPSG:3035, 1-band
-  uint8 land-cover classes), ~146k items over Europe.
-- `dynamic = true` runs a per-tile bbox `POST /search`, renders the returned
-  items concurrently, and composites them into a seamless class raster.
-- Rendered with the GHLC class colormap (`[sources.colormap]`, discrete,
-  `rescale_mode = "none"`, nodata 255 → transparent).
+- `io-10m-annual-lulc` on the Impact Observatory STAC API
+  (`https://api.impactobservatory.com/stac-aws`) is a global 10 m land-cover
+  product: one COG per Sentinel-2 MGRS supercell per year (2017–2024), 9
+  classes, 1-band uint8, EPSG:UTM (326xx/327xx).
+- `dynamic = true` runs a per-tile bbox `/search`, renders the returned
+  supercells concurrently, and composites them into a seamless class raster.
+- Rendered with the standard IO 9-class colormap (`[sources.colormap]`,
+  discrete, `rescale_mode = "none"`, nodata 255 → transparent).
+- `datetime` is pinned to a single instant (`2024-01-01T00:00:00Z`). Unpinned,
+  each `/search` returns one item per footprint *per timestep* — 8 vintages per
+  cell — and the per-tile asset cap fills with one cell's history, so the
+  neighbour is never opened and the tile shows a hard seam (52.9 % coverage at
+  z8). Pinning also cuts the fetch work ~8×.
+- `mosaic_max_assets = 64` counts places, not (place × timestep): the worst
+  case is the Bavaria z3 tile at 33 cells. Each open handle is charged 16 MiB
+  against the 1 GiB dataset-cache budget.
 
-### Why this STAC demo works where the retired one did not
+### Why UTM, and why this STAC demo works where the retired one did not
 
-The previous `sentinel2-mosaic` source (Earth Search Sentinel-2 L2A,
-`dynamic = true` + `max_items = 5` + `pixel_selection = "first"`) served
-mostly-black tiles at low zoom: it was a **temporal** collection, the top-5
-newest scenes for its region are 89–99 % cloud, and `first` composites by STAC
-order, not cloud cover. `EUGW_LCMH` is a **spatial** grid — every item shares
-one datetime and carries no `eo:cloud_cover`, so `first` simply means "the
-first adjacent tile", which is exactly what a mosaic wants. A `worldcereal` COG
-entry had also been removed earlier — it failed at startup registration (GDAL
-`GDALOpenEx` returned NULL, "Failure writing output to destination") and the
-public WorldCereal STAC API is dead.
+tileserver-rs warps every asset into EPSG:3857 (XYZ tiles are WebMercator by
+definition). The earlier `EUGW_LCMH` source was EPSG:3035 — a conic equal-area
+grid rotated relative to Mercator everywhere, so adjacent warped footprints
+left growing wedge gaps when zooming out. UTM is a transverse Mercator: near a
+zone's central meridian its grid is essentially axis-aligned in Mercator, so
+the residual skew is negligible. Munich (11.5 °E) sits close to UTM 32N's
+9 °E central meridian. Measured 2026-10-27: rendered coverage z10 96.0 %,
+z11 100 %, z12/z13 interior 100 %.
+
+Contrast with the removed `sentinel2-mosaic` (Earth Search Sentinel-2 L2A,
+`dynamic = true` + `max_items = 5` + `pixel_selection = "first"`), which served
+mostly-black tiles at low zoom: it was a **temporal** scene collection, the
+top-5 newest scenes for its region are 89–99 % cloud, and `first` composites by
+STAC order, not cloud cover. Here every item is a cloud-free annual composite,
+so `first` simply means "an adjacent supercell", which is exactly what a mosaic
+wants. A `worldcereal` COG entry had also been removed earlier — it failed at
+startup registration (GDAL `GDALOpenEx` returned NULL, "Failure writing output
+to destination") and the public WorldCereal STAC API is dead.
 
 ### Asset verification (2026-10-27)
 
-Verified against the asset bytes: real COG (128×128 tiles, full overview
-pyramid 1500→750→375→188→94, IFD before data, `accept-ranges: bytes`, 206 on
-Range); 1-band uint8, `GDAL_NODATA=255`; asset role is `data` (NOT Earth
-Search's `visual`). Colormap values cross-checked against decoded pixels of a
-real item (values 1–7, 9, 255 present, matching the GHLC value scheme).
+Verified against the asset bytes: real COG, publicly range-readable (HTTP 206,
+no auth, TIFF magic `II` + `42`); 1-band uint8, `GDAL_NODATA=255`; asset role
+is `data` (the asset key is `supercell`); `proj:code` is EPSG:32632/32633
+(UTM 32N/33N) over Bavaria. Colormap values cross-checked against decoded
+pixels of a real item (values 1–7 and 9 present, matching the IO 9-class
+scheme).
