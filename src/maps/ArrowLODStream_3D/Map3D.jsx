@@ -11,11 +11,23 @@ import {_TerrainExtension as TerrainExtension } from "@deck.gl/extensions";
 import { HUD } from '../../components/HUD';
 import { PlaybackControls } from '../../components/PlaybackControls';
 import { SelectionAnalysisPanel, filterPointsByGeometryInBounds, getGeometryBounds, normalizeGeometry } from '../../components/PointSelection';
+import { SymbolModeToggle } from '../../components/MapSymbols/SymbolModeToggle';
+import { ColorScaleLegend } from '../../components/MapSymbols/ColorScaleLegend';
+import { LegendOverlay } from '../../components/MapSymbols/LegendOverlay';
 import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
+import { getLodTier } from '../../layers/lodTiers';
+import { COLOR_DOMAIN, colorScale } from '../../layers/displacementScale';
+import { DISPLACEMENT_SYMBOL_MATERIAL } from '../../layers/displacementMaterial';
+import { getArrowHeading } from '../../layers/velocity/displacementSymbols';
+import { getAllRowIndices, getSymbolRowSplit } from '../../layers/symbolRows';
+import { build3dDisplacementArrowLayers } from '../../layers/factory/build3dDisplacementArrowLayers';
 import { setDeckGLInstance } from '../../components/PointSelection/drawingUtils';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
 import { calculateProfileData } from '../../components/2DLineProfile';
 import { cartoLightBasemapUrl } from '../basemaps';
+import { DISPLACEMENT_ARROW_PEN_METERS, getArrowStemMeters, getRaiseMeters } from './arrow3dSymbols';
+import stemMesh from '../ArrowGallery/meshes/arrow_tail_unit.obj?url&no-inline';
+import headMesh from '../ArrowGallery/meshes/arrow_head_round_cap.obj?url&no-inline';
 
 // --- Configuration ---
 const INITIAL_VIEW_STATE = { longitude: 14.44, latitude: 50.05, zoom: 14, pitch: 45, bearing: 0 };
@@ -27,18 +39,63 @@ const TILE_CACHE_LIMIT = 200;
 
 const sphere = new SphereGeometry({ radius: 1, nlat: 6, nlong: 6 });
 
-const colorScale = scaleLinear()
-    .domain([-20, 0, 20])
-    .range([[215, 25, 28], [254, 254, 191], [65, 182, 196]])
-    .clamp(true);
+// Sphere radius (metres) from |mean_velocity|. Kept in the same size class as
+// the 1.5 m arrow pen: the old [1, 10] range produced 20 m balls that dwarfed
+// the arrows at inspection zoom.
+const sizeScale = scaleLinear().domain([0, 5]).range([0.8, 2.4]).clamp(true);
 
-const sizeScale = scaleLinear().domain([0, 5]).range([1, 10]).clamp(true);
+// One sphere renderer shared by circle mode and arrow mode's near-zero points,
+// so radius/colour/triggers cannot drift between the two branches.
+function buildSphereLayer({ id, data, getPosition, getColor, getRadius, updateTriggers }) {
+    return new SimpleMeshLayer({
+        id,
+        data,
+        mesh: sphere,
+        extensions: [new TerrainExtension()],
+        // Lift by the radius so the sphere rests on the terrain instead of
+        // being half-buried by the ground depth buffer.
+        getPosition: (rowIndex) => {
+            const [lon, lat] = getPosition(rowIndex);
+            return [lon, lat, getRadius(rowIndex)];
+        },
+        getScale: (rowIndex) => {
+            const radius = getRadius(rowIndex);
+            return [radius, radius, radius];
+        },
+        getColor,
+        material: DISPLACEMENT_SYMBOL_MATERIAL,
+        updateTriggers,
+        transitions: {
+            getColor: 0,
+            getPosition: 0
+        },
+        pickable: true
+    });
+}
 
-// 🆕 LOD LOGIC
-function getTargetTier(zoom) {
-    if (zoom >= 15) return 2;
-    if (zoom >= 13) return 1;
-    return 0;
+// Per-row heading and stem length, cached per (table, mode, date). Both arrow
+// layers read these arrays, so the LOS vector and displacement are resolved
+// once per row per date instead of 3-6 times per animation frame.
+const arrowAttributeCache = new WeakMap();
+
+function getArrowRowAttributes(tableData, mode, timeIndex) {
+    const key = `${mode}:${timeIndex}`;
+    const cached = arrowAttributeCache.get(tableData.arrowTable);
+    if (cached && cached.key === key) return cached;
+
+    const numRows = tableData.numRows;
+    const heading = new Float64Array(numRows);
+    const stemMeters = new Float64Array(numRows);
+    for (let i = 0; i < numRows; i++) {
+        const displacement = tableData.getDisplacementValue(i, mode, timeIndex);
+        const los = tableData.getLosVector(i);
+        heading[i] = getArrowHeading(los?.east, los?.north, displacement);
+        stemMeters[i] = getArrowStemMeters(displacement);
+    }
+
+    const entry = { key, heading, stemMeters };
+    arrowAttributeCache.set(tableData.arrowTable, entry);
+    return entry;
 }
 
 // Map3D Component
@@ -53,13 +110,17 @@ function ArrowLODStream3D() {
 
     // Derive currentTierDisplay from viewState.zoom (not from state)
     const currentTierDisplay = (() => {
-        const t = getTargetTier(viewState.zoom);
+        const t = getLodTier(viewState.zoom);
         const percentages = ['5%', '35%', '100%'];
         return `${t} (${percentages[t]})`;
     })();
 
     const [mode, setMode] = useState('static');
     const [isPlaying, setIsPlaying] = useState(false);
+    // 'circle' keeps the existing spheres; 'arrow' renders the moving points as
+    // 3D meshes and the near-zero points as the same spheres. Both modes share
+    // one cached dataset, so toggling never refetches.
+    const [symbolMode, setSymbolMode] = useState('circle');
 
     const mapContainerRef = useRef(null);
     const deckGLRef = useRef(null);
@@ -240,7 +301,11 @@ function ArrowLODStream3D() {
                 longitude: 'x',
                 height: 'height',
                 size: 'mean_velocity',
-                color: 'displacements'
+                color: 'displacements',
+                // Requested for this map only, so the symbol toggle never
+                // refetches: both symbol modes read the same cached tiles.
+                losEast: 'los_east',
+                losNorth: 'los_north'
             },
             timeSeries: {
                 dates: 'dates',
@@ -290,63 +355,120 @@ function ArrowLODStream3D() {
                 }
 
                 return data.map((tableData) => {
-                    return new SimpleMeshLayer({
-                        id: `mesh-layer-${tableData.tableIndex}`,
-                        data: Array.from({ length: tableData.numRows }, (_, i) => i),
-                        mesh: sphere,
-                        extensions: [new TerrainExtension()],
-                        getPosition: (rowIndex) => {
-                            const { lon, lat } = tableData.getPosition(rowIndex);
-                            // Clamp to the terrain surface.
-                            return [lon, lat, 0];
-                        },
+                    const getSpherePosition = (rowIndex) => {
+                        const { lon, lat } = tableData.getPosition(rowIndex);
+                        return [lon, lat];
+                    };
 
-                        getColor: (rowIndex) => {
-                            const pointId = tableData.getPointId(rowIndex);
-                            
-                            // If point is hovered, show bright red
-                            if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
-                                return [255, 0, 0, 255];
-                            }
-                            
-                            // If point is selected, highlight it
-                            if (selectedPointIds.has(pointId)) {
-                                return [66, 212, 244, 255]; // Bright cyan
-                            }
-                            
-                            // If there are selected points, dim unselected
-                            if (selectedPointIds.size > 0) {
-                                return [200, 200, 200, 100]; // Dim gray
-                            }
-                            
-                            // Normal displacement color
-                            const val = tableData.getDisplacementValue(rowIndex, mode, debouncedTimeIndex);
-                            const rgb = colorScale(val);
-                            return [rgb[0], rgb[1], rgb[2], 255];
-                        },
+                    const getColor = (rowIndex) => {
+                        const pointId = tableData.getPointId(rowIndex);
 
-                        getScale: (rowIndex) => {
-                            const meanVelocity = tableData.getMeanVelocity(rowIndex);
-                            const size = sizeScale(Math.abs(meanVelocity || 1));
-                            return [size, size, size];
-                        },
+                        // If point is hovered, show bright red
+                        if (hoveredPointId && String(hoveredPointId) === String(pointId)) {
+                            return [255, 0, 0, 255];
+                        }
 
-                        updateTriggers: {
-                            getColor: [debouncedTimeIndex, mode, selectedPointIds, hoveredPointId],
-                            getPosition: [debouncedTimeIndex, mode]
-                        },
+                        // If point is selected, highlight it
+                        if (selectedPointIds.has(pointId)) {
+                            return [66, 212, 244, 255]; // Bright cyan
+                        }
 
-                        transitions: {
-                            getColor: 0,
-                            getPosition: 0
-                        },
+                        // If there are selected points, dim unselected
+                        if (selectedPointIds.size > 0) {
+                            return [200, 200, 200, 100]; // Dim gray
+                        }
 
-                        pickable: true
-                    });
-                });
+                        // Normal displacement color
+                        const val = tableData.getDisplacementValue(rowIndex, mode, debouncedTimeIndex);
+                        const rgb = colorScale(val);
+                        return [rgb[0], rgb[1], rgb[2], 255];
+                    };
+
+                    const getRadius = (rowIndex) => {
+                        const meanVelocity = tableData.getMeanVelocity(rowIndex);
+                        return sizeScale(Math.abs(meanVelocity || 1));
+                    };
+
+                    const sphereUpdateTriggers = {
+                        getColor: [debouncedTimeIndex, mode, selectedPointIds, hoveredPointId],
+                        // lon/lat and the sphere lift are time-invariant; only the
+                        // split array identity changes with the date.
+                        getPosition: [mode]
+                    };
+
+                    if (symbolMode === 'circle') {
+                        return buildSphereLayer({
+                            id: `mesh-layer-${tableData.tableIndex}`,
+                            data: getAllRowIndices(tableData),
+                            getPosition: getSpherePosition,
+                            getColor,
+                            getRadius,
+                            updateTriggers: sphereUpdateTriggers
+                        });
+                    }
+
+                    // Same 2 mm circle/arrow rule as 2D, from the shared rows
+                    // helper, evaluated against the displayed displacement.
+                    const { arrowRows, circleRows } = getSymbolRowSplit(
+                        tableData,
+                        mode,
+                        debouncedTimeIndex
+                    );
+
+                    const tableLayers = [];
+
+                    if (circleRows.length > 0) {
+                        tableLayers.push(buildSphereLayer({
+                            id: `mesh-layer-${tableData.tableIndex}-stable-circles`,
+                            data: circleRows,
+                            getPosition: getSpherePosition,
+                            getColor,
+                            getRadius,
+                            updateTriggers: sphereUpdateTriggers
+                        }));
+                    }
+
+                    if (arrowRows.length > 0) {
+                        const { heading, stemMeters } = getArrowRowAttributes(
+                            tableData,
+                            mode,
+                            debouncedTimeIndex
+                        );
+
+                        // Rest the flat mesh's underside on the terrain: the
+                        // cross-section is centred on model Y.
+                        const raiseMeters = getRaiseMeters(DISPLACEMENT_ARROW_PEN_METERS);
+
+                        tableLayers.push(...build3dDisplacementArrowLayers({
+                            idPrefix: `arrow-mesh-${tableData.tableIndex}`,
+                            data: arrowRows,
+                            getPosition: (rowIndex) => {
+                                const { lon, lat } = tableData.getPosition(rowIndex);
+                                return [lon, lat, raiseMeters];
+                            },
+                            getColor,
+                            getHeading: (rowIndex) => heading[rowIndex],
+                            getStemMeters: (rowIndex) => stemMeters[rowIndex],
+                            penMeters: DISPLACEMENT_ARROW_PEN_METERS,
+                            stemMesh,
+                            headMesh,
+                            updateTriggers: {
+                                getColor: sphereUpdateTriggers.getColor,
+                                getPosition: sphereUpdateTriggers.getPosition,
+                                getScale: [debouncedTimeIndex, mode],
+                                getOrientation: [debouncedTimeIndex, mode],
+                                getTranslation: [debouncedTimeIndex, mode]
+                            },
+                            extensions: [new TerrainExtension()],
+                            terrainDrawMode: 'offset'
+                        }));
+                    }
+
+                    return tableLayers;
+                }).flat();
             }
         })
-    ], [debouncedTimeIndex, mode, drawnGeometry, selectedPointIds, hoveredPointId, isDrawing, zRange, onZRangeUpdate]);
+    ], [debouncedTimeIndex, mode, symbolMode, drawnGeometry, selectedPointIds, hoveredPointId, isDrawing, zRange, onZRangeUpdate]);
 
     return (
         <div ref={mapContainerRef} style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
@@ -418,6 +540,14 @@ function ArrowLODStream3D() {
                 setTimeIndex={setTimeIndex}
             />
 
+            <LegendOverlay lifted={Boolean(selectedFeatures)}>
+                <ColorScaleLegend
+                    colorScale={colorScale}
+                    domain={COLOR_DOMAIN}
+                    title="LOS displacement (mm)"
+                />
+            </LegendOverlay>
+
             <SelectionAnalysisPanel
                 top="130px"
                 left="10px"
@@ -447,6 +577,13 @@ function ArrowLODStream3D() {
                 is3D={true}
                 viewState={viewState}
                 onPointHover={setHoveredPointId}
+
+                belowSelectionPanel={
+                    <SymbolModeToggle
+                        symbolMode={symbolMode}
+                        onSymbolModeChange={setSymbolMode}
+                    />
+                }
             />
         </div>
     );

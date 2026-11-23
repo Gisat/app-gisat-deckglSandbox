@@ -11,17 +11,18 @@ import ArrowLODTileLayer from '../../layers/ArrowLODTileLayer';
 import { DynamicArrowLayer } from '../../layers/DynamicArrowLayer';
 import { getLodTier } from '../../layers/lodTiers';
 import { cartoLightBasemapUrl } from '../basemaps';
-import { SymbolModeToggle } from './SymbolModeToggle';
-import { ColorScaleLegend } from './ColorScaleLegend';
-import { COLOR_DOMAIN, colorScale } from './displacementScale';
+import { SymbolModeToggle } from '../../components/MapSymbols/SymbolModeToggle';
+import { ColorScaleLegend } from '../../components/MapSymbols/ColorScaleLegend';
+import { LegendOverlay } from '../../components/MapSymbols/LegendOverlay';
+import { COLOR_DOMAIN, colorScale } from '../../layers/displacementScale';
+import { getAllRowIndices, getSymbolRowSplit } from '../../layers/symbolRows';
+import { getArrowHeading } from '../../layers/velocity/displacementSymbols';
 import {
     ARROW_HEAD_SIZE,
     ARROW_HEAD_WIDTH,
     ARROW_STEM_THICKNESS,
-    getArrowHeading,
     getArrowRadiusPixels,
-    getArrowStemLengthFraction,
-    isSmallDisplacement
+    getArrowStemLengthFraction
 } from './arrowPixelSymbols';
 
 // --- Configuration ---
@@ -43,63 +44,9 @@ function getPointSize(zoom) {
 
 // Arrow mode splits each tile into small-displacement points (circles) and
 // moving points (arrows) using the CURRENT displayed displacement, so the
-// symbols change with the timeline. The split is cached per table; pan/zoom
-// reuse it and unchanged classifications are reused across dates so the layers
-// keep a stable `data` identity (positions are not re-uploaded every frame).
-const symbolRowSplitCache = new WeakMap();
-
-function computeSplitSignature(tableData, mode, timeIndex) {
-    let hash = 2166136261;
-    let circleCount = 0;
-    for (let i = 0; i < tableData.numRows; i++) {
-        if (isSmallDisplacement(tableData.getDisplacementValue(i, mode, timeIndex))) {
-            hash = Math.imul(hash ^ i, 16777619);
-            circleCount += 1;
-        }
-    }
-    return `${circleCount}:${hash >>> 0}`;
-}
-
-function getSymbolRowSplit(tableData, mode, timeIndex) {
-    const key = `${mode}:${timeIndex}`;
-    const cached = symbolRowSplitCache.get(tableData.arrowTable);
-    if (cached && cached.key === key) return cached;
-
-    const signature = computeSplitSignature(tableData, mode, timeIndex);
-    if (cached && cached.signature === signature) {
-        // Same classification as the previous date: keep the existing row
-        // arrays so deck.gl sees the same `data` and skips the position rebuild.
-        const reused = { ...cached, key };
-        symbolRowSplitCache.set(tableData.arrowTable, reused);
-        return reused;
-    }
-
-    const arrowRows = [];
-    const circleRows = [];
-    for (let i = 0; i < tableData.numRows; i++) {
-        if (isSmallDisplacement(tableData.getDisplacementValue(i, mode, timeIndex))) {
-            circleRows.push(i);
-        } else {
-            arrowRows.push(i);
-        }
-    }
-
-    const split = { key, signature, arrowRows, circleRows };
-    symbolRowSplitCache.set(tableData.arrowTable, split);
-    return split;
-}
-
-// All-row index list for circle mode; cached so pan/zoom reuses the same array.
-const allRowIndexCache = new WeakMap();
-
-function getAllRowIndices(tableData) {
-    let rows = allRowIndexCache.get(tableData.arrowTable);
-    if (!rows) {
-        rows = Array.from({ length: tableData.numRows }, (_, i) => i);
-        allRowIndexCache.set(tableData.arrowTable, rows);
-    }
-    return rows;
-}
+// symbols change with the timeline. The split and its signature cache are
+// shared with the 3D map (see layers/symbolRows.js) so the two maps cannot
+// drift.
 
 // One circle renderer shared by circle mode and the arrow mode's near-zero
 // points, so radius/border/triggers cannot drift between the two branches.
@@ -541,23 +488,13 @@ function ArrowLODStream2D() {
                 setTimeIndex={setTimeIndex}
             />
 
-            <div style={{
-                position: 'absolute',
-                left: '12px',
-                // The line-profile card is 320 px tall + 24 px padding at
-                // bottom: 10px (354 px above the bottom edge), so lift past it
-                // instead of hiding the legend behind the chart.
-                bottom: selectedFeatures ? '360px' : '12px',
-                zIndex: 1000,
-                // The legend is read-only; let pan/draw gestures reach the map.
-                pointerEvents: 'none',
-            }}>
+            <LegendOverlay lifted={Boolean(selectedFeatures)}>
                 <ColorScaleLegend
                     colorScale={colorScale}
                     domain={COLOR_DOMAIN}
                     title="LOS displacement (mm)"
                 />
-            </div>
+            </LegendOverlay>
 
             <SelectionAnalysisPanel
                 top="130px"

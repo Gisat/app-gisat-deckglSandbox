@@ -1,6 +1,6 @@
 /**
  * SymbolModeToggle - small card that switches the streamed LOD points between
- * displacement circles and round-cap arrows.
+ * displacement circles and arrows.
  *
  * Rendered by `SelectionAnalysisPanel` below the selection card, which owns the
  * absolute positioning and stacking.
