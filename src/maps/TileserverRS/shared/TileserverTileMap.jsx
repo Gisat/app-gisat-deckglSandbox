@@ -74,6 +74,12 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
     const [tilejson, setTilejson] = useState(null);
 
     const tileUrl = `${baseUrl}/data/${sourceId}/{z}/{x}/{y}.png`;
+    // Same tile template but fully qualified (protocol + host + port), for the
+    // right-click menu's URL row and "Copy tile URL". `tileUrl` stays the
+    // same-origin proxy path the browser actually requests (COEP-safe); this is
+    // the paste-anywhere form, resolved from the same runtime knob as the
+    // endpoint panel (getTileserverPublicUrl).
+    const displayTileUrl = `${publicUrl}/data/${sourceId}/{z}/{x}/{y}.png`;
     // The probe tile must be in-bounds for the source — systemic failures only.
     const probeTileUrl = `${baseUrl}/data/${sourceId}/${probeTile}`;
 
@@ -93,6 +99,7 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
     // info and derives the exact request URL for the outline + context menu.
     const { hoveredTile, label: tileLabel, handleHover } = useTileHoverInspector({
         tileUrl,
+        displayTileUrl,
     });
 
     // Mirror the live hover into a ref so the native contextmenu listener (a

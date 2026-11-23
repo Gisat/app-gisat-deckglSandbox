@@ -25,20 +25,29 @@ import { useState, useMemo, useCallback } from 'react';
  * @param {object} opts
  * @param {string} opts.tileUrl - the TileLayer's data template
  *        (`.../data/{source}/{z}/{x}/{y}.png`); `{z}/{x}/{y}` are substituted
- *        per picked tile so the menu shows the exact URL that was requested.
+ *        per picked tile.
+ * @param {string} [opts.displayTileUrl] - same template but fully qualified
+ *        (protocol + host + port), used for the menu's URL row and the
+ *        "Copy tile URL" action. `tileUrl` is the same-origin request path the
+ *        browser uses, which is useless once pasted outside the browser; when
+ *        omitted this falls back to `tileUrl` (relative) rather than inventing
+ *        an origin.
  */
-function useTileHoverInspector({ tileUrl }) {
+function useTileHoverInspector({ tileUrl, displayTileUrl }) {
     const [hoveredTile, setHoveredTile] = useState(null);
+    // Template used for display/copy. Falls back to the request template so the
+    // hook stays usable on its own (and never fabricates a host).
+    const urlTemplate = displayTileUrl || tileUrl;
 
-    // Build the concrete request URL for a picked tile. deck.gl's TileLayer
-    // exposes `tile.index` = { x, y, z }, so substitution is exact.
+    // Build the concrete URL for a picked tile. deck.gl's TileLayer exposes
+    // `tile.index` = { x, y, z }, so substitution is exact.
     const buildTileUrl = useCallback((tile) => {
         const { x, y, z } = tile.index;
-        return tileUrl
+        return urlTemplate
             .replace('{z}', String(z))
             .replace('{x}', String(x))
             .replace('{y}', String(y));
-    }, [tileUrl]);
+    }, [urlTemplate]);
 
     // `onHover` is called with a single `info` (deck.gl's pickedInfo). The tile
     // rides on `info.tile`; `info.sourceTile` is the same object in deck.gl 9.
@@ -60,11 +69,17 @@ function useTileHoverInspector({ tileUrl }) {
             return {
                 z, x, y,
                 west, south, east, north,
+                // Fully qualified for the menu + clipboard; the same-origin
+                // path stays available for debugging what was actually fetched.
                 url: buildTileUrl(tile),
-                urlTemplate: tileUrl,
+                requestUrl: tileUrl
+                    .replace('{z}', String(z))
+                    .replace('{x}', String(x))
+                    .replace('{y}', String(y)),
+                urlTemplate,
             };
         });
-    }, [buildTileUrl, tileUrl]);
+    }, [buildTileUrl, urlTemplate, tileUrl]);
 
     const label = useMemo(
         () => (hoveredTile ? `z${hoveredTile.z} / x${hoveredTile.x} / y${hoveredTile.y}` : null),
