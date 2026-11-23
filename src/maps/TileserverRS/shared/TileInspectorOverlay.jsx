@@ -1,4 +1,5 @@
 import { PolygonLayer } from '@deck.gl/layers';
+import { copyText } from './clipboard';
 
 /**
  * Tile outline + custom right-click context menu for the Tileserver-RS (STAC)
@@ -38,31 +39,6 @@ function TileOutline({ tile }) {
         lineWidthMinPixels: 2,
         pickable: false,
     });
-}
-
-/** Copy text with a clipboard-API -> execCommand fallback. Returns a promise. */
-async function copyText(text) {
-    try {
-        await navigator.clipboard.writeText(text);
-        return true;
-    } catch {
-        // Clipboard API can reject (permissions / insecure context). Fall back
-        // to a hidden textarea + execCommand.
-        try {
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.setAttribute('readonly', '');
-            ta.style.position = 'fixed';
-            ta.style.opacity = '0';
-            document.body.appendChild(ta);
-            ta.select();
-            const ok = document.execCommand('copy');
-            document.body.removeChild(ta);
-            return ok;
-        } catch {
-            return false;
-        }
-    }
 }
 
 /**
@@ -130,4 +106,4 @@ function TileContextMenu({ tile, label, position, onClose }) {
     );
 }
 
-export { TileOutline, TileContextMenu, copyText };
+export { TileOutline, TileContextMenu };
