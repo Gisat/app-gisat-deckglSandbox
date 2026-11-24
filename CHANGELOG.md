@@ -1,3 +1,10 @@
+## [1.26.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.25.0...v1.26.0) (2026-11-24)
+
+### Features
+
+* **arrow-lod-stream-2d:** add LOS arrow symbol toggle and legend ([f4d1797](https://github.com/Gisat/app-gisat-deckglSandbox/commit/f4d1797958dbb30ba184b2b5c1ed0fe1afdf4f1b))
+* **arrow-lod-stream-3d:** add circle/arrow symbol toggle with 3D arrows ([4e82f47](https://github.com/Gisat/app-gisat-deckglSandbox/commit/4e82f47489da19406da7e7325547bdb3ff422410))
+
 ## [1.25.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.24.0...v1.25.0) (2026-11-20)
 
 ### Features
