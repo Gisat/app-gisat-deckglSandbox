@@ -69,7 +69,7 @@ function ToggleRow({ label, checked, onChange }) {
 }
 
 /** Compact duplicate of the bottom-left displacement ramp, so the panel is self-contained. */
-function ColorStrip() {
+function ColorStrip({ projectionMode }) {
     const stops = [];
     const [min, , max] = COLOR_DOMAIN;
     for (let i = 0; i <= 10; i++) {
@@ -81,7 +81,9 @@ function ColorStrip() {
     return (
         <div style={{ marginBottom: '10px' }}>
             <div style={{ fontSize: '11px', fontWeight: '600', marginBottom: '4px' }}>
-                LOS displacement (mm)
+                {projectionMode === 'vertical'
+                    ? 'Vertical equiv. displacement (mm)'
+                    : 'LOS (slant-range) displacement (mm)'}
             </div>
             <div
                 style={{
@@ -128,6 +130,8 @@ export function SnakeViewControls({
     onWidthByCoherenceChange,
     flipLean,
     onFlipLeanChange,
+    projectionMode = 'los',
+    onProjectionModeChange,
     showSlicePlane,
     onShowSlicePlaneChange,
     onRefit,
@@ -222,6 +226,19 @@ export function SnakeViewControls({
                 ))}
             </OptionRow>
 
+            <OptionRow label="Displacement projection">
+                <OptionButton
+                    active={projectionMode !== 'vertical'}
+                    onClick={() => onProjectionModeChange('los')}
+                    label="LOS (slant-range)"
+                />
+                <OptionButton
+                    active={projectionMode === 'vertical'}
+                    onClick={() => onProjectionModeChange('vertical')}
+                    label="Vertical equiv."
+                />
+            </OptionRow>
+
             <OptionRow label={`Time height: ${Math.round(timeHeightM)} m`}>
                 {[0.5, 1, 2].map(scale => (
                     <OptionButton
@@ -296,7 +313,7 @@ export function SnakeViewControls({
                 Refit view
             </button>
 
-            <ColorStrip />
+            <ColorStrip projectionMode={projectionMode} />
 
             <div
                 style={{
@@ -310,8 +327,9 @@ export function SnakeViewControls({
                 <span>↓ first acquisition</span>
             </div>
             <div style={{ fontSize: '9px', color: '#999', marginTop: '4px' }}>
-                Tube height is linear in real time; lateral offset is smoothed LOS
-                displacement relative to each point&apos;s first value.
+                {projectionMode === 'vertical'
+                    ? 'Assuming pure vertical motion (d_LOS ÷ los_up ≈ 1.29×), displayed laterally along the look azimuth because Z is time.'
+                    : 'Height is linear in real time; lateral lean (along ~260° WSW look azimuth) and color show smoothed 1D slant-range LOS displacement relative to the first acquisition.'}
             </div>
         </div>
     );

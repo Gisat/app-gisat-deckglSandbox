@@ -78,6 +78,50 @@ export function featureCoherence(properties) {
     return clamp(value, 0, 1);
 }
 
+/**
+ * Vertical component of the 3D LOS unit vector, clamped to [0.1, 1].
+ *
+ * Prefers the explicit `los_up` column. A non-positive value is treated as
+ * missing (the backend maps null metrics to 0), in which case it is
+ * reconstructed from the horizontal projection (`los_east`, `los_north`) as
+ * `sqrt(1 - e² - n²)`. A small floor keeps the projection finite.
+ *
+ * @param {Record<string, any>} properties
+ * @returns {number|null}
+ */
+function featureLosUp(properties) {
+    const explicit = Number(properties?.los_up);
+    if (Number.isFinite(explicit) && explicit > 0) return clamp(explicit, 0.1, 1);
+
+    const east = Number(properties?.los_east);
+    const north = Number(properties?.los_north);
+    if (Number.isFinite(east) && Number.isFinite(north)) {
+        return clamp(Math.sqrt(Math.max(0, 1 - east * east - north * north)), 0.1, 1);
+    }
+
+    return null;
+}
+
+/**
+ * Measured LOS slant-range displacement, optionally converted to a vertical
+ * equivalent assuming pure vertical motion.
+ *
+ * - `'los'` returns the measured slant-range value unchanged.
+ * - `'vertical'` divides by `losUp` (≈ 1.285× for a typical ~39° incidence),
+ *   falling back to the raw value when `losUp` is unusable.
+ *
+ * @param {number} valueMm Smoothed LOS displacement in mm.
+ * @param {number|null} losUp Vertical LOS component in [0.1, 1].
+ * @param {'los'|'vertical'} projectionMode
+ * @returns {number}
+ */
+export function projectDisplacement(valueMm, losUp, projectionMode) {
+    if (projectionMode === 'vertical') {
+        return Number.isFinite(losUp) && losUp > 0.1 ? valueMm / losUp : valueMm;
+    }
+    return valueMm;
+}
+
 /** One feature's dates and displacements, sorted by `(datesMs, value)`. */
 function featureSeries(feature) {
     const properties = feature?.properties ?? {};
@@ -299,7 +343,8 @@ export function computeSelectionStats(features) {
  *     pointId: any, lon: number, lat: number,
  *     gridMs: number[], values: number[],
  *     baselineMm: number, dir: [number, number],
- *     coherence: number|null, lastValueMm: number|null,
+ *     coherence: number|null, losUp: number|null, incidenceAngle: number|null,
+ *     lastValueMm: number|null,
  *     sampleCount: number, runStart: number,
  *   }>,
  *   totalFeatures: number, usedFeatures: number,
@@ -371,18 +416,23 @@ export function buildSnakeSeries(features, options = {}) {
         const { dates, values } = featureSeries(feature);
         if (dates.length === 0) continue;
 
-        // Resample the raw series onto the global uniform grid first, then run
-        // three cascaded boxcars there. Three passes approximate a Gaussian
-        // and leave continuous tangents, unlike one boxcar whose derivative
-        // corners showed up as kinks/twists in the tube frame.
+        // Smooth on this point's own (irregular) acquisition dates BEFORE
+        // resampling. Smoothing the 160-sample global grid instead quantised
+        // every window to the grid spacing (~11 d for this 5-year stack), so
+        // 7/21/45 d windows all collapsed to the same output and only 90 d
+        // crossed a grid cell. Three cascaded boxcars approximate a Gaussian
+        // (no derivative corners, so the tube frame never kinks); each pass
+        // uses a full width of 2·smoothDays, so the combined radius is
+        // ~smoothDays and every option stays visible on ~6 d acquisitions.
         const rawValues = values.map(value => (Number.isFinite(value) ? value : null));
-        let resampled = interpolateSeries(grid, dates, rawValues);
+        let smoothed = rawValues;
         if (smoothDays > 0) {
-            const passDays = Math.max(1, smoothDays / 2);
+            const passDays = Math.max(1, smoothDays * 2);
             for (let pass = 0; pass < 3; pass++) {
-                resampled = smoothSeries(resampled, grid, passDays);
+                smoothed = smoothSeries(smoothed, dates, passDays);
             }
         }
+        const resampled = interpolateSeries(grid, dates, smoothed);
 
         const baselineMm = firstFinite(resampled);
         if (baselineMm === null) continue;
@@ -391,6 +441,12 @@ export function buildSnakeSeries(features, options = {}) {
         const pointId = properties.point_id ?? feature?.id ?? null;
         const dir = featureDirection(properties);
         const coherence = featureCoherence(properties);
+        const losUp = featureLosUp(properties);
+        const rawIncidence = Number(properties.incidence_angle);
+        // 0 is the backend's "missing" sentinel; 0° is not a real incidence.
+        const incidenceAngle = Number.isFinite(rawIncidence) && rawIncidence > 0
+            ? rawIncidence
+            : null;
         const lastValueMm = lastFinite(resampled);
 
         // Contiguous finite runs; a gap never carries the previous value.
@@ -409,6 +465,8 @@ export function buildSnakeSeries(features, options = {}) {
                         baselineMm,
                         dir,
                         coherence,
+                        losUp,
+                        incidenceAngle,
                         lastValueMm,
                         sampleCount: grid.length,
                         runStart,
@@ -574,7 +632,7 @@ function parallelTransportFrames(tangents) {
  *   timeRange: { startMs: number, endMs: number },
  *   timeHeightM: number, leanMPerMm: number,
  *   widthByCoherence?: boolean, radiusBaseM?: number,
- *   flipLean?: boolean,
+ *   flipLean?: boolean, projectionMode?: 'los'|'vertical',
  * }} options
  * @returns {{ origin: [number, number]|null, mesh: object|null }}
  */
@@ -586,6 +644,7 @@ export function buildSnakeMesh(tubes, options) {
     const widthByCoherence = Boolean(options?.widthByCoherence);
     const radiusBaseM = Number.isFinite(options?.radiusBaseM) ? options.radiusBaseM : 4;
     const flip = options?.flipLean ? -1 : 1;
+    const projectionMode = options?.projectionMode === 'vertical' ? 'vertical' : 'los';
 
     if (list.length === 0 || !timeRange) {
         return { origin: null, mesh: null };
@@ -630,6 +689,21 @@ export function buildSnakeMesh(tubes, options) {
         return { origin: [originLon, originLat], mesh: null };
     }
 
+    // Width by coherence: normalise within the rendered selection so the
+    // variation is visible even when absolute coherence is uniformly high
+    // (e.g. 0.5–0.96). A near-constant selection falls back to the base radius.
+    let coherenceMin = Infinity;
+    let coherenceMax = -Infinity;
+    if (widthByCoherence) {
+        for (const { tube } of renderable) {
+            if (!Number.isFinite(tube.coherence)) continue;
+            if (tube.coherence < coherenceMin) coherenceMin = tube.coherence;
+            if (tube.coherence > coherenceMax) coherenceMax = tube.coherence;
+        }
+    }
+    const coherenceSpan = coherenceMax - coherenceMin;
+    const hasCoherenceSpread = Number.isFinite(coherenceSpan) && coherenceSpan > 0.05;
+
     const positions = new Float32Array(totalVertices * 3);
     const colors = new Float32Array(totalVertices * 3);
     const normals = new Float32Array(totalVertices * 3);
@@ -643,24 +717,40 @@ export function buildSnakeMesh(tubes, options) {
 
         const dirEast = (Array.isArray(tube.dir) ? tube.dir[0] : 0) * flip;
         const dirNorth = (Array.isArray(tube.dir) ? tube.dir[1] : 1) * flip;
-        const radius = widthByCoherence && Number.isFinite(tube.coherence)
-            ? radiusBaseM * (0.4 + 0.6 * tube.coherence)
-            : radiusBaseM;
+        let radius = radiusBaseM;
+        if (widthByCoherence && Number.isFinite(tube.coherence)) {
+            // Rank within the selection, then map 0..1 → 0.5×..1.5× base so the
+            // thinnest and thickest tubes differ by a clear 3×.
+            const t = hasCoherenceSpread
+                ? (tube.coherence - coherenceMin) / coherenceSpan
+                : 0.5;
+            radius = radiusBaseM * (0.5 + t);
+        }
+
+        // Project the baseline once per tube; the per-vertex values use the
+        // same mode so the lateral offset stays relative to the first
+        // acquisition and the colour matches the displayed quantity.
+        const projectedBaseline = projectDisplacement(
+            tube.baselineMm,
+            tube.losUp,
+            projectionMode,
+        );
 
         // Local path: metric XY offsets from the origin, real time on Z.
         const path = new Array(count);
         const sampleColors = new Array(count);
         for (let i = 0; i < count; i++) {
             const valueMm = values[i];
+            const projected = projectDisplacement(valueMm, tube.losUp, projectionMode);
             const u = clamp((gridMs[i] - timeRange.startMs) / spanMs, 0, 1);
             const z = u * timeHeightM;
-            const lateral = (valueMm - tube.baselineMm) * leanMPerMm;
+            const lateral = (projected - projectedBaseline) * leanMPerMm;
             const x = (tube.lon - originLon) * mPerDegLon + lateral * dirEast;
             const y = (tube.lat - originLat) * METRES_PER_DEG_LAT + lateral * dirNorth;
             path[i] = [x, y, z];
-            // Colour by the absolute (non-rebased) signed displacement, so the
-            // tube matches the 2D point colours and the legend exactly.
-            sampleColors[i] = colorScale(valueMm);
+            // Colour by the projected signed displacement, so the tube matches
+            // the 2D point colours and the legend for the active mode.
+            sampleColors[i] = colorScale(projected);
         }
 
         const baseVertex = vertexOffset;

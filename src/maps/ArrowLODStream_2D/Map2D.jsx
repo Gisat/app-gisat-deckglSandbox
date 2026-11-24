@@ -40,7 +40,8 @@ import {
     SAMPLE_COUNT,
     buildSnakeMesh,
     buildSnakeSeries,
-    computeSelectionStats
+    computeSelectionStats,
+    projectDisplacement
 } from './snakeGeometry';
 import {
     buildSlicePoints,
@@ -68,6 +69,8 @@ const SELECTION_METRICS = [
     'temporal_coherence',
     'los_east',
     'los_north',
+    'los_up',
+    'incidence_angle',
     'track_angle'
 ];
 
@@ -100,7 +103,9 @@ function buildDisplacementCircleLayer({
     selectedPointIds,
     hoveredPointId,
     getPosition,
-    getFillColor
+    getFillColor,
+    pickable = true,
+    updateTriggers
 }) {
     return new ScatterplotLayer({
         id,
@@ -115,14 +120,14 @@ function buildDisplacementCircleLayer({
         getLineColor: [0, 0, 0, 0],
         getLineWidth: 1,
         lineWidthUnits: 'pixels',
-        updateTriggers: {
+        updateTriggers: updateTriggers ?? {
             getFillColor: [debouncedTimeIndex, mode, selectedPointIds, hoveredPointId],
             getPosition: [mode],
         },
         transitions: {
             getFillColor: 0
         },
-        pickable: true
+        pickable
     });
 }
 
@@ -132,6 +137,60 @@ function formatMm(value) {
 
 function formatCoherence(value) {
     return Number.isFinite(value) ? value.toFixed(2) : '—';
+}
+
+function formatDegrees(value) {
+    return Number.isFinite(value) ? `${value.toFixed(1)}°` : '—';
+}
+
+// In 3D mode the remaining unselected points are drawn dim on the ground. The
+// filtered row-index list is cached per raw Arrow table + selection object, so
+// camera tilt/orbit animation frames reuse the same array instead of
+// re-allocating and re-filtering every frame.
+const unselectedRowIndexCache = new WeakMap();
+
+// Stable accessor identity so deck.gl does not rebuild colours every frame.
+const UNSELECTED_GROUND_FILL = () => [200, 200, 200, 100];
+
+function getUnselectedRowIndices(tableData, selectedPointIds) {
+    const cached = unselectedRowIndexCache.get(tableData.arrowTable);
+    if (cached && cached.selectedPointIds === selectedPointIds) return cached.rows;
+
+    const rows = [];
+    for (let i = 0; i < tableData.numRows; i++) {
+        if (!selectedPointIds.has(tableData.getPointId(i))) rows.push(i);
+    }
+    unselectedRowIndexCache.set(tableData.arrowTable, { selectedPointIds, rows });
+    return rows;
+}
+
+// Arrow/circle split of the remaining unselected rows, shared with the 2D
+// classification so the two views cannot drift. Cached per Arrow table +
+// selection + split signature, reusing the filtered arrays while the
+// classification is unchanged.
+const unselectedSymbolCache = new WeakMap();
+
+function getUnselectedSymbolRowSplit(tableData, mode, timeIndex, selectedPointIds) {
+    const split = getSymbolRowSplit(tableData, mode, timeIndex);
+    const cached = unselectedSymbolCache.get(tableData.arrowTable);
+    if (cached
+        && cached.selectedPointIds === selectedPointIds
+        && cached.signature === split.signature) {
+        return cached;
+    }
+
+    const arrowRows = [];
+    for (const rowIndex of split.arrowRows) {
+        if (!selectedPointIds.has(tableData.getPointId(rowIndex))) arrowRows.push(rowIndex);
+    }
+    const circleRows = [];
+    for (const rowIndex of split.circleRows) {
+        if (!selectedPointIds.has(tableData.getPointId(rowIndex))) circleRows.push(rowIndex);
+    }
+
+    const result = { selectedPointIds, signature: split.signature, arrowRows, circleRows };
+    unselectedSymbolCache.set(tableData.arrowTable, result);
+    return result;
 }
 
 function ArrowLODStream2D() {
@@ -178,6 +237,9 @@ function ArrowLODStream2D() {
     const [thicknessScale, setThicknessScale] = useState(1);
     const [widthByCoherence, setWidthByCoherence] = useState(true);
     const [flipLean, setFlipLean] = useState(false);
+    // 'los' shows the measured slant-range LOS; 'vertical' divides by los_up
+    // to show the vertical-equivalent ground motion.
+    const [projectionMode, setProjectionMode] = useState('los');
     const [animProgress, setAnimProgress] = useState(0);
     const [refitToken, setRefitToken] = useState(0);
     const [hoveredSliceU, setHoveredSliceU] = useState(null);
@@ -316,7 +378,8 @@ function ArrowLODStream2D() {
             leanMPerMm,
             widthByCoherence,
             radiusBaseM,
-            flipLean
+            flipLean,
+            projectionMode
         });
     }, [
         snakeActive,
@@ -325,7 +388,8 @@ function ArrowLODStream2D() {
         leanMPerMm,
         widthByCoherence,
         radiusBaseM,
-        flipLean
+        flipLean,
+        projectionMode
     ]);
 
     const baseMarkers = useMemo(() => {
@@ -339,8 +403,12 @@ function ArrowLODStream2D() {
                 pointId: tube.pointId,
                 lon: tube.lon,
                 lat: tube.lat,
-                lastValueMm: tube.lastValueMm,
-                coherence: tube.coherence
+                lastLosMm: tube.lastValueMm,
+                lastVertMm: Number.isFinite(tube.lastValueMm)
+                    ? projectDisplacement(tube.lastValueMm, tube.losUp, 'vertical')
+                    : null,
+                coherence: tube.coherence,
+                incidenceAngle: tube.incidenceAngle
             });
         }
         return markers;
@@ -355,13 +423,17 @@ function ArrowLODStream2D() {
     const axis = useMemo(() => {
         if (!snakeActive || !selectionCommitted) return null;
         if (!selectionStats.bounds || !snakeSeries.timeRange) return null;
+        // Calendar axis rides the Time-height control:
+        // 0.5× → years only, 1× and 2× → years + quarters.
+        const labelGranularity = timeScale <= 0.5 ? 'year' : 'quarter';
         return buildTimeAxis(
             selectionStats.bounds,
             snakeSeries.timeRange,
             timeHeightM,
             {
                 marginM: Math.max(4, 0.05 * selectionStats.spanM),
-                bearingDeg: viewState.bearing ?? bearingDeg
+                bearingDeg: viewState.bearing ?? bearingDeg,
+                labelGranularity
             }
         );
     }, [
@@ -370,6 +442,7 @@ function ArrowLODStream2D() {
         selectionStats,
         snakeSeries.timeRange,
         timeHeightM,
+        timeScale,
         bearingDeg,
         viewState.bearing
     ]);
@@ -417,7 +490,8 @@ function ArrowLODStream2D() {
                 sliceU,
                 timeHeightM,
                 leanMPerMm,
-                flipLean
+                flipLean,
+                projectionMode
             )
         };
     }, [
@@ -428,7 +502,8 @@ function ArrowLODStream2D() {
         snakeSeries,
         timeHeightM,
         leanMPerMm,
-        flipLean
+        flipLean,
+        projectionMode
     ]);
 
     const timestepCount = useMemo(() => {
@@ -690,14 +765,17 @@ function ArrowLODStream2D() {
             if (Math.abs(denominator) > 1) {
                 let u = clamp01((yBottom - info.y) / denominator);
 
-                // Snap to a tick so the slice lands on a labelled date.
+                // Snap to a tick so the slice lands on a labelled date. Scale the
+                // threshold to the tick spacing so dense axes at tall time
+                // heights never snap to a neighbouring tick.
                 let nearest = null;
                 for (const tick of axis.ticks) {
                     if (!nearest || Math.abs(tick.u - u) < Math.abs(nearest.u - u)) {
                         nearest = tick;
                     }
                 }
-                if (nearest && Math.abs(nearest.u - u) < 0.025) u = nearest.u;
+                const snapThreshold = Math.min(0.025, 0.35 / Math.max(1, axis.ticks.length - 1));
+                if (nearest && Math.abs(nearest.u - u) < snapThreshold) u = nearest.u;
 
                 setHoveredSliceU(u);
                 return;
@@ -714,8 +792,8 @@ function ArrowLODStream2D() {
             return {
                 text: [
                     `Point ${object.pointId ?? '—'}`,
-                    `LOS ${formatMm(object.lastValueMm)}`,
-                    `Coherence ${formatCoherence(object.coherence)}`
+                    `LOS ${formatMm(object.lastLosMm)} (Vert. equiv. ≈ ${formatMm(object.lastVertMm)})`,
+                    `Coherence ${formatCoherence(object.coherence)} • Inc ${formatDegrees(object.incidenceAngle)}`
                 ].join('\n')
             };
         }
@@ -779,12 +857,128 @@ function ArrowLODStream2D() {
 
                 if (!data || data.length === 0) return null;
 
-                // The selection is frozen after commit; the tilted snake view
-                // renders instead of the 2D points.
-                if (selectionCommitted) return [];
+                // After commit the selection is frozen and the tilted snake
+                // renders instead of the 2D points. The remaining unselected
+                // points stay visible, dim and flat on the ground, so the
+                // selection still has spatial context without stealing hover.
+                // They follow the same circle/arrow symbol mode as the 2D view.
+                if (selectionCommitted) {
+                    const groundLayers = [];
+
+                    for (const tableData of data) {
+                        const getPosition = (rowIndex) => {
+                            const { lon, lat } = tableData.getPosition(rowIndex);
+                            return [lon, lat, 0];
+                        };
+
+                        if (symbolMode === 'arrow') {
+                            const { arrowRows, circleRows } = getUnselectedSymbolRowSplit(
+                                tableData,
+                                mode,
+                                debouncedTimeIndex,
+                                selectedPointIds
+                            );
+
+                            if (circleRows.length > 0) {
+                                groundLayers.push(buildDisplacementCircleLayer({
+                                    id: `arrow-table-${tableData.tableIndex}-ground-circles`,
+                                    data: circleRows,
+                                    zoom: viewState.zoom,
+                                    mode,
+                                    debouncedTimeIndex,
+                                    selectedPointIds,
+                                    hoveredPointId,
+                                    getPosition,
+                                    getFillColor: UNSELECTED_GROUND_FILL,
+                                    updateTriggers: {
+                                        getFillColor: [],
+                                        getPosition: [],
+                                    },
+                                    pickable: false
+                                }));
+                            }
+
+                            if (arrowRows.length > 0) {
+                                groundLayers.push(new DynamicArrowLayer({
+                                    id: `arrow-table-${tableData.tableIndex}-ground-arrows`,
+                                    data: arrowRows,
+                                    shape: 'round-cap',
+                                    anchorCentered: false,
+                                    showBorder: true,
+
+                                    getPosition,
+                                    getFillColor: UNSELECTED_GROUND_FILL,
+
+                                    getRadius: getArrowRadiusPixels(viewState.zoom),
+                                    radiusUnits: 'pixels',
+
+                                    getAngle: (rowIndex) => {
+                                        const los = tableData.getLosVector(rowIndex);
+                                        return getArrowHeading(
+                                            los?.east,
+                                            los?.north,
+                                            tableData.getDisplacementValue(rowIndex, mode, debouncedTimeIndex)
+                                        );
+                                    },
+                                    getStemLength: (rowIndex) =>
+                                        getArrowStemLengthFraction(
+                                            tableData.getDisplacementValue(rowIndex, mode, debouncedTimeIndex)
+                                        ),
+                                    getStemThickness: ARROW_STEM_THICKNESS,
+                                    getHeadSize: ARROW_HEAD_SIZE,
+                                    getHeadWidth: ARROW_HEAD_WIDTH,
+
+                                    getLineColor: [0, 0, 0, 0],
+                                    getLineWidth: 0,
+
+                                    updateTriggers: {
+                                        getFillColor: [],
+                                        getPosition: [],
+                                        // Direction/length follow the displayed
+                                        // displacement, so they refresh with time.
+                                        getAngle: [debouncedTimeIndex, mode],
+                                        getStemLength: [debouncedTimeIndex, mode],
+                                        getRadius: [viewState.zoom],
+                                    },
+
+                                    transitions: {
+                                        getFillColor: 0
+                                    },
+
+                                    pickable: false
+                                }));
+                            }
+                            continue;
+                        }
+
+                        const rows = getUnselectedRowIndices(tableData, selectedPointIds);
+                        if (rows.length === 0) continue;
+                        groundLayers.push(buildDisplacementCircleLayer({
+                            id: `arrow-table-${tableData.tableIndex}-unselected-ground`,
+                            data: rows,
+                            zoom: viewState.zoom,
+                            mode,
+                            debouncedTimeIndex,
+                            selectedPointIds,
+                            hoveredPointId,
+                            getPosition,
+                            getFillColor: UNSELECTED_GROUND_FILL,
+                            // Constant fill/positions: never invalidate this
+                            // layer on the animation clock or hover, only when
+                            // the row data itself changes.
+                            updateTriggers: {
+                                getFillColor: [],
+                                getPosition: [],
+                            },
+                            pickable: false
+                        }));
+                    }
+
+                    return groundLayers;
+                }
 
                 // Only compute expensive data key if there's actually a geometry to filter
-                if (drawnGeometry && !isDrawing) {
+                if (drawnGeometry && !isDrawing && !selectionCommitted) {
                     // Track both geometry AND total row count to detect new data
                     const geometryKey = JSON.stringify(drawnGeometry);
                     const totalRows = data.reduce((sum, td) => sum + td.numRows, 0);
@@ -1010,7 +1204,7 @@ function ArrowLODStream2D() {
             getSourcePosition: (d) => d[0],
             getTargetPosition: (d) => d[1],
             getColor: [40, 40, 40, 230],
-            getWidth: 3,
+            getWidth: 2,
             widthUnits: 'pixels',
             pickable: true
         }),
@@ -1022,7 +1216,7 @@ function ArrowLODStream2D() {
             getColor: (_, { index }) => (
                 index === nearestTickIndex ? [66, 212, 244, 255] : [60, 60, 60, 200]
             ),
-            getWidth: (_, { index }) => (index === nearestTickIndex ? 3 : 1),
+            getWidth: (_, { index }) => (index === nearestTickIndex ? 2 : 1),
             widthUnits: 'pixels',
             pickable: false,
             updateTriggers: {
@@ -1035,9 +1229,9 @@ function ArrowLODStream2D() {
             data: axis.ticks,
             getText: (d) => d.label,
             getPosition: (d) => d.tip,
-            getSize: 10,
+            getSize: 7,
             getColor: (_, { index }) => (
-                index === nearestTickIndex ? [66, 212, 244, 255] : [55, 55, 55, 230]
+                index === nearestTickIndex ? [66, 212, 244, 255] : [120, 120, 120, 240]
             ),
             getTextAnchor: 'start',
             getAlignmentBaseline: 'center',
@@ -1054,8 +1248,9 @@ function ArrowLODStream2D() {
             getPosition: (d) => d.hit,
             getRadius: 7,
             radiusUnits: 'pixels',
-            // Low alpha keeps the hit targets invisible but pickable.
-            getFillColor: [66, 212, 244, 40],
+            // Fully transparent: deck.gl still renders these into the picking
+            // buffer, so the hits stay pickable without showing as cyan dots.
+            getFillColor: [66, 212, 244, 0],
             stroked: false,
             pickable: true
         }),
@@ -1075,10 +1270,19 @@ function ArrowLODStream2D() {
             id: 'snake-time-slice-dots',
             data: sliceGeometry.points,
             getPosition: (d) => d.position,
-            getRadius: 3,
+            // Grow past the base radius so the fill and 1 px rim stay crisp at
+            // every zoom, matching the 2D point border.
+            getRadius: Math.max(3, getPointSize(viewState.zoom)),
             radiusUnits: 'pixels',
             getFillColor: (d) => d.color,
-            stroked: false,
+            stroked: true,
+            filled: true,
+            getLineColor: [0, 0, 0, 0],
+            getLineWidth: 1,
+            lineWidthUnits: 'pixels',
+            updateTriggers: {
+                getRadius: [viewState.zoom]
+            },
             pickable: false
         })
     ].filter(Boolean);
@@ -1088,7 +1292,7 @@ function ArrowLODStream2D() {
             <DeckGL
                 viewState={viewState}
                 onViewStateChange={handleViewStateChange}
-                controller={true}
+                controller={{ maxPitch: 85 }}
                 layers={layers}
                 onHover={handleHover}
                 getTooltip={getTooltip}
@@ -1116,13 +1320,17 @@ function ArrowLODStream2D() {
                 setTimeIndex={setTimeIndex}
             />
 
-            <LegendOverlay lifted={Boolean(selectedFeatures)}>
-                <ColorScaleLegend
-                    colorScale={colorScale}
-                    domain={COLOR_DOMAIN}
-                    title="LOS displacement (mm)"
-                />
-            </LegendOverlay>
+            {!snakeActive && (
+                <LegendOverlay lifted={Boolean(selectedFeatures)}>
+                    <ColorScaleLegend
+                        colorScale={colorScale}
+                        domain={COLOR_DOMAIN}
+                        // The 2D map always colours raw LOS displacement, so the
+                        // projection mode (3D-only) must not retitle it.
+                        title="LOS (slant-range) displacement (mm)"
+                    />
+                </LegendOverlay>
+            )}
 
             <SelectionAnalysisPanel
                 top="130px"
@@ -1173,6 +1381,8 @@ function ArrowLODStream2D() {
                     onWidthByCoherenceChange={setWidthByCoherence}
                     flipLean={flipLean}
                     onFlipLeanChange={setFlipLean}
+                    projectionMode={projectionMode}
+                    onProjectionModeChange={setProjectionMode}
                     showSlicePlane={showSlicePlane}
                     onShowSlicePlaneChange={setShowSlicePlane}
                     onRefit={() => setRefitToken(token => token + 1)}

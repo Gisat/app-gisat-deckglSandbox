@@ -1,8 +1,9 @@
 /**
  * Pure screen-space symbology math for the ArrowLODStream 2D map.
  *
- * The streamed LOD points carry a horizontal LOS unit vector (`los_east`,
- * `los_north`) and a cumulative displacement in mm. This module turns those
+ * The streamed LOD points carry `los_east` / `los_north`, the horizontal
+ * projection of the 3D LOS unit vector (|·| ≈ 0.63), and a cumulative
+ * displacement in mm. This module turns those
  * values into the `DynamicArrowLayer` accessor inputs, using the same round-cap
  * arrow geometry as the Arrow Gallery instead of the map-metre velocity
  * symbology (this map sizes arrows in screen pixels).

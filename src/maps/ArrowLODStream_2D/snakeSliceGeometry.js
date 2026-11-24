@@ -9,14 +9,66 @@ import { colorScale } from '../../layers/displacementScale';
 import {
     METRES_PER_DEG_LAT,
     metresPerDegLon,
+    projectDisplacement,
 } from './snakeGeometry';
 
 function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
 }
 
-function formatUtcDate(epochMs) {
-    return new Date(epochMs).toISOString().slice(0, 10);
+function pad2(value) {
+    return String(value).padStart(2, '0');
+}
+
+// Calendar-axis granularities. The Time-height setting requests one of these.
+const LABEL_GRANULARITIES = ['year', 'quarter'];
+
+/**
+ * Calendar-aligned label boundaries for the time axis.
+ *
+ * Rounds to real year / quarter starts instead of arbitrary acquisition dates,
+ * so the axis reads as whole calendar periods. The partial period that contains
+ * the range start is anchored at the range start (so the first period is still
+ * labelled); periods that begin after the range end are dropped.
+ *
+ * @param {number} startMs
+ * @param {number} endMs
+ * @param {'year'|'quarter'} granularity
+ * @returns {Array<{ ms: number, text: string }>}
+ */
+function buildCalendarLabels(startMs, endMs, granularity) {
+    const startYear = new Date(startMs).getUTCFullYear();
+    const endYear = new Date(endMs).getUTCFullYear();
+    const months = granularity === 'quarter' ? [0, 3, 6, 9] : [0];
+
+    const periods = [];
+    for (let year = startYear; year <= endYear; year++) {
+        for (const month of months) {
+            const boundaryMs = Date.UTC(year, month, 1);
+            if (boundaryMs > endMs) continue;
+            periods.push({ boundaryMs, year, month });
+        }
+    }
+
+    // Anchor the partial period containing `startMs` at the range start.
+    let first = 0;
+    for (let i = 0; i < periods.length; i++) {
+        if (periods[i].boundaryMs <= startMs) first = i;
+        else break;
+    }
+
+    const labels = [];
+    for (let i = first; i < periods.length; i++) {
+        const { boundaryMs, year, month } = periods[i];
+        const ms = i === first ? Math.max(startMs, boundaryMs) : boundaryMs;
+        // Hierarchical axis: January carries the year, quarter starts carry
+        // the quarter.
+        const text = month === 0
+            ? String(year)
+            : `${year} ${pad2(month + 1)}-${pad2(month + 3)}`;
+        labels.push({ ms, text });
+    }
+    return labels;
 }
 
 /**
@@ -30,7 +82,10 @@ function formatUtcDate(epochMs) {
  * @param {[number, number, number, number]|null} bounds `[minLon, minLat, maxLon, maxLat]`
  * @param {{ startMs: number, endMs: number }} timeRange
  * @param {number} timeHeightM
- * @param {{ ticks?: number, marginM?: number, bearingDeg?: number }} options
+ * @param {{
+ *   labelGranularity?: 'year'|'quarter',
+ *   marginM?: number, bearingDeg?: number,
+ * }} options
  * @returns {{
  *   origin: [number, number],
  *   stem: number[][],
@@ -49,7 +104,6 @@ export function buildTimeAxis(bounds, timeRange, timeHeightM, options = {}) {
     const height = Number.isFinite(timeHeightM) ? timeHeightM : 0;
     const marginM = Number.isFinite(options.marginM) ? options.marginM : 4;
     const bearingDeg = Number.isFinite(options.bearingDeg) ? options.bearingDeg : 0;
-    const tickCount = Math.max(2, options.ticks ?? 10);
 
     const centerLon = (minLon + maxLon) / 2;
     const centerLat = (minLat + maxLat) / 2;
@@ -82,26 +136,36 @@ export function buildTimeAxis(bounds, timeRange, timeHeightM, options = {}) {
     const originLon = best[0] + (marginM * rightEast) / mPerDegLon;
     const originLat = best[1] + (marginM * rightNorth) / METRES_PER_DEG_LAT;
 
-    const spanMs = Math.max(1, timeRange.endMs - timeRange.startMs);
+    const startMs = timeRange.startMs;
+    const endMs = timeRange.endMs;
+    const spanMs = Math.max(1, endMs - startMs);
     const tickLengthM = Math.max(3, Math.min(12, marginM));
-    const ticks = [];
-    for (let i = 0; i < tickCount; i++) {
-        const u = i / (tickCount - 1);
-        const dateMs = Math.round(timeRange.startMs + u * spanMs);
+
+    // The requested granularity comes from the time-height setting and is
+    // honoured exactly: 0.5× years only, 1× and 2× years + quarters.
+    // The time-height control is the user's lever for label density, so no
+    // automatic coarsening is applied.
+    const granularity = LABEL_GRANULARITIES.includes(options.labelGranularity)
+        ? options.labelGranularity
+        : 'quarter';
+    const labels = buildCalendarLabels(startMs, endMs, granularity);
+
+    const ticks = labels.map(({ ms, text }) => {
+        const u = clamp((ms - startMs) / spanMs, 0, 1);
         const z = u * height;
-        ticks.push({
+        return {
             u,
             z,
-            dateMs,
-            label: formatUtcDate(dateMs),
+            dateMs: ms,
+            label: text,
             hit: [originLon, originLat, z],
             tip: [
                 originLon + (tickLengthM * rightEast) / mPerDegLon,
                 originLat + (tickLengthM * rightNorth) / METRES_PER_DEG_LAT,
                 z,
             ],
-        });
-    }
+        };
+    });
 
     return {
         origin: [originLon, originLat],
@@ -152,12 +216,21 @@ export function buildSliceRing(drawnGeometry, sliceU, timeHeightM) {
  * @param {number} timeHeightM
  * @param {number} leanMPerMm
  * @param {boolean} flipLean
+ * @param {'los'|'vertical'} [projectionMode] Displacement projection used for
+ *   the lateral offset and colour (default `'los'`).
  * @returns {Array<{
  *   pointId: any, position: [number, number, number],
  *   valueMm: number, color: [number, number, number, number],
  * }>}
  */
-export function buildSlicePoints(tubes, sliceU, timeHeightM, leanMPerMm, flipLean) {
+export function buildSlicePoints(
+    tubes,
+    sliceU,
+    timeHeightM,
+    leanMPerMm,
+    flipLean,
+    projectionMode = 'los',
+) {
     const list = Array.isArray(tubes) ? tubes : [];
     const u = clamp(Number.isFinite(sliceU) ? sliceU : 0, 0, 1);
     const height = Number.isFinite(timeHeightM) ? timeHeightM : 0;
@@ -179,12 +252,20 @@ export function buildSlicePoints(tubes, sliceU, timeHeightM, leanMPerMm, flipLea
         const valueMm = tube.values[localIndex];
         if (!Number.isFinite(valueMm)) continue;
 
-        const lateral = (valueMm - tube.baselineMm) * lean;
+        // Project both the value and its baseline so the lateral offset stays
+        // relative to the same point's first acquisition under either mode.
+        const projectedValue = projectDisplacement(valueMm, tube.losUp, projectionMode);
+        const projectedBaseline = projectDisplacement(
+            tube.baselineMm,
+            tube.losUp,
+            projectionMode,
+        );
+        const lateral = (projectedValue - projectedBaseline) * lean;
         const dirEast = Array.isArray(tube.dir) ? tube.dir[0] : 0;
         const dirNorth = Array.isArray(tube.dir) ? tube.dir[1] : 1;
         const lon = tube.lon + (lateral * dirEast * flip) / metresPerDegLon(tube.lat);
         const lat = tube.lat + (lateral * dirNorth * flip) / METRES_PER_DEG_LAT;
-        const rgb = colorScale(valueMm);
+        const rgb = colorScale(projectedValue);
 
         points.push({
             pointId: tube.pointId,
