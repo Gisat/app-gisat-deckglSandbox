@@ -55,6 +55,10 @@ def get_data():
         height_col = _safe_column(request.args.get('height_col', 'height'), 'height')
         size_col = _safe_column(request.args.get('size_col', 'mean_velocity'), 'mean_velocity')
         displacements_col = _safe_column(request.args.get('displacements_col', 'displacements'), 'displacements')
+        # Optional LOS unit-vector components (egms_optimized). Absent unless the
+        # caller asks for both, so existing consumers keep the exact same schema.
+        los_east_col = _safe_column(request.args.get('los_east_col'), None)
+        los_north_col = _safe_column(request.args.get('los_north_col'), None)
 
         db_index = date_index + 1
 
@@ -64,6 +68,9 @@ def get_data():
 
         # add point_id for selection tracking
         base_cols += ", pid AS point_id"
+
+        if los_east_col and los_north_col:
+            base_cols += f", {los_east_col} AS los_east, {los_north_col} AS los_north"
 
         if mode == 'animation':
             selection_col = f"{displacements_col} AS displacements"
