@@ -16,7 +16,33 @@ ALLOWED_COLUMNS = {
     'mean_velocity', 'displacements', 'dates', 'y', 'x',
     'mean_velocity_std', 'los_up', 'los_east', 'los_north',
     'rmse', 'acceleration', 'seasonality', 'pid', 'tier_id', 'tile_x', 'tile_y',
+    'temporal_coherence', 'amplitude_dispersion', 'incidence_angle',
+    'track_angle', 'acceleration_std', 'seasonality_std',
 }
+
+# Actual column names of the loaded parquet, cached after the first DESCRIBE.
+# Optional metrics requested by newer clients must be intersected with this
+# set: an older parquet that lacks them still returns a FeatureCollection
+# instead of failing the whole selection.
+_egms_column_cache = None
+
+
+def _egms_columns(conn):
+    """Return the set of columns exposed by the `egms_data` view.
+
+    Successful describes are cached. Failures are not cached: a transiently
+    unavailable parquet must not permanently disable the schema guard.
+    Returns ``None`` when the schema cannot be read.
+    """
+    global _egms_column_cache
+    if _egms_column_cache is not None:
+        return _egms_column_cache
+    try:
+        rows = conn.execute("DESCRIBE egms_data").fetchall()
+    except Exception:
+        return None
+    _egms_column_cache = {row[0] for row in rows}
+    return _egms_column_cache
 
 
 def _safe_column(value, default):
@@ -159,13 +185,25 @@ def select_by_geometry():
 
         conn = db.get_conn()  # shared module-level DuckDB connection
 
-        # Validate requested metrics against a safelist of allowed columns
+        # Validate requested metrics against a safelist of allowed columns,
+        # then against the columns the loaded parquet actually exposes.
         allowed_metrics = [
-            'mean_velocity', 'height', 'mean_velocity_std', 
-            'los_up', 'los_east', 'los_north', 'rmse', 
-            'acceleration', 'seasonality'
+            'mean_velocity', 'height', 'mean_velocity_std',
+            'los_up', 'los_east', 'los_north', 'rmse',
+            'acceleration', 'seasonality',
+            'temporal_coherence', 'amplitude_dispersion', 'incidence_angle',
+            'track_angle', 'acceleration_std', 'seasonality_std'
         ]
         sanitized_metrics = [m for m in metrics if m in allowed_metrics]
+        available_columns = _egms_columns(conn)
+        if available_columns:
+            sanitized_metrics = [
+                m for m in sanitized_metrics if m in available_columns
+            ]
+        else:
+            # Unknown/empty schema: degrade to the always-present base columns
+            # instead of selecting optional metrics that may not exist.
+            sanitized_metrics = []
 
         # Define base columns that are always required
         base_cols = [

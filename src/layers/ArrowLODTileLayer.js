@@ -32,6 +32,11 @@ const DEFAULT_PROPS = {
     gridSize: 0.06,
     tileBuffer: 1,
     cacheLimit: 200,
+
+    // While paused, the layer keeps its cached data but stops fetching new
+    // tiles. Used by the time-snake view so per-frame timeIndex changes never
+    // refetch tiles during the animation.
+    paused: false,
 };
 
 export default class ArrowLODTileLayer extends CompositeLayer {
@@ -50,7 +55,17 @@ export default class ArrowLODTileLayer extends CompositeLayer {
     }
 
     updateState({ props, oldProps, changeFlags, context }) {
-        if (changeFlags.viewportChanged ||
+        // Keep the current display data while paused. The transition back to
+        // unpaused refetches immediately so the tilted viewport is refreshed
+        // without waiting for the next viewport/date change.
+        if (props.paused) {
+            this._reportStatus();
+            return;
+        }
+
+        if (oldProps.paused && !props.paused) {
+            this._fetchTiles(context.viewport);
+        } else if (changeFlags.viewportChanged ||
             props.dateIndex !== oldProps.dateIndex ||
             props.mode !== oldProps.mode) {
             this._fetchTiles(context.viewport);
@@ -213,6 +228,9 @@ export default class ArrowLODTileLayer extends CompositeLayer {
         const { dataUrl, dateIndex, mode, gridSize, tileBuffer, cacheLimit } = this.props;
         const { tileCache, pendingRequests, previousVisibleKeys } = this.state;
 
+        // Second guard: updateState already returns early while paused, but a
+        // pending transition must never start a fetch.
+        if (this.props.paused) return;
         if (!dataUrl) return;
 
         // 1. Calculate Grid
