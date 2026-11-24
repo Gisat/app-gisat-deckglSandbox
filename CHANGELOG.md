@@ -1,3 +1,10 @@
+## [1.27.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.26.0...v1.27.0) (2026-11-24)
+
+### Features
+
+* **arrow-lod-stream-2d:** add 3D time-snake selection view ([4d752c0](https://github.com/Gisat/app-gisat-deckglSandbox/commit/4d752c0e6369d3842379a009eae696b4ee5d0203))
+* **arrow-lod-stream-2d:** refine 3D time-snake projection, axis and ground points ([2d38dc0](https://github.com/Gisat/app-gisat-deckglSandbox/commit/2d38dc0dbb07fae2a6bc6215d58ffe2f59b08759))
+
 ## [1.26.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.25.0...v1.26.0) (2026-11-24)
 
 ### Features
