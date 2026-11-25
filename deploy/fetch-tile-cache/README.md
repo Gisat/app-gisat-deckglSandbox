@@ -447,7 +447,65 @@ after changing anything in the math or the decoder.
 
 ---
 
-## 10. Design summary
+## 10. Compiling to PMTiles
+
+MBTiles is the crawl format; PMTiles is the serving format (one immutable file,
+HTTP range requests, no backend). `compile-pmtiles.sh` converts a directory of
+crawls using `go-pmtiles convert` — the reference implementation of the v3
+format, which builds the Hilbert-curve TileID directory, run-length encodes,
+dedupes identical payloads and splits root/leaf directories under the 16 KiB
+root budget.
+
+```sh
+./compile-pmtiles.sh                        # every *.mbtiles beside the script
+./compile-pmtiles.sh io-lulc.mbtiles        # explicit files
+./compile-pmtiles.sh --force                # rebuild even if .pmtiles is newer
+./compile-pmtiles.sh --sample=0             # skip the round-trip tile check
+```
+
+There is no `pmtiles` binary on this host (and the npm `pmtiles` package is a
+reader only — no `bin`, no writer), so the script resolves one as
+`$PMTILES_BIN` → `PATH` → `./bin/pmtiles` → a pinned release download
+(`PMTILES_VERSION`, default 1.31.2, ~17 MB, cached in `./bin/`).
+
+**Why a wrapper instead of one `convert` call.** Three failure modes were
+reproduced against go-pmtiles v1.31.2 on 2026-11-25, and two of them are silent:
+
+| | symptom | handled by |
+|---|---|---|
+| all-404 crawl | `fetch-tiles.mjs` exits **0**, `convert` exits 1 `no tiles in MBTiles archive` | pre-flight tile count (exit 3) |
+| no `metadata.format` | converts to tile type `0x00` — a valid header clients refuse | pre-flight metadata check (exit 4) |
+| **converter bug** | header `maxzoom` understated when the last RLE entry spans zooms | header bytes 100/101 rewritten from real zoom range |
+
+The third is a genuine defect: `convert` takes `MaxZoom` from the **first**
+TileID of the last directory entry, not the last tile that entry covers. A
+region whose top zoom is uniform — which is normal for a cached overlay —
+collapses into one long run, so a z0–14 archive can advertise `maxzoom=5` and
+clients simply never request those tiles. The tiles are present and extractable;
+only the header lies.
+
+```
+== dupes.mbtiles -> dupes.pmtiles
+  21 tiles, format=png, z0-2
+  header zoom repaired: 0-0 -> 0-2
+  round-trip ok: 10 tiles byte-identical to MBTiles
+  ok  png  z0-2  21 tiles  1 entries / 1 contents  clustered  dir:gzip  tiles:none
+      20.0 kB -> 302 B
+```
+
+So the header is repaired, and correctness is proven by **extracting tiles and
+comparing them byte-for-byte with the MBTiles rows** — not by `pmtiles verify`.
+`verify` repeats the converter's own assumption, so it reports a *repaired*
+archive as invalid (`header MaxZoom=2 does not match max tile z 0`). That is a
+false positive from the same bug; treat a post-repair `verify` failure confined
+to the maxzoom assertion as expected, and trust the round-trip check.
+
+Note the MBTiles → PMTiles direction is one-way in practice: the archive is
+sealed, so a changed source means re-crawl + re-convert, not an in-place patch.
+
+---
+
+## 11. Design summary
 
 | decision | reason |
 |---|---|
@@ -459,3 +517,5 @@ after changing anything in the math or the decoder.
 | Alpha-based blank detection | Brightness and byte-size both misclassify real sparse tiles |
 | WAL during, `DELETE` after | Crash-safe crawling, single-file delivery |
 | Verification via `inspect` | File size proves nothing about counts, zooms or orientation |
+| `compile-pmtiles.sh` wraps `convert` | Pre-flights the two silent crawl failures and repairs the converter's maxzoom bug |
+| Round-trip tile comparison | `verify` shares the converter's zoom assumption; byte comparison does not |

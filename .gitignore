@@ -62,3 +62,14 @@ deploy/tileserver/tileserver-runtime/runtime-libs/
 deploy/tileserver/tileserver-runtime/gdal-data/
 deploy/tileserver/tileserver-runtime/ca-certs/
 deploy/tileserver/tileserver-runtime/tileserver-rs
+
+# fetch-tile-cache artifacts. The go-pmtiles binary is downloaded on first use
+# (~57 MB, pinned by PMTILES_VERSION in compile-pmtiles.sh); crawls and their
+# PMTiles derivatives are build output, not source.
+deploy/fetch-tile-cache/bin/
+deploy/fetch-tile-cache/*.mbtiles
+deploy/fetch-tile-cache/*.mbtiles-wal
+deploy/fetch-tile-cache/*.mbtiles-shm
+deploy/fetch-tile-cache/*.mbtiles.misses.txt
+deploy/fetch-tile-cache/*.pmtiles
+deploy/fetch-tile-cache/*.pmtiles.tmp

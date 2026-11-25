@@ -121,6 +121,21 @@ function clampToBounds(vs, bounds, size) {
     return { ...vs, longitude: lon, latitude: lat };
 }
 
+// deck.gl's Controller defaults to `zoomAround: 'pointer'`, which anchors each
+// wheel notch on the cursor. Every notch then sets a CONSTRAINT_AROUND that
+// MapController applies via viewport.panByPosition() — and it does so
+// UNCONDITIONALLY, even when _constrainZoom() has already clamped the zoom.
+// At our zoom floor that makes the zoom term a no-op while the pan term still
+// applies, so the map kept sliding sideways (cursor-offset from centre per
+// notch) while the zoom stayed pinned — measured: zoom frozen at 5 while
+// longitude walked 22.6 -> 78.4 with 12 further notches.
+//
+// `zoomAround: 'center'` anchors on the viewport centre, so the anchor point
+// stays at its own screen position and the pan term cancels out. Wheel zoom
+// then never moves the map, at any zoom, and it applies to double-click and
+// pinch too (all of which route through getZoomPosition()).
+const CONTROLLER_PROPS = { zoomAround: 'center' };
+
 function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile = '0/0/0.png', inspectTiles = false, enableCrawl = false }) {
     const [viewState, setViewState] = useState(initialViewState);
     const { baseUrl, healthUrl, startCommand } = TILESERVER_ENDPOINT;
@@ -442,7 +457,7 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
                 id="deck-map"
                 viewState={viewState}
                 onViewStateChange={handleViewStateChange}
-                controller={!drawMode}
+                controller={drawMode ? false : CONTROLLER_PROPS}
                 layers={layers}
                 views={new MapView({ repeat: true })}
                 onHover={inspectTiles ? handleHover : undefined}
