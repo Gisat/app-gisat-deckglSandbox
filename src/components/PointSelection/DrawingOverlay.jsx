@@ -100,7 +100,14 @@ export function DrawingOverlay({
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            const coord = screenToGeo(viewStateRef.current, x, y, canvas.width, canvas.height);
+            const coord = screenToGeo(
+                viewStateRef.current,
+                x,
+                y,
+                canvas.width,
+                canvas.height,
+                is3DRef.current
+            );
 
             if (is3DRef.current) {
                 addCoord(coord);

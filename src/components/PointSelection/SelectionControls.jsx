@@ -21,6 +21,8 @@
  * @param {boolean} props.showLineProfileToggle - Whether to render the "2D Profile" checkbox (default: true)
  * @param {string} props.top - Top position (default: '130px')
  * @param {string} props.left - Left position (default: '10px')
+ * @param {Object} [props.containerRef] - Optional ref attached to the card root,
+ *   so a parent can measure the card height.
  */
 export function SelectionControls({
     selectionMode,
@@ -38,12 +40,14 @@ export function SelectionControls({
     onShowLineProfileChartChange,
     showLineProfileToggle = true,
     top = '130px',
-    left = '10px'
+    left = '10px',
+    containerRef
 }) {
     const modes = ['polygon', 'circle', 'line'];
 
     return (
         <div
+            ref={containerRef}
             style={{
                 position: 'absolute',
                 top,

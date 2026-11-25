@@ -24,9 +24,11 @@ export function setDeckGLInstance(deckGL) {
  * @param {number} y - Screen Y coordinate (click position)
  * @param {number} canvasWidth - Canvas width
  * @param {number} canvasHeight - Canvas height
+ * @param {boolean} [useTerrain] - Attempt terrain picking (3D maps). When
+ *   false, always unprojects onto `z = 0`, including a pitched 2D map.
  * @returns {Object} { geo: [lon, lat], screenPos: [x, y], elevation } 
  */
-export function screenToGeo(viewState, x, y, canvasWidth, canvasHeight) {
+export function screenToGeo(viewState, x, y, canvasWidth, canvasHeight, useTerrain = viewState.pitch > 0) {
     const viewport = new WebMercatorViewport({
         ...viewState,
         width: canvasWidth,
@@ -34,7 +36,7 @@ export function screenToGeo(viewState, x, y, canvasWidth, canvasHeight) {
     });
     
     // For flat views, use simple viewport unprojection
-    if (viewState.pitch <= 0) {
+    if (!useTerrain || viewState.pitch <= 0) {
         const coord = viewport.unproject([x, y], { targetZ: 0 });
         return { geo: coord, screenPos: [x, y], elevation: null };
     }
