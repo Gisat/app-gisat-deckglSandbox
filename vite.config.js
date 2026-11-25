@@ -12,18 +12,34 @@ import topLevelAwait from "vite-plugin-top-level-await";
 const quietMissingSourcemapSources = ['@developmentseed/affine', '@developmentseed/geotiff'];
 
 // Vite has no public `logger` export; `createLogger()` is the supported entry
-// point. Wrap its warn() so only the @developmentseed sourcemap noise is
-// dropped and every other warning still reaches the terminal.
+// point. Wrap warn() AND warnOnce() so only the @developmentseed sourcemap
+// noise is dropped and every other warning still reaches the terminal.
+//
+// warnOnce() must be wrapped separately: in Vite 7 it calls the internal
+// output() helper directly and never goes through logger.warn, so patching
+// warn() alone leaves "Sourcemap for ... points to missing source files"
+// (emitted via logger.warnOnce in config.js -> injectSourcesContent) visible.
 const logger = createLogger();
+
+const isDevelopmentseedSourcemapNoise = (msg) =>
+  typeof msg === 'string' &&
+  msg.includes('points to missing source files') &&
+  quietMissingSourcemapSources.some((p) => msg.includes(p));
+
 const originalWarn = logger.warn.bind(logger);
 logger.warn = (msg, options) => {
-  if (
-    msg.includes('points to missing source files') &&
-    quietMissingSourcemapSources.some((p) => msg.includes(p))
-  ) {
+  if (isDevelopmentseedSourcemapNoise(msg)) {
     return; // @developmentseed packages publish incomplete sourcemaps
   }
   originalWarn(msg, options);
+};
+
+const originalWarnOnce = logger.warnOnce.bind(logger);
+logger.warnOnce = (msg, options) => {
+  if (isDevelopmentseedSourcemapNoise(msg)) {
+    return; // see note above: warnOnce bypasses logger.warn
+  }
+  originalWarnOnce(msg, options);
 };
 
 // luma.gl's Texture class has `static defaultProps = { usage: Texture.SAMPLE |
