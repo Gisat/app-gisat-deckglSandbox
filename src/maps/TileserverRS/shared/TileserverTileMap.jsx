@@ -173,13 +173,28 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
         boundsRef.current = tilejson?.bounds ?? null;
     }, [tilejson]);
 
-    // The source's own zoom floor, derived from TileJSON so the camera and the
-    // TileLayer respect it. A dynamic STAC source can have a floor well above 0
-    // (io-lulc: 5, because low-zoom tiles fan out across full-width supercell
-    // bands and exceed the server's render timeout). Asking below it returns
-    // 404s for every tile in view — the map looks broken while the server is
-    // healthy, which is exactly the ambiguity this demo must avoid.
-    const minZoom = Number.isFinite(tilejson?.minzoom) ? tilejson.minzoom : 0;
+    // Zoom floors live in TWO different spaces — conflating them was a real bug.
+    //
+    // deck.gl picks the TILE level for a camera position as
+    //     tileZ = round(cameraZoom + log2(TILE_SIZE / tileSize))
+    // where TILE_SIZE is deck.gl's fixed reference (512). Our tiles are 256 px,
+    // so that term is log2(2) = +1: the tile level is ALWAYS one above the
+    // camera zoom. Confirmed against the live app via its tile inspector:
+    //     camera z9 -> tile z10, z8 -> z9, z7 -> z8, z6 -> z7, z5 -> z6.
+    //
+    // Therefore `tilejson.minzoom` is a TILE-space floor and must NOT be used as
+    // the camera floor. Clamping the camera at 5 capped the smallest tile level
+    // ever requested at 6, so the source's own z5 was unreachable and zoom-out
+    // appeared to stop one level early. The camera floor belongs one level BELOW
+    // the tile floor.
+    const TILE_SIZE = 512; // deck.gl reference tile size (fixed)
+    const SOURCE_TILE_PX = 256; // ours, set on both TileLayers below
+    const TILE_ZOOM_OFFSET = Math.log2(TILE_SIZE / SOURCE_TILE_PX); // = 1
+
+    // Tile space: the levels the server actually serves (drives the TileLayer).
+    const tileMinZoom = Number.isFinite(tilejson?.minzoom) ? tilejson.minzoom : 0;
+    // Camera space: the lowest camera zoom whose tile level is still legal.
+    const cameraMinZoom = Math.max(0, tileMinZoom - TILE_ZOOM_OFFSET);
 
     const tileUrl = `${baseUrl}/data/${sourceId}/{z}/{x}/{y}.png`;
     // Same tile template but fully qualified (protocol + host + port), for the
@@ -287,17 +302,18 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
     // setCamera() would move the map somewhere the user could not reach by hand.
     const applyViewState = useCallback((next) => {
         const el = wrapperRef.current;
-        // Clamp zoom to the source's own window FIRST: a camera below minZoom
-        // would request a full screen of tiles the source does not serve.
+        // Clamp the camera to a window whose tile level the source serves.
+        // `cameraMinZoom` is already converted from tile space, so for io-lulc
+        // the floor lets the camera reach tile z5 rather than stopping at z6.
         const zoom = Number.isFinite(next.zoom)
-            ? Math.max(minZoom, Math.min(maxZoom, next.zoom))
+            ? Math.max(cameraMinZoom, Math.min(maxZoom, next.zoom))
             : next.zoom;
         const clamped = clampToBounds({ ...next, zoom }, boundsRef.current, {
             width: el ? el.clientWidth : 0,
             height: el ? el.clientHeight : 0,
         });
         setViewState(clamped);
-    }, [minZoom, maxZoom]);
+    }, [cameraMinZoom, maxZoom]);
 
     // Dev-only test hook: expose a deterministic camera control on window so a
     // CDP-driven harness can pan/zoom the map with REAL viewState changes.
@@ -399,9 +415,21 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
     layers.push(new TileLayer({
         id: `tileserver-tiles-${tileLayerKey}`,
         data: tileUrl,
-        minZoom,
+        // Deliberately NOT `minZoom: tileMinZoom`. Passing a tile-space floor
+        // equal to the very tile level a camera maps to SUPPRESSES rendering at
+        // that level: deck.gl's Tileset2D treats `_minZoom` as a traversal floor
+        // (`_getNearestAncestor` stops walking at it), so at the boundary it has
+        // neither the tile nor any ancestor to fall back to and draws nothing.
+        // Measured: with `minZoom: 5`, camera z4 (= tile z5) rendered a blank
+        // canvas for 45s+ while the server served those tiles in 4-29ms; with the
+        // prop removed the same view paints normally.
+        //
+        // The floor is therefore enforced ONLY on the camera (cameraMinZoom),
+        // which is airtight: every camera update, real or programmatic, goes
+        // through applyViewState, so a tile level below `tileMinZoom` is never
+        // requested in the first place.
         maxZoom: maxZoom,
-        tileSize: 256,
+        tileSize: SOURCE_TILE_PX,
         onTileError: handleTileError,
         renderSubLayers: props => {
             const { west, south, east, north } = props.tile.bbox;
