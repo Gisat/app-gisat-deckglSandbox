@@ -194,7 +194,7 @@ max_items = 50
 # open COG handle is charged a flat 16 MiB against the dataset-cache byte
 # budget (1 GiB here = 64 handles).
 #
-# Pinned, this counts PLACES, not (place x timestep). At the z5 floor the
+# Pinned, this counts PLACES, not (place x timestep). At the z3 floor the
 # worst observed tile pulls a handful of full-width supercell bands, well
 # inside 64. Do NOT set this to 8: with one item per footprint that truncates
 # a multi-band tile and leaves permanent holes (previously measured 68.5% ->
@@ -203,17 +203,36 @@ mosaic_max_assets = 64
 pixel_selection = "first"
 stac_bbox = [-180, -90, 180, 90]
 resampling = "nearest"
-# minzoom = 5: the lowest zoom this server can actually serve for this source.
-# Measured 2026-11-25 (isolated, nothing else hitting the server):
-#   z3, z4 -> exceed render_timeout_secs (120s); repeated TIMEOUT at 125s.
-#   z5     -> 0.0-3.6s at 14 probes across Europe, Asia, Africa, the Americas
-#             and Australia.
-# The cost is structural: a low-zoom tile intersects several FULL-WIDTH
-# supercell bands, and each is one planet-spanning COG windowed into EPSG:3857.
-# Advertising minzoom 3 promised tiles the server cannot deliver, so a client
-# zooming out got timeouts instead of imagery. 5 is the honest floor.
+# minzoom = 3: the lowest zoom this server can serve for this source, measured.
+#
+# CORRECTED 2026-11-25. An earlier revision of this file set the floor to 5,
+# on the basis that z3/z4 exceeded render_timeout_secs (120s). That conclusion
+# was WRONG, twice over:
+#   1. The local reproduction used a broken PROJ_DATA path (pointed at
+#      gdal-data instead of gdal-data/proj), so every asset failed to open and
+#      the resulting 404s were mistaken for unservable zooms.
+#   2. The container timings were contaminated by the tester's own concurrent
+#      background sessions hitting the same server.
+#
+# Re-measured with a correct PROJ setup and ZERO concurrent load:
+#   single tile z4 -> 200, 5.3s
+#   single tile z3 -> 200, 8.8s
+#   z5 screenful   -> 33-44 of 45 tiles, median 4-29ms warm / 4.2s cold
+#   z3 VIEWPORT    -> 20/20 tiles 200, ZERO blank, zero errors;
+#                     wall 29.7s, median 21.8s, max 29.6s (cold, 5x4 screenful)
+#
+# So a z3 viewport DOES complete, comfortably inside the 120s render timeout,
+# and the app paints real LULC classes at camera z3 (centre pixel #c4281b).
+#
+# The cost is STRUCTURAL and worth knowing: a low-zoom tile intersects several
+# FULL-WIDTH supercell bands (360 deg lon), each one planet-spanning COG
+# windowed into EPSG:3857. That is why z3 runs ~20s/tile instead of ~20ms.
+# Each open COG handle is charged 16 MiB against the 1 GiB dataset cache
+# (64 handles); the concurrent burst did NOT exhaust it (0 blank tiles), but it
+# is the budget to watch if resolution or maxzoom is ever raised.
+#
 # Enforced in code on the dynamic STAC path, not TileJSON-advisory only.
-minzoom = 5
+minzoom = 3
 maxzoom = 14
 
 # Categorical class ids -> IO 9-class legend colors. `rescale_mode = "none"`

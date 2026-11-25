@@ -40,13 +40,24 @@ Both sources live in `deploy/tileserver/config.toml`.
   metadata. The UI's pan clamp and its "outside this source's bounds" warning
   both read this value, so they fired on perfectly good tiles. With the real
   extent declared, the warning is correct-by-construction for a global source.
-- `minzoom = 5` is the lowest zoom the server can actually serve here. Measured
-  2026-11-25 in isolation: z3 and z4 exceed `render_timeout_secs` (120 s) and
-  time out; z5 completes in 0.0–3.6 s across 14 probes on five continents. The
-  cause is structural — a low-zoom tile intersects several **full-width**
-  supercell bands, each a planet-spanning COG warped into EPSG:3857. The old
-  `minzoom = 3` advertised tiles that always timed out, so the demo opens at
-  z10 and floors at z5.
+- `minzoom = 3` is the lowest zoom the server can actually serve here. An
+  earlier revision argued for 5, on the claim that z3/z4 exceed
+  `render_timeout_secs` (120 s). **That was wrong**, for two recorded reasons:
+  the local reproduction had a broken `PROJ_DATA` path (so every asset failed to
+  open and the 404s were misread as unservable zooms), and the container timings
+  were contaminated by the tester's own concurrent sessions. Re-measured in
+  isolation: a single z3 tile is `200` in 8.8 s, a single z4 in 5.3 s, and a
+  full **z3 viewport** (cold, 5×4 = 20 tiles) returns **20/20 `200`, zero blank,
+  zero errors**, wall 29.7 s, median 21.8 s — comfortably inside the 120 s
+  timeout. The app paints real LULC classes at camera z3.
+
+  The cost is structural and worth knowing: a low-zoom tile intersects several
+  **full-width** (360° lon) supercell bands, each a planet-spanning COG warped
+  into EPSG:3857, so z3 runs ~20 s/tile rather than ~20 ms. That, not the
+  timeout, is the real budget to watch — every open COG handle costs 16 MiB of
+  the 1 GiB dataset cache (64 handles). The cold z3 burst did not exhaust it,
+  but raising resolution or `maxzoom` would push it. The demo opens at z10;
+  the floor is z3.
 
 ### Why UTM, and why this STAC demo works where the retired one did not
 

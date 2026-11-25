@@ -37,11 +37,17 @@ const SOURCE_ID = 'io-lulc';
 // is 9/9 OK, 97.8% opaque, 6 land-cover classes — a dense, well-populated
 // class raster, which makes the demo look like what it is.
 //
-// z10 is also the honest starting zoom: this source cannot serve low zooms.
-// A z3/z4 tile intersects several FULL-WIDTH supercell bands that each span the
-// whole planet, so the mosaic exceeds the server's 120s render timeout (measured
-// repeatedly, isolated). z5 is the lowest servable zoom and is safe worldwide
-// (0.0-3.6s). Hence config.toml minzoom = 5.
+// z10 is the starting zoom for presentation, NOT a server limit. This source
+// CAN serve low zooms — measured 2026-11-25 with a correct PROJ setup and zero
+// concurrent load: a single z3 tile returns 200 in 8.8s, and a cold z3 viewport
+// (5x4 = 20 tiles) returns 20/20 200 with zero blanks in 29.7s wall, well inside
+// the server's 120s render timeout. So config.toml floors at minzoom = 3.
+//
+// The legend is still not free at low zoom: a z3 tile intersects several
+// FULL-WIDTH (360 deg lon) supercell bands, each a planet-spanning COG warped
+// into EPSG:3857, so z3 costs ~20s/tile instead of ~20ms. That is a latency
+// story, not an availability one — which is exactly why the demo opens at z10
+// (instant, dense class raster) and lets the user zoom out deliberately.
 const INITIAL_VIEW_STATE = {
     longitude: 14.4378,
     latitude: 50.0755,
