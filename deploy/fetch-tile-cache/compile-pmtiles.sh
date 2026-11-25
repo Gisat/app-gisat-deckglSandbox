@@ -15,10 +15,14 @@
 # silent or actively misleading. All three were reproduced on 2026-11-25 with
 # go-pmtiles v1.31.2:
 #
-#  1. fetch-tiles.mjs exits 0 on a bbox that 404s everywhere, so an empty
-#     archive looks like success. `convert` then fails with "no tiles in
-#     MBTiles archive" — after the whole crawler run, on a file nobody looks at
-#     again. Checked here before convert.
+#  1. fetch-tiles.mjs exits 0 on a crawl that stored nothing, so an empty
+#     archive looks like success. Two causes, and neither is visible from the
+#     archive or from the exit code: 404 (bbox outside coverage, a deterministic
+#     negative that is correctly not retried) and blank (HTTP 200 with a fully
+#     transparent tile — tileserver-rs answers out-of-bounds requests this way,
+#     so a bbox near but outside the source yields 200s, not 404s). `convert`
+#     then fails with "no tiles in MBTiles archive" after the whole crawler run.
+#     Checked here before convert, and both causes are named in the message.
 #  2. MBTiles without metadata.format converts to tile type 0 (0x00 = unknown),
 #     a valid header that clients refuse to render. Checked here.
 #  3. CONVERTER BUG — the header's maxzoom is understated when the last
@@ -36,7 +40,14 @@
 # passes, so an interrupted run never leaves a truncated archive that still
 # looks servable.
 #
-# Exit: 0 all converted · 1 something failed · 2 setup/usage error
+# Exit codes carry the reason, not just "it failed":
+#   0  every requested archive converted (and round-trip checked)
+#   1  convert, verify or round-trip check failed; or an input was missing
+#   2  setup/usage: no pmtiles binary, no inputs, bad option
+#   3  at least one input was an EMPTY crawl (0 tiles stored) — fix bbox/zooms
+#   4  at least one input lacked metadata.format (would be tile type 0x00)
+#   5  at least one input was not a readable MBTiles archive
+# With several inputs the highest-seen kind wins: 5 > 4 > 3 > 1 > 0.
 
 set -euo pipefail
 
@@ -50,7 +61,7 @@ for arg in "$@"; do
   case "$arg" in
     --force|-f)   FORCE=1 ;;
     --sample=*)   SAMPLE=${arg#--sample=} ;;
-    -h|--help)    sed -n '2,44p' "$0"; exit 0 ;;
+    -h|--help)    awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "$0"; exit 0 ;;
     -*)           echo "unknown option: $arg (try --help)" >&2; exit 2 ;;
     *)            inputs+=("$arg") ;;
   esac
@@ -175,8 +186,17 @@ probe_mbtiles() {
     }
     const n = Number(agg.n);
     if (!n) {
-      console.error("  empty archive: 0 tiles. Note fetch-tiles.mjs exits 0 on an all-404 bbox —");
-      console.error("  read its \"tiles : N / M planned\" line; the exit code cannot tell you this.");
+      // Two different causes, indistinguishable from the archive alone, so name
+      // both and point at the one line that does distinguish them. A 404
+      // writes a misses file; a blank tile is never recorded anywhere (it is
+      // "not a miss and never re-fetched"), so an absent misses file is not
+      // evidence of success.
+      console.error("  empty archive: 0 tiles stored, so there is nothing to compile.");
+      console.error("  fetch-tiles.mjs still exits 0 here; read its summary line:");
+      console.error("    stored=0 404=N      -> source has no tiles there (bbox outside coverage)");
+      console.error("    stored=0 blank=N    -> tiles returned HTTP 200 but fully transparent");
+      console.error("                           (tileserver-rs answers out-of-bounds with a blank tile)");
+      console.error("  Fix the bbox/zoom range and re-crawl; --debug-bbox shows where the source really is.");
       process.exit(3);
     }
     if (!fmt) {
@@ -301,10 +321,14 @@ roundtrip_check() {
   '
 }
 
+# Decimal units (1 kB = 1000 B, 1 MB = 10^6 B) to match fetch-tiles.mjs's own
+# summary, which divides by 1e6 (line ~1481). Binary units here would report the
+# SAME file as a different number than the crawler just printed for it — with
+# manila-test.mbtiles: 8.93 MB (crawler) vs 8.51 "MB" (binary) for one file.
 fmt_bytes() {
   local b=$1
-  if [ "$b" -ge 1048576 ]; then printf '%d.%02d MB' $((b / 1048576)) $(((b % 1048576) * 100 / 1048576))
-  elif [ "$b" -ge 1024 ];  then printf '%d.%01d kB' $((b / 1024)) $(((b % 1024) * 10 / 1024))
+  if [ "$b" -ge 1000000 ]; then printf '%d.%02d MB' $((b / 1000000)) $(((b % 1000000) / 10000))
+  elif [ "$b" -ge 1000 ]; then printf '%d.%01d kB' $((b / 1000)) $(((b % 1000) / 100))
   else printf '%d B' "$b"
   fi
 }
@@ -312,13 +336,18 @@ fmt_bytes() {
 file_size() { if [ -f "$1" ]; then stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; else echo 0; fi; }
 
 TOTAL=0; CONVERTED=0; SKIPPED=0; FAILED=0
+# Highest-priority failure kind seen, so the script's own exit code carries the
+# reason instead of collapsing everything into 1. Priority: 4 (bad archive) >
+# 3 (empty source), both above 1 (convert/verify/round-trip failure).
+FAIL_KIND=0
+note_fail() { FAILED=$((FAILED + 1)); if [ "$1" -gt "$FAIL_KIND" ]; then FAIL_KIND=$1; fi; }
 declare -a ROWS=()
 
 for mb in "${inputs[@]}"; do
   TOTAL=$((TOTAL + 1))
   if [ ! -f "$mb" ]; then
     echo "MISSING  $mb" >&2
-    FAILED=$((FAILED + 1))
+    note_fail 1
     continue
   fi
 
@@ -336,7 +365,7 @@ for mb in "${inputs[@]}"; do
   rc=$?
   set -e
   if [ "$rc" -ne 0 ]; then
-    FAILED=$((FAILED + 1))
+    note_fail "$rc"
     continue
   fi
   IFS='|' read -r n_tiles fmt true_min true_max <<<"$info"
@@ -352,7 +381,7 @@ for mb in "${inputs[@]}"; do
     echo "  convert FAILED (exit $conv_rc)" >&2
     printf '%s\n' "$conv_err" | sed 's/^/    /' >&2
     rm -f "$tmp"
-    FAILED=$((FAILED + 1))
+    note_fail 1
     continue
   fi
 
@@ -366,7 +395,7 @@ for mb in "${inputs[@]}"; do
     echo "  verify FAILED (exit $verify_rc) — archive discarded" >&2
     printf '%s\n' "$verify_err" | sed 's/^/    /' >&2
     rm -f "$tmp"
-    FAILED=$((FAILED + 1))
+    note_fail 1
     continue
   fi
 
@@ -388,7 +417,7 @@ for mb in "${inputs[@]}"; do
     if ! roundtrip_check "$mb" "$tmp" "$PMT" "$SAMPLE"; then
       echo "  archive NOT published" >&2
       rm -f "$tmp"
-      FAILED=$((FAILED + 1))
+      note_fail 1
       continue
     fi
   fi
@@ -428,5 +457,4 @@ if [ ${#ROWS[@]} -gt 0 ] && [ "$CONVERTED" -gt 1 ]; then
   done
 fi
 
-[ "$FAILED" -eq 0 ] || exit 1
-exit 0
+exit "$FAIL_KIND"

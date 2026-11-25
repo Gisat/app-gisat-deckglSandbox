@@ -14,7 +14,7 @@ Both are single-file formats for storing map tiles, but they solve different pro
 - **Designed for:** Serving directly from static storage — S3, R2, GitHub Pages, nginx — with **no server-side logic**
 - **Range requests:** A client fetches only the bytes it needs via HTTP `Range` headers, so one PMTiles file on a bucket *is* your tile server
 - **Coordinate scheme:** Hilbert-curve ordering internally; clients handle the conversion
-- **Compression:** Optional internal gzip per tile; smaller files than MBTiles in practice
+- **Compression:** Internal gzip applies to the directory/metadata, and per-tile compression is optional and off by default for raster. Measured 2026-11-25 on a real crawl (50 PNG tiles, Manila RGB): PMTiles was **0.8% smaller** than the MBTiles it came from, and **equal to the raw tile payload** — the only thing removed is SQLite's page/row overhead. Do not expect PMTiles to shrink PNG/JPEG tiles: those are already deflate-compressed internally, so a second gzip pass gains ~1.5% on realistic imagery and *loses* bytes on small flat tiles (measured: 256×256 imagery 11,712 B → 9,667 B; 1×1 PNG 70 B → 83 B). Real size wins come from elsewhere: identical-tile dedup, and gzip of uncompressed **MVT** payloads. Choose PMTiles for serving (range requests, no backend), not for shrinking raster files.
 - **Newer:** Built by Protomaps around 2022, growing fast but not yet in every desktop GIS tool
 
 ## The practical difference

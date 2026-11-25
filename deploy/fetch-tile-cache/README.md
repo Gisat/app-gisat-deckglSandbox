@@ -473,9 +473,24 @@ reproduced against go-pmtiles v1.31.2 on 2026-11-25, and two of them are silent:
 
 | | symptom | handled by |
 |---|---|---|
-| all-404 crawl | `fetch-tiles.mjs` exits **0**, `convert` exits 1 `no tiles in MBTiles archive` | pre-flight tile count (exit 3) |
+| empty crawl | `fetch-tiles.mjs` exits **0**, `convert` exits 1 `no tiles in MBTiles archive` | pre-flight tile count (exit 3) |
 | no `metadata.format` | converts to tile type `0x00` — a valid header clients refuse | pre-flight metadata check (exit 4) |
 | **converter bug** | header `maxzoom` understated when the last RLE entry spans zooms | header bytes 100/101 rewritten from real zoom range |
+
+"Empty crawl" has two causes and the archive cannot tell you which. Both leave
+`stored=0` in the crawler summary, but:
+
+* `404=N` — the bbox is outside the source's coverage. A deterministic negative,
+  correctly not retried, recorded in the miss list.
+* `blank=N` — the server answered `200` with a fully transparent tile. This is
+  what tileserver-rs does for out-of-bounds requests, so a bbox *near but just
+  outside* the source produces 200s rather than 404s. Blank tiles are dropped by
+  the alpha check and are **never** written to the miss list, so an absent
+  `*.misses.txt` is not evidence that the crawl found anything.
+
+Both messages are printed on refusal. Read the `stored=` / `blank=` / `404=`
+counters on the crawler's own summary line; nothing downstream can reconstruct
+them.
 
 The third is a genuine defect: `convert` takes `MaxZoom` from the **first**
 TileID of the last directory entry, not the last tile that entry covers. A
@@ -490,8 +505,13 @@ only the header lies.
   header zoom repaired: 0-0 -> 0-2
   round-trip ok: 10 tiles byte-identical to MBTiles
   ok  png  z0-2  21 tiles  1 entries / 1 contents  clustered  dir:gzip  tiles:none
-      20.0 kB -> 302 B
+      20.4 kB -> 302 B
 ```
+
+Sizes use decimal units (1 MB = 10⁶ B) to match `fetch-tiles.mjs`'s own summary,
+which divides by `1e6`. Mixing conventions made the same file read as `8.93 MB`
+in the crawler and `8.51 MB` here, which looks like a corruption report and is
+not one.
 
 So the header is repaired, and correctness is proven by **extracting tiles and
 comparing them byte-for-byte with the MBTiles rows** — not by `pmtiles verify`.
