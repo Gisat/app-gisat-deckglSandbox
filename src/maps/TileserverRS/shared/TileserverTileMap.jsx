@@ -314,7 +314,18 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
                 layers={layers}
                 views={new MapView({ repeat: true })}
                 onHover={inspectTiles ? handleHover : undefined}
-                style={{ width: '100vw', height: '100vh' }}
+                // 100% (not 100vw): the map must fill its container, which sits
+                // to the right of the 340px sidebar. With 100vw deck.gl builds a
+                // viewport as wide as the window while the element is only as
+                // wide as .main-content (~1580px on a 1920px screen), so the
+                // canvas overhangs the right edge and every screen->geo
+                // conversion is offset east. That offset was invisible until
+                // b1bcb56 kept the drawn crawl bbox on screen; the bbox then
+                // landed ~0.12 deg east of where it was drawn at z10 and could
+                // trip the "outside this source's bounds" warning. Matching the
+                // container width also centres the map in the visible area
+                // instead of under the sidebar.
+                style={{ width: '100%', height: '100%' }}
             />
             {enableCrawl && drawMode && (
                 <CrawlBoxOverlay
