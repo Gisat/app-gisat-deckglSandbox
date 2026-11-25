@@ -1,0 +1,11 @@
+# The runtime is fetched from the fork's GitHub release at build time
+# (see Dockerfile: ARG TILESERVER_RELEASE_TAG). The local vendored copies are
+# no longer COPYed into the image, so keep them out of the build context to
+# avoid shipping ~219 MB of unused files to the Docker daemon on every build.
+#
+# These are the .gitignore'd generated inputs (binary, shared libs, GDAL/PROJ
+# data, CA bundle). `nsswitch.conf` is NOT ignored — it is small and committed.
+tileserver-rs
+runtime-libs/
+gdal-data/
+ca-certs/

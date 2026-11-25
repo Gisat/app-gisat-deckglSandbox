@@ -1,0 +1,255 @@
+# ============================================================================
+# tileserver-rs configuration — Tileserver-RS demo sources
+#
+# Motivation: demonstrate server-side COG rendering + in-process caching.
+#
+# One source:
+#   manila-rgb — the SAME true-color RGB COG the TiTiler "Manila RGB" demo
+#                uses (Manila Sentinel-2 composite, uint8 3-band, EPSG:3857,
+#                DEFLATE COG), served by tileserver-rs instead of TiTiler.
+#                Proven healthy; a faithful apples-to-apples demo.
+#
+# HISTORY 2026-10-14 (this demo was previously STAC-based, both entries
+# removed):
+#   - sentinel2-mosaic (Earth Search STAC, dynamic per-tile /search + mosaic):
+#     removed — the STAC configuration test case failed. Low-zoom tiles were
+#     mostly black because the top-5 newest scenes around the region are
+#     89-99 % cloud and `pixel_selection = "first"` picks by STAC rank, not
+#     cloud cover, so canvas pixels came from cloudy/nodata items. Only at
+#     high zoom (small bbox) did a low-cloud scene enter the result set and
+#     the tiles converge to real imagery. A STAC demo is not worth keeping
+#     until a reliable, low-cloud, overlapping-scene data source is available.
+#   - worldcereal (same COG as the TiTiler WorldCereal demo + discrete
+#     colormap): removed earlier — failed at startup registration (GDAL
+#     'GDALOpenEx' returned NULL, "Failure writing output to destination").
+#     The public WorldCereal STAC API is dead (stac.worldcereal.org NXDOMAIN).
+#
+# Tiles:    /data/{source-id}/{z}/{x}/{y}.png
+# TileJSON: /data/{source-id}.json
+# ============================================================================
+
+[server]
+host = "0.0.0.0"
+port = 8080
+cors_origins = ["*"]
+
+[telemetry]
+enabled = false
+
+# ---------------------------------------------------------------------------
+# Native renderer pool.
+#
+# WHY THIS IS TUNED (not left at the 4/30 defaults):
+#   A fast zoom/pan fires a BURST of parallel tile requests (20-60 at once) and
+#   many of them are first-touch COLD tiles that must run a GDAL /vsicurl/
+#   range read + warp + encode. The 4/30 defaults give each burst only four
+#   concurrent render slots and drop a request that queues longer than 30 s,
+#   so a cold burst can exceed the default timeout.
+#
+#   pool_size is raised to give the burst headroom; the timeout is raised so a
+#   cold remote-COG render is never dropped while it waits behind other cold
+#   tiles. Tune down on a memory-constrained host (each in-flight render holds
+#   its own GDAL dataset handle + buffers).
+#
+# NOTE: measured behaviour, not assumed. With pool_size=16 and a cleared tile
+#   cache, a 40-way parallel COLD burst returned 40/40 x HTTP 200 (cold single
+#   tiles 0.15-0.48 s). So the pool is NOT a demonstrated cause of the demo's
+#   tile-error toast; this block is headroom hardening, not a fix for it.
+# ---------------------------------------------------------------------------
+[render]
+pool_size = 16
+render_timeout_secs = 120
+
+# ---------------------------------------------------------------------------
+# Global raster defaults.
+# ---------------------------------------------------------------------------
+[raster]
+default_resampling = "bilinear"
+tile_size = 256
+
+# ---------------------------------------------------------------------------
+# In-process byte-weighted tile cache (moka). The container image is built
+# from the Gisat fork's integration release (../tileserver-rs, branch
+# integration/demo-fixes — see tileserver-runtime/Dockerfile), which serves
+# canonical /data/{id}/{z}/{x}/{y}.png requests from this cache for the
+# sources below. Without that patch (published ghcr.io image), only
+# Accept-Encoding re-encode variants are cached.
+# ---------------------------------------------------------------------------
+[cache]
+enabled = true
+max_size_mb = 512
+ttl_seconds = 3600
+
+# ---------------------------------------------------------------------------
+# Source: Manila Sentinel-2 RGB composite (uint8 3-band COG, EPSG:3857)
+#
+# The SAME COG the TiTiler "Manila RGB" demo renders
+# (src/maps/TiTilerDemo/ManilaRGB/index.jsx). True RGB — no colormap
+# (colormap applies only when band_count == 1; this is 3 bands, so RGB tiles
+# are served straight). Native resolution ≈ zoom 14-15 (10 m Sentinel-2);
+# bilinear is the sensible default for imagery.
+#
+# Bounds (from TiTiler /cog/info, EPSG:3857): lon 118.13-123.75,
+# lat 11.13-16.58 — Luzon-wide composite. maxzoom 15 keeps the demo honest:
+# beyond native res tiles are upsampled and the TiTiler demo does not zoom
+# further either (its TileLayer maxZoom = 16).
+# ---------------------------------------------------------------------------
+[[sources]]
+id = "manila-rgb"
+type = "cog"
+# Remote HTTP(S) COG paths are normalised to `/vsicurl/` **in code**
+# (`sources::to_gdal_cog_path`), so a bare https:// URL here does proper 206
+# range reads — no need to spell the prefix out. Historically a bare URL made
+# GDAL use its curl->/vsimem full-download shim (4x full-file GETs, ~45 s open,
+# ~500 MB in-memory copy per handle); that is fixed as of commit 5253c30.
+# An explicit /vsicurl/ prefix still works (the normaliser is idempotent).
+path = "https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/deck.gl-geotiff/examples/dataSources/cog_bitmap/Manila_S2_Composite_2020022_Mercator_RGB_COG_DEFLATE.tif"
+name = "Manila Sentinel-2 RGB Composite"
+attribution = "Sentinel-2 composite (Gisat demo data)"
+resampling = "bilinear"
+minzoom = 0
+maxzoom = 15
+
+# ---------------------------------------------------------------------------
+# Source: Impact Observatory 10m Annual LULC (STAC dynamic mosaic, 1-band
+# uint8 land-cover classes)
+#
+# The true STAC demo for this category. `io-10m-annual-lulc` on the Impact
+# Observatory STAC API is a global 10 m land-cover product: one COG per
+# Sentinel-2 MGRS supercell per year (2017-2024), 9 classes, EPSG:UTM
+# (326xx/327xx). A per-tile bbox /search returns the ADJACENT supercells that
+# composite into a seamless class raster.
+#
+# Why UTM and not the previous EUGW_LCMH (EPSG:3035): tileserver-rs warps
+# every asset into EPSG:3857 (XYZ tiles are WebMercator by definition). A
+# conic equal-area grid (3035) is rotated relative to Mercator everywhere,
+# so adjacent warped footprints left growing wedge gaps when zooming out.
+# UTM is a transverse Mercator: near a zone's central meridian its grid is
+# essentially axis-aligned in Mercator, so the residual skew is negligible.
+# Prague (14.44E) sits close to UTM 33N's 15E central meridian. Measured
+# 2026-11-25: z10 3x3 around Prague 97.8% opaque, 9/9 tiles, 6 classes.
+#
+# Contrast with the removed `sentinel2-mosaic` (see HISTORY above): that failed
+# because it was a temporal scene collection where `pixel_selection="first"`
+# picked by STAC rank = newest = 89-99 % cloud. Here every item is a
+# cloud-free annual composite, so `first` is simply "an adjacent supercell".
+#
+# VERIFIED 2026-10-27 (live, against the asset bytes):
+#   - Real COG, publicly range-readable (HTTP 206, no auth), TIFF magic II+.
+#   - 1-band uint8 -> colormap path applies; nearest resampling (categorical).
+#   - Asset role is "data" (the key is `supercell`).
+#   - proj:code is a per-supercell UTM zone (EPSG:326xx/327xx).
+#
+# Colormap: the standard IO 9-class legend. `rescale_mode = "none"` is
+# ESSENTIAL: with the default ("static") the values would be stretched to
+# 0-255 before lookup and every class would map to the wrong color.
+#
+# stac_bbox / initial view: GLOBAL, starting over Prague ([14.44E, 50.08N]).
+#
+# The collection's own extent is the whole planet ([-180,-90,180,90]), and the
+# per-tile STAC search ignores stac_bbox entirely — so this source has always
+# rendered globally. Advertising a Bavaria-only bbox was simply WRONG metadata:
+# the UI's pan clamp and its "outside this source's bounds" warning both read
+# this value, so they fired on perfectly good tiles (anywhere outside Bavaria).
+# Declaring the true global extent is what makes that warning correct-by-
+# construction: for a global source it can no longer fire at all.
+#
+# The start view is deliberately z10 (see minzoom below) over a major European
+# city; it is arbitrary and carries no semantic weight.
+# ---------------------------------------------------------------------------
+[[sources]]
+id = "io-lulc"
+type = "stac"
+path = "https://api.impactobservatory.com/stac-aws"
+collection = "io-10m-annual-lulc"
+asset_role = "supercell"
+name = "Impact Observatory 10m Annual LULC (9-class)"
+attribution = "Impact Observatory / National Geographic Society (CC-BY-4.0)"
+dynamic = true
+# Pin this source to ONE timestep via STAC's standard `datetime` search
+# parameter — an RFC 3339 INSTANT only; intervals are rejected by the server.
+# io-lulc items run whole calendar years from the year start, so the canonical
+# stamp is YYYY-01-01T00:00:00Z.
+#
+# Why this matters: unpinned, a /search returns one item per (footprint,
+# timestep) — 8 vintages per cell. The per-tile asset cap then fills with ONE
+# cell's history, its neighbour is never opened, and the tile renders a hard
+# vertical gap (the 12°E seam, 52.9% coverage at z8). It is also ~8x the fetch
+# work (z3: 264 items / 6 pages / 3.03s vs 33 items / 1 page / 0.47s). The
+# server now refuses to load an unpinned time-series source at startup.
+#
+# Where a footprint has no item covering this instant, the area renders as a
+# void — accepted, not a bug. Rollover: edit this line, then SIGHUP.
+datetime = "2024-01-01T00:00:00Z"
+# max_items is the PAGE SIZE (limit per STAC /search request); the total
+# fetched per tile is bounded by max_total_items (default 64, left unset — it
+# covers the global 62-cell worst case). With global discovery the startup
+# probe reads only PAGE 1 of a large result set (search_assets does not
+# paginate: measured 50 items / 1 page / 0.4s of 757 total). That is fine —
+# advertised bounds come from stac_bbox, not from the page, and the per-tile
+# dynamic path re-searches per tile.
+max_items = 50
+# mosaic_max_assets caps how many assets a SINGLE tile opens and composites.
+# Distinct from max_total_items (which bounds how many a tile fetches): each
+# open COG handle is charged a flat 16 MiB against the dataset-cache byte
+# budget (1 GiB here = 64 handles).
+#
+# Pinned, this counts PLACES, not (place x timestep). At the z3 floor the
+# worst observed tile pulls a handful of full-width supercell bands, well
+# inside 64. Do NOT set this to 8: with one item per footprint that truncates
+# a multi-band tile and leaves permanent holes (previously measured 68.5% ->
+# 28.2% coverage). 0 = unlimited (previous behaviour).
+mosaic_max_assets = 64
+pixel_selection = "first"
+stac_bbox = [-180, -90, 180, 90]
+resampling = "nearest"
+# minzoom = 3: the lowest zoom this server can serve for this source, measured.
+#
+# CORRECTED 2026-11-25. An earlier revision of this file set the floor to 5,
+# on the basis that z3/z4 exceeded render_timeout_secs (120s). That conclusion
+# was WRONG, twice over:
+#   1. The local reproduction used a broken PROJ_DATA path (pointed at
+#      gdal-data instead of gdal-data/proj), so every asset failed to open and
+#      the resulting 404s were mistaken for unservable zooms.
+#   2. The container timings were contaminated by the tester's own concurrent
+#      background sessions hitting the same server.
+#
+# Re-measured with a correct PROJ setup and ZERO concurrent load:
+#   single tile z4 -> 200, 5.3s
+#   single tile z3 -> 200, 8.8s
+#   z5 screenful   -> 33-44 of 45 tiles, median 4-29ms warm / 4.2s cold
+#   z3 VIEWPORT    -> 20/20 tiles 200, ZERO blank, zero errors;
+#                     wall 29.7s, median 21.8s, max 29.6s (cold, 5x4 screenful)
+#
+# So a z3 viewport DOES complete, comfortably inside the 120s render timeout,
+# and the app paints real LULC classes at camera z3 (centre pixel #c4281b).
+#
+# The cost is STRUCTURAL and worth knowing: a low-zoom tile intersects several
+# FULL-WIDTH supercell bands (360 deg lon), each one planet-spanning COG
+# windowed into EPSG:3857. That is why z3 runs ~20s/tile instead of ~20ms.
+# Each open COG handle is charged 16 MiB against the 1 GiB dataset cache
+# (64 handles); the concurrent burst did NOT exhaust it (0 blank tiles), but it
+# is the budget to watch if resolution or maxzoom is ever raised.
+#
+# Enforced in code on the dynamic STAC path, not TileJSON-advisory only.
+minzoom = 3
+maxzoom = 14
+
+# Categorical class ids -> IO 9-class legend colors. `rescale_mode = "none"`
+# is ESSENTIAL: with the default ("static") the values would be stretched to
+# 0-255 before lookup and every class would map to the wrong color.
+[sources.colormap]
+map_type = "discrete"
+rescale_mode = "none"
+nodata_color = "#00000000"
+entries = [
+    { value = 1.0, color = "#419BDF" },  # Water
+    { value = 2.0, color = "#397D49" },  # Trees
+    { value = 3.0, color = "#88B053" },  # Flooded vegetation
+    { value = 4.0, color = "#7A87C6" },  # Crops
+    { value = 5.0, color = "#E49635" },  # Built area
+    { value = 6.0, color = "#DFC35A" },  # Bare ground
+    { value = 7.0, color = "#C4281B" },  # Snow/ice
+    { value = 8.0, color = "#A59B8F" },  # Clouds
+    { value = 9.0, color = "#B39FE1" },  # Rangeland
+]

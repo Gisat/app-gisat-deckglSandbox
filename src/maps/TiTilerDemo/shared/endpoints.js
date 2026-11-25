@@ -88,16 +88,23 @@ function fetchWithTimeout(url, timeoutMs, options = {}) {
  * without a /healthz route (404): ANY HTTP response means the endpoint is up,
  * so only a total network failure (or timeout) counts as unreachable.
  * Real per-request problems surface later via onTileError + the z0 probe.
+ *
+ * `timeoutMs` (optional) overrides the 5 s default. The STAC demo passes a
+ * larger value because it shares the browser's ~6 HTTP/1.1 sockets with a
+ * burst of multi-second tile fetches: the probe's request can sit in the
+ * browser's socket queue for longer than 5 s and abort, falsely reporting an
+ * outage while the server is healthy (it answers /health in ~0.04 ms once it
+ * gets a socket). The default is unchanged so TiTiler keeps its timing.
  */
-async function isTiTilerReachable(healthUrl) {
+async function isTiTilerReachable(healthUrl, { timeoutMs = HEALTH_TIMEOUT_MS } = {}) {
     try {
-        await fetchWithTimeout(healthUrl, HEALTH_TIMEOUT_MS);
+        await fetchWithTimeout(healthUrl, timeoutMs);
         return true; // server answered (any status) -> reachable
     } catch {
         // CORS-blocked fetch rejects with TypeError even when the server is up —
         // retry in no-cors mode: resolves (opaque) whenever the server answers.
         try {
-            await fetchWithTimeout(healthUrl, HEALTH_TIMEOUT_MS, { mode: 'no-cors' });
+            await fetchWithTimeout(healthUrl, timeoutMs, { mode: 'no-cors' });
             return true;
         } catch {
             return false; // genuinely unreachable

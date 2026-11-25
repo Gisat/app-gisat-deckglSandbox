@@ -1,0 +1,60 @@
+# =============================================================================
+# Tileserver-RS demo — local-development stack.
+#
+# Runs the PREBUILT native tileserver-rs binary in a thin Debian 12 runtime. It
+# does NOT compile anything: tileserver-runtime/Dockerfile DOWNLOADS the runtime
+# (binary + shared libs + GDAL/PROJ data + CA bundle) from a versioned GitHub
+# release on the fork, verifies its sha256, and installs it.
+#
+# NO PREREQUISITE STEP — just build (from the repository root):
+#   docker compose -f deploy/tileserver/docker-compose.yml up -d --build
+#
+# The build is quick and needs NETWORK at build time (to fetch the release
+# asset). To pin a different release, pass:
+#   --build-arg TILESERVER_RELEASE_TAG=<tag> --build-arg TILESERVER_ASSET_SHA256=<sha256>
+# Full guide: USAGE.md. The demo sources are described in DEMOS.md.
+#
+# Health:  curl http://localhost:8080/health
+# Tiles:   http://localhost:8080/data/manila-rgb/{z}/{x}/{y}.png
+#
+# BUILD CONTEXT (mirrors deploy/titiler-caching/<encoder>/)
+#   ./tileserver-runtime/ holds the Dockerfile, .dockerignore, and
+#   nsswitch.conf. The vendored runtime inputs (binary, runtime-libs/,
+#   gdal-data/, ca-certs/) are NOT needed locally — they come from the release.
+#   Publish a new runtime release: pack the context with no wrapper dir, attach
+#   the tarball to a gisat-v<ver> release, bump the two build args (see USAGE.md).
+# =============================================================================
+
+services:
+  tileserver:
+    # Build context = ./tileserver-runtime/ (the Dockerfile + .dockerignore +
+    # nsswitch.conf). The runtime is fetched from the GitHub release inside the
+    # build — nothing outside this directory is read.
+    build:
+      context: ./tileserver-runtime
+    image: tileserver-rs-demo:local
+    container_name: tileserver-rs-demo
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Same demo config as the native runner (run-native.sh uses this too).
+      - ./config.toml:/app/config.toml:ro
+    environment:
+      # GDAL /vsicurl/ tuning is baked into the image (tileserver-runtime/Dockerfile ENV),
+      # but RUST_LOG is kept here so it stays easy to flip at run time.
+      - RUST_LOG=${RUST_LOG:-info}
+    healthcheck:
+      # debian:12-slim ships no curl at runtime (curl is installed only
+      # transiently at build time to fetch the release asset), so probe with
+      # bash /dev/tcp.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
