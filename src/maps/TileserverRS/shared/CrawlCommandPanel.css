@@ -87,6 +87,18 @@
     padding: 6px 8px;
 }
 
+/* A box that overlaps the footprint at all is a warning; one that misses it
+   entirely would produce nothing but blank tiles, so it reads as an error. */
+.crawl-panel-warn-outside {
+    color: #7a1c1c;
+    background-color: #fdecec;
+    border-left-color: #d84a4a;
+}
+
+.crawl-panel-warn-partial {
+    /* inherits the default amber "heads up" styling */
+}
+
 .crawl-command-block {
     display: flex;
     flex-direction: column;

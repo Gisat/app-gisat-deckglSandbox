@@ -43,6 +43,82 @@ import '../../TiTilerDemo/shared/TiTilerEndpointSwitch.css';
  * @param {boolean} [enableCrawl=false] - let the user drag a bbox and get the
  *        fetch-tiles.mjs command for it (see CrawlCommandPanel)
  */
+
+// --- Pan constraint -------------------------------------------------------
+// Sources like io-lulc cover a tiny region (0.7 deg x 0.5 deg) inside a global
+// basemap, so the user can easily pan into empty space and then draw a bbox
+// that is entirely off the data — which used to produce a confusing warning.
+//
+// deck.gl's own `maxBounds` is NOT usable here: it derives a minimum zoom from
+// the bounds rect (minZoom = log2(viewportWidth / boundsWidthInWorldPx)). For a
+// 0.7 deg source in a 1580 px viewport that is z~10.6, which would make the
+// source's advertised minzoom of 3 unreachable. So the centre is clamped by
+// hand and zoom stays free.
+//
+// The rule: a slice of the footprint must always stay on screen. The centre may
+// move until just MARGIN_FRAC of the viewport still shows data, and no further.
+// (Two rejected earlier attempts, both caught by checking against the live app:
+// adding positive "slack" let the whole footprint leave the screen; and clamping
+// to a bare edge-touch left zero pixels of data visible at the limit.)
+const MARGIN_FRAC = 0.15;
+const MAX_LAT = 85.05113;
+
+// deck.gl tiles are 512 px wide, so the world is 512 * 2^zoom px across.
+const worldSizeAt = (zoom) => 512 * 2 ** zoom;
+
+// Normalised Web Mercator Y in [0, 1] (0 = north edge, 1 = south edge).
+function mercY(lat) {
+    const r = (Math.max(-MAX_LAT, Math.min(MAX_LAT, lat)) * Math.PI) / 180;
+    return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2;
+}
+
+function mercYToLat(y) {
+    return (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
+}
+
+/**
+ * Clamp the camera centre so the source footprint cannot leave the screen.
+ *
+ * @param {object} vs     - view state (needs longitude, latitude, zoom)
+ * @param {number[]|null} bounds - [west, south, east, north] or null
+ * @param {{width:number, height:number}} size - viewport size in CSS px
+ * @returns {object} the view state, possibly with longitude/latitude adjusted
+ */
+function clampToBounds(vs, bounds, size) {
+    if (!Array.isArray(bounds) || bounds.length !== 4) return vs;
+    if (!Number.isFinite(vs.longitude) || !Number.isFinite(vs.latitude)) return vs;
+    const { width, height } = size || {};
+    if (!(width > 0) || !(height > 0)) return vs;
+    const zoom = Number.isFinite(vs.zoom) ? vs.zoom : 0;
+
+    const [bw, bs, be, bn] = bounds;
+    const ws = worldSizeAt(zoom);
+
+    // Half the viewport expressed in the same units as the bounds.
+    const halfLon = (width / 2 / ws) * 360;
+    const halfY = height / 2 / ws; // in normalised mercator units
+
+    // Longitude is linear in mercator, latitude is not, so convert the
+    // footprint to mercator Y before applying the same interval rule.
+    const yNorth = mercY(bn);
+    const ySouth = mercY(bs);
+
+    // A footprint edge may approach the screen edge but must leave at least
+    // MARGIN_FRAC of the viewport showing data.
+    const marginLon = ((width * MARGIN_FRAC) / ws) * 360;
+    const marginY = (height * MARGIN_FRAC) / ws;
+    const minLon = bw - halfLon + marginLon;
+    const maxLon = be + halfLon - marginLon;
+    const minY = yNorth - halfY + marginY;
+    const maxY = ySouth + halfY - marginY;
+
+    const lon = Math.max(minLon, Math.min(maxLon, vs.longitude));
+    const lat = mercYToLat(Math.max(minY, Math.min(maxY, mercY(vs.latitude))));
+
+    if (lon === vs.longitude && lat === vs.latitude) return vs;
+    return { ...vs, longitude: lon, latitude: lat };
+}
+
 function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile = '0/0/0.png', inspectTiles = false, enableCrawl = false }) {
     const [viewState, setViewState] = useState(initialViewState);
     const { baseUrl, healthUrl, startCommand } = TILESERVER_ENDPOINT;
@@ -70,8 +146,15 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
     const [drawMode, setDrawMode] = useState(false);
     // The completed bbox as [west, south, east, north], or null.
     const [crawlBbox, setCrawlBbox] = useState(null);
-    // Source TileJSON, read once for the suggested zoom range (min/maxzoom).
+    // Source TileJSON, read once for the suggested zoom range (min/maxzoom)
+    // and — via boundsRef — for the pan constraint.
     const [tilejson, setTilejson] = useState(null);
+    // Bounds mirrored into a ref so handleViewStateChange (a stable useCallback)
+    // can clamp against the latest footprint without being re-created.
+    const boundsRef = useRef(null);
+    useEffect(() => {
+        boundsRef.current = tilejson?.bounds ?? null;
+    }, [tilejson]);
 
     const tileUrl = `${baseUrl}/data/${sourceId}/{z}/{x}/{y}.png`;
     // Same tile template but fully qualified (protocol + host + port), for the
@@ -157,6 +240,35 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
         return () => { cancelled = true; };
     }, [enableCrawl, baseUrl, sourceId]);
 
+    // Apply the pan constraint once the footprint is known. Without this a
+    // camera that is already off the data (e.g. restored from a previous
+    // session, or a link with a custom view) would stay there until the user
+    // happened to pan. Idempotent: clamping an already-valid view is a no-op,
+    // so this cannot loop with handleViewStateChange.
+    useEffect(() => {
+        const bounds = tilejson?.bounds;
+        if (!Array.isArray(bounds) || bounds.length !== 4) return;
+        const el = wrapperRef.current;
+        if (!el || !el.clientWidth || !el.clientHeight) return;
+        setViewState(prev => clampToBounds(prev, bounds, {
+            width: el.clientWidth,
+            height: el.clientHeight,
+        }));
+    }, [tilejson]);
+
+    // The single place a camera change is applied, so the pan constraint cannot
+    // be bypassed. deck.gl's own controller path goes through
+    // handleViewStateChange; the dev hook below must use this too, otherwise
+    // setCamera() would move the map somewhere the user could not reach by hand.
+    const applyViewState = useCallback((next) => {
+        const el = wrapperRef.current;
+        const clamped = clampToBounds(next, boundsRef.current, {
+            width: el ? el.clientWidth : 0,
+            height: el ? el.clientHeight : 0,
+        });
+        setViewState(clamped);
+    }, []);
+
     // Dev-only test hook: expose a deterministic camera control on window so a
     // CDP-driven harness can pan/zoom the map with REAL viewState changes.
     // Synthetic pointer gestures are unreliable for deck.gl's controller (it
@@ -164,18 +276,19 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
     // reachable from the page. This makes burst tests reproducible: repeated
     // window.__map.setCamera({longitude, latitude, zoom}) calls are exactly the
     // "N tiles at one bbox" fan-out we need. Gated to DEV — the production
-    // bundle never defines window.__map.
+    // bundle never defines window.__map. Goes through applyViewState, so the
+    // tests exercise the same pan constraint the user gets.
     useEffect(() => {
         if (!import.meta.env.DEV) return undefined;
         window.__map = {
             sourceId,
             tileUrl,
             get: () => viewState,
-            setCamera: vs => setViewState(v => ({ ...v, ...vs })),
+            setCamera: vs => applyViewState({ ...viewState, ...vs }),
             forceReload,
         };
         return () => { delete window.__map; };
-    }, [sourceId, tileUrl, viewState]);
+    }, [sourceId, tileUrl, viewState, applyViewState]);
 
     // Dismiss the menu on Esc, on scroll, or on a left-click/tap outside it.
     // `pointerdown` in the CAPTURE phase fires before deck.gl's map handlers,
@@ -210,9 +323,13 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
     // deck.gl hands back the new camera on pan/zoom. The stats are
     // session-cumulative, so there is no measurement window to open/close here —
     // this is just the state update the map needs.
+    // The centre is clamped so a small regional source cannot be panned off
+    // screen (see clampToBounds). Size comes from the live element so a window
+    // resize is respected; bounds come from a ref so this callback stays stable
+    // across renders.
     const handleViewStateChange = useCallback(({ viewState: next }) => {
-        setViewState(next);
-    }, []);
+        applyViewState(next);
+    }, [applyViewState]);
 
     const {
         modal,
