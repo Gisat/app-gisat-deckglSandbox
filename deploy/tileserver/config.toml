@@ -126,8 +126,8 @@ maxzoom = 15
 # so adjacent warped footprints left growing wedge gaps when zooming out.
 # UTM is a transverse Mercator: near a zone's central meridian its grid is
 # essentially axis-aligned in Mercator, so the residual skew is negligible.
-# Munich (11.5E) sits close to UTM 32N's 9E central meridian. Measured
-# 2026-10-27: rendered coverage z10 96.0%, z11 100%, z12/z13 interior 100%.
+# Prague (14.44E) sits close to UTM 33N's 15E central meridian. Measured
+# 2026-11-25: z10 3x3 around Prague 97.8% opaque, 9/9 tiles, 6 classes.
 #
 # Contrast with the removed `sentinel2-mosaic` (see HISTORY above): that failed
 # because it was a temporal scene collection where `pixel_selection="first"`
@@ -138,13 +138,24 @@ maxzoom = 15
 #   - Real COG, publicly range-readable (HTTP 206, no auth), TIFF magic II+.
 #   - 1-band uint8 -> colormap path applies; nearest resampling (categorical).
 #   - Asset role is "data" (the key is `supercell`).
-#   - proj:code is EPSG:32632/32633 (UTM 32N/33N) over Bavaria.
+#   - proj:code is a per-supercell UTM zone (EPSG:326xx/327xx).
 #
 # Colormap: the standard IO 9-class legend. `rescale_mode = "none"` is
 # ESSENTIAL: with the default ("static") the values would be stretched to
 # 0-255 before lookup and every class would map to the wrong color.
 #
-# stac_bbox / initial view: Munich, Bavaria ([11.58E, 48.14N]).
+# stac_bbox / initial view: GLOBAL, starting over Prague ([14.44E, 50.08N]).
+#
+# The collection's own extent is the whole planet ([-180,-90,180,90]), and the
+# per-tile STAC search ignores stac_bbox entirely — so this source has always
+# rendered globally. Advertising a Bavaria-only bbox was simply WRONG metadata:
+# the UI's pan clamp and its "outside this source's bounds" warning both read
+# this value, so they fired on perfectly good tiles (anywhere outside Bavaria).
+# Declaring the true global extent is what makes that warning correct-by-
+# construction: for a global source it can no longer fire at all.
+#
+# The start view is deliberately z10 (see minzoom below) over a major European
+# city; it is arbitrary and carries no semantic weight.
 # ---------------------------------------------------------------------------
 [[sources]]
 id = "io-lulc"
@@ -172,25 +183,37 @@ dynamic = true
 datetime = "2024-01-01T00:00:00Z"
 # max_items is the PAGE SIZE (limit per STAC /search request); the total
 # fetched per tile is bounded by max_total_items (default 64, left unset — it
-# covers the global 62-cell worst case). Pinned z3 = 33 items -> one page of 50.
+# covers the global 62-cell worst case). With global discovery the startup
+# probe reads only PAGE 1 of a large result set (search_assets does not
+# paginate: measured 50 items / 1 page / 0.4s of 757 total). That is fine —
+# advertised bounds come from stac_bbox, not from the page, and the per-tile
+# dynamic path re-searches per tile.
 max_items = 50
 # mosaic_max_assets caps how many assets a SINGLE tile opens and composites.
 # Distinct from max_total_items (which bounds how many a tile fetches): each
 # open COG handle is charged a flat 16 MiB against the dataset-cache byte
 # budget (1 GiB here = 64 handles).
 #
-# Pinned, this counts PLACES, not (place x timestep): the demo's worst case is
-# the Bavaria z3 tile at 33 cells, comfortably inside 64. Do NOT set this to 8
-# as before — with one item per footprint that truncates z3 to 8 of 33 cells
-# (measured: coverage 68.5% -> 28.2%). 0 = unlimited (previous behaviour).
+# Pinned, this counts PLACES, not (place x timestep). At the z5 floor the
+# worst observed tile pulls a handful of full-width supercell bands, well
+# inside 64. Do NOT set this to 8: with one item per footprint that truncates
+# a multi-band tile and leaves permanent holes (previously measured 68.5% ->
+# 28.2% coverage). 0 = unlimited (previous behaviour).
 mosaic_max_assets = 64
 pixel_selection = "first"
-stac_bbox = [11.2, 47.9, 11.9, 48.4]
+stac_bbox = [-180, -90, 180, 90]
 resampling = "nearest"
-# minzoom = 3: the demo's z3 guarantee (33 cells = 528 MiB of handles). Below
-# z3 a request would fan out across far more cells than the budget can hold.
+# minzoom = 5: the lowest zoom this server can actually serve for this source.
+# Measured 2026-11-25 (isolated, nothing else hitting the server):
+#   z3, z4 -> exceed render_timeout_secs (120s); repeated TIMEOUT at 125s.
+#   z5     -> 0.0-3.6s at 14 probes across Europe, Asia, Africa, the Americas
+#             and Australia.
+# The cost is structural: a low-zoom tile intersects several FULL-WIDTH
+# supercell bands, and each is one planet-spanning COG windowed into EPSG:3857.
+# Advertising minzoom 3 promised tiles the server cannot deliver, so a client
+# zooming out got timeouts instead of imagery. 5 is the honest floor.
 # Enforced in code on the dynamic STAC path, not TileJSON-advisory only.
-minzoom = 3
+minzoom = 5
 maxzoom = 14
 
 # Categorical class ids -> IO 9-class legend colors. `rescale_mode = "none"`

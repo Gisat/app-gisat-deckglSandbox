@@ -45,15 +45,17 @@ import '../../TiTilerDemo/shared/TiTilerEndpointSwitch.css';
  */
 
 // --- Pan constraint -------------------------------------------------------
-// Sources like io-lulc cover a tiny region (0.7 deg x 0.5 deg) inside a global
-// basemap, so the user can easily pan into empty space and then draw a bbox
-// that is entirely off the data — which used to produce a confusing warning.
+// A source can cover a small region inside a global basemap, so the user can
+// easily pan into empty space and then draw a bbox that is entirely off the
+// data — which used to produce a confusing warning. (io-lulc itself is global,
+// so this no longer binds there; it still matters for regional sources like
+// manila-rgb, and it is what makes the constraint source-agnostic.)
 //
 // deck.gl's own `maxBounds` is NOT usable here: it derives a minimum zoom from
 // the bounds rect (minZoom = log2(viewportWidth / boundsWidthInWorldPx)). For a
-// 0.7 deg source in a 1580 px viewport that is z~10.6, which would make the
-// source's advertised minzoom of 3 unreachable. So the centre is clamped by
-// hand and zoom stays free.
+// small source in a 1580 px viewport that is z~10.6, far above its advertised
+// minzoom, so the source's low zooms would become unreachable. So the centre is
+// clamped by hand and zoom is limited separately, from TileJSON's minzoom.
 //
 // The rule: a slice of the footprint must always stay on screen. The centre may
 // move until just MARGIN_FRAC of the viewport still shows data, and no further.
@@ -155,6 +157,14 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
     useEffect(() => {
         boundsRef.current = tilejson?.bounds ?? null;
     }, [tilejson]);
+
+    // The source's own zoom floor, derived from TileJSON so the camera and the
+    // TileLayer respect it. A dynamic STAC source can have a floor well above 0
+    // (io-lulc: 5, because low-zoom tiles fan out across full-width supercell
+    // bands and exceed the server's render timeout). Asking below it returns
+    // 404s for every tile in view — the map looks broken while the server is
+    // healthy, which is exactly the ambiguity this demo must avoid.
+    const minZoom = Number.isFinite(tilejson?.minzoom) ? tilejson.minzoom : 0;
 
     const tileUrl = `${baseUrl}/data/${sourceId}/{z}/{x}/{y}.png`;
     // Same tile template but fully qualified (protocol + host + port), for the
@@ -262,12 +272,17 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
     // setCamera() would move the map somewhere the user could not reach by hand.
     const applyViewState = useCallback((next) => {
         const el = wrapperRef.current;
-        const clamped = clampToBounds(next, boundsRef.current, {
+        // Clamp zoom to the source's own window FIRST: a camera below minZoom
+        // would request a full screen of tiles the source does not serve.
+        const zoom = Number.isFinite(next.zoom)
+            ? Math.max(minZoom, Math.min(maxZoom, next.zoom))
+            : next.zoom;
+        const clamped = clampToBounds({ ...next, zoom }, boundsRef.current, {
             width: el ? el.clientWidth : 0,
             height: el ? el.clientHeight : 0,
         });
         setViewState(clamped);
-    }, []);
+    }, [minZoom, maxZoom]);
 
     // Dev-only test hook: expose a deterministic camera control on window so a
     // CDP-driven harness can pan/zoom the map with REAL viewState changes.
@@ -369,7 +384,7 @@ function TileserverTileMap({ sourceId, initialViewState, maxZoom = 14, probeTile
     layers.push(new TileLayer({
         id: `tileserver-tiles-${tileLayerKey}`,
         data: tileUrl,
-        minZoom: 0,
+        minZoom,
         maxZoom: maxZoom,
         tileSize: 256,
         onTileError: handleTileError,

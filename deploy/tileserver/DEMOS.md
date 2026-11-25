@@ -31,9 +31,22 @@ Both sources live in `deploy/tileserver/config.toml`.
   cell — and the per-tile asset cap fills with one cell's history, so the
   neighbour is never opened and the tile shows a hard seam (52.9 % coverage at
   z8). Pinning also cuts the fetch work ~8×.
-- `mosaic_max_assets = 64` counts places, not (place × timestep): the worst
-  case is the Bavaria z3 tile at 33 cells. Each open handle is charged 16 MiB
-  against the 1 GiB dataset-cache budget.
+- `mosaic_max_assets = 64` counts places, not (place × timestep). At the z5
+  floor a tile pulls a handful of full-width supercell bands, well inside 64.
+  Each open handle is charged 16 MiB against the 1 GiB dataset-cache budget.
+- `stac_bbox` is the collection's **true global extent**
+  (`[-180, -90, 180, 90]`). The per-tile `/search` ignores it entirely, so this
+  source always rendered globally; advertising a Bavaria-only box was wrong
+  metadata. The UI's pan clamp and its "outside this source's bounds" warning
+  both read this value, so they fired on perfectly good tiles. With the real
+  extent declared, the warning is correct-by-construction for a global source.
+- `minzoom = 5` is the lowest zoom the server can actually serve here. Measured
+  2026-11-25 in isolation: z3 and z4 exceed `render_timeout_secs` (120 s) and
+  time out; z5 completes in 0.0–3.6 s across 14 probes on five continents. The
+  cause is structural — a low-zoom tile intersects several **full-width**
+  supercell bands, each a planet-spanning COG warped into EPSG:3857. The old
+  `minzoom = 3` advertised tiles that always timed out, so the demo opens at
+  z10 and floors at z5.
 
 ### Why UTM, and why this STAC demo works where the retired one did not
 
@@ -42,9 +55,9 @@ definition). The earlier `EUGW_LCMH` source was EPSG:3035 — a conic equal-area
 grid rotated relative to Mercator everywhere, so adjacent warped footprints
 left growing wedge gaps when zooming out. UTM is a transverse Mercator: near a
 zone's central meridian its grid is essentially axis-aligned in Mercator, so
-the residual skew is negligible. Munich (11.5 °E) sits close to UTM 32N's
-9 °E central meridian. Measured 2026-10-27: rendered coverage z10 96.0 %,
-z11 100 %, z12/z13 interior 100 %.
+the residual skew is negligible. Prague (14.44 °E) sits close to UTM 33N's
+15 °E central meridian. Measured 2026-11-25: a z10 3×3 around Prague is 9/9
+OK, 97.8 % opaque, 6 land-cover classes.
 
 Contrast with the removed `sentinel2-mosaic` (Earth Search Sentinel-2 L2A,
 `dynamic = true` + `max_items = 5` + `pixel_selection = "first"`), which served

@@ -31,28 +31,33 @@ import TileserverTileMap from './shared/TileserverTileMap';
 //     transparent. Colors are the standard IO 9-class legend.
 const SOURCE_ID = 'io-lulc';
 
-// Centred on Munich, Bavaria (lon 11.58, lat 48.14), where IO LULC tiles
-// contiguously. Zoom 10 shows several adjacent supercells mosaicking into a
-// seamless class raster — rendered z10 coverage 96.0%, z11 100% (verified
-// 2026-10-27).
+// Startup view. Deliberately z10 over a major European city — the location is
+// arbitrary and carries no semantic weight (the source is global). Prague,
+// Czechia (lon 14.44, lat 50.08): measured 2026-11-25, a 3x3 block of z10 tiles
+// is 9/9 OK, 97.8% opaque, 6 land-cover classes — a dense, well-populated
+// class raster, which makes the demo look like what it is.
+//
+// z10 is also the honest starting zoom: this source cannot serve low zooms.
+// A z3/z4 tile intersects several FULL-WIDTH supercell bands that each span the
+// whole planet, so the mosaic exceeds the server's 120s render timeout (measured
+// repeatedly, isolated). z5 is the lowest servable zoom and is safe worldwide
+// (0.0-3.6s). Hence config.toml minzoom = 5.
 const INITIAL_VIEW_STATE = {
-    longitude: 11.58,
-    latitude: 48.14,
+    longitude: 14.4378,
+    latitude: 50.0755,
     zoom: 10,
     pitch: 0,
     bearing: 0
 };
 
-// In-bounds probe tile for the systemic-error gate. MUST be fully inside the
-// stac_bbox [11.2, 47.9, 11.9, 48.4] or the gate misfires (a genuinely
-// out-of-bounds tile 500s/404s, the probe fails too, and the app cannot tell
+// In-bounds probe tile for the systemic-error gate. MUST be servable at this
+// source's minzoom and actually hold data, or the gate misfires (a genuinely
+// out-of-bounds tile 404s, the probe fails too, and the app cannot tell
 // "server is down" from "you panned off the edge" -> it shows the tile-error
-// modal on every off-edge zoom).
-// z10/544/355 -> tile bbox lon 11.25..11.60, lat 47.99..48.22 — fully
-// inside, and it is the app's initial view centre, so it is always rendered
-// anyway. (Derived with standard WebMercator math from the centre, not
-// guessed.)
-const PROBE_TILE = '10/544/355.png';
+// modal on every off-edge pan).
+// z10/553/346 -> Prague city centre, the app's initial view, so it is always
+// rendered anyway. Verified 2026-11-25: HTTP 200, 24,490 B.
+const PROBE_TILE = '10/553/346.png';
 
 const IoLulc = () => (
     <TileserverTileMap
