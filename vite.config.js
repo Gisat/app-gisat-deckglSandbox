@@ -110,16 +110,6 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/titiler/, ''),
       },
-      // Dev-only fallback for the Mintarder InSAR GeoParquet. The presigned
-      // Ceph/S3 object answers GET but sends no CORS headers, so a direct
-      // cross-origin browser fetch is blocked. Proxying it same-origin keeps
-      // local development working; production keeps the direct S3 URL and
-      // requires the bucket's CORS policy to allow the app origin.
-      '/insar4ait': {
-        target: 'https://s3.waw4-1.cloudferro.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/insar4ait/, ''),
-      },
     },
   },
   worker: {

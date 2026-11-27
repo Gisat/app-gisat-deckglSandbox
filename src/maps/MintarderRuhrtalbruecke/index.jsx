@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DeckGL } from 'deck.gl';
 import { COORDINATE_SYSTEM } from '@deck.gl/core';
 import { TileLayer } from '@deck.gl/geo-layers';
@@ -84,27 +84,40 @@ const TERRAIN_OPTIONS = {
 };
 
 // ---------------------------------------------------------------------------
-// InSAR point layer (track 139D)
+// InSAR point layers (tracks 15A / 37D / 139D)
 // ---------------------------------------------------------------------------
 
-// The presigned S3/Ceph GET for the 4,752-point, EPSG:4326 GeoParquet. The
-// signature expires 2026-11-29T07:56:33Z; replace the constant (or set
-// VITE_MINTARDER_GP_URL at build time) once the link is re-signed.
-//
-// Checked 2026-11-27: the signed GET returns HTTP 200 / 11,052,623 bytes, but
-// the endpoint sends no Access-Control-Allow-Origin header. A direct browser
-// fetch is therefore blocked cross-origin. The dev server proxies the same
-// object at /insar4ait (see vite.config.js) so the layer is testable locally;
-// production keeps the direct URL and needs bucket CORS enabled.
-const S3_ORIGIN = 'https://s3.waw4-1.cloudferro.com';
-const S3_OBJECT_PATH =
-    '/archive/Insar4AIT/PILOT_kart/track_139D/POSTPROC_trefin1/DATA_OUT/mintander_139D_trefin1_final.geoparquet';
-const S3_QUERY =
-    'X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=6cd4729342884acd9caf821f8868a1d9%2F20261127%2Fwaw4-1%2Fs3%2Faws4_request&X-Amz-Date=20261127T075633Z&X-Amz-Expires=172800&X-Amz-SignedHeaders=host&X-Amz-Signature=321a8d2f7e1c81e98ade909a6232f6d49d70192f2df15b7eb6770461184c8d83';
+// One entry per measurement track. The GeoParquet files carry no orbit
+// property, so the orbit (which drives both the arrow heading pair and the
+// ascending/descending VEL_AVG ramp) is declared here. Any combination of
+// tracks may be visible at once, so point and layer ids are namespaced by
+// track id.
+const TRACKS = [
+    {
+        id: '15A',
+        direction: 'ascending',
+        orbit: 'A',
+        url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_15A_trefin1_final.geoparquet',
+    },
+    {
+        id: '37D',
+        direction: 'descending',
+        orbit: 'D',
+        url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_37D_trefin1_final.geoparquet',
+    },
+    {
+        id: '139D',
+        direction: 'descending',
+        orbit: 'D',
+        url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_139D_trefin1_final.geoparquet',
+    },
+];
 
-const GEO_PARQUET_S3_URL =
-    import.meta.env.VITE_MINTARDER_GP_URL || `${S3_ORIGIN}${S3_OBJECT_PATH}?${S3_QUERY}`;
-const GEO_PARQUET_DEV_PROXY_URL = `/insar4ait${S3_OBJECT_PATH}?${S3_QUERY}`;
+// Only 139D is shown on load; the other tracks load lazily on first toggle and
+// stay cached afterwards, so re-enabling one never refetches it.
+const DEFAULT_VISIBLE_TRACK_IDS = ['139D'];
+
+const trackLabel = (track) => `${track.id} ${track.orbit === 'A' ? '↑' : '↓'}`;
 
 // ParquetArrowLoader is the WASM-backed loader in @loaders.gl/parquet 4.5.x
 // (loader id `parquet-wasm`, worker: false). Point it at the local wasm copy
@@ -116,12 +129,33 @@ const POINTS_LAYER_PREFIX = 'mintarder-insar';
 // else keeps the 3D LOS arrow composite.
 const NEAR_ZERO_VEL_AVG = 0.5;
 const VEL_AVG_DOMAIN = [...POLAKY_VEL_AVG_DOMAIN];
-// Track 139D is descending; Poláky inverts the VEL_AVG ramp for D tracks.
-const VEL_AVG_SCALE = buildPolakyVelAvgScale('D');
+// Ascending tracks keep the blue → red ramp; descending tracks invert it, so a
+// given colour reads the same way on every orbit.
+const VEL_AVG_SCALES = {
+    A: buildPolakyVelAvgScale('A'),
+    D: buildPolakyVelAvgScale('D'),
+};
 
 const MISSING_VELOCITY_COLOR = [128, 128, 128, 255];
 // Same selection/hover cyan as Poláky Hradec v2.
 const SELECTION_COLOR = [66, 212, 244, 255];
+
+// Toggle button chrome for the Tracks row, mirroring the 3D chart's
+// Timeline/Custom switch in Poláky Hradec v2.
+function trackButtonStyle(active, failed = false) {
+    return {
+        minHeight: 24,
+        padding: '4px 8px',
+        border: `1px solid ${failed ? '#a00000' : active ? '#0066cc' : '#ccc'}`,
+        borderRadius: 4,
+        background: active ? '#e6f0ff' : '#fff',
+        color: failed ? '#a00000' : '#333',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        fontSize: 11,
+        fontWeight: active ? 600 : 400,
+    };
+}
 
 function parseOptionalNumber(value) {
     if (value == null || value === '') return null;
@@ -136,17 +170,19 @@ function clampVelocity(value) {
     return Math.max(min, Math.min(max, number));
 }
 
-function velocityColor(value) {
+function velocityColor(orbit, value) {
     const clamped = clampVelocity(value);
     if (clamped == null) return MISSING_VELOCITY_COLOR;
-    const [r, g, b] = VEL_AVG_SCALE(clamped).rgb();
+    const scale = VEL_AVG_SCALES[orbit] ?? VEL_AVG_SCALES.D;
+    const [r, g, b] = scale(clamped).rgb();
     return [r, g, b, 255];
 }
 
 // ColorScaleLegend samples a value -> [r, g, b] function.
-function velocityLegendColor(value) {
+function velocityLegendColor(orbit, value) {
     const clamped = clampVelocity(value);
-    const [r, g, b] = VEL_AVG_SCALE(clamped ?? 0).rgb();
+    const scale = VEL_AVG_SCALES[orbit] ?? VEL_AVG_SCALES.D;
+    const [r, g, b] = scale(clamped ?? 0).rgb();
     return [r, g, b];
 }
 
@@ -188,7 +224,7 @@ function geometryAt(vector, index) {
     return Number.isFinite(lon) && Number.isFinite(lat) ? [lon, lat] : null;
 }
 
-function buildPointFeatures(table) {
+function buildPointFeatures(table, track) {
     const columns = {
         ID: vectorFor(table, 'ID'),
         LON: vectorFor(table, 'LON'),
@@ -203,6 +239,12 @@ function buildPointFeatures(table) {
         ACCEL: vectorFor(table, 'ACCEL'),
         geometry: vectorFor(table, 'geometry'),
     };
+    // The timeline reads the d_YYYYMMDD samples from the feature properties, so
+    // they are materialised here and the Arrow table can be released.
+    const timelineColumns = table.schema.fields
+        .map((field) => field.name)
+        .filter(isTimelineKey)
+        .map((name) => ({ name, vector: vectorFor(table, name) }));
 
     const features = [];
     for (let index = 0; index < table.numRows; index++) {
@@ -227,9 +269,16 @@ function buildPointFeatures(table) {
             COH: numberAt(columns.COH, index),
             ACCEL: numberAt(columns.ACCEL, index),
         };
+        for (const { name, vector } of timelineColumns) {
+            const value = numberAt(vector, index);
+            if (value != null) properties[name] = value;
+        }
 
         features.push({
             type: 'Feature',
+            // Selection/hover keys are namespaced by track: point ids repeat
+            // across tracks.
+            trackId: track.id,
             arrowIndex: index,
             geometry: {
                 type: 'Point',
@@ -256,27 +305,28 @@ function sourceLabel(url) {
     }
 }
 
-function describeLoadError(error) {
-    const source = sourceLabel(GEO_PARQUET_S3_URL);
-    // Keep the presigned query string out of the visible error message.
-    const message = errorMessage(error)
-        .split(GEO_PARQUET_S3_URL).join(source)
-        .split(GEO_PARQUET_DEV_PROXY_URL).join(source);
-    const looksLikeCors = /failed to fetch|network\s*error|cors|load failed/i.test(message);
-    const corsHint = looksLikeCors
-        ? ' The signed S3/Ceph GET returns 200 to curl but the endpoint sends no Access-Control-Allow-Origin, so browsers block the cross-origin read. Enable bucket CORS for this app origin or serve the object same-origin.'
-        : '';
-    return `Could not load InSAR GeoParquet from ${source}. ${message}${corsHint}`;
+function describeLoadError(track, error) {
+    const source = sourceLabel(track.url);
+    // Keep the full URL out of the visible error message; the origin+path
+    // identifies the object without repeating it for every track.
+    const message = errorMessage(error).split(track.url).join(source);
+    return `Could not load InSAR GeoParquet for track ${track.id} from ${source}. ${message}`;
 }
 
 function MintarderRuhrtalbruecke() {
     const { zRange, onZRangeUpdate } = useTerrainZRange();
-    const [status, setStatus] = useState('loading');
-    const [error, setError] = useState(null);
-    const [retryToken, setRetryToken] = useState(0);
-    const [table, setTable] = useState(null);
-    const [points, setPoints] = useState([]);
-    const [hoveredArrowIndex, setHoveredArrowIndex] = useState(null);
+    // Multi-select: every enabled track is drawn. 139D is on by default; the
+    // others are fetched on first enable and cached.
+    const [visibleTrackIds, setVisibleTrackIds] = useState(
+        () => new Set(DEFAULT_VISIBLE_TRACK_IDS)
+    );
+    // Per-track cache: id -> { status, features, error }. Late responses for a
+    // hidden track land here and never paint the visible layers.
+    const [tracks, setTracks] = useState({});
+    // In-flight loads live in a ref so deduping does not trigger renders.
+    const inFlight = useRef(new Map());
+    // Hover/selection are track-scoped because point ids repeat across tracks.
+    const [hoveredPoint, setHoveredPoint] = useState(null);
     const [selectedPoint, setSelectedPoint] = useState(null);
     // Drive the 3D arrow/sphere size band; the map still starts from
     // INITIAL_VIEW_STATE.
@@ -288,94 +338,121 @@ function MintarderRuhrtalbruecke() {
     // and is the default; H places them at their absolute measured height.
     const [heightMode, setHeightMode] = useState('h_ref');
 
-    useEffect(() => {
-        let cancelled = false;
+    // Load one track once and cache its features; re-enabling a ready track is
+    // instant and never refetches. Disabling does not abort or evict.
+    const loadTrack = useCallback((id) => {
+        const track = TRACKS.find((entry) => entry.id === id);
+        if (!track || inFlight.current.has(id)) return;
 
-        setStatus('loading');
-        setError(null);
-        setTable(null);
-        setPoints([]);
-        setHoveredArrowIndex(null);
-        setSelectedPoint(null);
+        setTracks((previous) => (previous[id]?.status === 'ready'
+            ? previous
+            : { ...previous, [id]: { status: 'loading', features: null, error: null } }));
 
-        const loadOptions = {
-            worker: false,
-            parquet: { wasmUrl: PARQUET_WASM_URL },
-        };
-
-        async function loadArrowTable() {
+        const controller = new AbortController();
+        const promise = (async () => {
             try {
-                return await load(GEO_PARQUET_S3_URL, ParquetArrowLoader, loadOptions);
-            } catch (directError) {
-                if (!import.meta.env.DEV) throw directError;
+                const result = await load(track.url, ParquetArrowLoader, {
+                    worker: false,
+                    parquet: { wasmUrl: PARQUET_WASM_URL },
+                    fetch: { signal: controller.signal },
+                });
+                if (controller.signal.aborted) return;
 
-                // The Ceph endpoint does not send CORS headers. Retry through
-                // the same-origin dev proxy so local development still works.
-                try {
-                    return await load(GEO_PARQUET_DEV_PROXY_URL, ParquetArrowLoader, loadOptions);
-                } catch (proxyError) {
-                    throw new Error(
-                        `${errorMessage(directError)}; dev proxy retry also failed: ${errorMessage(proxyError)}`
-                    );
-                }
-            }
-        }
-
-        loadArrowTable()
-            .then((result) => {
-                if (cancelled) return;
-
-                const nextTable = result?.data;
-                if (!nextTable || typeof nextTable.numRows !== 'number' || nextTable.numRows === 0) {
+                const table = result?.data;
+                if (!table || typeof table.numRows !== 'number' || table.numRows === 0) {
                     throw new Error('The parquet response contained no rows.');
                 }
 
-                const nextPoints = buildPointFeatures(nextTable);
-                if (nextPoints.length === 0) {
+                const features = buildPointFeatures(table, track);
+                if (features.length === 0) {
                     throw new Error('No valid point coordinates found in LON/LAT or geometry.');
                 }
 
-                setTable(nextTable);
-                setPoints(nextPoints);
-                setStatus('ready');
-            })
-            .catch((loadError) => {
-                if (cancelled) return;
-                setStatus('error');
-                setError(describeLoadError(loadError));
+                setTracks((previous) => ({
+                    ...previous,
+                    [id]: { status: 'ready', features, error: null },
+                }));
+            } catch (loadError) {
+                // Unmount aborts in flight; not a track failure, no state to set.
+                if (controller.signal.aborted) return;
+                console.error(`❌ Failed to load Mintarder InSAR track ${id}:`, loadError);
+                setTracks((previous) => ({
+                    ...previous,
+                    [id]: {
+                        status: 'error',
+                        features: null,
+                        error: describeLoadError(track, loadError),
+                    },
+                }));
+            } finally {
+                inFlight.current.delete(id);
+            }
+        })();
+
+        inFlight.current.set(id, { promise, controller });
+    }, []);
+
+    useEffect(() => {
+        DEFAULT_VISIBLE_TRACK_IDS.forEach((id) => loadTrack(id));
+    }, [loadTrack]);
+
+    // Abort any pending track load when the map unmounts.
+    useEffect(() => () => {
+        for (const { controller } of inFlight.current.values()) controller.abort();
+        inFlight.current.clear();
+    }, []);
+
+    const visibleTracks = TRACKS.filter((track) => visibleTrackIds.has(track.id));
+    const readyTracks = visibleTracks.filter((track) => tracks[track.id]?.status === 'ready');
+    const failedTracks = visibleTracks.filter((track) => tracks[track.id]?.status === 'error');
+    const loadingTracks = visibleTracks.filter(
+        (track) => !tracks[track.id] || tracks[track.id].status === 'loading'
+    );
+
+    const handleToggleTrack = useCallback((id) => {
+        const state = tracks[id];
+        if (visibleTrackIds.has(id)) {
+            // A failed, still-enabled track is retried by clicking it again; an
+            // error is the only state where the click does not hide the track.
+            if (state?.status === 'error') {
+                loadTrack(id);
+                return;
+            }
+            setVisibleTrackIds((previous) => {
+                const next = new Set(previous);
+                next.delete(id);
+                return next;
             });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [retryToken]);
-
-    const timelineColumns = useMemo(() => {
-        if (!table) return [];
-        return table.schema.fields
-            .map((field) => field.name)
-            .filter(isTimelineKey)
-            .sort()
-            .map((name) => ({ name, vector: vectorFor(table, name) }));
-    }, [table]);
-
-    const selectedFeature = useMemo(() => {
-        if (!table || !selectedPoint) return null;
-
-        const properties = { ...selectedPoint.properties };
-        for (const { name, vector } of timelineColumns) {
-            const value = numberAt(vector, selectedPoint.arrowIndex);
-            if (value != null) properties[name] = value;
+            setHoveredPoint((previous) => (previous?.trackId === id ? null : previous));
+            setSelectedPoint((previous) => (previous?.trackId === id ? null : previous));
+            return;
         }
 
-        return { ...selectedPoint, properties };
-    }, [table, selectedPoint, timelineColumns]);
+        setVisibleTrackIds((previous) => {
+            const next = new Set(previous);
+            next.add(id);
+            return next;
+        });
+        if (state?.status !== 'ready') loadTrack(id);
+    }, [visibleTrackIds, tracks, loadTrack]);
+
+    // Selection carries its track already; the timeline reads the d_* samples
+    // materialised at load time, so no Arrow table lookup is needed.
+    const selectedFeature = selectedPoint;
 
     const handleHover = useCallback((info) => {
-        const next = isPointLayer(info.layer?.id)
-            ? (info.object?.arrowIndex ?? null)
+        const next = isPointLayer(info.layer?.id) && info.object
+            ? { trackId: info.object.trackId, arrowIndex: info.object.arrowIndex }
             : null;
-        setHoveredArrowIndex((previous) => (previous === next ? previous : next));
+        setHoveredPoint((previous) => {
+            if (!previous && !next) return previous;
+            if (previous && next
+                && previous.trackId === next.trackId
+                && previous.arrowIndex === next.arrowIndex) {
+                return previous;
+            }
+            return next;
+        });
     }, []);
 
     const handleClick = useCallback((info) => {
@@ -492,35 +569,42 @@ function MintarderRuhrtalbruecke() {
         [zRange]
     );
 
-    // Same Poláky split: |VEL_AVG| <= 0.5 mm/yr -> sphere, everything else ->
-    // the seven-part 3D LOS arrow composite.
-    const { arrowFeatures, sphereFeatures } = useMemo(() => {
-        const arrows = [];
-        const spheres = [];
-        for (const feature of points) {
-            (isNearZeroVelocity(feature) ? spheres : arrows).push(feature);
+    // Same Poláky split, done once per ready track: |VEL_AVG| <= 0.5 mm/yr ->
+    // sphere, everything else -> the seven-part 3D LOS arrow composite. The
+    // split is cached against the track's feature array, so loading another
+    // track does not recreate this track's data references and make deck.gl
+    // re-upload its attributes.
+    const symbolCache = useRef(new WeakMap());
+    const trackSymbols = useMemo(() => {
+        const symbols = {};
+        for (const track of TRACKS) {
+            const state = tracks[track.id];
+            if (state?.status !== 'ready') continue;
+            let split = symbolCache.current.get(state.features);
+            if (!split) {
+                const arrows = [];
+                const spheres = [];
+                for (const feature of state.features) {
+                    (isNearZeroVelocity(feature) ? spheres : arrows).push(feature);
+                }
+                split = { arrows, spheres };
+                symbolCache.current.set(state.features, split);
+            }
+            symbols[track.id] = split;
         }
-        return { arrowFeatures: arrows, sphereFeatures: spheres };
-    }, [points]);
+        return symbols;
+    }, [tracks]);
 
     const pointSymbolLayers = useMemo(() => {
-        if (points.length === 0) return [];
-
+        const selectedTrackId = selectedPoint?.trackId ?? null;
         const selectedArrowIndex = selectedPoint?.arrowIndex ?? null;
-        const getSymbolColor = (feature) => {
-            if (selectedArrowIndex != null && feature.arrowIndex === selectedArrowIndex) {
-                return SELECTION_COLOR;
-            }
-            if (hoveredArrowIndex != null && feature.arrowIndex === hoveredArrowIndex) {
-                return SELECTION_COLOR;
-            }
-            return velocityColor(feature.properties?.VEL_AVG);
-        };
+        const hoveredTrackId = hoveredPoint?.trackId ?? null;
+        const hoveredArrowIndex = hoveredPoint?.arrowIndex ?? null;
+
+        const useTerrainOffset = heightMode === 'h_ref';
         // Extensions cannot be reliably added/removed on an existing layer id.
         // Give each height mode its own ids so switching remounts the layers
         // with/without TerrainExtension instead of reusing stale state.
-        const pointLayerPrefix = `${POINTS_LAYER_PREFIX}-${heightMode}`;
-        const useTerrainOffset = heightMode === 'h_ref';
         const terrainOffsetProps = useTerrainOffset
             ? {
                 // Offset mode lifts each symbol by the DEM height at its own
@@ -530,7 +614,8 @@ function MintarderRuhrtalbruecke() {
             }
             : {};
         // H_REF is measured above the local ground; H is absolute. Fall back
-        // to the other value when the selected one is missing.
+        // to the other value when the selected one is missing. Height mode is
+        // global: it applies to every visible track.
         const getAnchorPosition = (feature) => {
             const properties = feature.properties ?? {};
             const primary = parseOptionalNumber(properties[useTerrainOffset ? 'H_REF' : 'H']);
@@ -538,38 +623,91 @@ function MintarderRuhrtalbruecke() {
             const height = primary ?? fallback ?? 0;
             return [properties.LON, properties.LAT, height];
         };
-        const updateTriggers = {
-            getColor: [selectedArrowIndex, hoveredArrowIndex],
-            // Force the anchors to re-evaluate when the DEM height map arrives.
-            getPosition: [zRange],
-        };
 
-        return [
-            ...build3dLosArrowLayers({
-                idPrefix: pointLayerPrefix,
-                data: arrowFeatures,
-                zoom,
-                // 139D is the descending track; Poláky uses the D heading pair.
-                orbit: 'D',
-                pickable: true,
-                getPosition: getAnchorPosition,
-                ...terrainOffsetProps,
-                getColor: getSymbolColor,
-                updateTriggers,
-            }),
-            build3dLosSphereLayer({
-                id: `${pointLayerPrefix}-spheres`,
-                data: sphereFeatures,
-                zoom,
-                radiusMeters: 1.6,
-                pickable: true,
-                getPosition: getAnchorPosition,
-                ...terrainOffsetProps,
-                getColor: getSymbolColor,
-                updateTriggers,
-            }),
-        ];
-    }, [points, arrowFeatures, sphereFeatures, zoom, selectedPoint, hoveredArrowIndex, heightMode, zRange]);
+        const symbolLayers = [];
+        for (const track of TRACKS) {
+            if (!visibleTrackIds.has(track.id)) continue;
+            const state = tracks[track.id];
+            const symbols = trackSymbols[track.id];
+            if (state?.status !== 'ready' || !symbols) continue;
+
+            // Track-scoped highlight: only this track's matching point lights
+            // up, even when other tracks share the same arrowIndex.
+            const getSymbolColor = (feature) => {
+                const isSelected = selectedArrowIndex != null
+                    && selectedTrackId === track.id
+                    && feature.arrowIndex === selectedArrowIndex;
+                const isHovered = hoveredArrowIndex != null
+                    && hoveredTrackId === track.id
+                    && feature.arrowIndex === hoveredArrowIndex;
+                if (isSelected || isHovered) return SELECTION_COLOR;
+                return velocityColor(track.orbit, feature.properties?.VEL_AVG);
+            };
+            const updateTriggers = {
+                getColor: [selectedTrackId, selectedArrowIndex, hoveredTrackId, hoveredArrowIndex],
+                // Force the anchors to re-evaluate when the DEM height map arrives.
+                getPosition: [zRange],
+            };
+            const pointLayerPrefix = `${POINTS_LAYER_PREFIX}-${track.id}-${heightMode}`;
+
+            symbolLayers.push(
+                ...build3dLosArrowLayers({
+                    idPrefix: pointLayerPrefix,
+                    data: symbols.arrows,
+                    zoom,
+                    orbit: track.orbit,
+                    pickable: true,
+                    getPosition: getAnchorPosition,
+                    ...terrainOffsetProps,
+                    getColor: getSymbolColor,
+                    updateTriggers,
+                }),
+                build3dLosSphereLayer({
+                    id: `${pointLayerPrefix}-spheres`,
+                    data: symbols.spheres,
+                    zoom,
+                    radiusMeters: 1.6,
+                    pickable: true,
+                    getPosition: getAnchorPosition,
+                    ...terrainOffsetProps,
+                    getColor: getSymbolColor,
+                    updateTriggers,
+                })
+            );
+        }
+        return symbolLayers;
+    }, [tracks, trackSymbols, visibleTrackIds, zoom, selectedPoint, hoveredPoint, heightMode, zRange]);
+
+    // Legend groups: one gradient per orbit present among the visible ready
+    // tracks, with aggregate point counts.
+    const legendGroups = useMemo(() => {
+        const groups = [];
+        for (const orbit of ['A', 'D']) {
+            const groupTracks = TRACKS.filter(
+                (track) => track.orbit === orbit
+                    && visibleTrackIds.has(track.id)
+                    && tracks[track.id]?.status === 'ready'
+            );
+            if (groupTracks.length === 0) continue;
+            const points = groupTracks.reduce(
+                (total, track) => total + tracks[track.id].features.length,
+                0
+            );
+            groups.push({ orbit, ids: groupTracks.map((track) => track.id), points });
+        }
+        return groups;
+    }, [tracks, visibleTrackIds]);
+
+    // Per-track counts for the info card.
+    const readyTrackSummaries = useMemo(
+        () => readyTracks.map((track) => ({
+            id: track.id,
+            points: tracks[track.id].features.length,
+            spheres: trackSymbols[track.id]?.spheres.length ?? 0,
+            arrows: trackSymbols[track.id]?.arrows.length ?? 0,
+        })),
+        [readyTracks, tracks, trackSymbols]
+    );
 
     const layers = useMemo(
         () => [
@@ -594,7 +732,7 @@ function MintarderRuhrtalbruecke() {
                 pickingRadius={6}
                 onHover={handleHover}
                 onClick={handleClick}
-                getCursor={() => (hoveredArrowIndex != null ? 'pointer' : 'grab')}
+                getCursor={() => (hoveredPoint != null ? 'pointer' : 'grab')}
             />
 
             <div
@@ -604,8 +742,9 @@ function MintarderRuhrtalbruecke() {
                     left: 12,
                     zIndex: 10,
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
+                    flexDirection: 'column',
+                    alignItems: 'stretch',
+                    gap: 6,
                     padding: '6px 10px',
                     borderRadius: 6,
                     background: 'rgba(255, 255, 255, 0.95)',
@@ -616,33 +755,67 @@ function MintarderRuhrtalbruecke() {
                     color: '#333',
                 }}
             >
-                <label
-                    htmlFor="mintarder-height-mode"
-                    style={{ fontSize: 11, color: '#555', whiteSpace: 'nowrap' }}
-                >
-                    Point height
-                </label>
-                <select
-                    id="mintarder-height-mode"
-                    value={heightMode}
-                    onChange={(event) => setHeightMode(event.target.value)}
-                    style={{
-                        padding: '3px 6px',
-                        border: '1px solid #bbb',
-                        borderRadius: 4,
-                        background: '#fff',
-                        color: '#333',
-                        fontFamily: 'inherit',
-                        fontSize: 11,
-                        cursor: 'pointer',
-                    }}
-                >
-                    <option value="h_ref">H_REF (above DEM)</option>
-                    <option value="h">H (absolute)</option>
-                </select>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label
+                        htmlFor="mintarder-height-mode"
+                        style={{ fontSize: 11, color: '#555', whiteSpace: 'nowrap' }}
+                    >
+                        Point height
+                    </label>
+                    <select
+                        id="mintarder-height-mode"
+                        value={heightMode}
+                        onChange={(event) => setHeightMode(event.target.value)}
+                        style={{
+                            padding: '3px 6px',
+                            border: '1px solid #bbb',
+                            borderRadius: 4,
+                            background: '#fff',
+                            color: '#333',
+                            fontFamily: 'inherit',
+                            fontSize: 11,
+                            cursor: 'pointer',
+                        }}
+                    >
+                        <option value="h_ref">H_REF (above DEM)</option>
+                        <option value="h">H (absolute)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <div style={{ fontSize: 11, color: '#555', marginBottom: 4 }}>Tracks</div>
+                    <div
+                        role="group"
+                        aria-label="InSAR tracks"
+                        style={{ display: 'flex', gap: 4 }}
+                    >
+                        {TRACKS.map((track) => {
+                            const state = tracks[track.id];
+                            const isActive = visibleTrackIds.has(track.id);
+                            const isTrackLoading = isActive && state?.status === 'loading';
+                            const hasFailed = isActive && state?.status === 'error';
+                            return (
+                                <button
+                                    key={track.id}
+                                    type="button"
+                                    onClick={() => handleToggleTrack(track.id)}
+                                    aria-pressed={isActive}
+                                    aria-busy={isTrackLoading || undefined}
+                                    title={hasFailed
+                                        ? `${track.id} (${track.direction}) failed to load: ${state.error} Click to retry.`
+                                        : `${track.id} (${track.direction})`}
+                                    style={trackButtonStyle(isActive, hasFailed)}
+                                >
+                                    {trackLabel(track)}
+                                    {isTrackLoading ? ' …' : ''}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
             </div>
 
-            {status === 'loading' && (
+            {visibleTracks.length > 0 && loadingTracks.length === visibleTracks.length && (
                 <div
                     style={{
                         position: 'absolute',
@@ -660,11 +833,11 @@ function MintarderRuhrtalbruecke() {
                         color: '#333',
                     }}
                 >
-                    Loading InSAR points from S3…
+                    Loading InSAR points ({loadingTracks.map((track) => track.id).join(', ')})…
                 </div>
             )}
 
-            {status === 'error' && (
+            {failedTracks.length > 0 && (
                 <div
                     style={{
                         position: 'absolute',
@@ -685,10 +858,14 @@ function MintarderRuhrtalbruecke() {
                     }}
                 >
                     <div style={{ fontWeight: 600, marginBottom: 4 }}>InSAR layer unavailable</div>
-                    <div style={{ lineHeight: 1.45 }}>{error}</div>
+                    {failedTracks.map((track) => (
+                        <div key={track.id} style={{ lineHeight: 1.45 }}>
+                            {tracks[track.id].error}
+                        </div>
+                    ))}
                     <button
                         type="button"
-                        onClick={() => setRetryToken((token) => token + 1)}
+                        onClick={() => failedTracks.forEach((track) => loadTrack(track.id))}
                         style={{
                             marginTop: 6,
                             padding: '3px 10px',
@@ -701,18 +878,34 @@ function MintarderRuhrtalbruecke() {
                             fontSize: 11,
                         }}
                     >
-                        Retry
+                        Retry failed
                     </button>
                 </div>
             )}
 
-            <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, pointerEvents: 'none' }}>
-                <ColorScaleLegend
-                    colorScale={velocityLegendColor}
-                    domain={[VEL_AVG_DOMAIN[0], 0, VEL_AVG_DOMAIN[1]]}
-                    title={`VEL_AVG (mm/yr) · 139D${points.length ? ` · ${points.length.toLocaleString()} pts` : ''}`}
-                />
-            </div>
+            {legendGroups.length > 0 && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        top: 12,
+                        right: 12,
+                        zIndex: 10,
+                        pointerEvents: 'none',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                    }}
+                >
+                    {legendGroups.map((group) => (
+                        <ColorScaleLegend
+                            key={group.orbit}
+                            colorScale={(value) => velocityLegendColor(group.orbit, value)}
+                            domain={[VEL_AVG_DOMAIN[0], 0, VEL_AVG_DOMAIN[1]]}
+                            title={`VEL_AVG ${group.orbit} (mm/yr) · ${group.ids.join(', ')} · ${group.points.toLocaleString()} pts`}
+                        />
+                    ))}
+                </div>
+            )}
 
             <button
                 type="button"
@@ -783,13 +976,24 @@ function MintarderRuhrtalbruecke() {
                     to the sampled ground.
                 </div>
                 <div>
-                    InSAR: track 139D, 4,752 points ({sphereFeatures.length.toLocaleString()} spheres,{' '}
-                    {arrowFeatures.length.toLocaleString()} arrows) — spheres for |VEL_AVG| ≤ 0.5 mm/yr,
-                    3D LOS arrows otherwise, anchored at{' '}
+                    InSAR:{' '}
+                    {readyTrackSummaries.length === 0
+                        ? 'no tracks loaded'
+                        : readyTrackSummaries.map((summary, index) => (
+                            <span key={summary.id}>
+                                {index > 0 ? ', ' : ''}
+                                {summary.id} ({summary.points.toLocaleString()} pts:{' '}
+                                {summary.spheres.toLocaleString()} spheres,{' '}
+                                {summary.arrows.toLocaleString()} arrows)
+                            </span>
+                        ))}
+                    {' '}— spheres for |VEL_AVG| ≤ 0.5 mm/yr, 3D LOS arrows
+                    otherwise, anchored at{' '}
                     {heightMode === 'h_ref' ? 'H_REF above the DEM' : 'absolute H'}.
-                    VEL_AVG scale −2.5 → +2.5 mm/yr; the descending (D) ramp is inverted,
-                    so red is negative and blue positive. Hover for ID / VEL_AVG / H /
-                    H_REF / COH; click a symbol for its d_* displacement series.
+                    VEL_AVG scale −2.5 → +2.5 mm/yr; ascending (A) tracks run blue →
+                    red and descending (D) tracks are inverted (red → blue). Toggle
+                    tracks in the top-left Tracks row; click a symbol for its d_*
+                    displacement series.
                 </div>
                 <div>
                     Alignment/anchor data:{' '}
@@ -838,7 +1042,7 @@ function MintarderRuhrtalbruecke() {
                 >
                     <TimelineChart
                         feature={selectedFeature}
-                        trackLabel="139D"
+                        trackLabel={selectedFeature.trackId}
                         onClose={() => setSelectedPoint(null)}
                     />
                 </div>
