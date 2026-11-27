@@ -1,6 +1,12 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ResponsiveLine } from '@nivo/line';
 import { epochKeyToUtc, isTimelineKey, toNumber } from '../../components/FeatureSpaceChart3D';
+import {
+  DOT_COLORS,
+  RELIABILITY_THRESHOLD_DEFAULT,
+  dotColorForDate,
+  loadTrackClassification,
+} from './trackClassification';
 
 function formatDate(value) {
   if (!(value instanceof Date) || Number.isNaN(value.getTime())) return String(value);
@@ -22,12 +28,96 @@ function formatNumber(value, digits) {
  * UTC. Non-finite / null samples are skipped. The card fills its positioned
  * parent, which owns the floating placement.
  *
- * @param {{ feature: any, trackLabel?: string, onClose: () => void }} props
+ * Dots are coloured by the track's final-class CSV reliability for the sample
+ * date: blue at or above the threshold, grey below, black when the CSV has no
+ * interval covering that date (or no row for the point).
+ *
+ * @param {{ feature: any, trackLabel?: string, onClose: () => void,
+ *   classificationUrl?: string, reliabilityThreshold?: number }} props
  */
-export default function TimelineChart({ feature, trackLabel = '–', onClose }) {
+export default function TimelineChart({
+  feature,
+  trackLabel = '–',
+  onClose,
+  classificationUrl,
+  reliabilityThreshold = RELIABILITY_THRESHOLD_DEFAULT,
+}) {
   const props = feature?.properties ?? {};
 
+  const [classification, setClassification] = useState({
+    url: null,
+    status: 'idle',
+    byId: null,
+    error: null,
+  });
+
+  useEffect(() => {
+    if (!classificationUrl) {
+      setClassification({ url: null, status: 'missing', byId: null, error: null });
+      return undefined;
+    }
+
+    let active = true;
+    setClassification((previous) => (
+      previous.url === classificationUrl && previous.status === 'ready'
+        ? previous
+        : { url: classificationUrl, status: 'loading', byId: null, error: null }
+    ));
+
+    loadTrackClassification(classificationUrl)
+      .then((byId) => {
+        if (!active) return;
+        setClassification({
+          url: classificationUrl,
+          status: 'ready',
+          byId,
+          error: null,
+        });
+      })
+      .catch((error) => {
+        if (!active) return;
+        setClassification({
+          url: classificationUrl,
+          status: 'error',
+          byId: null,
+          error,
+        });
+      });
+
+    return () => { active = false; };
+  }, [classificationUrl]);
+
+  // The CSV is keyed by `ID` (text); the parquet ID may be a number, so both
+  // sides are compared as strings. `arrowIndex` is a row index and must never
+  // stand in for the CSV ID.
+  const pointId = props.ID != null
+    ? String(props.ID)
+    : (feature?.id != null ? String(feature.id) : null);
+
+  // The chart instance survives a track change, and the effect below resets the
+  // CSV state after paint. Ignore a classification loaded for another URL so a
+  // point on a newly selected track can never be coloured with the previous
+  // track's intervals (IDs repeat across tracks).
+  const activeUrl = classificationUrl ?? null;
+  const classificationStatus = classification.url === activeUrl
+    ? classification.status
+    : 'loading';
+
+  const classificationEntry = classificationStatus === 'ready' && pointId != null
+    ? classification.byId?.get(pointId) ?? null
+    : null;
+
   const series = useMemo(() => {
+    // While the CSV is in flight keep the previous blue instead of flashing
+    // black; the caption below says why. Any other unresolved state is black.
+    const resolveColor = (date) => {
+      if (classificationStatus === 'loading' || classificationStatus === 'idle') {
+        return DOT_COLORS.reliable;
+      }
+      if (classificationStatus !== 'ready') return DOT_COLORS.missing;
+      return dotColorForDate(classificationEntry, date.getTime(), reliabilityThreshold);
+    };
+
     const samples = Object.entries(feature?.properties ?? {})
       .filter(([key]) => isTimelineKey(key))
       .map(([key, value]) => ({
@@ -35,9 +125,56 @@ export default function TimelineChart({ feature, trackLabel = '–', onClose }) 
         y: toNumber(value),
       }))
       .filter(({ x, y }) => y != null && !Number.isNaN(x.getTime()))
-      .sort((a, b) => a.x - b.x);
+      .sort((a, b) => a.x - b.x)
+      .map((datum) => ({ ...datum, color: resolveColor(datum.x) }));
     return samples.length ? [{ id: 'displacement', data: samples }] : [];
-  }, [feature]);
+  }, [feature, classificationStatus, classificationEntry, reliabilityThreshold]);
+
+  let statusMessage = null;
+  if (classificationStatus === 'loading' || classificationStatus === 'idle') {
+    statusMessage = 'Loading final-class CSV…';
+  } else if (classificationStatus === 'error') {
+    statusMessage = 'Final-class CSV unavailable for this track.';
+  } else if (classificationStatus === 'missing') {
+    statusMessage = 'Final-class CSV not configured for this track.';
+  } else if (classificationStatus === 'ready' && !classificationEntry) {
+    statusMessage = `Point ${pointId ?? '–'} not in this track's final-class CSV.`;
+  }
+
+  const errorDetail = classificationStatus === 'error' && classification.error
+    ? String(classification.error.message ?? classification.error)
+    : null;
+
+  const legend = (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      flexWrap: 'wrap',
+      marginBottom: '2px',
+      fontSize: '10px',
+      color: '#555',
+    }}>
+      {[
+        { color: DOT_COLORS.reliable, label: `rel ≥ ${reliabilityThreshold.toFixed(2)}` },
+        { color: DOT_COLORS.unreliable, label: `rel < ${reliabilityThreshold.toFixed(2)}` },
+        { color: DOT_COLORS.missing, label: 'no data' },
+      ].map((item) => (
+        <span key={item.label} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+          <span style={{
+            width: '7px',
+            height: '7px',
+            borderRadius: '50%',
+            background: item.color,
+            border: item.color === DOT_COLORS.missing ? '1px solid #999' : 'none',
+            boxSizing: 'border-box',
+            display: 'inline-block',
+          }} />
+          {item.label}
+        </span>
+      ))}
+    </div>
+  );
 
   const cardStyle = {
     position: 'relative',
@@ -106,6 +243,15 @@ export default function TimelineChart({ feature, trackLabel = '–', onClose }) 
   return (
     <div style={cardStyle}>
       {header}
+      {legend}
+      {statusMessage && (
+        <div
+          title={errorDetail ?? undefined}
+          style={{ fontSize: '10px', color: '#8a5a00', marginBottom: '2px' }}
+        >
+          {statusMessage}
+        </div>
+      )}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ResponsiveLine
           data={series}
@@ -133,13 +279,15 @@ export default function TimelineChart({ feature, trackLabel = '–', onClose }) 
             tickSize: 4,
             tickPadding: 6,
           }}
-          colors={['#228BE6']}
+          colors={[DOT_COLORS.reliable]}
           // nivo 0.99 has no `enableLine`; omitting the `lines` layer removes the
           // connecting line while keeping the per-sample dots, mesh and crosshair.
           layers={['grid', 'markers', 'axes', 'areas', 'crosshair', 'points', 'slices', 'mesh', 'legends']}
           pointSize={3.5}
           enablePoints={true}
-          pointColor="#228BE6"
+          // Runtime calls getPointColor once per point and reads the datum, so
+          // the per-sample `color` set in the series memo wins.
+          pointColor={(context) => context.point?.data?.color ?? DOT_COLORS.missing}
           pointBorderWidth={0}
           enableArea={false}
           enableGridX={false}

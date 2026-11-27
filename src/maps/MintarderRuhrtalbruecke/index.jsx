@@ -26,6 +26,12 @@ import {
     resolveScaleIdForAttribute,
 } from './trackColorScales';
 import TrackColorSection from './TrackColorSection';
+import {
+    RELIABILITY_THRESHOLD_DEFAULT,
+    RELIABILITY_THRESHOLD_MAX,
+    RELIABILITY_THRESHOLD_MIN,
+    RELIABILITY_THRESHOLD_STEP,
+} from './trackClassification';
 import TimelineChart from './TimelineChart';
 
 // Values below are copied from the asset sidecar
@@ -106,6 +112,7 @@ const TRACKS = [
         symbol: 'sphere',
         symbolLabel: 'sphere',
         url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_15A_trefin1_final.geoparquet',
+        classificationUrl: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_15A_trefin1_final_class.csv',
     },
     {
         id: '37D',
@@ -114,6 +121,7 @@ const TRACKS = [
         symbol: 'cube',
         symbolLabel: 'cube',
         url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_37D_trefin1_final.geoparquet',
+        classificationUrl: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_37D_trefin1_final_class.csv',
     },
     {
         id: '139D',
@@ -122,6 +130,7 @@ const TRACKS = [
         symbol: 'cone',
         symbolLabel: 'cone',
         url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_139D_trefin1_final.geoparquet',
+        classificationUrl: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_139D_trefin1_final_class.csv',
     },
 ];
 
@@ -360,6 +369,11 @@ function MintarderRuhrtalbruecke() {
     );
     // Opacity of the four bridge OBJ parts; 1 keeps the as-built look, 0 hides it.
     const [bridgeOpacity, setBridgeOpacity] = useState(1);
+    // Reliability cutoff for the selected-point 2D chart dots. Session-only,
+    // like the other map settings; changing it recolours the open chart.
+    const [reliabilityThreshold, setReliabilityThreshold] = useState(
+        RELIABILITY_THRESHOLD_DEFAULT
+    );
 
     // Load one track once and cache its features; re-enabling a ready track is
     // instant and never refetches. Disabling does not abort or evict.
@@ -903,6 +917,8 @@ function MintarderRuhrtalbruecke() {
                     background: 'rgba(255, 255, 255, 0.95)',
                     border: '1px solid #ddd',
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                    maxHeight: 'calc(100vh - 24px)',
+                    overflowY: 'auto',
                     fontFamily: 'system-ui, sans-serif',
                     fontSize: 11,
                     color: '#333',
@@ -985,6 +1001,47 @@ function MintarderRuhrtalbruecke() {
                             showSymbol={symbolMode === 'shapes'}
                         />
                     ))}
+                </div>
+
+                <div
+                    style={{
+                        marginTop: 10,
+                        paddingTop: 10,
+                        borderTop: '1px solid #e2e2e2',
+                    }}
+                >
+                    <div
+                        style={{
+                            display: 'flex',
+                            alignItems: 'baseline',
+                            justifyContent: 'space-between',
+                            marginBottom: 4,
+                        }}
+                    >
+                        <label
+                            htmlFor="mintarder-rel-threshold"
+                            style={{ fontSize: 11, color: '#555' }}
+                        >
+                            Chart reliability threshold
+                        </label>
+                        <span style={{ fontSize: 11, color: '#555', fontVariantNumeric: 'tabular-nums' }}>
+                            {reliabilityThreshold.toFixed(2)}
+                        </span>
+                    </div>
+                    <input
+                        id="mintarder-rel-threshold"
+                        type="range"
+                        min={RELIABILITY_THRESHOLD_MIN}
+                        max={RELIABILITY_THRESHOLD_MAX}
+                        step={RELIABILITY_THRESHOLD_STEP}
+                        value={reliabilityThreshold}
+                        onChange={(event) => setReliabilityThreshold(Number(event.target.value))}
+                        style={{ width: '100%', cursor: 'pointer', margin: 0 }}
+                    />
+                    <div style={{ marginTop: 3, fontSize: 10, color: '#777', lineHeight: 1.35 }}>
+                        Chart dots: blue at or above threshold, grey below, black when no
+                        final-class data.
+                    </div>
                 </div>
 
                 <div
@@ -1235,7 +1292,10 @@ function MintarderRuhrtalbruecke() {
                     another track never rescales the legend; VEL_AVG defaults to the
                     descending legacy ramp. The arrow/sphere split and arrow heading still
                     use VEL_AVG.
-                    Click a symbol for its d_* displacement series.
+                    Click a symbol for its d_* displacement series; each dot is
+                    coloured by the track final-class CSV reliability for that date
+                    (blue at or above the reliability threshold in the panel, grey
+                    below, black when the CSV has no interval for it).
                 </div>
                 <div>
                     Alignment/anchor data:{' '}
@@ -1286,6 +1346,10 @@ function MintarderRuhrtalbruecke() {
                         feature={selectedFeature}
                         trackLabel={selectedFeature.trackId}
                         onClose={() => setSelectedPoint(null)}
+                        classificationUrl={TRACKS.find(
+                            (track) => track.id === selectedFeature.trackId
+                        )?.classificationUrl}
+                        reliabilityThreshold={reliabilityThreshold}
                     />
                 </div>
             )}
