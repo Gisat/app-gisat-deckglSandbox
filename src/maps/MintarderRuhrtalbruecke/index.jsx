@@ -173,6 +173,45 @@ function toggleButtonStyle(active, failed = false) {
     };
 }
 
+// Small monochrome cue for the shape drawn by the active Track shapes view.
+// It inherits the button text colour, so failed tracks still read red.
+function TrackSymbolIcon({ shape }) {
+    return (
+        <svg
+            aria-hidden="true"
+            focusable="false"
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ flexShrink: 0 }}
+        >
+            {shape === 'sphere' && (
+                <>
+                    <circle cx="6" cy="6" r="4" />
+                    <ellipse cx="6" cy="6" rx="1.8" ry="4" />
+                </>
+            )}
+            {shape === 'cube' && (
+                <>
+                    <path d="M6 1.6 10.2 3.7v5L6 10.8 1.8 8.7v-5Z" />
+                    <path d="M1.8 3.7 6 5.8l4.2-2.1M6 5.8v5" />
+                </>
+            )}
+            {shape === 'cone' && (
+                <>
+                    <path d="M6 1.6 2.2 9.2M6 1.6l3.8 7.6" />
+                    <ellipse cx="6" cy="9.2" rx="3.8" ry="1.2" />
+                </>
+            )}
+        </svg>
+    );
+}
+
 function parseOptionalNumber(value) {
     if (value == null || value === '') return null;
     const number = Number(value);
@@ -909,8 +948,19 @@ function MintarderRuhrtalbruecke() {
                                         : `${track.id} (${track.direction}, ${track.symbolLabel})`}
                                     style={toggleButtonStyle(isActive, hasFailed)}
                                 >
-                                    {trackLabel(track)}
-                                    {isTrackLoading ? ' …' : ''}
+                                    <span
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 4,
+                                        }}
+                                    >
+                                        {symbolMode === 'shapes' && (
+                                            <TrackSymbolIcon shape={track.symbol} />
+                                        )}
+                                        {trackLabel(track)}
+                                        {isTrackLoading ? ' …' : ''}
+                                    </span>
                                 </button>
                             );
                         })}
