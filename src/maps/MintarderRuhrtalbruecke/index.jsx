@@ -787,11 +787,16 @@ function MintarderRuhrtalbruecke() {
                     </select>
                 </div>
 
-                <div>
-                    <div style={{ fontSize: 11, color: '#555', marginBottom: 4 }}>Tracks</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div
+                        id="mintarder-tracks-label"
+                        style={{ fontSize: 11, color: '#555', whiteSpace: 'nowrap' }}
+                    >
+                        Tracks
+                    </div>
                     <div
                         role="group"
-                        aria-label="InSAR tracks"
+                        aria-labelledby="mintarder-tracks-label"
                         style={{ display: 'flex', gap: 4 }}
                     >
                         {TRACKS.map((track) => {
