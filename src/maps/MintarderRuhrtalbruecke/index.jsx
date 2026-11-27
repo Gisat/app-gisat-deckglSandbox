@@ -129,6 +129,12 @@ function formatNumber(value, digits = 2) {
     return Number.isFinite(number) ? number.toFixed(digits) : '–';
 }
 
+function parseOptionalNumber(value) {
+    if (value == null || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+}
+
 function clampVelocity(value) {
     const number = Number(value);
     if (!Number.isFinite(number)) return null;
@@ -198,6 +204,7 @@ function buildPointFeatures(table) {
         REL_LEN: vectorFor(table, 'REL_LEN'),
         VEL_SD: vectorFor(table, 'VEL_SD'),
         H: vectorFor(table, 'H'),
+        H_REF: vectorFor(table, 'H_REF'),
         COH: vectorFor(table, 'COH'),
         ACCEL: vectorFor(table, 'ACCEL'),
         geometry: vectorFor(table, 'geometry'),
@@ -222,6 +229,7 @@ function buildPointFeatures(table) {
             REL_LEN: numberAt(columns.REL_LEN, index),
             VEL_SD: numberAt(columns.VEL_SD, index),
             H: height,
+            H_REF: numberAt(columns.H_REF, index),
             COH: numberAt(columns.COH, index),
             ACCEL: numberAt(columns.ACCEL, index),
         };
@@ -282,6 +290,9 @@ function MintarderRuhrtalbruecke() {
     // The model/attribution card is collapsed to a single small button so it
     // does not cover the map by default.
     const [infoOpen, setInfoOpen] = useState(false);
+    // Height reference for the 3D InSAR symbols. H_REF is relative to the DEM
+    // and is the default; H places them at their absolute measured height.
+    const [heightMode, setHeightMode] = useState('h_ref');
 
     useEffect(() => {
         let cancelled = false;
@@ -389,6 +400,7 @@ function MintarderRuhrtalbruecke() {
                 `ID: ${properties.ID ?? '–'}`,
                 `VEL_AVG: ${formatNumber(properties.VEL_AVG, 2)} mm/yr`,
                 `H: ${formatNumber(properties.H, 2)} m`,
+                `H_REF: ${formatNumber(properties.H_REF, 2)} m`,
                 `COH: ${formatNumber(properties.COH, 2)}`,
             ].join('\n'),
         };
@@ -449,6 +461,7 @@ function MintarderRuhrtalbruecke() {
                 tileSize: 256,
                 minZoom: 10,
                 maxZoom: 15,
+                zRange,
                 clampToTerrain: true,
                 extensions: [new TerrainExtension()],
                 cogBitmapOptions: {
@@ -461,7 +474,9 @@ function MintarderRuhrtalbruecke() {
                     maxGlazeAlpha: 80,
                 },
             }),
-        []
+        // Recreate after the terrain height map is available so the clamped
+        // relief overlay picks up the DEM instead of staying at z=0.
+        [zRange]
     );
 
     const bridgeLayers = useMemo(
@@ -483,6 +498,8 @@ function MintarderRuhrtalbruecke() {
                         getColor: () => part.color,
                         getPolygonOffset: () => [0, 0],
                         material: MATERIAL,
+                        // Re-run once the terrain height map is available.
+                        updateTriggers: { getPosition: [zRange] },
                         // Offset mode lifts the local ENU mesh by the DEM
                         // height sampled under the ANCHOR.
                         extensions: [new TerrainExtension()],
@@ -490,7 +507,9 @@ function MintarderRuhrtalbruecke() {
                         pickable: false,
                     })
             ),
-        []
+        // Same reason as the glaze overlay: re-apply the terrain offset once
+        // the height map exists.
+        [zRange]
     );
 
     // Same Poláky split: |VEL_AVG| <= 0.5 mm/yr -> sphere, everything else ->
@@ -517,45 +536,60 @@ function MintarderRuhrtalbruecke() {
             }
             return velocityColor(feature.properties?.VEL_AVG);
         };
-        // The user-facing requirement is explicit: latitude, longitude and the
-        // point's H value drive the 3D anchor.
+        // Extensions cannot be reliably added/removed on an existing layer id.
+        // Give each height mode its own ids so switching remounts the layers
+        // with/without TerrainExtension instead of reusing stale state.
+        const pointLayerPrefix = `${POINTS_LAYER_PREFIX}-${heightMode}`;
+        const useTerrainOffset = heightMode === 'h_ref';
+        const terrainOffsetProps = useTerrainOffset
+            ? {
+                // Offset mode lifts each symbol by the DEM height at its own
+                // lon/lat, then H_REF is the height above that ground.
+                extensions: [new TerrainExtension()],
+                terrainDrawMode: 'offset',
+            }
+            : {};
+        // H_REF is measured above the local ground; H is absolute. Fall back
+        // to the other value when the selected one is missing.
         const getAnchorPosition = (feature) => {
             const properties = feature.properties ?? {};
-            const height = Number(properties.H);
-            return [
-                properties.LON,
-                properties.LAT,
-                Number.isFinite(height) ? height : 0,
-            ];
+            const primary = parseOptionalNumber(properties[useTerrainOffset ? 'H_REF' : 'H']);
+            const fallback = parseOptionalNumber(properties[useTerrainOffset ? 'H' : 'H_REF']);
+            const height = primary ?? fallback ?? 0;
+            return [properties.LON, properties.LAT, height];
         };
         const updateTriggers = {
             getColor: [selectedArrowIndex, hoveredArrowIndex],
+            // Force the anchors to re-evaluate when the DEM height map arrives.
+            getPosition: [zRange],
         };
 
         return [
             ...build3dLosArrowLayers({
-                idPrefix: POINTS_LAYER_PREFIX,
+                idPrefix: pointLayerPrefix,
                 data: arrowFeatures,
                 zoom,
                 // 139D is the descending track; Poláky uses the D heading pair.
                 orbit: 'D',
                 pickable: true,
                 getPosition: getAnchorPosition,
+                ...terrainOffsetProps,
                 getColor: getSymbolColor,
                 updateTriggers,
             }),
             build3dLosSphereLayer({
-                id: `${POINTS_LAYER_PREFIX}-spheres`,
+                id: `${pointLayerPrefix}-spheres`,
                 data: sphereFeatures,
                 zoom,
                 radiusMeters: 1.6,
                 pickable: true,
                 getPosition: getAnchorPosition,
+                ...terrainOffsetProps,
                 getColor: getSymbolColor,
                 updateTriggers,
             }),
         ];
-    }, [points, arrowFeatures, sphereFeatures, zoom, selectedPoint, hoveredArrowIndex]);
+    }, [points, arrowFeatures, sphereFeatures, zoom, selectedPoint, hoveredArrowIndex, heightMode, zRange]);
 
     const layers = useMemo(
         () => [
@@ -583,6 +617,51 @@ function MintarderRuhrtalbruecke() {
                 getCursor={() => (hoveredArrowIndex != null ? 'pointer' : 'grab')}
                 getTooltip={getTooltip}
             />
+
+            <div
+                style={{
+                    position: 'absolute',
+                    top: 12,
+                    left: 12,
+                    zIndex: 10,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    background: 'rgba(255, 255, 255, 0.95)',
+                    border: '1px solid #ddd',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                    fontFamily: 'system-ui, sans-serif',
+                    fontSize: 11,
+                    color: '#333',
+                }}
+            >
+                <label
+                    htmlFor="mintarder-height-mode"
+                    style={{ fontSize: 11, color: '#555', whiteSpace: 'nowrap' }}
+                >
+                    Point height
+                </label>
+                <select
+                    id="mintarder-height-mode"
+                    value={heightMode}
+                    onChange={(event) => setHeightMode(event.target.value)}
+                    style={{
+                        padding: '3px 6px',
+                        border: '1px solid #bbb',
+                        borderRadius: 4,
+                        background: '#fff',
+                        color: '#333',
+                        fontFamily: 'inherit',
+                        fontSize: 11,
+                        cursor: 'pointer',
+                    }}
+                >
+                    <option value="h_ref">H_REF (above DEM)</option>
+                    <option value="h">H (absolute)</option>
+                </select>
+            </div>
 
             {status === 'loading' && (
                 <div
@@ -727,10 +806,11 @@ function MintarderRuhrtalbruecke() {
                 <div>
                     InSAR: track 139D, 4,752 points ({sphereFeatures.length.toLocaleString()} spheres,{' '}
                     {arrowFeatures.length.toLocaleString()} arrows) — spheres for |VEL_AVG| ≤ 0.5 mm/yr,
-                    3D LOS arrows otherwise, anchored at LON / LAT / H. VEL_AVG scale
-                    −2.5 → +2.5 mm/yr; the descending (D) ramp is inverted, so red is
-                    negative and blue positive. Hover for ID / VEL_AVG / H / COH; click a
-                    symbol for its d_* displacement series.
+                    3D LOS arrows otherwise, anchored at{' '}
+                    {heightMode === 'h_ref' ? 'H_REF above the DEM' : 'absolute H'}.
+                    VEL_AVG scale −2.5 → +2.5 mm/yr; the descending (D) ramp is inverted,
+                    so red is negative and blue positive. Hover for ID / VEL_AVG / H /
+                    H_REF / COH; click a symbol for its d_* displacement series.
                 </div>
                 <div>
                     Alignment/anchor data:{' '}
