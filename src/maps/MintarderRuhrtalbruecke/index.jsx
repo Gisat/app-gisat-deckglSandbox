@@ -13,9 +13,15 @@ import { ParquetArrowLoader } from '@loaders.gl/parquet';
 import { cartoLightBasemapUrl } from '../basemaps';
 import { ColorScaleLegend } from '../../components/MapSymbols/ColorScaleLegend';
 import { isTimelineKey } from '../../components/FeatureSpaceChart3D/timelineGeometry';
-import { build3dLosArrowLayers } from '../../layers/factory/build3dLosArrowLayers';
+import {
+    build3dLosArrowLayers,
+    computeArrowRaiseMeters,
+} from '../../layers/factory/build3dLosArrowLayers';
 import { build3dLosSphereLayer } from '../../layers/factory/build3dLosSphereLayer';
-import { build3dLosTrackSymbolLayer } from '../../layers/factory/build3dLosTrackSymbolLayer';
+import {
+    build3dLosTrackSymbolLayer,
+    getTrackSymbolSizeMeters,
+} from '../../layers/factory/build3dLosTrackSymbolLayer';
 import {
     COLOR_ATTRIBUTE_BY_KEY,
     COLOR_ATTRIBUTE_KEYS,
@@ -29,6 +35,7 @@ import TrackColorSection from './TrackColorSection';
 import { RELIABILITY_THRESHOLD_DEFAULT } from './trackClassification';
 import { DEFAULT_OFFSET_FACTOR, fetchTrackWavelength } from './trackMetadata';
 import TimelineChart from './TimelineChart';
+import { buildSelectionRingLayer } from './selectionRing';
 
 // Values below are copied from the asset sidecar
 // build/mintarder_ruhrtalbruecke.json (see 3DFLUS CCN/Mintarder Ruhrtalbrucke).
@@ -148,6 +155,9 @@ const SYMBOL_VIEWS = [
     { id: 'arrows', label: 'Arrows + circles' },
 ];
 const TRACK_SHAPE_RADIUS_METERS = 1.6;
+// The cone's visual mass sits below its vertical mid-height, so the selection
+// ring is lowered slightly to cross the cone body instead of its upper half.
+const CONE_RING_CENTER_SCALE = 0.85;
 
 // ParquetArrowLoader is the WASM-backed loader in @loaders.gl/parquet 4.5.x
 // (loader id `parquet-wasm`, worker: false). Point it at the local wasm copy
@@ -161,7 +171,7 @@ const POINTS_LAYER_PREFIX = 'mintarder-insar';
 const NEAR_ZERO_VEL_AVG = 0.5;
 
 const MISSING_VALUE_COLOR = [128, 128, 128, 255];
-// Same selection/hover cyan as Poláky Hradec v2.
+// Hover cyan and selection-ring cyan, same as Poláky Hradec v2.
 const SELECTION_COLOR = [66, 212, 244, 255];
 
 // Toggle button chrome for the Symbols view, mirroring the 3D chart's
@@ -591,9 +601,35 @@ function MintarderRuhrtalbruecke() {
         ? tracks[selectedFeature.trackId]
         : null;
 
+    // Hover tooltip: the value of the attribute currently driving the hovered
+    // track's colour scale.
+    const hoveredValue = useMemo(() => {
+        if (!hoveredPoint) return null;
+        const state = tracks[hoveredPoint.trackId];
+        if (state?.status !== 'ready') return null;
+        const feature = state.features.find(
+            (entry) => entry.arrowIndex === hoveredPoint.arrowIndex
+        );
+        const colorConfig = trackColorConfig[hoveredPoint.trackId];
+        if (!feature || !colorConfig) return null;
+        const attributeDef = COLOR_ATTRIBUTE_BY_KEY[colorConfig.attribute];
+        if (!attributeDef) return null;
+        return {
+            label: attributeDef.label,
+            unit: attributeDef.unit,
+            decimals: attributeDef.decimals ?? 2,
+            value: readColorAttribute(feature, colorConfig.attribute),
+        };
+    }, [hoveredPoint, tracks, trackColorConfig]);
+
     const handleHover = useCallback((info) => {
         const next = isPointLayer(info.layer?.id) && info.object
-            ? { trackId: info.object.trackId, arrowIndex: info.object.arrowIndex }
+            ? {
+                trackId: info.object.trackId,
+                arrowIndex: info.object.arrowIndex,
+                x: info.x,
+                y: info.y,
+            }
             : null;
         setHoveredPoint((previous) => {
             if (!previous && !next) return previous;
@@ -613,6 +649,42 @@ function MintarderRuhrtalbruecke() {
             setSelectedPoint(null);
         }
     }, []);
+
+    // Shared anchor for the point symbols and the selection ring. H_REF is
+    // measured above the local ground, H is absolute, and H_dem is the ground
+    // elevation. Convert between the two datums when the selected value is
+    // missing instead of swapping the raw value, which would shift the symbol by
+    // the whole terrain height. Height mode is global: it applies to every
+    // visible track.
+    const getAnchorPosition = useCallback((feature) => {
+        const properties = feature?.properties ?? {};
+        const h = parseOptionalNumber(properties.H);
+        const hRef = parseOptionalNumber(properties.H_REF);
+        const hDem = parseOptionalNumber(properties.H_dem);
+        const groundRelative = hRef ?? (h != null && hDem != null ? h - hDem : null);
+        const absolute = h ?? (hRef != null && hDem != null ? hRef + hDem : null);
+        const height = (heightMode === 'h_ref' ? groundRelative : absolute) ?? 0;
+        return [properties.LON, properties.LAT, height];
+    }, [heightMode]);
+
+    // Half-height from the anchor to the rendered symbol's vertical centre, using
+    // the same formulas as the meshes so the selection ring cannot drift.
+    const getSymbolCenterOffsetMeters = useCallback((feature, track, kind) => {
+        if (kind === 'arrow') {
+            const relLen = parseOptionalNumber(
+                feature?.properties?.REL_LEN ?? feature?.properties?.rel_len
+            );
+            return computeArrowRaiseMeters(relLen, zoom);
+        }
+
+        // Arrow mode renders near-zero points as spheres, not as the track shape.
+        if (symbolMode === 'arrows') {
+            return getTrackSymbolSizeMeters('sphere', TRACK_SHAPE_RADIUS_METERS, zoom);
+        }
+
+        const size = getTrackSymbolSizeMeters(track.symbol, TRACK_SHAPE_RADIUS_METERS, zoom);
+        return track.symbol === 'cone' ? size * CONE_RING_CENTER_SCALE : size;
+    }, [symbolMode, zoom]);
 
     const terrainLayer = useMemo(
         () =>
@@ -752,8 +824,6 @@ function MintarderRuhrtalbruecke() {
     }, [tracks, symbolMode]);
 
     const pointSymbolLayers = useMemo(() => {
-        const selectedTrackId = selectedPoint?.trackId ?? null;
-        const selectedArrowIndex = selectedPoint?.arrowIndex ?? null;
         const hoveredTrackId = hoveredPoint?.trackId ?? null;
         const hoveredArrowIndex = hoveredPoint?.arrowIndex ?? null;
 
@@ -769,21 +839,6 @@ function MintarderRuhrtalbruecke() {
                 terrainDrawMode: 'offset',
             }
             : {};
-        // H_REF is measured above the local ground, H is absolute, and H_dem is
-        // the ground elevation. Convert between the two datums when the selected
-        // value is missing instead of swapping the raw value, which would shift
-        // the symbol by the whole terrain height.
-        // Height mode is global: it applies to every visible track.
-        const getAnchorPosition = (feature) => {
-            const properties = feature.properties ?? {};
-            const h = parseOptionalNumber(properties.H);
-            const hRef = parseOptionalNumber(properties.H_REF);
-            const hDem = parseOptionalNumber(properties.H_dem);
-            const groundRelative = hRef ?? (h != null && hDem != null ? h - hDem : null);
-            const absolute = h ?? (hRef != null && hDem != null ? hRef + hDem : null);
-            const height = (useTerrainOffset ? groundRelative : absolute) ?? 0;
-            return [properties.LON, properties.LAT, height];
-        };
 
         const symbolLayers = [];
         for (const track of TRACKS) {
@@ -793,26 +848,23 @@ function MintarderRuhrtalbruecke() {
             const symbols = trackSymbols[track.id];
             const colorConfig = trackColorConfig[track.id];
 
-            // Track-scoped highlight: only this track's matching point lights
-            // up, even when other tracks share the same arrowIndex.
+            // Track-scoped hover highlight: only this track's matching point
+            // flashes cyan. Selection is drawn by the ring layer instead, so the
+            // selected symbol keeps its data-driven colour.
             const getSymbolColor = (feature) => {
-                const isSelected = selectedArrowIndex != null
-                    && selectedTrackId === track.id
-                    && feature.arrowIndex === selectedArrowIndex;
                 const isHovered = hoveredArrowIndex != null
                     && hoveredTrackId === track.id
                     && feature.arrowIndex === hoveredArrowIndex;
-                if (isSelected || isHovered) return SELECTION_COLOR;
+                if (isHovered) return SELECTION_COLOR;
                 const value = readColorAttribute(feature, colorConfig.attribute);
                 if (value == null) return MISSING_VALUE_COLOR;
                 const [r, g, b] = colorConfig.scale(value).rgb();
                 return [r, g, b, 255];
             };
             const updateTriggers = {
-                // Track-scoped: only this track's highlight or colour config
-                // can change, so other tracks skip their colour update.
+                // Track-scoped: only this track's hover or colour config can
+                // change, so other tracks skip their colour update.
                 getColor: [
-                    selectedTrackId === track.id ? selectedArrowIndex : null,
                     hoveredTrackId === track.id ? hoveredArrowIndex : null,
                     colorConfig.colorKey,
                 ],
@@ -857,7 +909,7 @@ function MintarderRuhrtalbruecke() {
                     id: `${pointLayerPrefix}-spheres`,
                     data: symbols.spheres,
                     zoom,
-                    radiusMeters: 1.6,
+                    radiusMeters: TRACK_SHAPE_RADIUS_METERS,
                     pickable: true,
                     getPosition: getAnchorPosition,
                     ...terrainOffsetProps,
@@ -867,7 +919,41 @@ function MintarderRuhrtalbruecke() {
             );
         }
         return symbolLayers;
-    }, [tracks, trackSymbols, visibleTrackIds, zoom, selectedPoint, hoveredPoint, heightMode, symbolMode, zRange, trackColorConfig]);
+    }, [tracks, trackSymbols, visibleTrackIds, zoom, hoveredPoint, heightMode, symbolMode, zRange, trackColorConfig, getAnchorPosition]);
+
+    // Selection is drawn as a horizontal cyan ring at the symbol's vertical
+    // centre, so the selected symbol keeps its data-driven colour.
+    const selectionRingLayer = useMemo(() => {
+        if (!selectedPoint) return null;
+        if (tracks[selectedPoint.trackId]?.status !== 'ready') return null;
+
+        const track = TRACKS.find((entry) => entry.id === selectedPoint.trackId);
+        if (!track) return null;
+
+        // Match the rendered symbol: in arrow mode a non-near-zero point is the
+        // 3D arrow composite; near-zero points are spheres in both modes.
+        const kind = symbolMode === 'arrows' && !isNearZeroVelocity(selectedPoint)
+            ? 'arrow'
+            : 'shape';
+        return buildSelectionRingLayer({
+            id: `${POINTS_LAYER_PREFIX}-${selectedPoint.trackId}-${heightMode}-${symbolMode}-selection-ring`,
+            feature: selectedPoint,
+            getAnchorPosition,
+            zoom,
+            kind,
+            centerOffsetMeters: getSymbolCenterOffsetMeters(selectedPoint, track, kind),
+            useTerrainOffset: heightMode === 'h_ref',
+            color: SELECTION_COLOR,
+        });
+    }, [
+        selectedPoint,
+        tracks,
+        symbolMode,
+        heightMode,
+        zoom,
+        getAnchorPosition,
+        getSymbolCenterOffsetMeters,
+    ]);
 
     // One legend per visible ready track, showing that track's effective
     // attribute, scale and fixed attribute domain.
@@ -912,9 +998,17 @@ function MintarderRuhrtalbruecke() {
             // symbols behind it, so they read as under the model instead of
             // on top of it. Opaque points still depth-cull the bridge.
             ...pointSymbolLayers,
+            ...(selectionRingLayer ? [selectionRingLayer] : []),
             ...bridgeLayers,
         ],
-        [terrainLayer, baseMapLayer, reliefGlazeLayer, bridgeLayers, pointSymbolLayers]
+        [
+            terrainLayer,
+            baseMapLayer,
+            reliefGlazeLayer,
+            bridgeLayers,
+            pointSymbolLayers,
+            selectionRingLayer,
+        ]
     );
 
     return (
@@ -931,6 +1025,37 @@ function MintarderRuhrtalbruecke() {
                 onClick={handleClick}
                 getCursor={() => (hoveredPoint != null ? 'pointer' : 'grab')}
             />
+
+            {hoveredValue && hoveredPoint?.x != null && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        left: hoveredPoint.x + 14,
+                        top: hoveredPoint.y + 14,
+                        zIndex: 15,
+                        pointerEvents: 'none',
+                        padding: '3px 7px',
+                        borderRadius: 4,
+                        background: 'rgba(255, 255, 255, 0.95)',
+                        border: '1px solid #ddd',
+                        boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
+                        fontFamily: 'system-ui, sans-serif',
+                        fontSize: 11,
+                        color: '#333',
+                        whiteSpace: 'nowrap',
+                    }}
+                >
+                    <span style={{ color: '#888' }}>{hoveredValue.label}</span>{' '}
+                    <b style={{ fontWeight: 600 }}>
+                        {hoveredValue.value == null
+                            ? '–'
+                            : hoveredValue.value.toFixed(hoveredValue.decimals)}
+                    </b>
+                    {hoveredValue.unit
+                        ? <span style={{ color: '#888' }}> {hoveredValue.unit}</span>
+                        : null}
+                </div>
+            )}
 
             <div
                 style={{
@@ -1284,8 +1409,9 @@ function MintarderRuhrtalbruecke() {
                     another track never rescales the legend; VEL_AVG defaults to the
                     descending legacy ramp. The arrow/sphere split and arrow heading still
                     use VEL_AVG.
-                    Click a symbol for its d_* displacement series; each dot is
-                    coloured by the track final-class CSV reliability for that date
+                    Click a symbol for a cyan selection ring at its vertical centre and
+                    its d_* displacement series; each dot is coloured by the track
+                    final-class CSV reliability for that date
                     (blue at or above the reliability threshold in the panel, grey
                     below, black when the CSV has no interval for it).
                 </div>

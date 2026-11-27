@@ -15,6 +15,7 @@ import {
   OFFSET_FACTOR_STEP,
   parseOffsetFactor,
 } from './trackMetadata';
+import { COLOR_ATTRIBUTES, readColorAttribute } from './trackColorScales';
 
 function formatDate(value) {
   if (!(value instanceof Date) || Number.isNaN(value.getTime())) return String(value);
@@ -89,6 +90,15 @@ export default function TimelineChart({
   onMinusOffsetFactorChange,
 }) {
   const props = feature?.properties ?? {};
+
+  // Values for the header grid; the feature object is stable per selection.
+  const attributeItems = useMemo(
+    () => COLOR_ATTRIBUTES.map((def) => ({
+      ...def,
+      value: readColorAttribute(feature, def.key),
+    })),
+    [feature],
+  );
 
   const [classification, setClassification] = useState({
     url: null,
@@ -382,9 +392,6 @@ export default function TimelineChart({
         Point {props.ID ?? '–'} · {trackLabel}
       </div>
       <div style={{ fontSize: '11px', color: '#555' }}>
-        VEL_AVG <b>{formatNumber(props.VEL_AVG, 2)}</b> mm/yr
-      </div>
-      <div style={{ fontSize: '11px', color: '#555' }}>
         λ <b>{formatNumber(wavelengthValue, 3)}</b> mm
       </div>
       <button
@@ -410,10 +417,39 @@ export default function TimelineChart({
     </div>
   );
 
+  const attributeGrid = (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+      columnGap: '8px',
+      rowGap: '2px',
+      marginBottom: '8px',
+      paddingBottom: '6px',
+      fontSize: '10px',
+      color: '#555',
+    }}>
+      {attributeItems.map((item) => (
+        <span
+          key={item.key}
+          title={`${item.label}${item.unit ? ` (${item.unit})` : ''}`}
+          style={{ minWidth: 0 }}
+        >
+          <span style={{ color: '#888' }}>{item.label}</span>
+          <br />
+          <b style={{ color: '#333', fontWeight: 600 }}>
+            {formatNumber(item.value, item.decimals)}
+          </b>
+          {item.unit ? <span style={{ color: '#888' }}> {item.unit}</span> : null}
+        </span>
+      ))}
+    </div>
+  );
+
   if (series.length === 0) {
     return (
       <div style={cardStyle}>
         {header}
+        {attributeGrid}
         <div style={{
           flex: 1,
           display: 'flex',
@@ -431,6 +467,7 @@ export default function TimelineChart({
   return (
     <div style={cardStyle}>
       {header}
+      {attributeGrid}
       {legend}
       {settingsRow}
       {statusMessage && (
