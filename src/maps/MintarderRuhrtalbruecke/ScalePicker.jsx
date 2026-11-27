@@ -4,17 +4,40 @@ import { TRACK_COLOR_SCALES } from './trackColorScales';
 
 const GROUP_LABELS = {
   legacy: 'Velocity ramps',
-  brewer: 'ColorBrewer diverging',
+  'brewer-diverging': 'ColorBrewer diverging',
+  'brewer-sequential': 'ColorBrewer sequential',
 };
 
+const PREVIEW_HEIGHT = 12;
+
+// Continuous gradient preview of the scale stops. The map interpolates between
+// the same stops, so the preview reads like the layer colours instead of a set
+// of discrete classes.
 const gradientFor = (colors) => `linear-gradient(to right, ${colors.join(', ')})`;
+
+function ScalePreview({ colors, width }) {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        flexShrink: 0,
+        width,
+        height: PREVIEW_HEIGHT,
+        border: '1px solid #ccc',
+        borderRadius: 2,
+        boxSizing: 'border-box',
+        background: gradientFor(colors),
+      }}
+    />
+  );
+}
 
 /**
  * Popup gradient picker for a track's colour scale.
  *
- * The trigger shows the selected gradient and label; the popup (portalled to
- * `document.body` so the map's overflow clipping cannot cut it off) lists every
- * scale as a gradient bar. The popup is positioned from the trigger rect,
+ * The trigger shows the selected gradient and short label; the popup (portalled
+ * to `document.body` so the map's overflow clipping cannot cut it off) lists
+ * every scale as a gradient bar. The popup is positioned from the trigger rect,
  * flips above when there is more room there, and closes on selection, Escape,
  * outside pointerdown, scroll or resize.
  *
@@ -204,17 +227,7 @@ export default function ScalePicker({ value, onChange }) {
               border: `1px solid ${def.id === value ? '#0066cc' : 'transparent'}`,
             }}
           >
-            <span
-              aria-hidden="true"
-              style={{
-                flexShrink: 0,
-                width: 72,
-                height: 12,
-                borderRadius: 2,
-                border: '1px solid #ccc',
-                background: gradientFor(def.colors),
-              }}
-            />
+            <ScalePreview colors={def.colors} width={96} />
             <span style={{ flex: 1, minWidth: 0 }}>{def.label}</span>
             {def.id === value ? (
               <span aria-hidden="true" style={{ color: '#0066cc' }}>✓</span>
@@ -235,6 +248,7 @@ export default function ScalePicker({ value, onChange }) {
         aria-expanded={open}
         aria-controls={open ? popupId : undefined}
         aria-label={`Color scale: ${selected.label}`}
+        title={selected.label}
         onClick={() => (open ? close() : openPopup())}
         style={{
           display: 'flex',
@@ -253,17 +267,7 @@ export default function ScalePicker({ value, onChange }) {
           textAlign: 'left',
         }}
       >
-        <span
-          aria-hidden="true"
-          style={{
-            flexShrink: 0,
-            width: 40,
-            height: 10,
-            borderRadius: 2,
-            border: '1px solid #ccc',
-            background: gradientFor(selected.colors),
-          }}
-        />
+        <ScalePreview colors={selected.colors} width={56} />
         <span
           style={{
             flex: 1,
@@ -273,7 +277,7 @@ export default function ScalePicker({ value, onChange }) {
             whiteSpace: 'nowrap',
           }}
         >
-          {selected.label}
+          {selected.shortLabel}
         </span>
         <span aria-hidden="true" style={{ flexShrink: 0, color: '#777' }}>▾</span>
       </button>

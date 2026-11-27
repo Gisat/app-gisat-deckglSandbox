@@ -19,11 +19,11 @@ import { build3dLosTrackSymbolLayer } from '../../layers/factory/build3dLosTrack
 import {
     COLOR_ATTRIBUTE_BY_KEY,
     COLOR_ATTRIBUTE_KEYS,
-    DEFAULT_SCALE_ID_BY_ORBIT,
     TRACK_COLOR_SCALE_BY_ID,
     buildTrackColorScale,
     computeTrackColorStats,
     readColorAttribute,
+    resolveScaleIdForAttribute,
 } from './trackColorScales';
 import TrackColorSection from './TrackColorSection';
 import TimelineChart from './TimelineChart';
@@ -95,10 +95,9 @@ const TERRAIN_OPTIONS = {
 // ---------------------------------------------------------------------------
 
 // One entry per measurement track. The GeoParquet files carry no orbit
-// property, so the orbit (which drives both the arrow heading pair and the
-// default ascending/descending colour ramp) is declared here. Any combination
-// of tracks may be visible at once, so point and layer ids are namespaced by
-// track id.
+// property, so the orbit (which drives the arrow heading pair) is declared
+// here. Any combination of tracks may be visible at once, so point and layer
+// ids are namespaced by track id.
 const TRACKS = [
     {
         id: '15A',
@@ -235,12 +234,13 @@ function buildPointFeatures(table, track) {
         VEL_AVG: vectorForAny(table, ['VEL_AVG', 'vel_avg']),
         VEL_REL: vectorForAny(table, ['VEL_REL', 'vel_rel']),
         VEL_LAST: vectorForAny(table, ['VEL_LAST', 'vel_last']),
+        K_TEMP: vectorForAny(table, ['K_TEMP', 'k_temp']),
         REL_LEN: vectorFor(table, 'REL_LEN'),
         VEL_SD: vectorFor(table, 'VEL_SD'),
-        H: vectorFor(table, 'H'),
-        H_REF: vectorFor(table, 'H_REF'),
-        H_dem: vectorFor(table, 'H_dem'),
-        COH: vectorFor(table, 'COH'),
+        H: vectorForAny(table, ['H', 'h']),
+        H_REF: vectorForAny(table, ['H_REF', 'h_ref']),
+        H_dem: vectorForAny(table, ['H_dem', 'h_dem']),
+        COH: vectorForAny(table, ['COH', 'coh']),
         ACCEL: vectorFor(table, 'ACCEL'),
         geometry: vectorFor(table, 'geometry'),
     };
@@ -268,6 +268,7 @@ function buildPointFeatures(table, track) {
             VEL_AVG: numberAt(columns.VEL_AVG, index),
             VEL_REL: numberAt(columns.VEL_REL, index),
             VEL_LAST: numberAt(columns.VEL_LAST, index),
+            K_TEMP: numberAt(columns.K_TEMP, index),
             REL_LEN: numberAt(columns.REL_LEN, index),
             VEL_SD: numberAt(columns.VEL_SD, index),
             H: height,
@@ -347,13 +348,13 @@ function MintarderRuhrtalbruecke() {
     // Per-track shapes (default) or the 3D LOS arrow / near-zero sphere split.
     const [symbolMode, setSymbolMode] = useState('shapes');
     // Per-track colour attribute and scale. Session-only; a reload returns to
-    // VEL_AVG with each orbit's legacy ramp.
+    // VEL_AVG with the descending legacy ramp on every track.
     const [trackColorSettings, setTrackColorSettings] = useState(() =>
         Object.fromEntries(TRACKS.map((track) => [
             track.id,
             {
                 attribute: 'VEL_AVG',
-                scaleId: DEFAULT_SCALE_ID_BY_ORBIT[track.orbit],
+                scaleId: COLOR_ATTRIBUTE_BY_KEY.VEL_AVG.defaultScaleId,
             },
         ]))
     );
@@ -400,16 +401,23 @@ function MintarderRuhrtalbruecke() {
                 // fall back to the first available attribute in declared order.
                 setTrackColorSettings((previous) => {
                     const current = previous[id];
-                    if (!current || colorStats[current.attribute]?.available) {
-                        return previous;
-                    }
-                    const fallback = COLOR_ATTRIBUTE_KEYS.find(
-                        (key) => colorStats[key]?.available
-                    ) ?? 'VEL_AVG';
+                    if (!current) return previous;
+                    const fallback = colorStats[current.attribute]?.available
+                        ? current.attribute
+                        : (COLOR_ATTRIBUTE_KEYS.find(
+                            (key) => colorStats[key]?.available
+                        ) ?? 'VEL_AVG');
                     if (fallback === current.attribute) return previous;
                     return {
                         ...previous,
-                        [id]: { ...current, attribute: fallback },
+                        [id]: {
+                            ...current,
+                            attribute: fallback,
+                            scaleId: resolveScaleIdForAttribute(
+                                current.scaleId,
+                                COLOR_ATTRIBUTE_BY_KEY[fallback]
+                            ),
+                        },
                     };
                 });
             } catch (loadError) {
@@ -478,7 +486,8 @@ function MintarderRuhrtalbruecke() {
 
     // One resolved colour config per track. The effective attribute falls back
     // to the first available one when the stored selection is missing from the
-    // loaded dataset, so the picker and the colours never disagree.
+    // loaded dataset, so the picker and the colours never disagree. Domains are
+    // fixed per attribute so every track shares one scale range.
     const trackColorConfig = useMemo(() => {
         const configs = {};
         for (const track of TRACKS) {
@@ -491,32 +500,37 @@ function MintarderRuhrtalbruecke() {
                     ?? 'VEL_AVG')
                 : settings.attribute;
 
+            const attributeDef = COLOR_ATTRIBUTE_BY_KEY[attribute];
             const scaleDef = TRACK_COLOR_SCALE_BY_ID[settings.scaleId]
-                ?? TRACK_COLOR_SCALE_BY_ID[DEFAULT_SCALE_ID_BY_ORBIT[track.orbit]];
-
-            const domain = state?.status === 'ready'
-                ? state.colorStats?.[attribute]?.domain
-                    ?? COLOR_ATTRIBUTE_BY_KEY[attribute].floorDomain
-                : COLOR_ATTRIBUTE_BY_KEY[attribute].floorDomain;
+                ?? TRACK_COLOR_SCALE_BY_ID[attributeDef.defaultScaleId];
+            const domain = attributeDef.domain;
 
             configs[track.id] = {
                 attribute,
                 scaleDef,
                 domain,
                 scale: buildTrackColorScale(scaleDef, domain),
-                // Retrigger only this track when its attribute, scale or
-                // auto-expanded domain changes.
-                colorKey: `${attribute}|${scaleDef.id}|${domain[0]}|${domain[1]}`,
+                // Retrigger only this track when its attribute or scale changes.
+                colorKey: `${attribute}|${scaleDef.id}`,
             };
         }
         return configs;
     }, [tracks, trackColorSettings]);
 
     const handleTrackAttributeChange = useCallback((id, attribute) => {
-        setTrackColorSettings((previous) => ({
-            ...previous,
-            [id]: { ...previous[id], attribute },
-        }));
+        setTrackColorSettings((previous) => {
+            const current = previous[id];
+            const attributeDef = COLOR_ATTRIBUTE_BY_KEY[attribute];
+            if (!current || !attributeDef) return previous;
+            return {
+                ...previous,
+                [id]: {
+                    ...current,
+                    attribute,
+                    scaleId: resolveScaleIdForAttribute(current.scaleId, attributeDef),
+                },
+            };
+        });
     }, []);
 
     const handleTrackScaleChange = useCallback((id, scaleId) => {
@@ -809,7 +823,7 @@ function MintarderRuhrtalbruecke() {
     }, [tracks, trackSymbols, visibleTrackIds, zoom, selectedPoint, hoveredPoint, heightMode, symbolMode, zRange, trackColorConfig]);
 
     // One legend per visible ready track, showing that track's effective
-    // attribute, scale and (possibly auto-expanded) domain.
+    // attribute, scale and fixed attribute domain.
     const legendTracks = useMemo(
         () => TRACKS
             .filter((track) => visibleTrackIds.has(track.id)
@@ -973,7 +987,13 @@ function MintarderRuhrtalbruecke() {
                     ))}
                 </div>
 
-                <div>
+                <div
+                    style={{
+                        marginTop: 10,
+                        paddingTop: 10,
+                        borderTop: '1px solid #e2e2e2',
+                    }}
+                >
                     <div
                         style={{
                             display: 'flex',
@@ -1083,22 +1103,43 @@ function MintarderRuhrtalbruecke() {
                         pointerEvents: 'none',
                         display: 'flex',
                         flexDirection: 'column',
+                        alignItems: 'flex-end',
                         gap: 8,
                         maxHeight: 'calc(100vh - 24px)',
                         overflowY: 'auto',
                     }}
                 >
-                    {legendTracks.map(({ track, config, points }) => (
-                        <ColorScaleLegend
-                            key={track.id}
-                            colorScale={(value) => {
-                                const [r, g, b] = config.scale(value).rgb();
-                                return [r, g, b];
-                            }}
-                            domain={[config.domain[0], 0, config.domain[1]]}
-                            title={`${trackLabel(track)} · ${config.attribute} (mm/yr) · ${config.scaleDef.label} · ${points.toLocaleString()} pts`}
-                        />
-                    ))}
+                    {legendTracks.map(({ track, config, points }) => {
+                        const attributeDef = COLOR_ATTRIBUTE_BY_KEY[config.attribute];
+                        const [min, max] = config.domain;
+                        // Ticks follow the attribute's fixed domain, not the
+                        // selected scale (any scale can be used on any
+                        // attribute). Diverging domains mark 0; sequential ones
+                        // have no meaningful zero, so the middle tick is the
+                        // midpoint.
+                        const isDiverging = attributeDef.kind === 'diverging';
+                        const domain = isDiverging
+                            ? [min, 0, max]
+                            : [min, (min + max) / 2, max];
+                        const subtitle = attributeDef.unit
+                            ? `${attributeDef.unit} · ${config.scaleDef.shortLabel}`
+                            : config.scaleDef.shortLabel;
+                        return (
+                            <ColorScaleLegend
+                                key={track.id}
+                                width={128}
+                                colorScale={(value) => {
+                                    const [r, g, b] = config.scale(value).rgb();
+                                    return [r, g, b];
+                                }}
+                                domain={domain}
+                                title={`${trackLabel(track)} · ${config.attribute}`}
+                                subtitle={subtitle}
+                                tooltip={`${trackLabel(track)} · ${config.attribute} · ${config.scaleDef.label} · ${points.toLocaleString()} pts`}
+                                signed={isDiverging}
+                            />
+                        );
+                    })}
                 </div>
             )}
 
@@ -1187,10 +1228,13 @@ function MintarderRuhrtalbruecke() {
                         ? '— one shape per track, coloured by its selected attribute, anchored at '
                         : `— spheres for |VEL_AVG| ≤ ${NEAR_ZERO_VEL_AVG} mm/yr, 3D LOS arrows otherwise, anchored at `}
                     {heightMode === 'h_ref' ? 'H_REF above the DEM' : 'absolute H'}.
-                    Each track is coloured independently by VEL_AVG, VEL_REL or VEL_LAST
-                    using a legacy velocity ramp or a ColorBrewer diverging scale, chosen
-                    in the top-left Tracks section; each legend shows its own symmetric
-                    domain. The arrow/sphere split and arrow heading still use VEL_AVG.
+                    Each track is coloured independently by VEL_AVG, VEL_REL, VEL_LAST,
+                    K_TEMP, H, H_REF or COH using a legacy velocity ramp or a ColorBrewer
+                    diverging / sequential scale, chosen in the top-left Tracks section.
+                    Every attribute has one fixed domain shared by all tracks, so enabling
+                    another track never rescales the legend; VEL_AVG defaults to the
+                    descending legacy ramp. The arrow/sphere split and arrow heading still
+                    use VEL_AVG.
                     Click a symbol for its d_* displacement series.
                 </div>
                 <div>
