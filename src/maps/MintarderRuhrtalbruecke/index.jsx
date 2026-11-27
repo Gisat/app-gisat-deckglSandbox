@@ -16,10 +16,10 @@ import { isTimelineKey } from '../../components/FeatureSpaceChart3D/timelineGeom
 import { build3dLosArrowLayers } from '../../layers/factory/build3dLosArrowLayers';
 import { build3dLosSphereLayer } from '../../layers/factory/build3dLosSphereLayer';
 import {
-    POLAKY_VEL_AVG_DOMAIN,
-    buildPolakyVelAvgScale,
-} from '../PolakyHradecV2/velAvgPalette';
-import TimelineChart from '../PolakyHradecV2/TimelineChart';
+    MINTARDER_VEL_AVG_DOMAIN,
+    buildMintarderVelAvgScale,
+} from './velAvgPalette';
+import TimelineChart from './TimelineChart';
 
 // Values below are copied from the asset sidecar
 // build/mintarder_ruhrtalbruecke.json (see 3DFLUS CCN/Mintarder Ruhrtalbrucke).
@@ -128,12 +128,12 @@ const POINTS_LAYER_PREFIX = 'mintarder-insar';
 // Same split as Poláky: |VEL_AVG| <= 0.5 mm/yr renders as a sphere, everything
 // else keeps the 3D LOS arrow composite.
 const NEAR_ZERO_VEL_AVG = 0.5;
-const VEL_AVG_DOMAIN = [...POLAKY_VEL_AVG_DOMAIN];
+const VEL_AVG_DOMAIN = [...MINTARDER_VEL_AVG_DOMAIN];
 // Ascending tracks keep the blue → red ramp; descending tracks invert it, so a
 // given colour reads the same way on every orbit.
 const VEL_AVG_SCALES = {
-    A: buildPolakyVelAvgScale('A'),
-    D: buildPolakyVelAvgScale('D'),
+    A: buildMintarderVelAvgScale('A'),
+    D: buildMintarderVelAvgScale('D'),
 };
 
 const MISSING_VELOCITY_COLOR = [128, 128, 128, 255];
@@ -235,6 +235,7 @@ function buildPointFeatures(table, track) {
         VEL_SD: vectorFor(table, 'VEL_SD'),
         H: vectorFor(table, 'H'),
         H_REF: vectorFor(table, 'H_REF'),
+        H_dem: vectorFor(table, 'H_dem'),
         COH: vectorFor(table, 'COH'),
         ACCEL: vectorFor(table, 'ACCEL'),
         geometry: vectorFor(table, 'geometry'),
@@ -266,6 +267,7 @@ function buildPointFeatures(table, track) {
             VEL_SD: numberAt(columns.VEL_SD, index),
             H: height,
             H_REF: numberAt(columns.H_REF, index),
+            H_dem: numberAt(columns.H_dem, index),
             COH: numberAt(columns.COH, index),
             ACCEL: numberAt(columns.ACCEL, index),
         };
@@ -618,14 +620,19 @@ function MintarderRuhrtalbruecke() {
                 terrainDrawMode: 'offset',
             }
             : {};
-        // H_REF is measured above the local ground; H is absolute. Fall back
-        // to the other value when the selected one is missing. Height mode is
-        // global: it applies to every visible track.
+        // H_REF is measured above the local ground, H is absolute, and H_dem is
+        // the ground elevation. Convert between the two datums when the selected
+        // value is missing instead of swapping the raw value, which would shift
+        // the symbol by the whole terrain height.
+        // Height mode is global: it applies to every visible track.
         const getAnchorPosition = (feature) => {
             const properties = feature.properties ?? {};
-            const primary = parseOptionalNumber(properties[useTerrainOffset ? 'H_REF' : 'H']);
-            const fallback = parseOptionalNumber(properties[useTerrainOffset ? 'H' : 'H_REF']);
-            const height = primary ?? fallback ?? 0;
+            const h = parseOptionalNumber(properties.H);
+            const hRef = parseOptionalNumber(properties.H_REF);
+            const hDem = parseOptionalNumber(properties.H_dem);
+            const groundRelative = hRef ?? (h != null && hDem != null ? h - hDem : null);
+            const absolute = h ?? (hRef != null && hDem != null ? hRef + hDem : null);
+            const height = (useTerrainOffset ? groundRelative : absolute) ?? 0;
             return [properties.LON, properties.LAT, height];
         };
 
@@ -649,7 +656,12 @@ function MintarderRuhrtalbruecke() {
                 return velocityColor(track.orbit, feature.properties?.VEL_AVG);
             };
             const updateTriggers = {
-                getColor: [selectedTrackId, selectedArrowIndex, hoveredTrackId, hoveredArrowIndex],
+                // Track-scoped: only this track's highlight can change, so other
+                // tracks keep identical triggers and skip their color update.
+                getColor: [
+                    selectedTrackId === track.id ? selectedArrowIndex : null,
+                    hoveredTrackId === track.id ? hoveredArrowIndex : null,
+                ],
                 // Force the anchors to re-evaluate when the DEM height map arrives.
                 getPosition: [zRange],
             };
@@ -1031,10 +1043,10 @@ function MintarderRuhrtalbruecke() {
                                 {summary.arrows.toLocaleString()} arrows)
                             </span>
                         ))}
-                    {' '}— spheres for |VEL_AVG| ≤ 0.5 mm/yr, 3D LOS arrows
+                    {' '}— spheres for |VEL_AVG| ≤ {NEAR_ZERO_VEL_AVG} mm/yr, 3D LOS arrows
                     otherwise, anchored at{' '}
                     {heightMode === 'h_ref' ? 'H_REF above the DEM' : 'absolute H'}.
-                    VEL_AVG scale −2.5 → +2.5 mm/yr; ascending (A) tracks run blue →
+                    VEL_AVG scale {VEL_AVG_DOMAIN[0]} → +{VEL_AVG_DOMAIN[1]} mm/yr; ascending (A) tracks run blue →
                     red and descending (D) tracks are inverted (red → blue). Toggle
                     tracks in the top-left Tracks row; click a symbol for its d_*
                     displacement series.
