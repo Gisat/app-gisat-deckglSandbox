@@ -15,6 +15,7 @@ import { ColorScaleLegend } from '../../components/MapSymbols/ColorScaleLegend';
 import { isTimelineKey } from '../../components/FeatureSpaceChart3D/timelineGeometry';
 import { build3dLosArrowLayers } from '../../layers/factory/build3dLosArrowLayers';
 import { build3dLosSphereLayer } from '../../layers/factory/build3dLosSphereLayer';
+import { build3dLosTrackSymbolLayer } from '../../layers/factory/build3dLosTrackSymbolLayer';
 import {
     MINTARDER_VEL_AVG_DOMAIN,
     buildMintarderVelAvgScale,
@@ -97,18 +98,24 @@ const TRACKS = [
         id: '15A',
         direction: 'ascending',
         orbit: 'A',
+        symbol: 'sphere',
+        symbolLabel: 'sphere',
         url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_15A_trefin1_final.geoparquet',
     },
     {
         id: '37D',
         direction: 'descending',
         orbit: 'D',
+        symbol: 'cube',
+        symbolLabel: 'cube',
         url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_37D_trefin1_final.geoparquet',
     },
     {
         id: '139D',
         direction: 'descending',
         orbit: 'D',
+        symbol: 'cone',
+        symbolLabel: 'cone',
         url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_139D_trefin1_final.geoparquet',
     },
 ];
@@ -118,6 +125,15 @@ const TRACKS = [
 const DEFAULT_VISIBLE_TRACK_IDS = ['139D'];
 
 const trackLabel = (track) => `${track.id} ${track.orbit === 'A' ? '↑' : '↓'}`;
+
+// Symbol views for the top-left Symbols row. Shape view draws one shape per
+// track (coloured by VEL_AVG only); arrow view keeps the current near-zero
+// sphere / 3D LOS arrow split.
+const SYMBOL_VIEWS = [
+    { id: 'shapes', label: 'Track shapes' },
+    { id: 'arrows', label: 'Arrows + circles' },
+];
+const TRACK_SHAPE_RADIUS_METERS = 1.6;
 
 // ParquetArrowLoader is the WASM-backed loader in @loaders.gl/parquet 4.5.x
 // (loader id `parquet-wasm`, worker: false). Point it at the local wasm copy
@@ -140,9 +156,9 @@ const MISSING_VELOCITY_COLOR = [128, 128, 128, 255];
 // Same selection/hover cyan as Poláky Hradec v2.
 const SELECTION_COLOR = [66, 212, 244, 255];
 
-// Toggle button chrome for the Tracks row, mirroring the 3D chart's
-// Timeline/Custom switch in Poláky Hradec v2.
-function trackButtonStyle(active, failed = false) {
+// Toggle button chrome for the Symbols and Tracks rows, mirroring the 3D
+// chart's Timeline/Custom switch in Poláky Hradec v2.
+function toggleButtonStyle(active, failed = false) {
     return {
         minHeight: 24,
         padding: '4px 8px',
@@ -339,6 +355,8 @@ function MintarderRuhrtalbruecke() {
     // Height reference for the 3D InSAR symbols. H_REF is relative to the DEM
     // and is the default; H places them at their absolute measured height.
     const [heightMode, setHeightMode] = useState('h_ref');
+    // Per-track shapes (default) or the 3D LOS arrow / near-zero sphere split.
+    const [symbolMode, setSymbolMode] = useState('shapes');
     // Opacity of the four bridge OBJ parts; 1 keeps the as-built look, 0 hides it.
     const [bridgeOpacity, setBridgeOpacity] = useState(1);
 
@@ -580,10 +598,12 @@ function MintarderRuhrtalbruecke() {
     // sphere, everything else -> the seven-part 3D LOS arrow composite. The
     // split is cached against the track's feature array, so loading another
     // track does not recreate this track's data references and make deck.gl
-    // re-upload its attributes.
+    // re-upload its attributes. Shape view draws one mesh per track and does
+    // not need the split at all.
     const symbolCache = useRef(new WeakMap());
     const trackSymbols = useMemo(() => {
         const symbols = {};
+        if (symbolMode !== 'arrows') return symbols;
         for (const track of TRACKS) {
             const state = tracks[track.id];
             if (state?.status !== 'ready') continue;
@@ -600,7 +620,7 @@ function MintarderRuhrtalbruecke() {
             symbols[track.id] = split;
         }
         return symbols;
-    }, [tracks]);
+    }, [tracks, symbolMode]);
 
     const pointSymbolLayers = useMemo(() => {
         const selectedTrackId = selectedPoint?.trackId ?? null;
@@ -640,8 +660,8 @@ function MintarderRuhrtalbruecke() {
         for (const track of TRACKS) {
             if (!visibleTrackIds.has(track.id)) continue;
             const state = tracks[track.id];
+            if (state?.status !== 'ready') continue;
             const symbols = trackSymbols[track.id];
-            if (state?.status !== 'ready' || !symbols) continue;
 
             // Track-scoped highlight: only this track's matching point lights
             // up, even when other tracks share the same arrowIndex.
@@ -665,7 +685,27 @@ function MintarderRuhrtalbruecke() {
                 // Force the anchors to re-evaluate when the DEM height map arrives.
                 getPosition: [zRange],
             };
-            const pointLayerPrefix = `${POINTS_LAYER_PREFIX}-${track.id}-${heightMode}`;
+            const pointLayerPrefix = `${POINTS_LAYER_PREFIX}-${track.id}-${heightMode}-${symbolMode}`;
+
+            if (symbolMode === 'shapes') {
+                symbolLayers.push(
+                    build3dLosTrackSymbolLayer({
+                        id: `${pointLayerPrefix}-shape`,
+                        data: state.features,
+                        shape: track.symbol,
+                        zoom,
+                        radiusMeters: TRACK_SHAPE_RADIUS_METERS,
+                        pickable: true,
+                        getPosition: getAnchorPosition,
+                        ...terrainOffsetProps,
+                        getColor: getSymbolColor,
+                        updateTriggers,
+                    })
+                );
+                continue;
+            }
+
+            if (!symbols) continue;
 
             symbolLayers.push(
                 ...build3dLosArrowLayers({
@@ -693,7 +733,7 @@ function MintarderRuhrtalbruecke() {
             );
         }
         return symbolLayers;
-    }, [tracks, trackSymbols, visibleTrackIds, zoom, selectedPoint, hoveredPoint, heightMode, zRange]);
+    }, [tracks, trackSymbols, visibleTrackIds, zoom, selectedPoint, hoveredPoint, heightMode, symbolMode, zRange]);
 
     // Legend groups: one gradient per orbit present among the visible ready
     // tracks, with aggregate point counts.
@@ -715,15 +755,24 @@ function MintarderRuhrtalbruecke() {
         return groups;
     }, [tracks, visibleTrackIds]);
 
-    // Per-track counts for the info card.
+    // Per-track counts for the info card. Shape view reports the single shape
+    // used by the track; arrow view keeps the sphere/arrow split counts.
     const readyTrackSummaries = useMemo(
-        () => readyTracks.map((track) => ({
-            id: track.id,
-            points: tracks[track.id].features.length,
-            spheres: trackSymbols[track.id]?.spheres.length ?? 0,
-            arrows: trackSymbols[track.id]?.arrows.length ?? 0,
-        })),
-        [readyTracks, tracks, trackSymbols]
+        () => readyTracks.map((track) => (
+            symbolMode === 'shapes'
+                ? {
+                    id: track.id,
+                    points: tracks[track.id].features.length,
+                    symbolLabel: track.symbolLabel,
+                }
+                : {
+                    id: track.id,
+                    points: tracks[track.id].features.length,
+                    spheres: trackSymbols[track.id]?.spheres.length ?? 0,
+                    arrows: trackSymbols[track.id]?.arrows.length ?? 0,
+                }
+        )),
+        [readyTracks, tracks, trackSymbols, symbolMode]
     );
 
     const layers = useMemo(
@@ -804,6 +853,35 @@ function MintarderRuhrtalbruecke() {
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div
+                        id="mintarder-symbols-label"
+                        style={{ fontSize: 11, color: '#555', whiteSpace: 'nowrap' }}
+                    >
+                        Symbols
+                    </div>
+                    <div
+                        role="group"
+                        aria-labelledby="mintarder-symbols-label"
+                        style={{ display: 'flex', gap: 4 }}
+                    >
+                        {SYMBOL_VIEWS.map((view) => {
+                            const isActive = symbolMode === view.id;
+                            return (
+                                <button
+                                    key={view.id}
+                                    type="button"
+                                    onClick={() => setSymbolMode(view.id)}
+                                    aria-pressed={isActive}
+                                    style={toggleButtonStyle(isActive)}
+                                >
+                                    {view.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div
                         id="mintarder-tracks-label"
                         style={{ fontSize: 11, color: '#555', whiteSpace: 'nowrap' }}
                     >
@@ -828,8 +906,8 @@ function MintarderRuhrtalbruecke() {
                                     aria-busy={isTrackLoading || undefined}
                                     title={hasFailed
                                         ? `${track.id} (${track.direction}) failed to load: ${state.error} Click to retry.`
-                                        : `${track.id} (${track.direction})`}
-                                    style={trackButtonStyle(isActive, hasFailed)}
+                                        : `${track.id} (${track.direction}, ${track.symbolLabel})`}
+                                    style={toggleButtonStyle(isActive, hasFailed)}
                                 >
                                     {trackLabel(track)}
                                     {isTrackLoading ? ' …' : ''}
@@ -1038,13 +1116,15 @@ function MintarderRuhrtalbruecke() {
                         : readyTrackSummaries.map((summary, index) => (
                             <span key={summary.id}>
                                 {index > 0 ? ', ' : ''}
-                                {summary.id} ({summary.points.toLocaleString()} pts:{' '}
-                                {summary.spheres.toLocaleString()} spheres,{' '}
-                                {summary.arrows.toLocaleString()} arrows)
+                                {symbolMode === 'shapes'
+                                    ? `${summary.id} (${summary.points.toLocaleString()} pts, ${summary.symbolLabel})`
+                                    : `${summary.id} (${summary.points.toLocaleString()} pts: ${summary.spheres.toLocaleString()} spheres, ${summary.arrows.toLocaleString()} arrows)`}
                             </span>
                         ))}
-                    {' '}— spheres for |VEL_AVG| ≤ {NEAR_ZERO_VEL_AVG} mm/yr, 3D LOS arrows
-                    otherwise, anchored at{' '}
+                    {' '}
+                    {symbolMode === 'shapes'
+                        ? '— one shape per track, coloured by VEL_AVG, anchored at '
+                        : `— spheres for |VEL_AVG| ≤ ${NEAR_ZERO_VEL_AVG} mm/yr, 3D LOS arrows otherwise, anchored at `}
                     {heightMode === 'h_ref' ? 'H_REF above the DEM' : 'absolute H'}.
                     VEL_AVG scale {VEL_AVG_DOMAIN[0]} → +{VEL_AVG_DOMAIN[1]} mm/yr; ascending (A) tracks run blue →
                     red and descending (D) tracks are inverted (red → blue). Toggle
