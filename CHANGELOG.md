@@ -1,3 +1,29 @@
+## [1.28.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.27.0...v1.28.0) (2026-11-27)
+
+### Features
+
+* **mintarder-ruhrtalbruecke:** add 3D InSAR layer and DEM terrain ([01283b4](https://github.com/Gisat/app-gisat-deckglSandbox/commit/01283b431fbc5dc6261160ade6c74dafb673219a))
+* **mintarder-ruhrtalbruecke:** add bridge opacity slider ([37fe7bb](https://github.com/Gisat/app-gisat-deckglSandbox/commit/37fe7bb0f172932282eae4ac02c430df9cca78cd))
+* **mintarder-ruhrtalbruecke:** add fixed attribute domains and sequential colour scales ([7383ab1](https://github.com/Gisat/app-gisat-deckglSandbox/commit/7383ab1b6374da8ee8168b92fcb39b9713a9cd10))
+* **mintarder-ruhrtalbruecke:** add H/H_REF height selector for InSAR symbols ([a673eee](https://github.com/Gisat/app-gisat-deckglSandbox/commit/a673eeed41edc0ed1ac03a4ba7c2f032f8d401a8))
+* **mintarder-ruhrtalbruecke:** add Mintarder Ruhrtalbrücke 3D OBJ map ([e0d6fbe](https://github.com/Gisat/app-gisat-deckglSandbox/commit/e0d6fbe8d42e0f89d44da00e0c35a7a06ab9f73e))
+* **mintarder-ruhrtalbruecke:** add multi-track InSAR overlay (15A/37D/139D) ([99b630e](https://github.com/Gisat/app-gisat-deckglSandbox/commit/99b630e4604a9dfee796d6dff51ed9aeaf6143b1))
+* **mintarder-ruhrtalbruecke:** add on-the-fly relief shade glaze ([ddc6856](https://github.com/Gisat/app-gisat-deckglSandbox/commit/ddc68561ad9990cff2a41025f7b201784ac1c94e))
+* **mintarder-ruhrtalbruecke:** add per-track color attributes and scales ([eb693b5](https://github.com/Gisat/app-gisat-deckglSandbox/commit/eb693b5992d8f68e52cbcffbf58941ad2ca6c1c1))
+* **mintarder-ruhrtalbruecke:** add per-track shape symbol toggle ([c9e9937](https://github.com/Gisat/app-gisat-deckglSandbox/commit/c9e99379d4b7d646fbb5959159cfdd78086bca50))
+* **mintarder-ruhrtalbruecke:** add wavelength offset series to chart ([6a0d324](https://github.com/Gisat/app-gisat-deckglSandbox/commit/6a0d3242a9955b93e9504cc5e39169f0cca3dac4))
+* **mintarder-ruhrtalbruecke:** colour chart dots by final-class reliability ([5142dca](https://github.com/Gisat/app-gisat-deckglSandbox/commit/5142dca108ccae68feb43171bc1f4bddce9b0771))
+* **mintarder-ruhrtalbruecke:** show per-track shape icons on track buttons ([75691bd](https://github.com/Gisat/app-gisat-deckglSandbox/commit/75691bd9b327b4d5149a22cb101207f89d7cbd08))
+* **ui:** add collapsible map navigation sidebar ([d82afba](https://github.com/Gisat/app-gisat-deckglSandbox/commit/d82afba3de671b9e702ea913eaf0fea9a2da6256))
+
+### Bug Fixes
+
+* **mintarder-ruhrtalbruecke:** balance cube size against sphere and cone ([9543489](https://github.com/Gisat/app-gisat-deckglSandbox/commit/954348988870a58216e916b43a7d355d868f6a1b))
+* **mintarder-ruhrtalbruecke:** blend faded bridge over InSAR symbols ([710ed68](https://github.com/Gisat/app-gisat-deckglSandbox/commit/710ed686c55d163bc979178ea990cf71fee9be29))
+* **mintarder-ruhrtalbruecke:** correct height datum fallback and own the palette ([cebff96](https://github.com/Gisat/app-gisat-deckglSandbox/commit/cebff96d8ead7e6f3eff53b536c73e3d92dc7617))
+* **mintarder-ruhrtalbruecke:** remove hover tooltip box ([806c40c](https://github.com/Gisat/app-gisat-deckglSandbox/commit/806c40cdc831070a0789b265253967f0fe63daef))
+* **ui:** keep sidebar toggle visible while navigation scrolls ([ed16318](https://github.com/Gisat/app-gisat-deckglSandbox/commit/ed16318bc5b9b96d38e46138724865b59e589ff5))
+
 ## [1.27.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.26.0...v1.27.0) (2026-11-24)
 
 ### Features
