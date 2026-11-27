@@ -22,6 +22,21 @@ const SHAPE_MESHES: Record<
   cone: CONE_MESH,
 };
 
+/**
+ * Per-shape visual-size correction at the same nominal radius.
+ *
+ * A cube's corners reach √3·r and its three lit faces read bulkier than a
+ * sphere of radius r, so it is drawn at 0.82× to match the sphere's projected
+ * area (a unit cube projects to ~1.5× the area of an inscribed sphere). The
+ * cone's triangular silhouette plus base already reads close to the sphere, so
+ * it keeps the full radius.
+ */
+const SHAPE_SIZE_SCALE: Record<LosTrackSymbolShape, number> = {
+  sphere: 1,
+  cube: 0.82,
+  cone: 1,
+};
+
 export interface Build3dLosTrackSymbolLayerProps {
   /** Sublayer id; the map passes `${pointLayerPrefix}-shape`. */
   id: string;
@@ -77,6 +92,7 @@ export const build3dLosTrackSymbolLayer = ({
   terrainDrawMode,
 }: Build3dLosTrackSymbolLayerProps): SimpleMeshLayer<LosArrowFeature> => {
   const radius = radiusMeters * compute3dVelocitySizeZoomScale(zoom);
+  const size = radius * (SHAPE_SIZE_SCALE[shape] ?? 1);
   const isCone = shape === 'cone';
 
   const triggers = updateTriggers ?? {};
@@ -89,13 +105,13 @@ export const build3dLosTrackSymbolLayer = ({
     coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
     getPosition: (feature) => {
       const [longitude, latitude, height] = getPosition(feature);
-      return [longitude, latitude, height + radius];
+      return [longitude, latitude, height + size];
     },
     // The cone mesh is a unit height centred on its local +Y axis, so the
-    // local Y scale of 2r gives a height of 2r and the X/Z scale of r gives
-    // the same footprint as the sphere and cube.
+    // local Y scale of 2×size gives a height of 2×size and the X/Z scale of
+    // size gives the same footprint as the sphere and cube.
     getScale: (): [number, number, number] =>
-      isCone ? [radius, radius * 2, radius] : [radius, radius, radius],
+      isCone ? [size, size * 2, size] : [size, size, size],
     ...(isCone ? { getOrientation: (): [number, number, number] => [0, 0, 90] } : {}),
     getColor,
     material: { ambient: 0.35, diffuse: 0.6, shininess: 0, specularColor: [0, 0, 0] },
@@ -103,8 +119,8 @@ export const build3dLosTrackSymbolLayer = ({
       ...triggers,
       getColor: [...(triggers.getColor ?? [])],
       // Re-evaluate the geometry when the floor-only 3D band changes.
-      getPosition: [...(triggers.getPosition ?? []), radius],
-      getScale: [...(triggers.getScale ?? []), radius],
+      getPosition: [...(triggers.getPosition ?? []), size],
+      getScale: [...(triggers.getScale ?? []), size],
     },
     ...(extensions ? { extensions, terrainDrawMode } : {}),
   });
