@@ -16,6 +16,9 @@ function AppContent() {
         'TiTiler DEMO': false,
         '3d Terrain': false,
     });
+    // Collapse the map navigation to a narrow rail so the map gets nearly the
+    // full viewport.
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
     const toggleGroup = (category) => {
         setExpandedGroups(prev => ({
@@ -50,28 +53,45 @@ function AppContent() {
 
     return (
         <div className="app-container">
-            <nav className="sidebar">
-                <h1><Link to="/">Sandbox</Link></h1>
-                {sortedGroups.map((category) => (
-                    <div key={category} className="map-group">
-                        <button 
-                            className="group-title-btn" 
-                            onClick={() => toggleGroup(category)}
-                        >
-                            <span className="group-chevron">{expandedGroups[category] ? '▼' : '▶'}</span>
-                            <span className="group-title-text">{category}</span>
-                        </button>
-                        {expandedGroups[category] && (
-                            <ul>
-                                {groupedMaps[category].map((app) => (
-                                    <li key={app.path} className={location.pathname === app.path ? 'active' : ''}>
-                                        <Link to={app.path}>{app.name}</Link>
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                    </div>
-                ))}
+            <nav className={`sidebar${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+                <div className="sidebar-header">
+                    {!sidebarCollapsed && (
+                        <h1><Link to="/">Sandbox</Link></h1>
+                    )}
+                    <button
+                        type="button"
+                        className="sidebar-toggle"
+                        onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+                        aria-expanded={!sidebarCollapsed}
+                        aria-controls="map-navigation"
+                        aria-label={sidebarCollapsed ? 'Expand map navigation' : 'Minimize map navigation'}
+                        title={sidebarCollapsed ? 'Expand map navigation' : 'Minimize map navigation'}
+                    >
+                        {sidebarCollapsed ? '»' : '«'}
+                    </button>
+                </div>
+                <div id="map-navigation" className="sidebar-nav" hidden={sidebarCollapsed}>
+                    {sortedGroups.map((category) => (
+                        <div key={category} className="map-group">
+                            <button
+                                className="group-title-btn"
+                                onClick={() => toggleGroup(category)}
+                            >
+                                <span className="group-chevron">{expandedGroups[category] ? '▼' : '▶'}</span>
+                                <span className="group-title-text">{category}</span>
+                            </button>
+                            {expandedGroups[category] && (
+                                <ul>
+                                    {groupedMaps[category].map((app) => (
+                                        <li key={app.path} className={location.pathname === app.path ? 'active' : ''}>
+                                            <Link to={app.path}>{app.name}</Link>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    ))}
+                </div>
             </nav>
             <main className="main-content">
                 <Routes>
