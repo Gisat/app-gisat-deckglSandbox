@@ -5,7 +5,7 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers';
 import { _TerrainExtension as TerrainExtension } from '@deck.gl/extensions';
-import { CogTerrainLayer } from '@gisatcz/deckgl-geolib';
+import { CogBitmapLayer, CogTerrainLayer } from '@gisatcz/deckgl-geolib';
 import { useTerrainZRange } from '@gisatcz/deckgl-geolib/react';
 import { OBJLoader } from '@loaders.gl/obj';
 import { load } from '@loaders.gl/core';
@@ -403,7 +403,9 @@ function MintarderRuhrtalbruecke() {
                 tileSize: 256,
                 minZoom: 10,
                 maxZoom: 15,
-                operation: 'terrain+draw',
+                // Glaze mode: the basemap and relief mask provide the visible
+                // surface; the terrain pass only writes the height map.
+                operation: 'terrain',
                 onZRangeUpdate,
                 pickable: false,
                 terrainOptions: TERRAIN_OPTIONS,
@@ -433,6 +435,33 @@ function MintarderRuhrtalbruecke() {
                 },
             }),
         [zRange]
+    );
+
+    // On-the-fly Swiss relief glaze: a transparent kernel-derived shade mask
+    // composited over the draped basemap. Same options as the sandbox's
+    // CogTerrainKernel/Tabqa glaze modes; clamped to the DEM mesh.
+    const reliefGlazeLayer = useMemo(
+        () =>
+            new CogBitmapLayer({
+                id: 'relief-glaze-overlay',
+                rasterData: TERRAIN_URL,
+                isTiled: true,
+                tileSize: 256,
+                minZoom: 10,
+                maxZoom: 15,
+                clampToTerrain: true,
+                extensions: [new TerrainExtension()],
+                cogBitmapOptions: {
+                    type: 'image',
+                    useReliefGlaze: true,
+                    noDataValue: 0,
+                    useChannel: 1,
+                    swissSlopeWeight: 0.3,
+                    zFactor: 10,
+                    maxGlazeAlpha: 80,
+                },
+            }),
+        []
     );
 
     const bridgeLayers = useMemo(
@@ -532,10 +561,11 @@ function MintarderRuhrtalbruecke() {
         () => [
             terrainLayer,
             baseMapLayer,
+            reliefGlazeLayer,
             ...bridgeLayers,
             ...pointSymbolLayers,
         ],
-        [terrainLayer, baseMapLayer, bridgeLayers, pointSymbolLayers]
+        [terrainLayer, baseMapLayer, reliefGlazeLayer, bridgeLayers, pointSymbolLayers]
     );
 
     return (
@@ -691,7 +721,8 @@ function MintarderRuhrtalbruecke() {
                 </div>
                 <div>
                     Terrain: local Mintander DEM COG; the Carto basemap is draped on the
-                    mesh and the bridge is offset to the sampled ground.
+                    mesh with an on-the-fly Swiss relief glaze, and the bridge is offset
+                    to the sampled ground.
                 </div>
                 <div>
                     InSAR: track 139D, 4,752 points ({sphereFeatures.length.toLocaleString()} spheres,{' '}
