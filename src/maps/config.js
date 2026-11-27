@@ -67,7 +67,7 @@ const mapApps = [
     { category: 'Other', name: 'Deck.gl-raster COG', path: '/deck.gl-raster', component: devSeedCOG },
     { category: 'Other', name: 'Nepal', path: '/nepal', component: NepalMap, description: 'Nepal COP30 terrain COG with satellite imagery overlay' },
     { category: 'Other', name: 'Fehmarnsundbrucke', path: '/fehmarnsundbrucke', component: Fehmarnsundbrucke, description: 'Fehmarnsundbrücke 3D OBJ model on a Carto light basemap' },
-    { category: 'Other', name: 'Mintarder Ruhrtalbrücke', path: '/mintarder-ruhrtalbruecke', component: MintarderRuhrtalbruecke, description: 'Mintarder Ruhrtalbrücke (A52, as-built 1966) 3D OBJ model — 1830 m arc, 18 piers, one layer per material split, on a Carto light basemap' },
+    { category: 'Other', name: 'Mintarder Ruhrtalbrücke', path: '/mintarder-ruhrtalbruecke', component: MintarderRuhrtalbruecke, description: 'Mintarder Ruhrtalbrücke (A52, as-built 1966) 3D OBJ model — 1830 m arc, 18 piers, plus a 4,752-point InSAR GeoParquet layer drawn as 3D spheres/arrows coloured by VEL_AVG, on a Carto light basemap' },
     { category: 'Other', name: 'Arrow Gallery', path: '/arrow-gallery', component: ArrowGallery, description: '2D shader arrows and 3D split/single meshes with live pen and tail controls' },
     // { name: 'Test Gisat Geotiff', path: '/test-gisat-geotiff', component: GisatGeotiffMap, description: 'Testing Gisat Geotiff rendering' },
     { category: '3DFLUS CCN', name: 'COG Terrain Kernel', path: '/cog-kernel', component: CogTerrainKernel, description: 'Showcase kernel calculation and hover features with deck.gl-geotiff' },
