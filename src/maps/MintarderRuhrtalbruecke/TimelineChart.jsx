@@ -4,9 +4,17 @@ import { epochKeyToUtc, isTimelineKey, toNumber } from '../../components/Feature
 import {
   DOT_COLORS,
   RELIABILITY_THRESHOLD_DEFAULT,
+  RELIABILITY_THRESHOLD_MAX,
+  RELIABILITY_THRESHOLD_MIN,
+  RELIABILITY_THRESHOLD_STEP,
   dotColorForDate,
   loadTrackClassification,
 } from './trackClassification';
+import {
+  DEFAULT_OFFSET_FACTOR,
+  OFFSET_FACTOR_STEP,
+  parseOffsetFactor,
+} from './trackMetadata';
 
 function formatDate(value) {
   if (!(value instanceof Date) || Number.isNaN(value.getTime())) return String(value);
@@ -21,6 +29,28 @@ function formatNumber(value, digits) {
   return Number.isFinite(num) ? num.toFixed(digits) : '–';
 }
 
+const RAW_SERIES_ID = 'Displacement';
+const OFFSET_COLOR = '#40E0D0';
+const RAW_POINT_SIZE = 3.5;
+const OFFSET_POINT_SIZE = 2.2;
+
+/**
+ * Per-datum dot symbol. Nivo's `pointSize` prop is a scalar, so the radius is
+ * read from the original datum (`datum.pointSize`) and falls back to the
+ * scalar `size` for anything that does not carry one.
+ */
+function VariablePointSymbol({ datum, size, color, borderWidth, borderColor }) {
+  const radius = (datum?.pointSize ?? size) / 2;
+  return (
+    <circle
+      r={radius}
+      fill={color}
+      stroke={borderColor}
+      strokeWidth={borderWidth}
+    />
+  );
+}
+
 /**
  * Displacement timeline card for a single InSAR point.
  *
@@ -32,8 +62,17 @@ function formatNumber(value, digits) {
  * date: blue at or above the threshold, grey below, black when the CSV has no
  * interval covering that date (or no row for the point).
  *
+ * Two optional turquoise series shift the raw displacement by `±wavelength ×
+ * factor` (wavelength from the track metadata). They are hidden when the
+ * wavelength is unavailable or the factor is zero / invalid.
+ *
  * @param {{ feature: any, trackLabel?: string, onClose: () => void,
- *   classificationUrl?: string, reliabilityThreshold?: number }} props
+ *   classificationUrl?: string, reliabilityThreshold?: number,
+ *   onReliabilityThresholdChange?: (value: number) => void,
+ *   wavelength?: number|null, wavelengthError?: string|null,
+ *   plusOffsetFactor?: string, onPlusOffsetFactorChange?: (value: string) => void,
+ *   minusOffsetFactor?: string,
+ *   onMinusOffsetFactorChange?: (value: string) => void }} props
  */
 export default function TimelineChart({
   feature,
@@ -41,6 +80,13 @@ export default function TimelineChart({
   onClose,
   classificationUrl,
   reliabilityThreshold = RELIABILITY_THRESHOLD_DEFAULT,
+  onReliabilityThresholdChange,
+  wavelength = null,
+  wavelengthError = null,
+  plusOffsetFactor = String(DEFAULT_OFFSET_FACTOR),
+  onPlusOffsetFactorChange,
+  minusOffsetFactor = String(DEFAULT_OFFSET_FACTOR),
+  onMinusOffsetFactorChange,
 }) {
   const props = feature?.properties ?? {};
 
@@ -107,7 +153,7 @@ export default function TimelineChart({
     ? classification.byId?.get(pointId) ?? null
     : null;
 
-  const series = useMemo(() => {
+  const rawSamples = useMemo(() => {
     // While the CSV is in flight keep the previous blue instead of flashing
     // black; the caption below says why. Any other unresolved state is black.
     const resolveColor = (date) => {
@@ -118,7 +164,7 @@ export default function TimelineChart({
       return dotColorForDate(classificationEntry, date.getTime(), reliabilityThreshold);
     };
 
-    const samples = Object.entries(feature?.properties ?? {})
+    return Object.entries(feature?.properties ?? {})
       .filter(([key]) => isTimelineKey(key))
       .map(([key, value]) => ({
         x: new Date(epochKeyToUtc(key)),
@@ -126,9 +172,60 @@ export default function TimelineChart({
       }))
       .filter(({ x, y }) => y != null && !Number.isNaN(x.getTime()))
       .sort((a, b) => a.x - b.x)
-      .map((datum) => ({ ...datum, color: resolveColor(datum.x) }));
-    return samples.length ? [{ id: 'displacement', data: samples }] : [];
+      .map((datum) => ({
+        ...datum,
+        color: resolveColor(datum.x),
+        pointSize: RAW_POINT_SIZE,
+        seriesId: RAW_SERIES_ID,
+      }));
   }, [feature, classificationStatus, classificationEntry, reliabilityThreshold]);
+
+  const wavelengthValue = Number.isFinite(wavelength) ? wavelength : null;
+  const plusFactor = parseOffsetFactor(plusOffsetFactor);
+  const minusFactor = parseOffsetFactor(minusOffsetFactor);
+  const plusOffset = wavelengthValue != null && plusFactor != null && plusFactor > 0
+    ? wavelengthValue * plusFactor
+    : null;
+  const minusOffset = wavelengthValue != null && minusFactor != null && minusFactor > 0
+    ? wavelengthValue * minusFactor
+    : null;
+
+  const series = useMemo(() => {
+    if (rawSamples.length === 0) return [];
+    const result = [{ id: RAW_SERIES_ID, data: rawSamples }];
+
+    if (plusOffset != null) {
+      const id = `+${plusFactor.toFixed(2)}λ`;
+      result.push({
+        id,
+        data: rawSamples.map((point) => ({
+          x: point.x,
+          y: point.y + plusOffset,
+          // Overwrite, never spread: the raw reliability colours must not leak
+          // into the turquoise offset series.
+          color: OFFSET_COLOR,
+          pointSize: OFFSET_POINT_SIZE,
+          seriesId: id,
+        })),
+      });
+    }
+
+    if (minusOffset != null) {
+      const id = `−${minusFactor.toFixed(2)}λ`;
+      result.push({
+        id,
+        data: rawSamples.map((point) => ({
+          x: point.x,
+          y: point.y - minusOffset,
+          color: OFFSET_COLOR,
+          pointSize: OFFSET_POINT_SIZE,
+          seriesId: id,
+        })),
+      });
+    }
+
+    return result;
+  }, [rawSamples, plusOffset, minusOffset, plusFactor, minusFactor]);
 
   let statusMessage = null;
   if (classificationStatus === 'loading' || classificationStatus === 'idle') {
@@ -145,6 +242,26 @@ export default function TimelineChart({
     ? String(classification.error.message ?? classification.error)
     : null;
 
+  const wavelengthMissing = wavelengthValue == null;
+
+  const legendItems = [
+    { color: DOT_COLORS.reliable, label: `rel ≥ ${reliabilityThreshold.toFixed(2)}` },
+    { color: DOT_COLORS.unreliable, label: `rel < ${reliabilityThreshold.toFixed(2)}` },
+    { color: DOT_COLORS.missing, label: 'no data' },
+  ];
+  if (plusOffset != null) {
+    legendItems.push({
+      color: OFFSET_COLOR,
+      label: `+λ×${plusFactor.toFixed(2)} (+${plusOffset.toFixed(2)} mm)`,
+    });
+  }
+  if (minusOffset != null) {
+    legendItems.push({
+      color: OFFSET_COLOR,
+      label: `−λ×${minusFactor.toFixed(2)} (−${minusOffset.toFixed(2)} mm)`,
+    });
+  }
+
   const legend = (
     <div style={{
       display: 'flex',
@@ -155,11 +272,7 @@ export default function TimelineChart({
       fontSize: '10px',
       color: '#555',
     }}>
-      {[
-        { color: DOT_COLORS.reliable, label: `rel ≥ ${reliabilityThreshold.toFixed(2)}` },
-        { color: DOT_COLORS.unreliable, label: `rel < ${reliabilityThreshold.toFixed(2)}` },
-        { color: DOT_COLORS.missing, label: 'no data' },
-      ].map((item) => (
+      {legendItems.map((item) => (
         <span key={item.label} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
           <span style={{
             width: '7px',
@@ -173,6 +286,78 @@ export default function TimelineChart({
           {item.label}
         </span>
       ))}
+    </div>
+  );
+
+  const numberInputStyle = {
+    width: '52px',
+    padding: '1px 4px',
+    fontSize: '10px',
+    color: '#333',
+    border: '1px solid #ccc',
+    borderRadius: '3px',
+    boxSizing: 'border-box',
+  };
+
+  const settingsRow = (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      flexWrap: 'wrap',
+      marginBottom: '3px',
+      fontSize: '10px',
+      color: '#555',
+    }}>
+      <label
+        htmlFor="timeline-rel-threshold"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+      >
+        <span>rel ≥ {reliabilityThreshold.toFixed(2)}</span>
+        <input
+          id="timeline-rel-threshold"
+          type="range"
+          min={RELIABILITY_THRESHOLD_MIN}
+          max={RELIABILITY_THRESHOLD_MAX}
+          step={RELIABILITY_THRESHOLD_STEP}
+          value={reliabilityThreshold}
+          onChange={(event) => onReliabilityThresholdChange?.(Number(event.target.value))}
+          disabled={!onReliabilityThresholdChange}
+          style={{ width: '72px', cursor: 'pointer', margin: 0 }}
+        />
+      </label>
+      <label
+        htmlFor="timeline-plus-factor"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+      >
+        <span>+λ ×</span>
+        <input
+          id="timeline-plus-factor"
+          type="number"
+          min={0}
+          step={OFFSET_FACTOR_STEP}
+          value={plusOffsetFactor}
+          onChange={(event) => onPlusOffsetFactorChange?.(event.target.value)}
+          disabled={wavelengthMissing}
+          style={numberInputStyle}
+        />
+      </label>
+      <label
+        htmlFor="timeline-minus-factor"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+      >
+        <span>−λ ×</span>
+        <input
+          id="timeline-minus-factor"
+          type="number"
+          min={0}
+          step={OFFSET_FACTOR_STEP}
+          value={minusOffsetFactor}
+          onChange={(event) => onMinusOffsetFactorChange?.(event.target.value)}
+          disabled={wavelengthMissing}
+          style={numberInputStyle}
+        />
+      </label>
     </div>
   );
 
@@ -198,6 +383,9 @@ export default function TimelineChart({
       </div>
       <div style={{ fontSize: '11px', color: '#555' }}>
         VEL_AVG <b>{formatNumber(props.VEL_AVG, 2)}</b> mm/yr
+      </div>
+      <div style={{ fontSize: '11px', color: '#555' }}>
+        λ <b>{formatNumber(wavelengthValue, 3)}</b> mm
       </div>
       <button
         type="button"
@@ -244,12 +432,21 @@ export default function TimelineChart({
     <div style={cardStyle}>
       {header}
       {legend}
+      {settingsRow}
       {statusMessage && (
         <div
           title={errorDetail ?? undefined}
           style={{ fontSize: '10px', color: '#8a5a00', marginBottom: '2px' }}
         >
           {statusMessage}
+        </div>
+      )}
+      {wavelengthMissing && (
+        <div
+          title={wavelengthError ?? undefined}
+          style={{ fontSize: '10px', color: '#8a5a00', marginBottom: '2px' }}
+        >
+          Wavelength unavailable for this track; offset series hidden.
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0 }}>
@@ -283,7 +480,8 @@ export default function TimelineChart({
           // nivo 0.99 has no `enableLine`; omitting the `lines` layer removes the
           // connecting line while keeping the per-sample dots, mesh and crosshair.
           layers={['grid', 'markers', 'axes', 'areas', 'crosshair', 'points', 'slices', 'mesh', 'legends']}
-          pointSize={3.5}
+          pointSize={RAW_POINT_SIZE}
+          pointSymbol={VariablePointSymbol}
           enablePoints={true}
           // Runtime calls getPointColor once per point and reads the datum, so
           // the per-sample `color` set in the series memo wins.
@@ -306,6 +504,7 @@ export default function TimelineChart({
               fontFamily: 'system-ui, sans-serif',
             }}>
               <div>{formatDate(point.data.x)}</div>
+              <div>{point.seriesId ?? 'displacement'}</div>
               <div style={{ fontWeight: 700 }}>{Number(point.data.y).toFixed(2)} mm</div>
             </div>
           )}

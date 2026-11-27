@@ -26,12 +26,8 @@ import {
     resolveScaleIdForAttribute,
 } from './trackColorScales';
 import TrackColorSection from './TrackColorSection';
-import {
-    RELIABILITY_THRESHOLD_DEFAULT,
-    RELIABILITY_THRESHOLD_MAX,
-    RELIABILITY_THRESHOLD_MIN,
-    RELIABILITY_THRESHOLD_STEP,
-} from './trackClassification';
+import { RELIABILITY_THRESHOLD_DEFAULT } from './trackClassification';
+import { DEFAULT_OFFSET_FACTOR, fetchTrackWavelength } from './trackMetadata';
 import TimelineChart from './TimelineChart';
 
 // Values below are copied from the asset sidecar
@@ -113,6 +109,8 @@ const TRACKS = [
         symbolLabel: 'sphere',
         url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_15A_trefin1_final.geoparquet',
         classificationUrl: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_15A_trefin1_final_class.csv',
+        // 15A is the one track whose metadata file has no `_trefin1` suffix.
+        metadataUrl: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_15A_metadata.txt',
     },
     {
         id: '37D',
@@ -122,6 +120,7 @@ const TRACKS = [
         symbolLabel: 'cube',
         url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_37D_trefin1_final.geoparquet',
         classificationUrl: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_37D_trefin1_final_class.csv',
+        metadataUrl: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_37D_metadata_trefin1.txt',
     },
     {
         id: '139D',
@@ -131,6 +130,7 @@ const TRACKS = [
         symbolLabel: 'cone',
         url: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_139D_trefin1_final.geoparquet',
         classificationUrl: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_139D_trefin1_final_class.csv',
+        metadataUrl: 'https://eu-central-1.linodeobjects.com/gisat-data/3DFlus_GST-22/app-gisat-deckglSandbox/vectors/mintander/mintander_139D_metadata_trefin1.txt',
     },
 ];
 
@@ -374,6 +374,14 @@ function MintarderRuhrtalbruecke() {
     const [reliabilityThreshold, setReliabilityThreshold] = useState(
         RELIABILITY_THRESHOLD_DEFAULT
     );
+    // Chart-only λ multipliers for the two turquoise offset series. Kept as
+    // strings so intermediate input such as `0.` is allowed while typing.
+    const [plusOffsetFactor, setPlusOffsetFactor] = useState(
+        String(DEFAULT_OFFSET_FACTOR)
+    );
+    const [minusOffsetFactor, setMinusOffsetFactor] = useState(
+        String(DEFAULT_OFFSET_FACTOR)
+    );
 
     // Load one track once and cache its features; re-enabling a ready track is
     // instant and never refetches. Disabling does not abort or evict.
@@ -383,9 +391,21 @@ function MintarderRuhrtalbruecke() {
 
         setTracks((previous) => (previous[id]?.status === 'ready'
             ? previous
-            : { ...previous, [id]: { status: 'loading', features: null, error: null } }));
+            : {
+                ...previous,
+                [id]: {
+                    status: 'loading',
+                    features: null,
+                    wavelength: null,
+                    wavelengthError: null,
+                    error: null,
+                },
+            }));
 
         const controller = new AbortController();
+        // Started before the parquet load so both requests overlap. This helper
+        // never rejects, so a metadata failure can never fail the track.
+        const metadataPromise = fetchTrackWavelength(track.metadataUrl);
         const promise = (async () => {
             try {
                 const result = await load(track.url, ParquetArrowLoader, {
@@ -406,9 +426,17 @@ function MintarderRuhrtalbruecke() {
                 }
 
                 const colorStats = computeTrackColorStats(features);
+                const { wavelength, error: wavelengthError } = await metadataPromise;
                 setTracks((previous) => ({
                     ...previous,
-                    [id]: { status: 'ready', features, colorStats, error: null },
+                    [id]: {
+                        status: 'ready',
+                        features,
+                        colorStats,
+                        wavelength,
+                        wavelengthError,
+                        error: null,
+                    },
                 }));
 
                 // A pre-load attribute selection may not exist in this dataset;
@@ -443,6 +471,8 @@ function MintarderRuhrtalbruecke() {
                     [id]: {
                         status: 'error',
                         features: null,
+                        wavelength: null,
+                        wavelengthError: null,
                         error: describeLoadError(track, loadError),
                     },
                 }));
@@ -557,6 +587,9 @@ function MintarderRuhrtalbruecke() {
     // Selection carries its track already; the timeline reads the d_* samples
     // materialised at load time, so no Arrow table lookup is needed.
     const selectedFeature = selectedPoint;
+    const selectedTrackState = selectedFeature
+        ? tracks[selectedFeature.trackId]
+        : null;
 
     const handleHover = useCallback((info) => {
         const next = isPointLayer(info.layer?.id) && info.object
@@ -1019,47 +1052,6 @@ function MintarderRuhrtalbruecke() {
                         }}
                     >
                         <label
-                            htmlFor="mintarder-rel-threshold"
-                            style={{ fontSize: 11, color: '#555' }}
-                        >
-                            Chart reliability threshold
-                        </label>
-                        <span style={{ fontSize: 11, color: '#555', fontVariantNumeric: 'tabular-nums' }}>
-                            {reliabilityThreshold.toFixed(2)}
-                        </span>
-                    </div>
-                    <input
-                        id="mintarder-rel-threshold"
-                        type="range"
-                        min={RELIABILITY_THRESHOLD_MIN}
-                        max={RELIABILITY_THRESHOLD_MAX}
-                        step={RELIABILITY_THRESHOLD_STEP}
-                        value={reliabilityThreshold}
-                        onChange={(event) => setReliabilityThreshold(Number(event.target.value))}
-                        style={{ width: '100%', cursor: 'pointer', margin: 0 }}
-                    />
-                    <div style={{ marginTop: 3, fontSize: 10, color: '#777', lineHeight: 1.35 }}>
-                        Chart dots: blue at or above threshold, grey below, black when no
-                        final-class data.
-                    </div>
-                </div>
-
-                <div
-                    style={{
-                        marginTop: 10,
-                        paddingTop: 10,
-                        borderTop: '1px solid #e2e2e2',
-                    }}
-                >
-                    <div
-                        style={{
-                            display: 'flex',
-                            alignItems: 'baseline',
-                            justifyContent: 'space-between',
-                            marginBottom: 4,
-                        }}
-                    >
-                        <label
                             htmlFor="mintarder-bridge-opacity"
                             style={{ fontSize: 11, color: '#555' }}
                         >
@@ -1339,7 +1331,7 @@ function MintarderRuhrtalbruecke() {
                         zIndex: 30,
                         width: 460,
                         maxWidth: 'calc(100% - 24px)',
-                        height: 'min(320px, calc(100% - 24px))',
+                        height: 'min(380px, calc(100% - 24px))',
                     }}
                 >
                     <TimelineChart
@@ -1350,6 +1342,13 @@ function MintarderRuhrtalbruecke() {
                             (track) => track.id === selectedFeature.trackId
                         )?.classificationUrl}
                         reliabilityThreshold={reliabilityThreshold}
+                        onReliabilityThresholdChange={setReliabilityThreshold}
+                        wavelength={selectedTrackState?.wavelength ?? null}
+                        wavelengthError={selectedTrackState?.wavelengthError ?? null}
+                        plusOffsetFactor={plusOffsetFactor}
+                        onPlusOffsetFactorChange={setPlusOffsetFactor}
+                        minusOffsetFactor={minusOffsetFactor}
+                        onMinusOffsetFactorChange={setMinusOffsetFactor}
                     />
                 </div>
             )}
