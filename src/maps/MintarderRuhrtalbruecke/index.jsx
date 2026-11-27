@@ -719,8 +719,11 @@ function MintarderRuhrtalbruecke() {
             terrainLayer,
             baseMapLayer,
             reliefGlazeLayer,
-            ...bridgeLayers,
+            // Points first, bridge last: a faded bridge blends over the
+            // symbols behind it, so they read as under the model instead of
+            // on top of it. Opaque points still depth-cull the bridge.
             ...pointSymbolLayers,
+            ...bridgeLayers,
         ],
         [terrainLayer, baseMapLayer, reliefGlazeLayer, bridgeLayers, pointSymbolLayers]
     );
