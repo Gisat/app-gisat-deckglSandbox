@@ -423,7 +423,8 @@ export default function TimelineChart({
       gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
       columnGap: '8px',
       rowGap: '2px',
-      marginBottom: '3px',
+      marginBottom: '8px',
+      paddingBottom: '6px',
       fontSize: '10px',
       color: '#555',
     }}>
