@@ -337,6 +337,8 @@ function MintarderRuhrtalbruecke() {
     // Height reference for the 3D InSAR symbols. H_REF is relative to the DEM
     // and is the default; H places them at their absolute measured height.
     const [heightMode, setHeightMode] = useState('h_ref');
+    // Opacity of the four bridge OBJ parts; 1 keeps the as-built look, 0 hides it.
+    const [bridgeOpacity, setBridgeOpacity] = useState(1);
 
     // Load one track once and cache its features; re-enabling a ready track is
     // instant and never refetches. Disabling does not abort or evict.
@@ -561,12 +563,15 @@ function MintarderRuhrtalbruecke() {
                         // height sampled under the ANCHOR.
                         extensions: [new TerrainExtension()],
                         terrainDrawMode: 'offset',
+                        opacity: bridgeOpacity,
+                        // Skip the draw entirely when fully transparent.
+                        visible: bridgeOpacity > 0,
                         pickable: false,
                     })
             ),
         // Same reason as the glaze overlay: re-apply the terrain offset once
         // the height map exists.
-        [zRange]
+        [zRange, bridgeOpacity]
     );
 
     // Same Poláky split, done once per ready track: |VEL_AVG| <= 0.5 mm/yr ->
@@ -812,6 +817,37 @@ function MintarderRuhrtalbruecke() {
                             );
                         })}
                     </div>
+                </div>
+
+                <div>
+                    <div
+                        style={{
+                            display: 'flex',
+                            alignItems: 'baseline',
+                            justifyContent: 'space-between',
+                            marginBottom: 4,
+                        }}
+                    >
+                        <label
+                            htmlFor="mintarder-bridge-opacity"
+                            style={{ fontSize: 11, color: '#555' }}
+                        >
+                            Bridge opacity
+                        </label>
+                        <span style={{ fontSize: 11, color: '#555', fontVariantNumeric: 'tabular-nums' }}>
+                            {Math.round(bridgeOpacity * 100)}%
+                        </span>
+                    </div>
+                    <input
+                        id="mintarder-bridge-opacity"
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={Math.round(bridgeOpacity * 100)}
+                        onChange={(event) => setBridgeOpacity(Number(event.target.value) / 100)}
+                        style={{ width: '100%', cursor: 'pointer', margin: 0 }}
+                    />
                 </div>
             </div>
 
