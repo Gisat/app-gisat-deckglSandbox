@@ -123,12 +123,6 @@ const MISSING_VELOCITY_COLOR = [128, 128, 128, 255];
 // Same selection/hover cyan as Poláky Hradec v2.
 const SELECTION_COLOR = [66, 212, 244, 255];
 
-function formatNumber(value, digits = 2) {
-    if (value == null || value === '') return '–';
-    const number = Number(value);
-    return Number.isFinite(number) ? number.toFixed(digits) : '–';
-}
-
 function parseOptionalNumber(value) {
     if (value == null || value === '') return null;
     const number = Number(value);
@@ -392,20 +386,6 @@ function MintarderRuhrtalbruecke() {
         }
     }, []);
 
-    const getTooltip = useCallback(({ object, layer }) => {
-        if (!isPointLayer(layer?.id) || !object) return null;
-        const properties = object.properties ?? {};
-        return {
-            text: [
-                `ID: ${properties.ID ?? '–'}`,
-                `VEL_AVG: ${formatNumber(properties.VEL_AVG, 2)} mm/yr`,
-                `H: ${formatNumber(properties.H, 2)} m`,
-                `H_REF: ${formatNumber(properties.H_REF, 2)} m`,
-                `COH: ${formatNumber(properties.COH, 2)}`,
-            ].join('\n'),
-        };
-    }, []);
-
     const terrainLayer = useMemo(
         () =>
             new CogTerrainLayer({
@@ -615,7 +595,6 @@ function MintarderRuhrtalbruecke() {
                 onHover={handleHover}
                 onClick={handleClick}
                 getCursor={() => (hoveredArrowIndex != null ? 'pointer' : 'grab')}
-                getTooltip={getTooltip}
             />
 
             <div
