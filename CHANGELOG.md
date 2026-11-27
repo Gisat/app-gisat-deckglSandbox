@@ -1,3 +1,13 @@
+## [1.29.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.28.0...v1.29.0) (2026-11-27)
+
+### Features
+
+* **mintarder-ruhrtalbruecke:** add selection ring, hover value and attribute grid ([9deea0d](https://github.com/Gisat/app-gisat-deckglSandbox/commit/9deea0de6e52da76d5c37cd30a1b4a7a354e1698))
+
+### Bug Fixes
+
+* **mintarder-ruhrtalbruecke:** add gap between chart attributes and legend ([c1eb682](https://github.com/Gisat/app-gisat-deckglSandbox/commit/c1eb682385f7c96083078b28b0654c40dca4d5bc))
+
 ## [1.28.0](https://github.com/Gisat/app-gisat-deckglSandbox/compare/v1.27.0...v1.28.0) (2026-11-27)
 
 ### Features
