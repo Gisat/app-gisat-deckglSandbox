@@ -126,6 +126,21 @@ const scaleVec = (
 ): [number, number, number] => [tuple[0] * scale, tuple[1] * scale, tuple[2] * scale];
 
 /**
+ * Vertical lift (map meters) of the 3D arrow composite above its anchor:
+ * `computeVectorRaiseMeters(relLen) × floor-only 3D zoom band ×
+ * ARROW_MAP_SIZE_SCALE`.
+ *
+ * Shared with the selection ring so the ring centre always matches the
+ * rendered arrow.
+ *
+ * @param relLen - `REL_LEN` attribute value driving the pen width, or null.
+ * @param zoom - Current view zoom; drives the floor-only 3D size band.
+ * @returns The lift in map meters.
+ */
+export const computeArrowRaiseMeters = (relLen: number | null, zoom: number): number =>
+  computeVectorRaiseMeters(relLen) * compute3dVelocitySizeZoomScale(zoom) * ARROW_MAP_SIZE_SCALE;
+
+/**
  * Builds the seven `SimpleMeshLayer`s of the 3D LOS round-cap arrow composite:
  * rear cap, straight body, two wing rods, two wing-tip caps and the arrow tip.
  *
@@ -175,7 +190,7 @@ export const build3dLosArrowLayers = ({
 
   const getArrowPosition = (feature: LosArrowFeature): [number, number, number] => {
     const [longitude, latitude, height] = getPosition(feature);
-    const raise = computeVectorRaiseMeters(getAttributes(feature).relLen) * arrowScale;
+    const raise = computeArrowRaiseMeters(getAttributes(feature).relLen, zoom);
     return [longitude, latitude, height + raise];
   };
 

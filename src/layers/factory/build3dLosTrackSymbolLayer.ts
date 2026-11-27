@@ -37,6 +37,21 @@ const SHAPE_SIZE_SCALE: Record<LosTrackSymbolShape, number> = {
   cone: 1,
 };
 
+/**
+ * World size (map meters) of one track shape: the zoom-banded radius times the
+ * per-shape visual-size correction.
+ *
+ * This is the `size` the builder adds to the anchor height and applies to the
+ * unit mesh, so it is also the shape's vertical centre (half-height) above the
+ * anchor. Shared with the selection ring so its centre cannot drift.
+ */
+export const getTrackSymbolSizeMeters = (
+  shape: LosTrackSymbolShape,
+  radiusMeters: number,
+  zoom: number,
+): number =>
+  radiusMeters * compute3dVelocitySizeZoomScale(zoom) * (SHAPE_SIZE_SCALE[shape] ?? 1);
+
 export interface Build3dLosTrackSymbolLayerProps {
   /** Sublayer id; the map passes `${pointLayerPrefix}-shape`. */
   id: string;
@@ -91,8 +106,7 @@ export const build3dLosTrackSymbolLayer = ({
   extensions,
   terrainDrawMode,
 }: Build3dLosTrackSymbolLayerProps): SimpleMeshLayer<LosArrowFeature> => {
-  const radius = radiusMeters * compute3dVelocitySizeZoomScale(zoom);
-  const size = radius * (SHAPE_SIZE_SCALE[shape] ?? 1);
+  const size = getTrackSymbolSizeMeters(shape, radiusMeters, zoom);
   const isCone = shape === 'cone';
 
   const triggers = updateTriggers ?? {};
