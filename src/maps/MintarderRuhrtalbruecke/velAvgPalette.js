@@ -54,11 +54,16 @@ export const getMintarderVelAvgColors = (orbit) =>
     : MINTARDER_VEL_AVG_COLORS_ASCENDING);
 
 /**
- * Builds the continuous `VEL_AVG` scale over the map's ±2.5 mm/yr domain for one
- * orbit.
+ * Builds the continuous `VEL_AVG` scale for one orbit.
+ *
+ * The default domain is the map's ±2.5 mm/yr; callers that auto-expand the
+ * domain per track can pass their own symmetric `[min, max]`.
  *
  * @param {'A'|'D'|null|undefined} [orbit] Track orbit; `'D'` uses the inverted ramp.
+ * @param {[number, number]} [domain] Scale domain; defaults to ±2.5 mm/yr.
  * @returns {import('chroma-js').Scale} Chroma scale for `VEL_AVG`.
  */
-export const buildMintarderVelAvgScale = (orbit = 'A') =>
-  chroma.scale(getMintarderVelAvgColors(orbit)).domain([...MINTARDER_VEL_AVG_DOMAIN]);
+export const buildMintarderVelAvgScale = (
+  orbit = 'A',
+  domain = MINTARDER_VEL_AVG_DOMAIN,
+) => chroma.scale(getMintarderVelAvgColors(orbit)).domain([...domain]);

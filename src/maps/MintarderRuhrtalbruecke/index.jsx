@@ -17,9 +17,15 @@ import { build3dLosArrowLayers } from '../../layers/factory/build3dLosArrowLayer
 import { build3dLosSphereLayer } from '../../layers/factory/build3dLosSphereLayer';
 import { build3dLosTrackSymbolLayer } from '../../layers/factory/build3dLosTrackSymbolLayer';
 import {
-    MINTARDER_VEL_AVG_DOMAIN,
-    buildMintarderVelAvgScale,
-} from './velAvgPalette';
+    COLOR_ATTRIBUTE_BY_KEY,
+    COLOR_ATTRIBUTE_KEYS,
+    DEFAULT_SCALE_ID_BY_ORBIT,
+    TRACK_COLOR_SCALE_BY_ID,
+    buildTrackColorScale,
+    computeTrackColorStats,
+    readColorAttribute,
+} from './trackColorScales';
+import TrackColorSection from './TrackColorSection';
 import TimelineChart from './TimelineChart';
 
 // Values below are copied from the asset sidecar
@@ -90,8 +96,8 @@ const TERRAIN_OPTIONS = {
 
 // One entry per measurement track. The GeoParquet files carry no orbit
 // property, so the orbit (which drives both the arrow heading pair and the
-// ascending/descending VEL_AVG ramp) is declared here. Any combination of
-// tracks may be visible at once, so point and layer ids are namespaced by
+// default ascending/descending colour ramp) is declared here. Any combination
+// of tracks may be visible at once, so point and layer ids are namespaced by
 // track id.
 const TRACKS = [
     {
@@ -127,8 +133,8 @@ const DEFAULT_VISIBLE_TRACK_IDS = ['139D'];
 const trackLabel = (track) => `${track.id} ${track.orbit === 'A' ? '↑' : '↓'}`;
 
 // Symbol views for the top-left Symbols row. Shape view draws one shape per
-// track (coloured by VEL_AVG only); arrow view keeps the current near-zero
-// sphere / 3D LOS arrow split.
+// track, coloured by its selected color attribute; arrow view keeps the
+// near-zero sphere / 3D LOS arrow split.
 const SYMBOL_VIEWS = [
     { id: 'shapes', label: 'Track shapes' },
     { id: 'arrows', label: 'Arrows + circles' },
@@ -142,22 +148,16 @@ const PARQUET_WASM_URL = `${import.meta.env.BASE_URL}esm/parquet_wasm_bg.wasm`;
 
 const POINTS_LAYER_PREFIX = 'mintarder-insar';
 // Same split as Poláky: |VEL_AVG| <= 0.5 mm/yr renders as a sphere, everything
-// else keeps the 3D LOS arrow composite.
+// else keeps the 3D LOS arrow composite. The split stays VEL_AVG-driven even
+// when the track is coloured by another attribute.
 const NEAR_ZERO_VEL_AVG = 0.5;
-const VEL_AVG_DOMAIN = [...MINTARDER_VEL_AVG_DOMAIN];
-// Ascending tracks keep the blue → red ramp; descending tracks invert it, so a
-// given colour reads the same way on every orbit.
-const VEL_AVG_SCALES = {
-    A: buildMintarderVelAvgScale('A'),
-    D: buildMintarderVelAvgScale('D'),
-};
 
-const MISSING_VELOCITY_COLOR = [128, 128, 128, 255];
+const MISSING_VALUE_COLOR = [128, 128, 128, 255];
 // Same selection/hover cyan as Poláky Hradec v2.
 const SELECTION_COLOR = [66, 212, 244, 255];
 
-// Toggle button chrome for the Symbols and Tracks rows, mirroring the 3D
-// chart's Timeline/Custom switch in Poláky Hradec v2.
+// Toggle button chrome for the Symbols view, mirroring the 3D chart's
+// Timeline/Custom switch in Poláky Hradec v2.
 function toggleButtonStyle(active, failed = false) {
     return {
         minHeight: 24,
@@ -173,72 +173,10 @@ function toggleButtonStyle(active, failed = false) {
     };
 }
 
-// Small monochrome cue for the shape drawn by the active Track shapes view.
-// It inherits the button text colour, so failed tracks still read red.
-function TrackSymbolIcon({ shape }) {
-    return (
-        <svg
-            aria-hidden="true"
-            focusable="false"
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{ flexShrink: 0 }}
-        >
-            {shape === 'sphere' && (
-                <>
-                    <circle cx="6" cy="6" r="4" />
-                    <ellipse cx="6" cy="6" rx="1.8" ry="4" />
-                </>
-            )}
-            {shape === 'cube' && (
-                <>
-                    <path d="M6 1.6 10.2 3.7v5L6 10.8 1.8 8.7v-5Z" />
-                    <path d="M1.8 3.7 6 5.8l4.2-2.1M6 5.8v5" />
-                </>
-            )}
-            {shape === 'cone' && (
-                <>
-                    <path d="M6 1.6 2.2 9.2M6 1.6l3.8 7.6" />
-                    <ellipse cx="6" cy="9.2" rx="3.8" ry="1.2" />
-                </>
-            )}
-        </svg>
-    );
-}
-
 function parseOptionalNumber(value) {
     if (value == null || value === '') return null;
     const number = Number(value);
     return Number.isFinite(number) ? number : null;
-}
-
-function clampVelocity(value) {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return null;
-    const [min, max] = VEL_AVG_DOMAIN;
-    return Math.max(min, Math.min(max, number));
-}
-
-function velocityColor(orbit, value) {
-    const clamped = clampVelocity(value);
-    if (clamped == null) return MISSING_VELOCITY_COLOR;
-    const scale = VEL_AVG_SCALES[orbit] ?? VEL_AVG_SCALES.D;
-    const [r, g, b] = scale(clamped).rgb();
-    return [r, g, b, 255];
-}
-
-// ColorScaleLegend samples a value -> [r, g, b] function.
-function velocityLegendColor(orbit, value) {
-    const clamped = clampVelocity(value);
-    const scale = VEL_AVG_SCALES[orbit] ?? VEL_AVG_SCALES.D;
-    const [r, g, b] = scale(clamped ?? 0).rgb();
-    return [r, g, b];
 }
 
 // Missing / non-finite VEL_AVG keeps the arrow behaviour in Poláky.
@@ -259,6 +197,16 @@ function vectorFor(table, name) {
     } catch {
         return null;
     }
+}
+
+// Some GeoParquet exports use lowercase column names; take the first spelling
+// that exists. Feature properties stay canonical uppercase.
+function vectorForAny(table, names) {
+    for (const name of names) {
+        const vector = vectorFor(table, name);
+        if (vector) return vector;
+    }
+    return null;
 }
 
 function numberAt(vector, index) {
@@ -284,8 +232,9 @@ function buildPointFeatures(table, track) {
         ID: vectorFor(table, 'ID'),
         LON: vectorFor(table, 'LON'),
         LAT: vectorFor(table, 'LAT'),
-        VEL_AVG: vectorFor(table, 'VEL_AVG'),
-        VEL_REL: vectorFor(table, 'VEL_REL'),
+        VEL_AVG: vectorForAny(table, ['VEL_AVG', 'vel_avg']),
+        VEL_REL: vectorForAny(table, ['VEL_REL', 'vel_rel']),
+        VEL_LAST: vectorForAny(table, ['VEL_LAST', 'vel_last']),
         REL_LEN: vectorFor(table, 'REL_LEN'),
         VEL_SD: vectorFor(table, 'VEL_SD'),
         H: vectorFor(table, 'H'),
@@ -318,6 +267,7 @@ function buildPointFeatures(table, track) {
             LAT: coordinates[1],
             VEL_AVG: numberAt(columns.VEL_AVG, index),
             VEL_REL: numberAt(columns.VEL_REL, index),
+            VEL_LAST: numberAt(columns.VEL_LAST, index),
             REL_LEN: numberAt(columns.REL_LEN, index),
             VEL_SD: numberAt(columns.VEL_SD, index),
             H: height,
@@ -396,6 +346,17 @@ function MintarderRuhrtalbruecke() {
     const [heightMode, setHeightMode] = useState('h_ref');
     // Per-track shapes (default) or the 3D LOS arrow / near-zero sphere split.
     const [symbolMode, setSymbolMode] = useState('shapes');
+    // Per-track colour attribute and scale. Session-only; a reload returns to
+    // VEL_AVG with each orbit's legacy ramp.
+    const [trackColorSettings, setTrackColorSettings] = useState(() =>
+        Object.fromEntries(TRACKS.map((track) => [
+            track.id,
+            {
+                attribute: 'VEL_AVG',
+                scaleId: DEFAULT_SCALE_ID_BY_ORBIT[track.orbit],
+            },
+        ]))
+    );
     // Opacity of the four bridge OBJ parts; 1 keeps the as-built look, 0 hides it.
     const [bridgeOpacity, setBridgeOpacity] = useState(1);
 
@@ -429,10 +390,28 @@ function MintarderRuhrtalbruecke() {
                     throw new Error('No valid point coordinates found in LON/LAT or geometry.');
                 }
 
+                const colorStats = computeTrackColorStats(features);
                 setTracks((previous) => ({
                     ...previous,
-                    [id]: { status: 'ready', features, error: null },
+                    [id]: { status: 'ready', features, colorStats, error: null },
                 }));
+
+                // A pre-load attribute selection may not exist in this dataset;
+                // fall back to the first available attribute in declared order.
+                setTrackColorSettings((previous) => {
+                    const current = previous[id];
+                    if (!current || colorStats[current.attribute]?.available) {
+                        return previous;
+                    }
+                    const fallback = COLOR_ATTRIBUTE_KEYS.find(
+                        (key) => colorStats[key]?.available
+                    ) ?? 'VEL_AVG';
+                    if (fallback === current.attribute) return previous;
+                    return {
+                        ...previous,
+                        [id]: { ...current, attribute: fallback },
+                    };
+                });
             } catch (loadError) {
                 // Unmount aborts in flight; not a track failure, no state to set.
                 if (controller.signal.aborted) return;
@@ -496,6 +475,56 @@ function MintarderRuhrtalbruecke() {
         });
         if (state?.status !== 'ready') loadTrack(id);
     }, [visibleTrackIds, tracks, loadTrack]);
+
+    // One resolved colour config per track. The effective attribute falls back
+    // to the first available one when the stored selection is missing from the
+    // loaded dataset, so the picker and the colours never disagree.
+    const trackColorConfig = useMemo(() => {
+        const configs = {};
+        for (const track of TRACKS) {
+            const state = tracks[track.id];
+            const settings = trackColorSettings[track.id];
+
+            const attribute = state?.status === 'ready'
+                && !state.colorStats?.[settings.attribute]?.available
+                ? (COLOR_ATTRIBUTE_KEYS.find((key) => state.colorStats?.[key]?.available)
+                    ?? 'VEL_AVG')
+                : settings.attribute;
+
+            const scaleDef = TRACK_COLOR_SCALE_BY_ID[settings.scaleId]
+                ?? TRACK_COLOR_SCALE_BY_ID[DEFAULT_SCALE_ID_BY_ORBIT[track.orbit]];
+
+            const domain = state?.status === 'ready'
+                ? state.colorStats?.[attribute]?.domain
+                    ?? COLOR_ATTRIBUTE_BY_KEY[attribute].floorDomain
+                : COLOR_ATTRIBUTE_BY_KEY[attribute].floorDomain;
+
+            configs[track.id] = {
+                attribute,
+                scaleDef,
+                domain,
+                scale: buildTrackColorScale(scaleDef, domain),
+                // Retrigger only this track when its attribute, scale or
+                // auto-expanded domain changes.
+                colorKey: `${attribute}|${scaleDef.id}|${domain[0]}|${domain[1]}`,
+            };
+        }
+        return configs;
+    }, [tracks, trackColorSettings]);
+
+    const handleTrackAttributeChange = useCallback((id, attribute) => {
+        setTrackColorSettings((previous) => ({
+            ...previous,
+            [id]: { ...previous[id], attribute },
+        }));
+    }, []);
+
+    const handleTrackScaleChange = useCallback((id, scaleId) => {
+        setTrackColorSettings((previous) => ({
+            ...previous,
+            [id]: { ...previous[id], scaleId },
+        }));
+    }, []);
 
     // Selection carries its track already; the timeline reads the d_* samples
     // materialised at load time, so no Arrow table lookup is needed.
@@ -701,6 +730,7 @@ function MintarderRuhrtalbruecke() {
             const state = tracks[track.id];
             if (state?.status !== 'ready') continue;
             const symbols = trackSymbols[track.id];
+            const colorConfig = trackColorConfig[track.id];
 
             // Track-scoped highlight: only this track's matching point lights
             // up, even when other tracks share the same arrowIndex.
@@ -712,14 +742,18 @@ function MintarderRuhrtalbruecke() {
                     && hoveredTrackId === track.id
                     && feature.arrowIndex === hoveredArrowIndex;
                 if (isSelected || isHovered) return SELECTION_COLOR;
-                return velocityColor(track.orbit, feature.properties?.VEL_AVG);
+                const value = readColorAttribute(feature, colorConfig.attribute);
+                if (value == null) return MISSING_VALUE_COLOR;
+                const [r, g, b] = colorConfig.scale(value).rgb();
+                return [r, g, b, 255];
             };
             const updateTriggers = {
-                // Track-scoped: only this track's highlight can change, so other
-                // tracks keep identical triggers and skip their color update.
+                // Track-scoped: only this track's highlight or colour config
+                // can change, so other tracks skip their colour update.
                 getColor: [
                     selectedTrackId === track.id ? selectedArrowIndex : null,
                     hoveredTrackId === track.id ? hoveredArrowIndex : null,
+                    colorConfig.colorKey,
                 ],
                 // Force the anchors to re-evaluate when the DEM height map arrives.
                 getPosition: [zRange],
@@ -772,27 +806,21 @@ function MintarderRuhrtalbruecke() {
             );
         }
         return symbolLayers;
-    }, [tracks, trackSymbols, visibleTrackIds, zoom, selectedPoint, hoveredPoint, heightMode, symbolMode, zRange]);
+    }, [tracks, trackSymbols, visibleTrackIds, zoom, selectedPoint, hoveredPoint, heightMode, symbolMode, zRange, trackColorConfig]);
 
-    // Legend groups: one gradient per orbit present among the visible ready
-    // tracks, with aggregate point counts.
-    const legendGroups = useMemo(() => {
-        const groups = [];
-        for (const orbit of ['A', 'D']) {
-            const groupTracks = TRACKS.filter(
-                (track) => track.orbit === orbit
-                    && visibleTrackIds.has(track.id)
-                    && tracks[track.id]?.status === 'ready'
-            );
-            if (groupTracks.length === 0) continue;
-            const points = groupTracks.reduce(
-                (total, track) => total + tracks[track.id].features.length,
-                0
-            );
-            groups.push({ orbit, ids: groupTracks.map((track) => track.id), points });
-        }
-        return groups;
-    }, [tracks, visibleTrackIds]);
+    // One legend per visible ready track, showing that track's effective
+    // attribute, scale and (possibly auto-expanded) domain.
+    const legendTracks = useMemo(
+        () => TRACKS
+            .filter((track) => visibleTrackIds.has(track.id)
+                && tracks[track.id]?.status === 'ready')
+            .map((track) => ({
+                track,
+                config: trackColorConfig[track.id],
+                points: tracks[track.id].features.length,
+            })),
+        [tracks, visibleTrackIds, trackColorConfig]
+    );
 
     // Per-track counts for the info card. Shape view reports the single shape
     // used by the track; arrow view keeps the sphere/arrow split counts.
@@ -849,6 +877,9 @@ function MintarderRuhrtalbruecke() {
                     top: 12,
                     left: 12,
                     zIndex: 10,
+                    width: 320,
+                    minWidth: 260,
+                    maxWidth: 'min(340px, calc(100vw - 24px))',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'stretch',
@@ -919,52 +950,27 @@ function MintarderRuhrtalbruecke() {
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div
-                        id="mintarder-tracks-label"
-                        style={{ fontSize: 11, color: '#555', whiteSpace: 'nowrap' }}
-                    >
-                        Tracks
-                    </div>
-                    <div
-                        role="group"
-                        aria-labelledby="mintarder-tracks-label"
-                        style={{ display: 'flex', gap: 4 }}
-                    >
-                        {TRACKS.map((track) => {
-                            const state = tracks[track.id];
-                            const isActive = visibleTrackIds.has(track.id);
-                            const isTrackLoading = isActive && state?.status === 'loading';
-                            const hasFailed = isActive && state?.status === 'error';
-                            return (
-                                <button
-                                    key={track.id}
-                                    type="button"
-                                    onClick={() => handleToggleTrack(track.id)}
-                                    aria-pressed={isActive}
-                                    aria-busy={isTrackLoading || undefined}
-                                    title={hasFailed
-                                        ? `${track.id} (${track.direction}) failed to load: ${state.error} Click to retry.`
-                                        : `${track.id} (${track.direction}, ${track.symbolLabel})`}
-                                    style={toggleButtonStyle(isActive, hasFailed)}
-                                >
-                                    <span
-                                        style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: 4,
-                                        }}
-                                    >
-                                        {symbolMode === 'shapes' && (
-                                            <TrackSymbolIcon shape={track.symbol} />
-                                        )}
-                                        {trackLabel(track)}
-                                        {isTrackLoading ? ' …' : ''}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
+                <div
+                    id="mintarder-tracks-label"
+                    style={{ fontSize: 11, color: '#555', fontWeight: 600 }}
+                >
+                    Tracks
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {TRACKS.map((track) => (
+                        <TrackColorSection
+                            key={track.id}
+                            track={track}
+                            enabled={visibleTrackIds.has(track.id)}
+                            state={tracks[track.id]}
+                            settings={trackColorSettings[track.id]}
+                            colorConfig={trackColorConfig[track.id]}
+                            onToggle={handleToggleTrack}
+                            onAttributeChange={handleTrackAttributeChange}
+                            onScaleChange={handleTrackScaleChange}
+                            showSymbol={symbolMode === 'shapes'}
+                        />
+                    ))}
                 </div>
 
                 <div>
@@ -1067,7 +1073,7 @@ function MintarderRuhrtalbruecke() {
                 </div>
             )}
 
-            {legendGroups.length > 0 && (
+            {legendTracks.length > 0 && (
                 <div
                     style={{
                         position: 'absolute',
@@ -1078,14 +1084,19 @@ function MintarderRuhrtalbruecke() {
                         display: 'flex',
                         flexDirection: 'column',
                         gap: 8,
+                        maxHeight: 'calc(100vh - 24px)',
+                        overflowY: 'auto',
                     }}
                 >
-                    {legendGroups.map((group) => (
+                    {legendTracks.map(({ track, config, points }) => (
                         <ColorScaleLegend
-                            key={group.orbit}
-                            colorScale={(value) => velocityLegendColor(group.orbit, value)}
-                            domain={[VEL_AVG_DOMAIN[0], 0, VEL_AVG_DOMAIN[1]]}
-                            title={`VEL_AVG ${group.orbit} (mm/yr) · ${group.ids.join(', ')} · ${group.points.toLocaleString()} pts`}
+                            key={track.id}
+                            colorScale={(value) => {
+                                const [r, g, b] = config.scale(value).rgb();
+                                return [r, g, b];
+                            }}
+                            domain={[config.domain[0], 0, config.domain[1]]}
+                            title={`${trackLabel(track)} · ${config.attribute} (mm/yr) · ${config.scaleDef.label} · ${points.toLocaleString()} pts`}
                         />
                     ))}
                 </div>
@@ -1173,13 +1184,14 @@ function MintarderRuhrtalbruecke() {
                         ))}
                     {' '}
                     {symbolMode === 'shapes'
-                        ? '— one shape per track, coloured by VEL_AVG, anchored at '
+                        ? '— one shape per track, coloured by its selected attribute, anchored at '
                         : `— spheres for |VEL_AVG| ≤ ${NEAR_ZERO_VEL_AVG} mm/yr, 3D LOS arrows otherwise, anchored at `}
                     {heightMode === 'h_ref' ? 'H_REF above the DEM' : 'absolute H'}.
-                    VEL_AVG scale {VEL_AVG_DOMAIN[0]} → +{VEL_AVG_DOMAIN[1]} mm/yr; ascending (A) tracks run blue →
-                    red and descending (D) tracks are inverted (red → blue). Toggle
-                    tracks in the top-left Tracks row; click a symbol for its d_*
-                    displacement series.
+                    Each track is coloured independently by VEL_AVG, VEL_REL or VEL_LAST
+                    using a legacy velocity ramp or a ColorBrewer diverging scale, chosen
+                    in the top-left Tracks section; each legend shows its own symmetric
+                    domain. The arrow/sphere split and arrow heading still use VEL_AVG.
+                    Click a symbol for its d_* displacement series.
                 </div>
                 <div>
                     Alignment/anchor data:{' '}
