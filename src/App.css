@@ -15,11 +15,13 @@ html, body, #root {
   width: 300px;
   box-sizing: border-box;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   background-color: #f4f4f4;
-  padding: 20px;
+  padding: 0;
   box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
-  overflow-y: auto;
-  transition: width 0.2s ease, padding 0.2s ease;
+  overflow: hidden;
+  transition: width 0.2s ease;
 }
 
 .main-content {
@@ -34,11 +36,20 @@ html, body, #root {
 }
 
 .sidebar-header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 8px;
+  padding: 20px 20px 8px;
+}
+
+/* Only the navigation list scrolls; the header with the toggle stays put. */
+.sidebar-nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 20px 20px;
 }
 
 .sidebar-header h1 {
@@ -73,13 +84,11 @@ html, body, #root {
 
 .sidebar-collapsed {
   width: 40px;
-  padding: 8px 6px;
-  overflow: hidden;
 }
 
 .sidebar-collapsed .sidebar-header {
   justify-content: center;
-  margin-bottom: 0;
+  padding: 8px 6px;
 }
 
 .sidebar ul {
